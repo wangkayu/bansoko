@@ -218,18 +218,19 @@ func TestSourceGroupCatalogFields(t *testing.T) {
 		fields[field.Path] = field
 	}
 	for _, path := range sourceGroupFieldPaths {
-		field, ok := fields[path]
+		displayPath := namingDisplayPath(path)
+		field, ok := fields[displayPath]
 		if !ok {
-			t.Fatalf("naming catalog is missing %s", path)
+			t.Fatalf("naming catalog is missing %s", displayPath)
 		}
 		if !field.Nullable || field.Type != "string" || field.SampleValue == "" || field.Description == "" {
-			t.Fatalf("catalog field %s = %+v", path, field)
+			t.Fatalf("catalog field %s = %+v", displayPath, field)
 		}
 		if field.Phase != string(templatefacts.PhaseRelease) {
-			t.Fatalf("catalog field %s phase = %q", path, field.Phase)
+			t.Fatalf("catalog field %s phase = %q", displayPath, field.Phase)
 		}
-		if !strings.HasPrefix(field.LabelKey, "facts."+path+".") {
-			t.Fatalf("catalog field %s label key = %q", path, field.LabelKey)
+		if !strings.HasPrefix(field.LabelKey, "facts."+displayPath+".") {
+			t.Fatalf("catalog field %s label key = %q", displayPath, field.LabelKey)
 		}
 	}
 }

@@ -16,7 +16,7 @@ import (
 // File manager recognition: the naming rules one-shot step two renders with,
 // over the facts of one local file. It is the naming core under a different
 // input adapter: the episode comes from the caller's own parser evidence over
-// the file name, and the file.rt.* values come from parsing that same name.
+// the file name, and the frt.* values come from parsing that same name.
 // There is no release title here, so rt.* stays empty: the file's own parse has
 // its own namespace and never stands in for the release parse. Nothing here
 // reads a placement, an artifact or a stored naming rule: the rules are the

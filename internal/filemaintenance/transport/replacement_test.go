@@ -12,7 +12,7 @@ import (
 
 func TestReplacementPolicyInputsMapTheTypedProfile(t *testing.T) {
 	profile := generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{
-		{Key: "anibt.language", Ranks: [][]string{{"CHS", "CHT"}, {"CHS"}}},
+		{Key: "anibt.lang", Ranks: [][]string{{"CHS", "CHT"}, {"CHS"}}},
 		{Key: "subgroup.score", Ranks: [][]string{}},
 	}}
 	input, err := ReplacementPolicyDefaultInput(generated.ReplacementPolicyDefaultInput{
@@ -26,7 +26,7 @@ func TestReplacementPolicyInputsMapTheTypedProfile(t *testing.T) {
 	if input.ExpectedVersion != 7 || input.Policy.AdmissionMode != filemaintenance.ModePerGroup {
 		t.Fatalf("mapped input = %+v", input)
 	}
-	if got := string(input.Policy.QualityProfile); got != `{"items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["CHS"]]},{"key":"subgroup.score","ranks":[]}],"version":"profile-v1"}` {
+	if got := string(input.Policy.QualityProfile); got != `{"items":[{"key":"anibt.lang","ranks":[["CHS","CHT"],["CHS"]]},{"key":"subgroup.score","ranks":[]}],"version":"profile-v1"}` {
 		t.Fatalf("quality profile JSON = %s", got)
 	}
 }

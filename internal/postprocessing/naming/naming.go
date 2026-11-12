@@ -88,14 +88,14 @@ func DefaultNamingRules() NamingRules {
 		Language: Language,
 		TV: NamingVariant{
 			DirectoryTemplate:     "/media/${kind}/${ny}/${sf}",
-			VideoFilenameTemplate: "${n} ${s00e00}.${file.ext}",
+			VideoFilenameTemplate: "${n} ${s00e00}.${ext}",
 		},
 		Unknown: defaultUnknownVariant(),
 		Movie: NamingVariant{
 			DirectoryTemplate:     "/media/${kind}/${ny}",
 			VideoFilenameTemplate: "${fn}",
 		},
-		SubtitleSuffixTemplate: "${sub.lang_tag}",
+		SubtitleSuffixTemplate: "${langtag}",
 	}
 }
 

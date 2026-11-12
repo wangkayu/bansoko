@@ -91,7 +91,9 @@ func TestCatalogFieldsExistInProductionSampleContexts(t *testing.T) {
 				t.Fatalf("sample %q context: %v", sample.Ref, err)
 			}
 			var current interface{} = object
-			for _, part := range strings.Split(field.Path, ".") {
+			parts := strings.Split(field.Path, ".")
+			parts[0] = canonicalRoot(parts[0])
+			for _, part := range parts {
 				node, isObject := current.(map[string]interface{})
 				if !isObject {
 					current = nil

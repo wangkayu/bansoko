@@ -605,11 +605,11 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 		// naming/rules failure that produced no target, fails closed.
 		if rendered.Safety != animedomain.PreviewFileResultSafety("valid") {
 			setTargetDiagnostic(file, targetDiagnosticCode(rendered.ReasonCode, "target_render_failed"), "目标路径生成失败，未执行重命名")
-			return fail("target_render_failed", "the selected file produced an invalid or unsafe target: "+reasonOrUnknown(rendered.ReasonCode))
+			return fail(targetRenderAdmissionReason(rendered.ReasonCode), "the selected file produced an invalid or unsafe target: "+reasonOrUnknown(rendered.ReasonCode))
 		}
 		if rendered.RenderedTarget == nil || strings.TrimSpace(*rendered.RenderedTarget) == "" {
 			setTargetDiagnostic(file, targetDiagnosticCode(rendered.ReasonCode, "target_render_failed"), "目标路径生成失败，未执行重命名")
-			return fail("target_render_failed", "included torrent entry did not produce a final target: "+reasonOrUnknown(rendered.ReasonCode))
+			return fail(targetRenderAdmissionReason(rendered.ReasonCode), "included torrent entry did not produce a final target: "+reasonOrUnknown(rendered.ReasonCode))
 		}
 		renderedTarget := *rendered.RenderedTarget
 		targetPath, err := ResolveTargetPath(renderedTarget)
@@ -871,6 +871,17 @@ func targetDiagnosticCode(value *string, fallback string) string {
 		return fallback
 	}
 	return strings.TrimSpace(*value)
+}
+
+// targetRenderAdmissionReason keeps a missing-fact code structured on the
+// release. Other invalid or unsafe renders remain target_render_failed: only a
+// named missing fact has an input-specific recovery path.
+func targetRenderAdmissionReason(value *string) string {
+	code := targetDiagnosticCode(value, "target_render_failed")
+	if strings.HasPrefix(code, "naming_fact_missing_") {
+		return code
+	}
+	return "target_render_failed"
 }
 
 func targetMediaKind(value string) string {

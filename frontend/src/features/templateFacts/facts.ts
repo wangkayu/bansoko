@@ -58,11 +58,11 @@ export function factTitle(fact: CatalogFact): string {
   return parts.join(" · ");
 }
 
-const PLACEHOLDER = /⟨([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){1,2})⟩/g;
+const PLACEHOLDER = /⟨([a-z][a-z0-9_]*)⟩/g;
 
-/** The placeholder's display text; with no copy, the path is used. */
-export function placeholderText(path: string): string {
-  return t("templateFacts.placeholder", { label: tryT(`facts.${path}.label`) ?? path });
+/** Placeholders already carry the approved minimal token from the renderer. */
+export function placeholderText(name: string): string {
+  return t("templateFacts.placeholder", { label: name });
 }
 
 /** Splits preview text into plain fragments and execution-time placeholders. */

@@ -145,7 +145,7 @@ func feedItemFromPreviewSeed(seed SeedPreviewFact, provider string) acquisitiond
 	// fetched item does before its release persists one. A render reads the
 	// value namespaces only from the item's frozen sets, so a seed whose title
 	// is never parsed renders no rt.* fact at all — the shipped subtitle suffix
-	// (sub.lang_tag, which falls back to rt.sub_lang for a subtitle whose
+	// (sub.lang_tag, which falls back to rt.lang for a subtitle whose
 	// own name names no language) would then differ from the eventual
 	// release, which renders with the language its own title names.
 	//

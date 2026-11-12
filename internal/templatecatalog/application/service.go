@@ -247,7 +247,7 @@ func (s *Service) PreviewNaming(_ context.Context, input NamingTemplatePreviewIn
 		Warnings:       []TemplateWarning{},
 	}
 
-	// Execution-phase facts preview as placeholders (⟨media.resolution⟩).
+	// Known values render directly; absent execution-phase facts use minimal placeholders (⟨res⟩).
 	engine := naming.NewEngine().Preview()
 	compiled, err := engine.Compile(kind, input.TemplateSource)
 	if err == nil {

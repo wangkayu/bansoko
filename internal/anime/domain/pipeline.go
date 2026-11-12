@@ -597,7 +597,7 @@ func unknownVideo(file ManifestFileInput) bool {
 // preview marks a render shown to the user before the download (the RSS,
 // draft and one-shot previews): a fact read from the downloaded file
 // (media.resolution, media.video_codec, media.audio_codec, media.container)
-// renders as its placeholder ⟨path⟩ and never counts as empty. The
+// renders as a minimal placeholder such as ⟨res⟩ only when absent. The
 // acquisition target set renders without placeholders (PreviewExactFile).
 func renderManifestFile(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, rules attrrules.Rules, filename string, file ManifestFileInput, unknownRoute string, preview bool) previewFileOutcome {
 	if unknownVideo(file) {

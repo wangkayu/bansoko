@@ -12,7 +12,7 @@ import (
 )
 
 // companionPreviewFixture is the manifest preview fixture with a title of the
-// caller's choosing. The release's subtitle language (rt.sub_lang) is what a
+// caller's choosing. The release's subtitle language (rt.lang) is what a
 // subtitle whose own name names none renders (sub.lang falls back to it).
 func companionPreviewFixture(t *testing.T, title string) (EffectiveConfig, PreviewReleaseResult, acquisitiondomain.FeedItem) {
 	t.Helper()
@@ -126,8 +126,8 @@ func precureManifest(release PreviewReleaseResult, tails ...string) []ManifestFi
 // The default subtitle suffix is the subtitle's one BCP 47 tag
 // (sub.lang_tag), resolved like the episode: the subtitle file's own tag
 // first, normalized with the reltitle sub_lang vocabulary, else the release
-// title's rt.sub_lang. The owner's FLsnow release (the CHS&CHT&JPN combo,
-// rt.sub_lang
+// title's rt.lang. The owner's FLsnow release (the CHS&CHT&JPN combo,
+// rt.lang
 // JPSC+JPTC) ships `.chs&jpn.ass` and `.cht&jpn.ass`: the release-level
 // default rendered both to `<video>.JPSC+JPTC.ass` and dropped both as
 // target_duplicate.

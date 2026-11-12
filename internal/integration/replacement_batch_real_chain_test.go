@@ -201,13 +201,13 @@ ORDER BY d.created_at DESC, d.id DESC LIMIT 1`, animeID).Scan(&e1State); err != 
 // of the shipped default (E03-E04).
 func multiEpisodeNamingRules(root string) generated.NamingRules {
 	rules := flatNamingRules(root)
-	rules.Tv.VideoFilenameTemplate = "${sanitize(anime.title)} - E${pad(ep.display, 2)}${ep.number_end ? `-E${pad(ep.number_end, 2)}` : ''}@${anime.group}.${file.ext}"
+	rules.Tv.VideoFilenameTemplate = "${sanitize(anime.title)} - E${pad(ep.display, 2)}${ep.end ? `-E${pad(ep.end, 2)}` : ''}@${anime.group}.${file.ext}"
 	return rules
 }
 
 // TestMultiEpisodeFileRealChain proves a double-episode file: the file
 // name range 03-04 resolves to two coverage keys, the file is placed once on
-// both keys, and ep.number_end names it E03-E04.
+// both keys, and ep.end names it E03-E04.
 func TestMultiEpisodeFileRealChain(t *testing.T) {
 	stamp := time.Now().UTC().Format(time.RFC3339Nano)
 	items := map[string]rssItem{

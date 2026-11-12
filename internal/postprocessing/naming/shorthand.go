@@ -53,9 +53,9 @@ type Shorthand struct {
 var Shorthands = []Shorthand{
 	// s00e00 composes exactly like the ep.s00e00 fact (SeasonEpisode): the
 	// season argument is guard-preprocessed because the helper takes a string,
-	// and ep.number_end is conditional so a multi-episode range stays optional.
+	// and ep.end is conditional so a multi-episode range stays optional.
 	// ep.number stays required.
-	{Name: "s00e00", Expansion: `seasonEpisode(anime.kind, anime.season === null ? "" : anime.season, ep.number, ep.number_end === null ? "" : ep.number_end)`, Example: "S01E12"},
+	{Name: "s00e00", Expansion: `seasonEpisode(anime.kind, anime.season === null ? "" : anime.season, ep.number, ep.end === null ? "" : ep.end)`, Example: "S01E12"},
 	{Name: "sxe", Expansion: `anime.season === null ? "" : anime.season + "x" + pad(ep.number, 2)`, Example: "1x12"},
 	{Name: "s00", Expansion: `anime.season === null ? "" : pad(anime.season, 2)`, Example: "01"},
 	{Name: "e00", Expansion: `pad(ep.number, 2)`, Example: "12"},
@@ -76,14 +76,21 @@ var Shorthands = []Shorthand{
 	// entry the artifact record freezes), the FileBot {fn} semantics: a whole
 	// value returning, not a composite.
 	{Name: "fn", Expansion: `file.name`, Example: "Show - 12.mkv"},
-	// ep is the bare episode number; res/vc/ac/cf replay the file's own media
-	// probe facts and g the scroll group. Each is a whole value returning, so
-	// an empty fact renders an empty segment that NormalizePathSegment cleans.
-	{Name: "ep", Expansion: `ep.number`, Example: "12"},
+	// The direct file/media/language tokens and group replay exactly one
+	// registered fact. Each is a whole value returning, so an empty fact renders
+	// an empty segment that NormalizePathSegment cleans. The retired bare ep is
+	// deliberately absent; e/e00/e000 are the only recommended episode tokens.
+	{Name: "ext", Expansion: `file.ext`, Example: "mkv"},
+	{Name: "stem", Expansion: `file.stem`, Example: "Show - 12"},
 	{Name: "res", Expansion: `media.resolution`, Example: "1080p"},
 	{Name: "vc", Expansion: `media.video_codec`, Example: "HEVC"},
 	{Name: "ac", Expansion: `media.audio_codec`, Example: "AAC"},
 	{Name: "cf", Expansion: `media.container`, Example: "mkv"},
+	{Name: "hdr", Expansion: `media.hdr`, Example: "hdr10"},
+	{Name: "langcode", Expansion: `sub.lang_code`, Example: "jpsc"},
+	{Name: "langtag", Expansion: `sub.lang_tag`, Example: "zh-Hans"},
+	{Name: "langname", Expansion: `sub.lang_name`, Example: "简繁日内封"},
+	{Name: "group", Expansion: `anime.group`, Example: "示例字幕组"},
 	{Name: "g", Expansion: `anime.group`, Example: "示例字幕组"},
 	// sf and sp replay the season folder level (Season 01 under the movie gate
 	// for sf, the '/Season 01' root-relative composite for sp), the same

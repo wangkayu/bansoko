@@ -824,6 +824,6 @@ func resolutionNamingRules(root string) generated.NamingRules {
 			DirectoryTemplate:     prefix + "/${anime.kind}/${anime.title} ${anime.year}/Extras",
 			VideoFilenameTemplate: "${file.stem}.${file.ext}",
 		},
-		SubtitleSuffixTemplate: "${rt.sub_lang}",
+		SubtitleSuffixTemplate: "${rt.lang}",
 	}
 }

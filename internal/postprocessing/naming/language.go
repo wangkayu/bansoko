@@ -22,7 +22,8 @@ func SupportedLanguage(language string) bool {
 // languageProfile is everything the engine and analyser need for the language.
 type languageProfile struct {
 	// roots are the context roots a template reads; varsRoot is the context key
-	// carrying Vars (the `vars` identifier binds it).
+	// carrying Vars (the `vars` identifier binds it). Short roots are real
+	// identifier aliases, not source-text substitutions.
 	roots    map[string]bool
 	varsRoot string
 	// index is the leaf whitelist; nullable the facts the missing check covers.
@@ -30,6 +31,25 @@ type languageProfile struct {
 	nullable map[string]bool
 	// bindings is the wrapper's root declarations.
 	bindings string
+}
+
+// shortRootAliases is the fixed root vocabulary of js-naming-1. Analysis
+// canonicalizes these aliases to the registry path, while the wrapper binds the
+// same context object under both names. No alias is defined for sub: s already
+// means the season shorthand.
+var shortRootAliases = map[string]string{
+	"a": "anime",
+	"r": "release",
+	"t": "torrent",
+	"f": "file",
+	"m": "media",
+}
+
+func canonicalRoot(root string) string {
+	if canonical, ok := shortRootAliases[root]; ok {
+		return canonical
+	}
+	return root
 }
 
 var (
@@ -64,6 +84,11 @@ func buildProfile() *languageProfile {
 		p.index.nodes[root] = true
 		bindings = append(bindings, root+"=context."+root)
 	}
+	for _, alias := range []string{"a", "r", "t", "f", "m"} {
+		canonical := shortRootAliases[alias]
+		p.roots[alias] = true
+		bindings = append(bindings, alias+"=context."+canonical)
+	}
 	p.bindings = "const " + strings.Join(bindings, ", ") + ", vars=context.vars || {}"
 	return p
 }
@@ -93,13 +118,13 @@ func (p *languageProfile) guardedRoots() []string {
 }
 
 // object builds the plain template object for one render from its projected
-// facts. With placeholders every execution-phase fact reads
-// PreviewPlaceholder(path).
+// facts. A preview keeps every known value; only an absent execution-phase fact
+// reads PreviewPlaceholder(path).
 func (p *languageProfile) object(facts *templatefacts.FactSet, placeholders bool) (map[string]interface{}, error) {
 	out := templatefacts.ScenarioObject(templatefacts.ScenarioNaming, facts)
 	if placeholders {
 		for _, fact := range templatefacts.ScenarioFacts(templatefacts.ScenarioNaming) {
-			if fact.Phase != templatefacts.PhaseExecution {
+			if fact.Phase != templatefacts.PhaseExecution || !templatefacts.Absent(fact.Value(facts)) {
 				continue
 			}
 			segments := strings.Split(fact.Path, ".")

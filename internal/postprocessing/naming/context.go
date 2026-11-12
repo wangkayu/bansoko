@@ -169,7 +169,7 @@ type TMDBNamingFacts struct {
 	// (tmdb.title_cn; every request sends language=zh-CN).
 	TitleCN string
 	// OriginalTitle is the work's TMDB original title
-	// (tmdb.original_title only).
+	// (tmdb.title only).
 	OriginalTitle string `json:"-"`
 }
 
@@ -403,7 +403,7 @@ func WithFrozenReleaseFacts(ctx NamingContext, facts map[string]any) NamingConte
 	ctx.Anime.TitleOverride = text("anime", "title_override")
 	ctx.Anime.ProviderTitle = text("anime", "provider_title")
 	ctx.Anime.BGM.WorkID, ctx.Anime.BGM.Title, ctx.Anime.BGM.TitleCN = text("bgm", "id"), text("bgm", "title"), text("bgm", "title_cn")
-	ctx.Anime.TMDB.WorkID, ctx.Anime.TMDB.TitleCN, ctx.Anime.TMDB.OriginalTitle = text("tmdb", "id"), text("tmdb", "title_cn"), text("tmdb", "original_title")
+	ctx.Anime.TMDB.WorkID, ctx.Anime.TMDB.TitleCN, ctx.Anime.TMDB.OriginalTitle = text("tmdb", "id"), text("tmdb", "title_cn"), text("tmdb", "title")
 	// anime.year is the owner-edited year frozen with the input. An older
 	// input froze the provider projection with its source (anime.year_source);
 	// that source is restored on its work so a naming-render-1 replay

@@ -121,8 +121,11 @@ type Fact struct {
 	// Nullable the subset where the frozen value may be absent.
 	Scenarios Scenario
 	Nullable  Scenario
-	// Hidden facts render but are not advertised (aliases only).
-	Hidden bool
+	// Hidden facts render but are not advertised anywhere (compatibility aliases).
+	// HiddenIn hides a fact only in the selected scenarios, so an advanced naming
+	// fact can remain visible in notification catalogs.
+	Hidden   bool
+	HiddenIn Scenario
 	// Sample is the catalog sample value; samples overrides it per scenario.
 	Sample  any
 	samples map[Scenario]any
@@ -346,7 +349,7 @@ func ScenarioObject(s Scenario, fs *FactSet) map[string]any {
 func SampleFlat(s Scenario) map[string]any {
 	out := map[string]any{}
 	for _, fact := range ScenarioFacts(s) {
-		if fact.Hidden {
+		if fact.Hidden || fact.HiddenIn&s != 0 {
 			continue
 		}
 		value := fact.SampleFor(s)
@@ -407,6 +410,8 @@ func (f Fact) with(s Scenario, sample any) Fact {
 
 func (f Fact) hidden() Fact { f.Hidden = true; return f }
 
+func (f Fact) hideIn(scenarios Scenario) Fact { f.HiddenIn |= scenarios; return f }
+
 const (
 	sampleTitle    = "进击的巨人"
 	sampleYear     = "2025"
@@ -446,19 +451,19 @@ var systemFacts = []Fact{
 	// anime
 	fact("anime.id", TypeString, PhaseRelease, scenarioAll|scenarioWorkflow, ScenarioNaming|scenarioFile,
 		Text{"作品 ID", "Anime ID"}, Text{"订阅作品的标识。", "Identifier of the subscribed anime."},
-		"ma_silent_witch_001", func(f *FactSet) any { return f.Anime.ID }),
+		"ma_silent_witch_001", func(f *FactSet) any { return f.Anime.ID }).hideIn(ScenarioNaming),
 	fact("anime.title", TypeString, PhaseRelease, scenarioAll|scenarioWorkflow, ScenarioNaming|scenarioFile,
 		Text{"标题", "Title"}, Text{"有效标题：自定义、来源标题、TMDB 中文、BGM 中文、BGM、基础标题，取第一个有值的。始终有定义；基础标题必填，所以实际不为空。原样输出，不做清理。", "Effective title: custom, provider title, TMDB Chinese, BGM Chinese, BGM, then the base title, whichever comes first. Always defined; the base title is required, so it is never empty in practice. Output as stored, not cleaned."},
 		sampleTitle, func(f *FactSet) any { return f.Anime.Title }).derived(),
 	fact("anime.title_source", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"标题来源", "Title source"}, Text{"有效标题取自哪里：override、provider、tmdb_cn、bgm_cn、bgm、base。", "Where the effective title came from: override, provider, tmdb_cn, bgm_cn, bgm or base."},
-		TitleSourceOverride, func(f *FactSet) any { return f.Anime.TitleSource }).derived(),
+		TitleSourceOverride, func(f *FactSet) any { return f.Anime.TitleSource }).derived().hideIn(ScenarioNaming),
 	fact("anime.title_override", TypeString, PhaseRelease, ScenarioNaming|ScenarioDownloadSubmitted, ScenarioNaming|ScenarioDownloadSubmitted,
 		Text{"自定义标题", "Custom title"}, Text{"为作品设置的标题，覆盖整条标题链。", "Title set for the anime; it overrides the whole title chain."},
-		"巨人", func(f *FactSet) any { return f.Anime.TitleOverride }),
+		"巨人", func(f *FactSet) any { return f.Anime.TitleOverride }).hideIn(ScenarioNaming),
 	fact("anime.provider_title", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"来源标题", "Provider title"}, Text{"订阅时来源（AniBT/Mikan）目录提供的作品标题；custom/oneshot 或目录无该条目时为空。", "The work title the subscription source (AniBT/Mikan) catalog provided at subscribe time; empty for custom/oneshot or an entry the catalog does not carry."},
-		"进击的巨人", func(f *FactSet) any { return f.Anime.ProviderTitle }),
+		"进击的巨人", func(f *FactSet) any { return f.Anime.ProviderTitle }).hideIn(ScenarioNaming),
 	fact("anime.title_base", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"基础标题", "Base title"}, Text{"作品记录上保存的标题，标题顺序的最后兜底。", "The title stored on the anime record, the last fallback of the title order."},
 		sampleTitle, func(f *FactSet) any { return f.Anime.TitleBase }).hidden(),
@@ -497,7 +502,7 @@ var systemFacts = []Fact{
 	fact("tmdb.title_cn", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 中文标题", "TMDB Chinese title"}, Text{"绑定作品在 TMDB 按请求语言（language=zh-CN）返回的标题，接受发布时冻结。", "The title TMDB returned for the request language (language=zh-CN) of the bound work, frozen at accept."},
 		"进击的巨人", func(f *FactSet) any { return f.Tmdb.TitleCN }),
-	fact("tmdb.original_title", TypeString, PhaseRelease, scenarioAll, scenarioAll,
+	fact("tmdb.title", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 原标题", "TMDB original title"}, Text{"绑定作品在 TMDB 的原始标题，接受发布时冻结。", "Original title of the bound TMDB work, frozen at accept."},
 		"進撃の巨人", func(f *FactSet) any { return f.Tmdb.OriginalTitle }),
 	// tmdb.summary is notification-scope only: a multi-paragraph overview in a
@@ -507,10 +512,10 @@ var systemFacts = []Fact{
 		"高新技术被广泛应用的未来世界，人工智能与人性的边界逐渐模糊。", func(f *FactSet) any { return f.Tmdb.Summary }),
 	fact("tmdb.kind", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 类型", "TMDB kind"}, Text{"tv 或 movie。", "tv or movie."},
-		"tv", func(f *FactSet) any { return f.Tmdb.Kind }),
+		"tv", func(f *FactSet) any { return f.Tmdb.Kind }).hideIn(ScenarioNaming),
 	fact("tmdb.season", TypeInteger, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 季", "TMDB season"}, Text{"绑定的 TMDB 季号，用于查询 TMDB 剧集信息；命名的季见 anime.season。", "Bound TMDB season number, used to look up TMDB episodes; the named season is anime.season."},
-		int64(1), func(f *FactSet) any { return f.Tmdb.Season }),
+		int64(1), func(f *FactSet) any { return f.Tmdb.Season }).hideIn(ScenarioNaming),
 	fact("bgm.ep_title", TypeString, PhaseExecution, ScenarioNaming|scenarioFile, ScenarioNaming|scenarioFile,
 		Text{"BGM 集标题", "BGM episode title"}, Text{"查询 Bangumi 条目分集得到的本集标题，查询结果会缓存。未绑定 Bangumi、没有集数、该集没有标题或查询尚未成功时为空；重命名执行时才查询，下载前的预览显示为占位。", "The episode title of the bound Bangumi subject, queried and cached; empty when Bangumi is not bound, there is no episode number, the provider has no title for that episode, or the lookup has not succeeded yet. Queried at the rename execution only; previews before the download show a placeholder."},
 		"炎の七夕 祭り", func(f *FactSet) any { return f.Bgm.EpTitle }),
@@ -521,7 +526,7 @@ var systemFacts = []Fact{
 	// release
 	fact("release.id", TypeString, PhaseRelease, scenarioAll|scenarioRelease, ScenarioNaming|scenarioFile|ScenarioDownloadFailed|ScenarioUnknownImported,
 		Text{"发布 ID", "Release ID"}, Text{"发布条目的标识。", "Identifier of the release."},
-		"rel_001", func(f *FactSet) any { return f.Release.ID }),
+		"rel_001", func(f *FactSet) any { return f.Release.ID }).hideIn(ScenarioNaming),
 	fact("release.title", TypeString, PhaseRelease, scenarioAll|scenarioRelease, scenarioAll|ScenarioDownloadFailed|ScenarioUnknownImported,
 		Text{"发布标题", "Release title"}, Text{"RSS 中的原始标题。", "Original title from the feed."},
 		sampleRelease, func(f *FactSet) any { return f.Release.Title }),
@@ -535,7 +540,7 @@ var systemFacts = []Fact{
 		Text{"来源", "Source"}, Text{"发布所在的来源：媒体事件为 mikan 或 anibt；发布工作流事件为 provider_group 或 custom_rss；载荷未记录时为空。", "Where the release came from: mikan or anibt for a media event, provider_group or custom_rss for a release workflow event; empty when the payload records none."},
 		"anibt", func(f *FactSet) any { return f.Release.Src }),
 	fact("release.subtitle_mode", TypeString, PhaseRelease, ScenarioNaming, 0,
-		Text{"字幕方式", "Subtitle mode"}, Text{"embedded、external、mixed 或 unknown，由发布标题解析的字幕方式标志 rt.sub_flag 归并：仅 soft 或 hard 为 embedded，仅 ex 为 external，ex 与 soft/hard 并存为 mixed，都没有时为 unknown。", "embedded, external, mixed or unknown, folded from the title-parse subtitle flags rt.sub_flag: soft or hard alone embedded, ex alone external, ex beside soft/hard mixed, none unknown."},
+		Text{"字幕方式", "Subtitle mode"}, Text{"embedded、external、mixed 或 unknown，由发布标题解析的字幕方式标志 rt.subflag 归并：仅 soft 或 hard 为 embedded，仅 ex 为 external，ex 与 soft/hard 并存为 mixed，都没有时为 unknown。", "embedded, external, mixed or unknown, folded from the title-parse subtitle flags rt.subflag: soft or hard alone embedded, ex alone external, ex beside soft/hard mixed, none unknown."},
 		"embedded", func(f *FactSet) any { return f.Release.SubtitleMode }).derived(),
 	fact("release.lang", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"语言", "Language"}, Text{"从标题识别的主语言代码，如 sc、tc、jpsc。", "Main language code read from the title, such as sc, tc or jpsc."},
@@ -543,13 +548,13 @@ var systemFacts = []Fact{
 	fact("release.langs", TypeList, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"语言集合", "Languages"}, Text{"识别到的全部语言代码。", "Every language code read from the title."},
 		[]string{"sc", "tc"}, func(f *FactSet) any { return f.Release.Langs }).parsed(),
-	fact("release.lang_tag", TypeList, PhaseRelease, ScenarioNaming, ScenarioNaming,
+	fact("release.lang_tags", TypeList, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"语言标签", "Language tags"}, Text{"release.langs 里每个语言代码对应的 BCP 47 标签，如 zh-Hans、zh-Hant、ja；没有对应标签的代码不列出。由 release.langs 转换得到，不是另一路解析结果。", "The BCP 47 tag of each release.langs code, such as zh-Hans, zh-Hant or ja; a code with no tag is left out. Converted from release.langs, not a second parse."},
 		[]string{"zh-Hans", "zh-Hant"}, func(f *FactSet) any { return f.Release.LangTag }).derived(),
 
 	// subtitle language: file first, then release (like the episode)
 	fact("sub.lang", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
-		Text{"字幕语言", "Subtitle language"}, Text{"字幕文件的语言代码，如 SC、TC、JPSC；多个用 + 连接。先读字幕文件名自己的标记，读不出时取发布标题的 rt.sub_lang；都没有时为空。仅字幕文件有值。", "Language code of the subtitle file, such as SC, TC or JPSC; several join with +. Read from the subtitle file name's own tag first, else the release title's rt.sub_lang; empty when neither has one. Subtitle files only."},
+		Text{"字幕语言", "Subtitle language"}, Text{"字幕文件的语言代码，如 SC、TC、JPSC；多个用 + 连接。先读字幕文件名自己的标记，读不出时取发布标题的 rt.lang；都没有时为空。仅字幕文件有值。", "Language code of the subtitle file, such as SC, TC or JPSC; several join with +. Read from the subtitle file name's own tag first, else the release title's rt.lang; empty when neither has one. Subtitle files only."},
 		"SC", func(f *FactSet) any { return f.Sub.Lang }).derived(),
 	fact("sub.langs", TypeList, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕语言集合", "Subtitle languages"}, Text{"sub.lang 的全部语言代码。", "Every language code of sub.lang."},
@@ -559,19 +564,19 @@ var systemFacts = []Fact{
 		"zh-Hans", func(f *FactSet) any { return f.Sub.LangTag }).derived(),
 	fact("sub.lang_source", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕语言来源", "Subtitle language source"}, Text{"sub.lang 取自哪里：file 为字幕文件名，release 为发布标题。", "Where sub.lang came from: file means the subtitle file name, release the release title."},
-		"file", func(f *FactSet) any { return f.Sub.LangSource }).derived(),
+		"file", func(f *FactSet) any { return f.Sub.LangSource }).derived().hideIn(ScenarioNaming),
 	fact("sub.lang_code", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕语言短码", "Subtitle language code"}, Text{"sub.lang 的短码（小写，jpsc 一类的组合码）：jpsc 为简体+日文并胜过 jptc，jptc 为繁体+日文；单一语言取它自己的码，多个语言按 jpsc > jptc > sc > tc > eng > jpn 优先取，其他组合为 other。", "Lowercase short code of sub.lang (the jpsc-style composites): jpsc for simplified+japanese and beats jptc, jptc traditional+japanese; a single language keeps its own code, several pick by the priority jpsc > jptc > sc > tc > eng > jpn, everything else is other."},
 		"jpsc", func(f *FactSet) any { return f.Sub.LangCode }).derived(),
 	fact("sub.lang_name", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
-		Text{"字幕语言显示", "Subtitle language name"}, Text{"sub.lang 按整组语言列表组成的显示词（简体、繁体、简日、繁日、简繁、简繁日、简英、繁英），非中文列表显示单一语言的最高优先词（英文、日文、韩文）。中文显示追加 rt.sub_flag 的方式词（内封、内嵌、外挂、混合）；没有明确方式时组合显示补双语（AniBT INTERNAL 为内封），单个简体/繁体不带。", "Display word composed from the whole sub.lang list (Simplified, Traditional, Simplified+Japanese, Traditional+Japanese, Simplified+Traditional, the three-way and the two English combinations); a list without Chinese shows the top word of one language (English, Japanese, Korean). A Chinese display appends the rt.sub_flag mode word (muxed, hardcoded, external, mixed); with no resolved type a composite display takes bilingual (AniBT INTERNAL reads muxed), a single Simplified/Traditional stays bare."},
+		Text{"字幕语言显示", "Subtitle language name"}, Text{"sub.lang 按整组语言列表组成的显示词（简体、繁体、简日、繁日、简繁、简繁日、简英、繁英），非中文列表显示单一语言的最高优先词（英文、日文、韩文）。中文显示追加 rt.subflag 的方式词（内封、内嵌、外挂、混合）；没有明确方式时组合显示补双语（AniBT INTERNAL 为内封），单个简体/繁体不带。", "Display word composed from the whole sub.lang list (Simplified, Traditional, Simplified+Japanese, Traditional+Japanese, Simplified+Traditional, the three-way and the two English combinations); a list without Chinese shows the top word of one language (English, Japanese, Korean). A Chinese display appends the rt.subflag mode word (muxed, hardcoded, external, mixed); with no resolved type a composite display takes bilingual (AniBT INTERNAL reads muxed), a single Simplified/Traditional stays bare."},
 		"简繁日内封", func(f *FactSet) any { return f.Sub.LangName }).derived(),
 
 	// episode
 	fact("ep.number", TypeString, PhaseRelease, ScenarioNaming|ScenarioDownloadSubmitted|ScenarioFileCompleted|ScenarioReleaseDiscovered, ScenarioNaming|ScenarioDownloadSubmitted|ScenarioFileCompleted|ScenarioReleaseDiscovered,
 		Text{"集数", "Episode"}, Text{"应用偏移后的集数，如 12，不补零：由解析到的原文（ep.raw）与生效的偏移（ep.offset）算出，偏移只在身份解析时应用一次。有集数识别时才有定义；未识别的文件走未识别模板。", "Episode number after the offset, such as 12, not zero-padded: computed from the parsed capture (ep.raw) and the effective offset (ep.offset), which the identity resolver applies exactly once. Defined only with an episode identity; an unrecognized file uses the unknown template."},
-		"7", func(f *FactSet) any { return f.Ep.Number }).derived(),
-	fact("ep.number_end", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
+		"7", func(f *FactSet) any { return f.Ep.Number }).derived().hideIn(ScenarioNaming),
+	fact("ep.end", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"结束集数", "Last episode"}, Text{"一个文件含多集时的最后一集，如 E01-E02 中的 2；单集为空。", "Last episode of a file holding several, such as 2 in E01-E02; empty for a single episode."},
 		"8", func(f *FactSet) any { return f.Ep.NumberEnd }).derived(),
 	fact("ep.s00e00", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
@@ -582,13 +587,13 @@ var systemFacts = []Fact{
 		"07", func(f *FactSet) any { return f.Ep.Raw }).parsed(),
 	fact("ep.display", TypeString, PhaseRelease, ScenarioNaming|ScenarioDownloadSubmitted|ScenarioFileCompleted|ScenarioReleaseDiscovered, ScenarioNaming|ScenarioDownloadSubmitted|ScenarioFileCompleted|ScenarioReleaseDiscovered,
 		Text{"显示集数", "Display episode"}, Text{"用于显示的集数；今天每个投影都把它设为 ep.number，尚无独立的显示文本生产者。", "Episode text for display; every projection today sets it to ep.number, so it has no independent producer yet."},
-		"7", func(f *FactSet) any { return f.Ep.Display }).derived(),
+		"7", func(f *FactSet) any { return f.Ep.Display }).derived().hideIn(ScenarioNaming),
 	fact("ep.offset", TypeInteger, PhaseRelease, ScenarioNaming|ScenarioDownloadSubmitted|ScenarioFileCompleted, ScenarioDownloadSubmitted|ScenarioFileCompleted,
 		Text{"集数偏移", "Episode offset"}, Text{"生效的集数偏移。", "Episode offset in effect."},
-		int64(0), func(f *FactSet) any { return f.Ep.Offset }),
+		int64(0), func(f *FactSet) any { return f.Ep.Offset }).hideIn(ScenarioNaming),
 	fact("ep.source", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"集数来源", "Episode source"}, Text{"集数取自哪份证据：file_parser 为文件解析，release_parser 为发布标题解析，anibt 为来源站点标签，movie 为剧场版，manual 为手动匹配。", "Which evidence supplied the episode: file_parser, release_parser, anibt, movie, or manual for a manual match."},
-		"release_parser", func(f *FactSet) any { return f.Ep.Source }).derived(),
+		"release_parser", func(f *FactSet) any { return f.Ep.Source }).derived().hideIn(ScenarioNaming),
 	fact("ep.kind", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"特别篇类型", "Special kind"}, Text{"正片为空；ncop、nced 或 special。由发布标题里的关键词判定，不是解析器给出的集数身份证据。", "Empty for a regular episode; ncop, nced or special. Decided by a keyword in the release title, not parser episode-identity evidence."},
 		"special", func(f *FactSet) any { return f.Ep.Kind }).derived(),
@@ -599,16 +604,16 @@ var systemFacts = []Fact{
 		sampleRelease, func(f *FactSet) any { return f.Torrent.Name }),
 	fact("torrent.size", TypeInteger, PhaseRelease, scenarioAll|ScenarioReleaseDiscovered, scenarioAll|ScenarioReleaseDiscovered,
 		Text{"种子大小", "Torrent size"}, Text{"种子内全部文件的字节数。", "Total size of the files in the torrent, in bytes."},
-		sampleFileSize, func(f *FactSet) any { return f.Torrent.Size }).parsed(),
+		sampleFileSize, func(f *FactSet) any { return f.Torrent.Size }).parsed().hideIn(ScenarioNaming),
 	fact("torrent.file_count", TypeInteger, PhaseRelease, scenarioAll|ScenarioReleaseDiscovered, scenarioAll|ScenarioReleaseDiscovered,
 		Text{"文件数", "File count"}, Text{"种子内的文件数。", "Number of files in the torrent."},
-		int64(1), func(f *FactSet) any { return f.Torrent.FileCount }).parsed(),
+		int64(1), func(f *FactSet) any { return f.Torrent.FileCount }).parsed().hideIn(ScenarioNaming),
 	fact("torrent.hash_v1", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"InfoHash v1", "InfoHash v1"}, Text{"BitTorrent v1 info hash。", "BitTorrent v1 info hash."},
-		"5d1c5c8e0b7a4f3e9a2d6c1b8e7f4a3d2c1b0a9e", func(f *FactSet) any { return f.Torrent.HashV1 }).parsed(),
+		"5d1c5c8e0b7a4f3e9a2d6c1b8e7f4a3d2c1b0a9e", func(f *FactSet) any { return f.Torrent.HashV1 }).parsed().hideIn(ScenarioNaming),
 	fact("torrent.hash_v2", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"InfoHash v2", "InfoHash v2"}, Text{"BitTorrent v2 info hash。", "BitTorrent v2 info hash."},
-		"8f2e6d4c1a9b7e5d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d", func(f *FactSet) any { return f.Torrent.HashV2 }).parsed(),
+		"8f2e6d4c1a9b7e5d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d", func(f *FactSet) any { return f.Torrent.HashV2 }).parsed().hideIn(ScenarioNaming),
 	fact("torrent.tree", TypeString, PhaseRelease, ScenarioDownloadSubmitted|ScenarioReleaseDiscovered, ScenarioDownloadSubmitted|ScenarioReleaseDiscovered,
 		Text{"种子结构", "Torrent structure"}, Text{"种子内顶层目录与文件的大小一览，每行一项；顶层目录带递归大小与文件数，末尾一行合计。没有种子载荷时为空。", "One line per top-level folder or file in the torrent; a folder carries its recursive size and file count, and the last line is the total. Empty when there is no torrent payload."},
 		"Show S01/   12.4 GiB · 24 files\nreadme.txt  4.0 KiB\n合计: 12.4 GiB · 25 files", func(f *FactSet) any { return f.Torrent.Tree }).derived(),
@@ -625,12 +630,12 @@ var systemFacts = []Fact{
 		"mkv", func(f *FactSet) any { return f.File.Ext }),
 	fact("file.size", TypeInteger, PhaseRelease, ScenarioNaming|scenarioFile, scenarioFile,
 		Text{"文件大小", "File size"}, Text{"文件字节数。", "File size in bytes."},
-		sampleFileSize, func(f *FactSet) any { return f.File.Size }),
+		sampleFileSize, func(f *FactSet) any { return f.File.Size }).hideIn(ScenarioNaming),
 	fact("file.kind", TypeString, PhaseRelease, ScenarioNaming|scenarioFile, scenarioFile,
 		Text{"文件类型", "File kind"}, Text{"video、subtitle 或 other。", "video, subtitle or other."},
-		"video", func(f *FactSet) any { return f.File.Kind }).derived(),
+		"video", func(f *FactSet) any { return f.File.Kind }).derived().hideIn(ScenarioNaming),
 	fact("media.resolution", TypeString, PhaseExecution, ScenarioNaming|scenarioFile, ScenarioNaming|scenarioFile,
-		Text{"分辨率", "Resolution"}, Text{"检查文件得到的分辨率，如 1080p；文件未带时取发布标题中的分辨率，都没有时为空。下载前的预览显示为占位。", "Resolution read from the file, such as 1080p; when the file has none, the release title's resolution, else empty. Previews before the download show a placeholder."},
+		Text{"分辨率", "Resolution"}, Text{"检查文件得到的分辨率，如 1080p；文件未带时取发布标题中的分辨率，都没有时为空。下载前且没有已知值时显示⟨res⟩占位。", "Resolution read from the file, such as 1080p; when the file has none, the release title's resolution, else empty. Previews show ⟨res⟩ only when no value is known before download."},
 		"1080p", func(f *FactSet) any { return f.File.Resolution }),
 	fact("media.video_codec", TypeString, PhaseExecution, ScenarioNaming|scenarioFile, ScenarioNaming|scenarioFile,
 		Text{"视频编码", "Video codec"}, Text{"检查文件得到的视频编码，如 HEVC；读不到时为空。下载前的预览显示为占位。", "Video codec read from the file, such as HEVC; empty when it cannot be read. Previews before the download show a placeholder."},
@@ -644,15 +649,15 @@ var systemFacts = []Fact{
 	fact("media.hdr", TypeString, PhaseExecution, ScenarioNaming|scenarioFile, ScenarioNaming|scenarioFile,
 		Text{"HDR 格式", "HDR"}, Text{"检查文件得到的 HDR 格式，如 hdr10、hlg、dovi；多格式按文件中的顺序逗号连接（hdr10,dovi），SDR 或读不到时为空。下载前的预览显示为占位。", "HDR read from the file, such as hdr10, hlg or dovi; multiple formats join with commas in the file's order (hdr10,dovi); empty for SDR or when it cannot be read. Previews before the download show a placeholder."},
 		"hdr10", func(f *FactSet) any { return f.Info.HDR }),
-	fact("file.sub.lang", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
+	fact("file.sub.lang_tag", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕文件语言标签", "Subtitle file language tag"}, Text{"字幕文件名标记中第一个语言的 BCP 47 标签，如 zh-Hans；仅字幕文件有值。", "BCP 47 tag of the first language in the subtitle file name's tag, such as zh-Hans; subtitle files only."},
 		"zh-Hans", func(f *FactSet) any { return f.File.Sub.Lang }).parsed(),
-	fact("file.sub.langs", TypeList, PhaseRelease, ScenarioNaming, ScenarioNaming,
+	fact("file.sub.lang_tags", TypeList, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕文件语言标签集合", "Subtitle file language tags"}, Text{"字幕文件名标记中每一段的 BCP 47 标签，读不出的段记为 und。", "BCP 47 tag of each part of the subtitle file name's tag; a part that reads as no language is und."},
 		[]string{"zh-Hans", "ja"}, func(f *FactSet) any { return f.File.Sub.Langs }).parsed(),
 	fact("file.sub.format", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕格式", "Subtitle format"}, Text{"ass、ssa、srt 或 vtt。", "ass, ssa, srt or vtt."},
-		"ass", func(f *FactSet) any { return f.File.Sub.Format }).parsed(),
+		"ass", func(f *FactSet) any { return f.File.Sub.Format }).parsed().hideIn(ScenarioNaming),
 	fact("file.sub.suffix", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"字幕后缀", "Subtitle suffix"}, Text{"主名和扩展名之间的原始标记，原样不变，如 chs&jpn。", "Original tag between the stem and the extension, verbatim, such as chs&jpn."},
 		"chs_forced", func(f *FactSet) any { return f.File.Sub.Suffix }).parsed(),
@@ -753,20 +758,20 @@ var systemFacts = []Fact{
 		sampleRelease, func(f *FactSet) any { return f.Taker.Title }),
 }
 
-// fileReltitleCopy is the file.rt catalog copy, keyed by field name. The fields
+// fileReltitleCopy is the frt catalog copy, keyed by field name. The fields
 // are rt.*'s own, read from the file name instead of the release title, and the
 // description says which source the value came from.
 var fileReltitleCopy = map[string]Text{
-	"title":       {"reltitle 从文件名读出的作品标题。", "Title reltitle read from the file name."},
-	"subgroup":    {"reltitle 从文件名读出的字幕组。", "Group reltitle read from the file name."},
-	"version":     {"reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。", "The Rev reltitle read from the file name, such as v2. Empty when the file name has none."},
-	"resolution":  {"reltitle 从文件名读出的分辨率。", "Resolution reltitle read from the file name."},
-	"source":      {"reltitle 从文件名读出的片源类型。", "Source type reltitle read from the file name."},
-	"video_codec": {"reltitle 从文件名读出的视频编码。", "Video codec reltitle read from the file name."},
-	"audio_codec": {"reltitle 从文件名读出的音频编码。", "Audio codec reltitle read from the file name."},
-	"sub_lang":    {"reltitle 从文件名读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the file name; several join with +."},
-	"sub_flag":    {"reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly."},
-	"uncensored":  {"文件名标有无修正（UNCENSORED）时为是。", "Yes when the file name is marked uncensored (UNCENSORED)."},
+	"title":      {"reltitle 从文件名读出的作品标题。", "Title reltitle read from the file name."},
+	"group":      {"reltitle 从文件名读出的字幕组。", "Group reltitle read from the file name."},
+	"rev":        {"reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。", "The Rev reltitle read from the file name, such as v2. Empty when the file name has none."},
+	"res":        {"reltitle 从文件名读出的分辨率。", "Resolution reltitle read from the file name."},
+	"source":     {"reltitle 从文件名读出的片源类型。", "Source type reltitle read from the file name."},
+	"vc":         {"reltitle 从文件名读出的视频编码。", "Video codec reltitle read from the file name."},
+	"ac":         {"reltitle 从文件名读出的音频编码。", "Audio codec reltitle read from the file name."},
+	"lang":       {"reltitle 从文件名读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the file name; several join with +."},
+	"subflag":    {"reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly."},
+	"uncensored": {"文件名标有无修正（UNCENSORED）时为是。", "Yes when the file name is marked uncensored (UNCENSORED)."},
 }
 
 // namespaceFacts registers the rt and anibt value namespaces, and the source
@@ -776,9 +781,9 @@ var fileReltitleCopy = map[string]Text{
 // scenario that reads them today). A reltitle field's value is the parser's
 // output; the tag dimensions and the group identity are stored values.
 //
-// The file root carries the file's own reltitle parse under file.rt.*: the same
-// fields as rt.*, read from the file name instead of the release title. The two
-// parses stay in separate namespaces so a template always names its source.
+// The frt root carries the file's own reltitle parse: the same fields as rt.*,
+// read from the file name instead of the release title. The two parses stay in
+// separate namespaces so a template always names its source.
 func namespaceFacts() []Fact {
 	facts := []Fact{}
 	allRelease := scenarioAll | scenarioRelease
@@ -794,7 +799,7 @@ func namespaceFacts() []Fact {
 		parsed    bool
 	}{
 		{RootRt, Text{"reltitle", "reltitle"}, ReltitleFields, nil, func(f *FactSet) Values { return f.Rt }, allRelease, true},
-		{"file.rt", Text{"文件 reltitle", "File reltitle"}, ReltitleFields, fileReltitleCopy, func(f *FactSet) Values { return f.FileRt }, allRelease, true},
+		{"frt", Text{"文件 reltitle", "File reltitle"}, ReltitleFields, fileReltitleCopy, func(f *FactSet) Values { return f.FileRt }, allRelease, true},
 		{RootAnibt, Text{"AniBT", "AniBT"}, AniBTTagFields, nil, func(f *FactSet) Values { return f.Anibt }, allRelease, false},
 		// The source group identity is the subscription source's own identity,
 		// not a tag value: it shares the anibt root with the AniBT tag fields

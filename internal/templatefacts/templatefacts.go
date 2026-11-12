@@ -60,41 +60,38 @@ type Field struct {
 // canonical dictionary pins it to hard / soft / ex.
 var ReltitleFields = []Field{
 	{Key: "Title", Name: "title", Dimension: acquisitiondomain.TitleValueDimensionTitle, Description: "Title reltitle read from the release title.", SampleValue: "进击的巨人", Label: Text{"标题", "Title"}, Text: Text{"reltitle 从发布标题读出的作品标题。", "Title reltitle read from the release title."}},
-	{Key: "Subgroup", Name: "subgroup", Dimension: acquisitiondomain.TitleValueDimensionGroup, Description: "Release group reltitle read from the release title.", SampleValue: "SampleGroup", Label: Text{"字幕组", "Group"}, Text: Text{"reltitle 从发布标题读出的字幕组。", "Group reltitle read from the release title."}},
-	{Key: "Version", Name: "version", Dimension: acquisitiondomain.TitleValueDimensionVersion, Description: "Rev reltitle read from the release title.", SampleValue: "v2", Label: Text{"Rev", "Rev"}, Text: Text{"reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。", "The Rev reltitle read from the title, such as v2. Empty when the title has none."}},
-	{Key: "Resolution", Name: "resolution", Dimension: "resolution", Description: "Resolution reltitle read from the release title.", SampleValue: "1080p", Label: Text{"分辨率", "Resolution"}, Text: Text{"reltitle 从发布标题读出的分辨率。", "Resolution reltitle read from the release title."}},
+	{Key: "Subgroup", Name: "group", Dimension: acquisitiondomain.TitleValueDimensionGroup, Description: "Release group reltitle read from the release title.", SampleValue: "SampleGroup", Label: Text{"字幕组", "Group"}, Text: Text{"reltitle 从发布标题读出的字幕组。", "Group reltitle read from the release title."}},
+	{Key: "Version", Name: "rev", Dimension: acquisitiondomain.TitleValueDimensionVersion, Description: "Rev reltitle read from the release title.", SampleValue: "v2", Label: Text{"Rev", "Rev"}, Text: Text{"reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。", "The Rev reltitle read from the title, such as v2. Empty when the title has none."}},
+	{Key: "Resolution", Name: "res", Dimension: "resolution", Description: "Resolution reltitle read from the release title.", SampleValue: "1080p", Label: Text{"分辨率", "Resolution"}, Text: Text{"reltitle 从发布标题读出的分辨率。", "Resolution reltitle read from the release title."}},
 	{Key: "Source", Name: "source", Dimension: "source_type", Description: "Source type reltitle read from the release title.", SampleValue: "WEBRip", Label: Text{"片源", "Source"}, Text: Text{"reltitle 从发布标题读出的片源类型。", "Source type reltitle read from the release title."}},
-	{Key: "Codec", Name: "video_codec", Dimension: "video_codec", Description: "Video codec reltitle read from the release title.", SampleValue: "HEVC", Label: Text{"视频编码", "Video codec"}, Text: Text{"reltitle 从发布标题读出的视频编码。", "Video codec reltitle read from the release title."}},
-	{Key: "AudioCodec", Name: "audio_codec", Dimension: "audio_codec", Description: "Audio codec reltitle read from the release title.", SampleValue: "AAC", Label: Text{"音频编码", "Audio codec"}, Text: Text{"reltitle 从发布标题读出的音频编码。", "Audio codec reltitle read from the release title."}},
-	{Key: "SubLang", Name: "sub_lang", Dimension: "sub_lang", Description: "Subtitle language reltitle read from the release title; several join with +.", SampleValue: "SC", Label: Text{"字幕语言", "Subtitle language"}, Text: Text{"reltitle 从发布标题读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the release title; several join with +."}},
-	{Key: "SubFlag", Name: "sub_flag", Dimension: "sub_flag", Description: "Subtitle mode flag reltitle read from the release title; several join with +.", SampleValue: "soft", Label: Text{"字幕方式标志", "Subtitle flag"}, Text: Text{"reltitle 从发布标题读出的字幕方式标志（soft、hard、ex），多个用 + 连接；标题没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the release title (soft, hard, ex); several join with +. Empty when the release title names none explicitly."}},
+	{Key: "Codec", Name: "vc", Dimension: "video_codec", Description: "Video codec reltitle read from the release title.", SampleValue: "HEVC", Label: Text{"视频编码", "Video codec"}, Text: Text{"reltitle 从发布标题读出的视频编码。", "Video codec reltitle read from the release title."}},
+	{Key: "AudioCodec", Name: "ac", Dimension: "audio_codec", Description: "Audio codec reltitle read from the release title.", SampleValue: "AAC", Label: Text{"音频编码", "Audio codec"}, Text: Text{"reltitle 从发布标题读出的音频编码。", "Audio codec reltitle read from the release title."}},
+	{Key: "SubLang", Name: "lang", Dimension: "sub_lang", Description: "Subtitle language reltitle read from the release title; several join with +.", SampleValue: "SC", Label: Text{"字幕语言", "Subtitle language"}, Text: Text{"reltitle 从发布标题读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the release title; several join with +."}},
+	{Key: "SubFlag", Name: "subflag", Dimension: "sub_flag", Description: "Subtitle mode flag reltitle read from the release title; several join with +.", SampleValue: "soft", Label: Text{"字幕方式标志", "Subtitle flag"}, Text: Text{"reltitle 从发布标题读出的字幕方式标志（soft、hard、ex），多个用 + 连接；标题没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the release title (soft, hard, ex); several join with +. Empty when the release title names none explicitly."}},
 	{Key: "Uncensored", Name: "uncensored", Dimension: acquisitiondomain.TitleDimensionContentRating, Type: TypeBoolean, Description: "Whether the release title is marked uncensored (UNCENSORED), as reltitle read it.", SampleValue: "true", Label: Text{"无修正", "Uncensored"}, Text: Text{"标题标有无修正（UNCENSORED）时为是。", "Yes when the title is marked uncensored (UNCENSORED)."}},
 }
 
 // AniBTTagFields are the exposed AniBT tag fields, one per AniBT tag
 // dimension, in catalog order.
 var AniBTTagFields = []Field{
-	{Key: "Resolution", Name: "resolution", Dimension: acquisitiondomain.AniBTDimensionResolution, Description: "AniBT resolution tag.", SampleValue: "1080p", Label: Text{"分辨率", "Resolution"}, Text: Text{"AniBT 分辨率标签。", "AniBT resolution tag."}},
+	{Key: "Resolution", Name: "res", Dimension: acquisitiondomain.AniBTDimensionResolution, Description: "AniBT resolution tag.", SampleValue: "1080p", Label: Text{"分辨率", "Resolution"}, Text: Text{"AniBT 分辨率标签。", "AniBT resolution tag."}},
 	{Key: "Subtitle", Name: "subtitle", Dimension: acquisitiondomain.AniBTDimensionSubtitle, Description: "AniBT subtitle tag.", SampleValue: "INTERNAL", Label: Text{"字幕", "Subtitle"}, Text: Text{"AniBT 字幕标签。", "AniBT subtitle tag."}},
-	{Key: "Language", Name: "language", Dimension: acquisitiondomain.AniBTDimensionLanguage, Description: "AniBT language tags; several join with +.", SampleValue: "CHS+CHT", Label: Text{"语言", "Language"}, Text: Text{"AniBT 语言标签，多个用 + 连接。", "AniBT language tags; several join with +."}},
+	{Key: "Language", Name: "lang", Dimension: acquisitiondomain.AniBTDimensionLanguage, Description: "AniBT language tags; several join with +.", SampleValue: "CHS+CHT", Label: Text{"语言", "Language"}, Text: Text{"AniBT 语言标签，多个用 + 连接。", "AniBT language tags; several join with +."}},
 	{Key: "Format", Name: "format", Dimension: acquisitiondomain.AniBTDimensionFormat, Description: "AniBT format tag.", SampleValue: "MKV", Label: Text{"格式", "Format"}, Text: Text{"AniBT 格式标签。", "AniBT format tag."}},
 	{Key: "Tag", Name: "tag", Dimension: acquisitiondomain.AniBTDimensionTag, Description: "AniBT custom tags; several join with +.", SampleValue: "10bit+AAC+HEVC+WEBRip", Label: Text{"标签", "Tag"}, Text: Text{"AniBT 自定义标签，多个用 + 连接。", "AniBT custom tags; several join with +."}},
 }
 
 // AniBTSourceGroupFields are the AniBT provider_group source's group identity
-// fields. The slug shares the anibt root with the AniBT tag fields but comes
-// from the subscription source rather than from a tag dimension: it is the
-// stable identity the subgroup policy keys on. A Release that did not come
-// from an AniBT provider_group source has no value; the source's configured
-// display name reads anime.group, not a namespace field here.
+// and configured display name. Both are null when the source kind differs.
 var AniBTSourceGroupFields = []Field{
+	{Key: "GroupName", Name: "group", Description: "AniBT provider group display name of the RSS source.", SampleValue: "示例字幕组", Label: Text{"来源组", "Source group"}, Text: Text{"RSS 来源配置的 AniBT 字幕组显示名；不读取发布解析或其他来源。", "Configured AniBT group display name of the RSS source; never read from release parsing or another provider."}},
 	{Key: "GroupSlug", Name: "groupslug", Description: "AniBT provider group slug of the RSS source.", SampleValue: "samplegroup", Label: Text{"来源组 slug", "Source group slug"}, Text: Text{"RSS 来源的 AniBT 字幕组 slug，分组策略使用的稳定键。", "AniBT provider group slug of the RSS source; the stable key the subgroup policy uses."}},
 }
 
-// MikanSourceGroupFields are the Mikan provider_group source's group identity
-// field: the numeric group id, the stable key the subgroup policy uses. The
-// source's configured display name reads anime.group, not a namespace field.
+// MikanSourceGroupFields are the Mikan provider_group source's configured
+// display name and numeric stable identity.
 var MikanSourceGroupFields = []Field{
+	{Key: "GroupName", Name: "group", Description: "Mikan provider group display name of the RSS source.", SampleValue: "示例字幕组", Label: Text{"来源组", "Source group"}, Text: Text{"RSS 来源配置的 Mikan 字幕组显示名；不读取发布解析或其他来源。", "Configured Mikan group display name of the RSS source; never read from release parsing or another provider."}},
 	{Key: "GroupID", Name: "groupid", Description: "Mikan provider group id of the RSS source.", SampleValue: "58", Label: Text{"来源组 ID", "Source group ID"}, Text: Text{"RSS 来源的 Mikan 数字字幕组 ID，分组策略使用的稳定键。", "Mikan numeric provider group id of the RSS source; the stable key the subgroup policy uses."}},
 }
 
@@ -112,8 +109,8 @@ type SourceGroupIdentity struct {
 	// GroupRef is the provider's external group id: Mikan's numeric group id
 	// or AniBT's group slug. Empty when the source records none.
 	GroupRef string
-	// GroupName is the source's configured display name. It is not projected
-	// onto a namespace root; the anime.group fact reads it directly.
+	// GroupName is the source's configured display name. The generic anime.group
+	// fact and the matching provider-qualified group field both read it.
 	GroupName string
 }
 
@@ -132,12 +129,15 @@ func (g SourceGroupIdentity) Values() (anibt, mikan Values) {
 	return anibt, mikan
 }
 
-// sourceGroupValues is the shared provider_group projection: the stable
-// external id under idKey, present only when the frozen value exists.
+// sourceGroupValues projects the stable external id and display name only onto
+// the selected provider root.
 func sourceGroupValues(g SourceGroupIdentity, idKey string) Values {
 	values := Values{}
 	if g.GroupRef != "" {
 		values[idKey] = g.GroupRef
+	}
+	if g.GroupName != "" {
+		values["GroupName"] = g.GroupName
 	}
 	return values
 }

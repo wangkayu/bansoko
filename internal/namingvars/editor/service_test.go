@@ -127,7 +127,7 @@ func newEditor(t *testing.T, releases ReleaseEvidenceLoader) (*Service, *memory)
 
 func TestDryRunMatchesTheFrozenResultOfTheSameEvidence(t *testing.T) {
 	service, _ := newEditor(t, nil)
-	source := "vars.show = {title: input.anime.title ?? \"\", ep: input.ep.number ?? \"\", group: input.rt.subgroup ?? \"\", n: `${input.torrent.file_count}`};\n"
+	source := "vars.show = {title: input.anime.title ?? \"\", ep: input.ep.number ?? \"\", group: input.rt.group ?? \"\", n: `${input.torrent.file_count}`};\n"
 	result, err := service.DryRun(context.Background(), source, []DryRunTarget{
 		{Kind: TargetSample, Sample: namingvars.SampleTV},
 		{Kind: TargetSample, Sample: namingvars.SampleBare},

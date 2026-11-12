@@ -66,8 +66,7 @@ func (e *Error) Error() string {
 type Engine struct {
 	pool    *runtimePool
 	timeout time.Duration
-	// preview renders every execution-phase fact as its
-	// placeholder; see Preview.
+	// preview renders absent execution-phase facts as placeholders; see Preview.
 	preview bool
 	// replay is the renderer semantics a frozen snapshot is replayed with
 	// (1 = naming-render-1, 2 = naming-render-2, 3 = naming-render-3); 0
@@ -78,20 +77,32 @@ type Engine struct {
 // legacy reports whether the engine replays naming-render-1.
 func (e *Engine) legacy() bool { return e.replay == 1 }
 
-// Preview returns an engine for template previews: a fact whose
-// value only exists when the file is processed (phase execution, e.g.
-// media.resolution) renders as the placeholder ⟨path⟩
-// (PreviewPlaceholder) and is never reported missing; everything else renders
-// as usual. A placeholder marks where a value will appear — it is never a
-// naming result.
+// Preview returns an engine for template previews. Known values render as
+// usual; an absent execution-phase fact renders as a minimal placeholder such
+// as ⟨res⟩ and is never reported missing. A placeholder marks where a value
+// will appear — it is never a naming result.
 func (e *Engine) Preview() *Engine {
 	preview := *e
 	preview.preview = true
 	return &preview
 }
 
-// PreviewPlaceholder is the preview text of an execution-phase fact.
-func PreviewPlaceholder(path string) string { return "⟨" + path + "⟩" }
+// PreviewPlaceholder is the preview text of an execution-phase fact. It uses
+// the approved shorthand when one points at this fact, otherwise the leaf name;
+// namespaces and localized long labels never leak into the rendered preview.
+func PreviewPlaceholder(path string) string {
+	name := path
+	if index := strings.LastIndexByte(path, '.'); index >= 0 {
+		name = path[index+1:]
+	}
+	for _, shorthand := range Shorthands {
+		if shorthand.Expansion == path {
+			name = shorthand.Name
+			break
+		}
+	}
+	return "⟨" + name + "⟩"
+}
 
 // HasPreviewPlaceholder reports whether a preview render still holds a
 // placeholder: the real path is decided only at execution, so nothing may

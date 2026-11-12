@@ -18,7 +18,7 @@ import (
 func TestSubtitlePlacementComposesTheCompanionFilename(t *testing.T) {
 	// The release's frozen source facts carry the title-parse set; the default
 	// suffix template renders sub.lang_tag, which falls back to its
-	// rt.sub_lang (SC) for a subtitle whose own tag names no language.
+	// rt.lang (SC) for a subtitle whose own tag names no language.
 	artifact := artifactContext{
 		releaseID:     "release-1",
 		animeTitle:    "Show",

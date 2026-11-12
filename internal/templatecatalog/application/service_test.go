@@ -89,7 +89,7 @@ func TestNamingCatalogCompleteness(t *testing.T) {
 			t.Errorf("field %q has empty source", field.Path)
 		}
 	}
-	for _, want := range []string{"anime.title", "ep.display", "file.ext", "media.resolution", "rt.title", "anibt.language", "bgm.title", "tmdb.original_title", "torrent.size", "torrent.hash_v1"} {
+	for _, want := range []string{"a.title", "ep.end", "f.ext", "m.resolution", "rt.title", "anibt.lang", "bgm.title", "tmdb.title", "frt.group"} {
 		if !paths[want] {
 			t.Errorf("naming catalog missing field %q", want)
 		}
@@ -381,7 +381,7 @@ func TestPreviewNamingSubtitleSuffixLockedSample(t *testing.T) {
 	wantBasename := "进击的巨人 S01E07"
 
 	preview, err := service.PreviewNaming(context.Background(), newInput(
-		"${defaultValue('und', file.sub.lang)}",
+		"${defaultValue('und', file.sub.lang_tag)}",
 	))
 	if err != nil {
 		t.Fatalf("PreviewNaming returned error: %v", err)
@@ -579,7 +579,7 @@ func TestPreviewNamingValueNamespaces(t *testing.T) {
 	service := NewService()
 	preview, err := service.PreviewNaming(context.Background(), namingPreviewInput(
 		NamingTemplatePreviewInputTemplateKindVideoFilename,
-		"[${rt.subgroup}] ${rt.title} [${rt.sub_lang}][${anibt.language}].${file.ext}",
+		"[${rt.group}] ${rt.title} [${rt.lang}][${anibt.lang}].${file.ext}",
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -588,13 +588,13 @@ func TestPreviewNamingValueNamespaces(t *testing.T) {
 		t.Fatalf("namespace preview = %q, %+v", preview.Rendered, preview.Errors)
 	}
 	movie := "sample-movie"
-	input := namingPreviewInput(NamingTemplatePreviewInputTemplateKindVideoFilename, "${anibt.language}.${file.ext}")
+	input := namingPreviewInput(NamingTemplatePreviewInputTemplateKindVideoFilename, "${anibt.lang}.${file.ext}")
 	input.SampleRef = &movie
 	preview, err = service.PreviewNaming(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Valid || len(preview.Errors) != 1 || preview.Errors[0].Code != "NAMING_FACT_UNDEFINED" || strings.Join(preview.EmptyFacts, ",") != "anibt.language" {
+	if preview.Valid || len(preview.Errors) != 1 || preview.Errors[0].Code != "NAMING_FACT_UNDEFINED" || strings.Join(preview.EmptyFacts, ",") != "anibt.lang" {
 		t.Fatalf("non-AniBT sample preview = %+v", preview)
 	}
 	// A missing value that leaves a valid name renders empty and is listed.
@@ -615,7 +615,7 @@ func TestPreviewNamingValueNamespaces(t *testing.T) {
 	for _, field := range catalog.Fields {
 		paths[field.Path] = field.Nullable
 	}
-	for _, path := range []string{"rt.title", "rt.subgroup", "rt.resolution", "rt.source", "rt.video_codec", "rt.audio_codec", "rt.sub_lang", "anibt.resolution", "anibt.subtitle", "anibt.language", "anibt.format", "anibt.tag"} {
+	for _, path := range []string{"rt.title", "rt.group", "rt.res", "rt.source", "rt.vc", "rt.ac", "rt.lang", "anibt.res", "anibt.subtitle", "anibt.lang", "anibt.format", "anibt.tag"} {
 		if nullable, ok := paths[path]; !ok || !nullable {
 			t.Fatalf("catalog field %s present=%v nullable=%v", path, ok, nullable)
 		}

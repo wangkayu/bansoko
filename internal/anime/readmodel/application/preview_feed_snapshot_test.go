@@ -331,7 +331,7 @@ func TestFeedItemFromPreviewSeedClassifiesV1Infohash(t *testing.T) {
 // The rebuilt item freezes the release title's parsed tag set, so a preview
 // render reads the same value namespaces the release freezes at acceptance
 // instead of refusing a fact the title carries. The shipped subtitle suffix
-// (sub.lang_tag, which falls back to rt.sub_lang) reads it.
+// (sub.lang_tag, which falls back to rt.lang) reads it.
 func TestFeedItemFromPreviewSeedFreezesTheTitleTagSet(t *testing.T) {
 	item := feedItemFromPreviewSeed(SeedPreviewFact{
 		StableSeedKey: "seed-1", DownloadURL: "https://example.test/a.torrent",

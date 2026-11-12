@@ -42,7 +42,7 @@ import (
 //     implies.
 //   - naming-render-6: as naming-render-5 for the engine semantics; the
 //     subtitle-mode swap is the render change: release.subtitle_mode now
-//     derives from the release's parsed subtitle flags (rt.sub_flag) instead
+//     derives from the release's parsed subtitle flags (rt.subflag) instead
 //     of the retired hand-rolled title token scan, and the new lang_code /
 //     lang_name / sub.lang display facts and the chain helper join the fact
 //     and helper catalogs every render at this floor reads. Frozen snapshots
@@ -54,12 +54,15 @@ import (
 //     naming-render-6 and earlier read "Season 00" / "/Season 00". Frozen
 //     snapshots of every earlier version replay the old folder name so an
 //     older target re-renders unchanged; ep.s00e00 keeps S00E07.
-const RendererVersion = "naming-render-7"
+//   - naming-render-8: the template vocabulary uses the short roots and
+//     fields, frt replaces file.rt, and the retired references are rejected.
+//     Season and subtitle-mode replay for earlier renderer versions is unchanged.
+const RendererVersion = "naming-render-8"
 
-// renderer6Version, renderer5Version, renderer4Version, renderer3Version and
-// renderer2Version are previous semantics, replayed for snapshots that
-// recorded them.
+// renderer7Version through renderer2Version are previous semantics, replayed
+// for snapshots that recorded them.
 const (
+	renderer7Version = "naming-render-7"
 	renderer6Version = "naming-render-6"
 	renderer5Version = "naming-render-5"
 	renderer4Version = "naming-render-4"
@@ -84,6 +87,8 @@ func (e *Engine) ForRenderer(version string) (*Engine, error) {
 	switch strings.TrimSpace(version) {
 	case RendererVersion:
 		replay.replay = 0
+	case renderer7Version:
+		replay.replay = 7
 	case renderer6Version:
 		replay.replay = 6
 	case renderer5Version, renderer4Version:
@@ -105,10 +110,10 @@ func (e *Engine) ForRenderer(version string) (*Engine, error) {
 // season and year are always read now, so the pre-owner-season semantics
 // (naming-render-1 to 3, which name the TMDB binding's season) have no replay
 // there; they render with naming-render-4, the first owner-season version.
-// naming-render-4 to 7 keep their own season and subtitle-mode derivation.
+// naming-render-4 to 8 keep their own season and subtitle-mode derivation.
 func CurrentConfigRenderer(recorded string) string {
 	switch version := strings.TrimSpace(recorded); version {
-	case RendererVersion, renderer6Version, renderer5Version, renderer4Version:
+	case RendererVersion, renderer7Version, renderer6Version, renderer5Version, renderer4Version:
 		return version
 	}
 	return renderer4Version
@@ -158,8 +163,10 @@ func renderFacts(ctx NamingContext, replay int) templatefacts.FactSet {
 		// does; only the specials folder differs (season 0 read Season 00).
 		facts.Anime.SeasonFolder = LegacySeasonFolderFact(facts.Anime.Kind, facts.Anime.Season)
 	}
-	if replay != 0 {
+	if replay >= 1 && replay <= 5 {
 		facts.Release.SubtitleMode = legacyRenderSubtitleMode(ctx.Release.OriginalTitle)
+	}
+	if replay >= 1 && replay <= 6 {
 		facts.Anime.SeasonPath = LegacySeasonPath(facts.Anime.Kind, facts.Anime.Season)
 	} else {
 		facts.Anime.SeasonPath = SeasonPath(facts.Anime.Kind, facts.Anime.Season)
@@ -169,7 +176,7 @@ func renderFacts(ctx NamingContext, replay int) templatefacts.FactSet {
 }
 
 // legacyRenderSubtitleMode is the release.subtitle_mode of naming-render-5
-// and earlier: the hand-rolled title token scan the rt.sub_flag swap retired.
+// and earlier: the hand-rolled title token scan the rt.subflag swap retired.
 // Frozen snapshots of those renderer versions replay it so an older target
 // re-renders byte for byte; it is dead for every new render.
 func legacyRenderSubtitleMode(title string) string {

@@ -191,7 +191,7 @@ async function mockSettingsReads(page: Page) {
   );
   await page.route("**/api/v1/config/naming-templates", (route) =>
     getOnly(route, () =>
-      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ default_key: "default", templates: [{ key: "default", name: "Default", rules: { language: "js-naming-1", tv: { directory_template: "{title}", video_filename_template: "{title}" }, movie: { directory_template: "{title}", video_filename_template: "{title}" }, unknown: { directory_template: "{title}", video_filename_template: "{title}" }, subtitle_suffix_template: "" } }], version: 1 } satisfies NamingTemplateLibraryView) }),
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ default_key: "default", templates: [{ key: "default", name: "Default", rules: { language: "js-naming-1", tv: { directory_template: "/library/${a.title}", video_filename_template: "示例动画 [${r.res}]" }, movie: { directory_template: "{title}", video_filename_template: "{title}" }, unknown: { directory_template: "{title}", video_filename_template: "{title}" }, subtitle_suffix_template: "" } }], version: 1 } satisfies NamingTemplateLibraryView) }),
     ),
   );
   await page.route("**/api/v1/catalog/suppressions", (route) =>
@@ -670,5 +670,84 @@ test.describe("settings fixture coverage", () => {
     await expect(dialog.getByText("0.0.3")).toBeVisible();
     await expect(dialog.getByText("尚未检查过更新", { exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "检查更新" })).toBeVisible();
+  });
+
+  test("命名目录使用短根，分辨率预览区分真实值与极简占位", async ({ page }, testInfo) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await openSettings(page, "/#/settings/rules");
+
+    await page.route("**/api/v1/template-catalogs/naming**", (route) =>
+      getOnly(route, () =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            language: "js-naming-1",
+            fields: [
+              { path: "a.title", label: "标题", type: "string", nullable: false, source: "anime", sample_value: "示例动画", phase: "release" },
+              { path: "r.res", label: "分辨率", type: "string", nullable: true, source: "release", sample_value: "1080p", phase: "release" },
+              { path: "anibt.res", label: "分辨率", type: "string", nullable: true, source: "anibt", phase: "release" },
+              { path: "rt.res", label: "分辨率", type: "string", nullable: true, source: "rt", phase: "release" },
+              { path: "media.res", label: "分辨率", type: "string", nullable: true, source: "media", phase: "execution" },
+            ],
+            functions: [],
+            shorthands: [{ name: "e00", expansion: "pad(ep.number, 2)", example: "01" }],
+            samples: [{ ref: "sample-tv", label: "剧集样例" }],
+            vars_keys: [],
+            vars_loaded_at: null,
+          } satisfies NamingTemplateCatalog),
+        }),
+      ),
+    );
+    await page.route("**/api/v1/template-previews/naming", (route) => {
+      if (route.request().method() !== "POST") {
+        return route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "method_not_allowed", allowed: ["POST"] }) });
+      }
+      const { template_source: source } = route.request().postDataJSON() as { template_source: string };
+      const rendered = {
+        "/library/${a.title}": "/library/示例动画",
+        "示例动画 [${r.res}]": "示例动画 [1080p].mkv",
+        "示例动画 [${anibt.res}-${rt.res}-${media.res}].mkv": "示例动画 [⟨res⟩-⟨res⟩-⟨res⟩].mkv",
+      }[source] ?? source;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ valid: true, rendered, warnings: [], errors: [] }),
+      });
+    });
+
+    const settingsDialog = page.getByRole("dialog");
+    const namingCard = settingsDialog.locator("li.settings-shared-card").filter({ has: page.getByRole("heading", { name: "命名规则", exact: true }) });
+    await expect(namingCard).toBeVisible({ timeout: 10000 });
+    await namingCard.getByRole("button", { name: "编辑" }).click();
+    const editor = page.getByRole("dialog", { name: "编辑 · 命名规则" });
+    await expect(editor).toBeVisible();
+
+    await editor.getByRole("button", { name: /可用变量 5 个/ }).click();
+    for (const path of ["a.title", "r.res", "anibt.res", "rt.res", "media.res"]) {
+      await expect(editor.locator(".naming-palette-item").filter({ hasText: path })).toHaveCount(1);
+    }
+    for (const oldPath of ["anime.title", "release.res"]) {
+      await expect(editor.locator(".naming-palette-item").filter({ hasText: oldPath })).toHaveCount(0);
+    }
+    await expect(editor.getByRole("button", { name: "${e00} → 01" })).toBeVisible();
+
+    const directoryPreview = editor.locator(".naming-preview").filter({ hasText: "目录预览" });
+    const filePreview = editor.locator(".naming-preview").filter({ hasText: "文件名预览" });
+    await expect(directoryPreview).toContainText("/library/示例动画");
+    await expect(filePreview.locator(".naming-preview-value")).toHaveText("示例动画 [1080p].mkv");
+    await expect(filePreview.locator("mark")).toHaveCount(0);
+
+    await editor.getByLabel("文件名模板").fill("示例动画 [${anibt.res}-${rt.res}-${media.res}].mkv");
+    await expect(filePreview.locator("mark")).toHaveText(["〈res〉", "〈res〉", "〈res〉"]);
+    await expect(filePreview.locator(".naming-preview-value")).toHaveText("示例动画 [〈res〉-〈res〉-〈res〉].mkv");
+    await expect(filePreview).not.toContainText(/anibt\.res|rt\.res|media\.res/);
+    await expect(filePreview.locator("mark").first()).toHaveAttribute("title", "下载后确定的值：res");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(pageErrors).toEqual([]);
+    await editor.locator(".naming-palette-body").screenshot({ path: testInfo.outputPath("naming-short-root-catalog.png") });
+    await filePreview.scrollIntoViewIfNeeded();
+    await filePreview.screenshot({ path: testInfo.outputPath("naming-minimal-placeholders.png") });
   });
 });

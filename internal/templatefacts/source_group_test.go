@@ -18,12 +18,12 @@ func TestSourceGroupIdentityValuesPerProvider(t *testing.T) {
 		{
 			name:     "anibt provider group",
 			identity: SourceGroupIdentity{Provider: "anibt", GroupRef: "samplegroup", GroupName: "SampleGroup"},
-			want:     map[string]Values{"anibt": {"GroupSlug": "samplegroup"}},
+			want:     map[string]Values{"anibt": {"GroupSlug": "samplegroup", "GroupName": "SampleGroup"}},
 		},
 		{
 			name:     "mikan provider group",
 			identity: SourceGroupIdentity{Provider: "mikan", GroupRef: "58", GroupName: "SampleGroup"},
-			want:     map[string]Values{"mikan": {"GroupID": "58"}},
+			want:     map[string]Values{"mikan": {"GroupID": "58", "GroupName": "SampleGroup"}},
 		},
 		{
 			// A source without a provider identity projects neither root: its

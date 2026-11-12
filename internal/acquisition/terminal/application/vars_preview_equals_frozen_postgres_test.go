@@ -84,7 +84,7 @@ func checkVarsPreviewEqualsFrozenPostgres(t *testing.T, ctx context.Context, own
 	frozen.ReleaseTitle = result.input.Object["source"].Object["title"].Object["value"].String
 	bgm, _ := frozen.Facts["bgm"].(map[string]any)
 	rt, _ := frozen.Facts["rt"].(map[string]any)
-	if bgm["title_cn"] != "秀" || rt["sub_lang"] != "chs+CHT" || frozen.Facts["anime"].(map[string]any)["id"] != "anime-1" {
+	if bgm["title_cn"] != "秀" || rt["lang"] != "chs+CHT" || frozen.Facts["anime"].(map[string]any)["id"] != "anime-1" {
 		t.Fatalf("frozen facts = %+v", frozen.Facts)
 	}
 	// The preview side: the same release read back the way the RSS list and
@@ -107,7 +107,7 @@ func checkVarsPreviewEqualsFrozenPostgres(t *testing.T, ctx context.Context, own
 	if a, b := canonicalJSON(t, preview.Facts), canonicalJSON(t, frozen.Facts); !reflect.DeepEqual(a, b) {
 		t.Fatalf("preview facts differ from frozen:\npreview %v\nfrozen  %v", a, b)
 	}
-	source := `vars.f = {bgm: input.bgm.title_cn, tmdb: input.tmdb.original_title, rt: input.rt.sub_lang, anibt: input.anibt.format, size: String(input.torrent.size), anime: input.anime.title};`
+	source := `vars.f = {bgm: input.bgm.title_cn, tmdb: input.tmdb.title, rt: input.rt.lang, anibt: input.anibt.format, size: String(input.torrent.size), anime: input.anime.title};`
 	digest, err := namingvars.SourceFingerprint(source)
 	if err != nil {
 		t.Fatal(err)

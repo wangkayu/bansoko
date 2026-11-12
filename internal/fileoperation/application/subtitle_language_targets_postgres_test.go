@@ -62,7 +62,7 @@ func subtitleTargetsFixtureWith(t *testing.T, edit func(map[string]any), subtitl
 // tags differ only in the Chinese script (`.chs&jpn.ass` / `.cht&jpn.ass`).
 // The shipped suffix is sub.lang_tag, read from each subtitle file first,
 // so the two frozen targets are distinct and both subtitles place beside the
-// video. The release-level rt.sub_lang default rendered one target for both
+// video. The release-level rt.lang default rendered one target for both
 // and failed them.
 func TestSubtitlesOfOneVideoFreezeTheirOwnLanguageTargets(t *testing.T) {
 	fixture, operations, requirement := subtitleTargetsFixture(t,

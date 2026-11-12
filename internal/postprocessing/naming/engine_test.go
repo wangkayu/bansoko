@@ -132,7 +132,7 @@ func TestDefaultRulesRenderSampleTV(t *testing.T) {
 		t.Fatalf("filename = %q, want %q", filename, wantFilename)
 	}
 	// The default suffix is the subtitle's one BCP 47 tag (sub.lang_tag):
-	// the file's own tag first, else the release title's rt.sub_lang (SC
+	// the file's own tag first, else the release title's rt.lang (SC
 	// here). Two subtitles of one release keep distinct suffixes when their
 	// own tags differ.
 	facts := compileOrFail(t, engine, KindSubtitleSuffix, "${sub.lang}|${sub.langs}|${sub.lang_tag}|${sub.lang_source}")
@@ -141,7 +141,7 @@ func TestDefaultRulesRenderSampleTV(t *testing.T) {
 		{"[FLsnow][Precure][36][TVer_1080p].cht&jpn.ass", "zh-Hant", "JPN+TC|JPN,TC|zh-Hant|file"},
 		{"Show - 07.eng.ass", "en", "ENG|ENG|en|file"},
 		// zh-Hans is read from the subtitle's own tag, so the file value
-		// wins over the release's rt.sub_lang.
+		// wins over the release's rt.lang.
 		{"Show - 07.zh-Hans.ass", "zh-Hans", "SC|SC|zh-Hans|file"},
 		{"Show - 07.ass", "zh-Hans", "SC|SC|zh-Hans|release"},
 	} {
@@ -246,7 +246,7 @@ func TestRenderVideoBranchSelection(t *testing.T) {
 	}
 }
 
-// The naming catalog lists tmdb.title_cn and tmdb.original_title but never
+// The naming catalog lists tmdb.title_cn and tmdb.title but never
 // tmdb.summary: a multi-paragraph overview in a path is structurally wrong
 // (owner ruling 2026-10-22), so the save-time compile refuses the reference as
 // an unknown leaf while the notification catalog projects it.
@@ -528,9 +528,9 @@ func TestCompiledRequiredFactsIgnoreConditionalReads(t *testing.T) {
 	}
 }
 
-// A preview renders execution-phase facts as placeholders and never reports
-// them missing; release-phase facts render their value.
-func TestPreviewRendersExecutionFactsAsPlaceholders(t *testing.T) {
+// A preview uses known execution values directly. Only values still absent
+// before processing become minimal placeholders, and are never reported empty.
+func TestPreviewUsesKnownExecutionValuesAndShortPlaceholders(t *testing.T) {
 	ctx, _ := ResolveSampleContext("sample-tv")
 	compiled, err := NewEngine().Compile(KindVideoFilename, "${anime.title} [${media.resolution}] ${media.video_codec}.${file.ext}")
 	if err != nil {
@@ -540,18 +540,21 @@ func TestPreviewRendersExecutionFactsAsPlaceholders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := ctx.Derived.EffectiveTitle + " [⟨media.resolution⟩] ⟨media.video_codec⟩.mkv"
+	want := ctx.Derived.EffectiveTitle + " [1080p] HEVC.mkv"
 	if got != want {
-		t.Fatalf("preview = %q, want %q", got, want)
+		t.Fatalf("preview with known media = %q, want %q", got, want)
 	}
-	// An ordinary render reads the inspected values.
 	rendered, err := NewEngine().RenderDetailed(compiled, ctx)
-	if err != nil || rendered.Value != ctx.Derived.EffectiveTitle+" [1080p] HEVC.mkv" || len(rendered.EmptyFacts) != 0 {
+	if err != nil || rendered.Value != want || len(rendered.EmptyFacts) != 0 {
 		t.Fatalf("ordinary render = %+v, %v", rendered, err)
 	}
-	// A preview never reports an execution fact empty, even without a value.
 	ctx.File.Media = MediaNamingFacts{}
-	if preview, err := NewEngine().Preview().RenderDetailed(compiled, ctx); err != nil || len(preview.EmptyFacts) != 0 {
-		t.Fatalf("preview without media facts = %+v, %v", preview, err)
+	preview, err := NewEngine().Preview().RenderDetailed(compiled, ctx)
+	want = ctx.Derived.EffectiveTitle + " [⟨res⟩] ⟨vc⟩.mkv"
+	if err != nil || preview.Value != want || len(preview.EmptyFacts) != 0 {
+		t.Fatalf("preview without media facts = %+v, %v; want %q", preview, err, want)
+	}
+	if !HasPreviewPlaceholder(preview.Value) {
+		t.Fatalf("short placeholders must remain detectable: %q", preview.Value)
 	}
 }

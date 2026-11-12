@@ -36,7 +36,7 @@ func IsFactError(code string) bool {
 //   - release.*, torrent.* and rt.* are defined when the render has a
 //     release (every release carries a title-tag block); a tag the title does
 //     not carry is empty.
-//   - ep.* is defined when the file has an episode identity; ep.number_end is
+//   - ep.* is defined when the file has an episode identity; ep.end is
 //     then empty for a single episode.
 //   - anibt.* is defined for an AniBT release or source; mikan.* when the
 //     source is Mikan.

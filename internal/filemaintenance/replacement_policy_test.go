@@ -102,7 +102,7 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 	// A profile-v1 document and a duplicate value set are rejected.
 	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v0","dimensions":["resolution"],"ranks":{},"codec_enabled":false}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.lang","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Correct CAS succeeds and bumps the version exactly once.

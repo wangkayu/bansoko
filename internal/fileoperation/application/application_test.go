@@ -1191,7 +1191,7 @@ VALUES ('source-file-test', 'subscription-file-test', 'custom_rss', 'https://fee
 	}
 	// The release's frozen source facts carry the reltitle tag set a real
 	// admission freezes: the default subtitle suffix template renders
-	// rt.sub_lang, so a fixture that plans a bound subtitle must supply the
+	// rt.lang, so a fixture that plans a bound subtitle must supply the
 	// language the release was parsed with. Tests that need the absent-value
 	// case overwrite source_facts themselves.
 	if _, err := db.ExecContext(ctx, `

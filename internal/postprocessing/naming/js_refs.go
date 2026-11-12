@@ -617,6 +617,9 @@ func (a *expressionAnalyzer) expression(expr ast.Expression) error {
 	case nil:
 		return nil
 	case *ast.Identifier:
+		if node.Name.String() == "ep" && !a.allowShorthands {
+			return a.unknownIdentifier(node.Name.String())
+		}
 		if !a.known(node.Name.String()) {
 			return a.unknownIdentifier(node.Name.String())
 		}
@@ -922,7 +925,7 @@ func (a *expressionAnalyzer) checkChain(chain memberChainResult) error {
 	case chain.root == "vars":
 		return a.checkVarsChain(chain)
 	case a.profile.isRoot(chain.root):
-		return a.checkFieldChain(chain.root, chain.segments, chain.dynamic)
+		return a.checkFieldChain(canonicalRoot(chain.root), chain.segments, chain.dynamic)
 	case templateRootAliases[chain.root]:
 		if len(chain.segments) == 0 {
 			return nil
@@ -932,7 +935,7 @@ func (a *expressionAnalyzer) checkChain(chain memberChainResult) error {
 			return a.checkVarsChain(memberChainResult{root: "vars", segments: chain.segments[1:], dynamic: chain.dynamic})
 		}
 		if a.profile.isRoot(inner) {
-			return a.checkFieldChain(inner, chain.segments[1:], chain.dynamic)
+			return a.checkFieldChain(canonicalRoot(inner), chain.segments[1:], chain.dynamic)
 		}
 		return a.unknownField(chain.root + "." + inner)
 	default:

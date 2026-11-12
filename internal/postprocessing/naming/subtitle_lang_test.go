@@ -60,7 +60,7 @@ func TestSubtitleLangNameDisplayWords(t *testing.T) {
 		{"non-Chinese multi even with a flag", []string{"ENG", "JPN"}, "soft", "", "", "英文"},
 		{"lone out-of-set word", []string{"KOR"}, "", "", "", "韩文"},
 		{"zh is not in the family", []string{"ZH"}, "", "", "", "中文"},
-		// The type tail rides a Chinese display only, from rt.sub_flag first.
+		// The type tail rides a Chinese display only, from rt.subflag first.
 		{"简体内封", []string{"SC"}, "soft", "", "", "简体内封"},
 		{"简体内嵌", []string{"SC"}, "hard", "", "", "简体内嵌"},
 		{"简繁外挂", []string{"SC", "TC"}, "ex", "", "", "简繁外挂"},
@@ -104,7 +104,7 @@ func TestSubtitleLanguageFactsIntegration(t *testing.T) {
 	if facts.LangTag == "" || facts.LangSource != "file" {
 		t.Fatalf("unrelated sub facts moved: %+v", facts)
 	}
-	// No file tag: the release faces name the chain (rt.sub_lang).
+	// No file tag: the release faces name the chain (rt.lang).
 	rtOnly := NamingContext{
 		Release: ReleaseNamingFacts{OriginalTitle: "[SampleGroup] Show - 07"},
 		Rt:      templatefacts.Values{"SubFlag": "ex", "SubLang": "SC+TC"},
@@ -125,7 +125,7 @@ func TestSubtitleLanguageFactsIntegration(t *testing.T) {
 }
 
 // TestLegacySubtitleModeReplay pins the renderer-version split of the
-// subtitle-mode swap: the current renderer reads the rt.sub_flag projection,
+// subtitle-mode swap: the current renderer reads the rt.subflag projection,
 // and every naming-render-5-and-earlier version replays the retired token
 // scan, whatever the frozen facts say.
 func TestLegacySubtitleModeReplay(t *testing.T) {

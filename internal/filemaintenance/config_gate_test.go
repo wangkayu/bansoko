@@ -9,7 +9,7 @@ import (
 // The template item names the undefined variables in order and keeps whole
 // names within configItemNamesLimit; nothing undefined is no item.
 func TestTemplateVariableItem(t *testing.T) {
-	if got := templateVariableItem(map[string]bool{"vars.b": true, "anibt.language": true, "rt.title": true}); got != "template_variable_undefined:anibt.language,rt.title,vars.b" {
+	if got := templateVariableItem(map[string]bool{"vars.b": true, "anibt.lang": true, "rt.title": true}); got != "template_variable_undefined:anibt.lang,rt.title,vars.b" {
 		t.Fatalf("item = %q", got)
 	}
 	if got := templateVariableItem(map[string]bool{}); got != "" {

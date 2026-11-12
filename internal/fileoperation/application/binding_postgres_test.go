@@ -165,7 +165,7 @@ func TestPrepareBindsSubtitleToLockedVideoTarget(t *testing.T) {
 		p["fixture_anime_season"] = 1
 		sections := p["effective_sections"].(map[string]any)
 		rules := naming.DefaultNamingRules()
-		rules.SubtitleSuffixTemplate = "${defaultValue('und', file.sub.lang)}"
+		rules.SubtitleSuffixTemplate = "${defaultValue('und', file.sub.lang_tag)}"
 		sections[animedomain.SectionNamingRules] = rules
 		sections[animedomain.SectionFileEffect] = map[string]any{"operation": "move", "collision_policy": "overwrite"}
 	})
@@ -177,7 +177,7 @@ func TestPrepareBindsSubtitleToLockedVideoTarget(t *testing.T) {
 	addArtifactFile(t, db, fixture, "artifact-file-sub-1", "sub-1", "source.chs.ass", subtitlePath, "subtitle", 8)
 	videoTarget := fixtureDefaultVideoTarget(t, fixture)
 	// The suffix here comes from the caller's own suffix template
-	// (file.sub.lang), not from the default rules: only the directory and the
+	// (file.sub.lang_tag), not from the default rules: only the directory and the
 	// locked basename are the shipped default layout.
 	subtitleTarget := strings.TrimSuffix(videoTarget, ".mkv") + ".zh-Hans.ass"
 	if err := os.MkdirAll(filepath.Dir(videoTarget), 0o755); err != nil {
@@ -225,7 +225,7 @@ func TestPrepareAdoptsExistingSidecarUnderReplacement(t *testing.T) {
 		p["fixture_anime_season"] = 1
 		sections := p["effective_sections"].(map[string]any)
 		rules := naming.DefaultNamingRules()
-		rules.SubtitleSuffixTemplate = "${defaultValue('und', file.sub.lang)}"
+		rules.SubtitleSuffixTemplate = "${defaultValue('und', file.sub.lang_tag)}"
 		sections[animedomain.SectionNamingRules] = rules
 		sections[animedomain.SectionFileEffect] = map[string]any{"operation": "copy", "collision_policy": "overwrite"}
 	})
@@ -287,7 +287,7 @@ func TestPrepareBindsSubtitleToLockedVideoTargetVersionControl(t *testing.T) {
 		p["fixture_anime_season"] = 1
 		sections := p["effective_sections"].(map[string]any)
 		rules := naming.DefaultNamingRules()
-		rules.SubtitleSuffixTemplate = "${defaultValue('und', file.sub.lang)}"
+		rules.SubtitleSuffixTemplate = "${defaultValue('und', file.sub.lang_tag)}"
 		sections[animedomain.SectionNamingRules] = rules
 		// "versioned" is the policy literal that maps to the DB's version
 		// collision (collisionPolicyToDB); the bare "version" is not a valid

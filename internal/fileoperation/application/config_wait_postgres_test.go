@@ -180,10 +180,10 @@ func TestPlanWaitsForTheTMDBBindingAndResumesOnTheWrite(t *testing.T) {
 // waking plans the file.
 func TestPlanWaitsForAnUndefinedTemplateVariable(t *testing.T) {
 	current := naming.DefaultNamingRules()
-	current.TV.VideoFilenameTemplate = "${anibt.language}.${file.ext}"
+	current.TV.VideoFilenameTemplate = "${anibt.lang}.${file.ext}"
 	db, fixture, service, planID := openConfigWaitFixture(t, &current)
 	ctx := context.Background()
-	hold := `[{"item":"template_variable_undefined:anibt.language","files":1}]`
+	hold := `[{"item":"template_variable_undefined:anibt.lang","files":1}]`
 	runPlanClaim(t, db, service, planID)
 	assertWaitingForConfiguration(t, db, fixture, planID, hold)
 	revision := func() int {

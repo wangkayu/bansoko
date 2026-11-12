@@ -71,7 +71,7 @@ func TestPreviewRefusesOnlyAnInvalidRenderedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules := NamingRulesFromDomain(naming.DefaultNamingRules())
-	rules.Tv.VideoFilenameTemplate = "${bgm.id}-${anibt.language}.${file.ext}"
+	rules.Tv.VideoFilenameTemplate = "${bgm.id}-${anibt.lang}.${file.ext}"
 	effective := EffectiveConfig{Rules: EffectiveRules{
 		Parser: ParserRules{EpisodePatterns: acquisitiondomain.DefaultEpisodePatterns},
 		Naming: rules,
@@ -93,10 +93,10 @@ func TestPreviewRefusesOnlyAnInvalidRenderedName(t *testing.T) {
 	}
 	// No Bangumi binding and not an AniBT release: both are undefined
 	// variables, never empty values.
-	if outcome.ReasonCode == nil || *outcome.ReasonCode != "naming_fact_undefined_anibt_language" {
+	if outcome.ReasonCode == nil || *outcome.ReasonCode != "naming_fact_undefined_anibt_lang" {
 		t.Fatalf("the refusal names the undefined variable: %+v", outcome)
 	}
-	if strings.Join(outcome.EmptyFacts, ",") != "anibt.language,bgm.id" {
+	if strings.Join(outcome.EmptyFacts, ",") != "anibt.lang,bgm.id" {
 		t.Fatalf("the refusal lists every undefined variable: %+v", outcome.EmptyFacts)
 	}
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${anime.title_override}-${tmdb.id}.${file.ext}"

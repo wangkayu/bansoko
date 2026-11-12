@@ -104,7 +104,7 @@ func TestConfigurationWritesWakeWaitingImports(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	acquisitionfixture.ParkDuePlan(t, tx, "fixture-plan-artifact-wake", `[{"item":"template_variable_undefined:anibt.language","files":1}]`, 1)
+	acquisitionfixture.ParkDuePlan(t, tx, "fixture-plan-artifact-wake", `[{"item":"template_variable_undefined:anibt.lang","files":1}]`, 1)
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}

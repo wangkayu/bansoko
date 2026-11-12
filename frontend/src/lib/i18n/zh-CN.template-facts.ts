@@ -13,6 +13,12 @@ export const templateFactsCopy = {
   placeholderHint: "下载后确定的值：{path}",
   placeholder: "〈{label}〉",
   roots: {
+    a: "番剧",
+    r: "发布",
+    t: "种子",
+    f: "文件",
+    m: "媒体",
+    frt: "文件名 reltitle 解析值",
     anime: "番剧",
     bgm: "Bangumi",
     tmdb: "TMDB",

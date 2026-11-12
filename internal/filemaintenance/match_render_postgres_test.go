@@ -136,7 +136,7 @@ func TestRenderMatchPathLineage(t *testing.T) {
 	render := func(rules naming.NamingRules, in MatchRenderInput) (MatchRender, error) {
 		return NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rules}).RenderMatch(ctx, in)
 	}
-	grouped := matchRules("${sanitize(anime.title)} - E${pad(ep.display, 2)} [${rt.resolution}] [${vars.actual.size}] ${anime.group}.${file.ext}")
+	grouped := matchRules("${sanitize(anime.title)} - E${pad(ep.display, 2)} [${rt.res}] [${vars.actual.size}] ${anime.group}.${file.ext}")
 	// The completed operation target names the file's own artifact lineage.
 	in := MatchRenderInput{
 		ManagedAnimeID: "anime-path", LineagePath: "/library/路径番/EP05.mkv", FileName: "EP05.mkv",
@@ -150,7 +150,7 @@ func TestRenderMatchPathLineage(t *testing.T) {
 	// a file the acquisition never published (the skip route leaves it there).
 	sourceOnly := in
 	sourceOnly.LineagePath = "/downloads/EP05.mkv"
-	got, err = render(matchRules("${sanitize(anime.title)} - [${rt.resolution}] ${anime.group}.${file.ext}"), sourceOnly)
+	got, err = render(matchRules("${sanitize(anime.title)} - [${rt.res}] ${anime.group}.${file.ext}"), sourceOnly)
 	if err != nil || got.Path != "/library/路径番/Season 02/路径番 - [1080p] PathGroup.mkv" || !got.Lineage {
 		t.Fatalf("source path lineage = %+v, %v", got, err)
 	}

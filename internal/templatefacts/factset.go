@@ -142,7 +142,7 @@ type EpFacts struct {
 
 // SubFacts is the system subtitle language of one subtitle file, resolved like
 // the episode: the file's own tag first (normalized with the reltitle
-// sub_lang vocabulary), else the release title's rt.sub_lang. A video or
+// sub_lang vocabulary), else the release title's rt.lang. A video or
 // other file has none.
 type SubFacts struct {
 	// Lang is the codes joined with +, Langs the codes, LangTag their one

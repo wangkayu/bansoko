@@ -19,7 +19,7 @@ func TestPreviewRendersFrozenNamespacesWithoutReparsing(t *testing.T) {
 	// fail-closed — so the expectation below carries the deployment root the
 	// code default names.
 	effective.Rules.Naming.Tv.DirectoryTemplate = "/library/${rt.title}"
-	effective.Rules.Naming.Tv.VideoFilenameTemplate = "[${rt.subgroup}] ${anibt.language ? `[${anibt.language}]` : ''}E${ep.display}.${file.ext}"
+	effective.Rules.Naming.Tv.VideoFilenameTemplate = "[${rt.group}] ${anibt.lang ? `[${anibt.lang}]` : ''}E${ep.display}.${file.ext}"
 	release := PreviewReleaseResult{
 		FrozenVars:    &namingvars.FrozenEvaluation{Status: "ok", Input: namingvars.Input{ReleaseTitle: "t", Files: []namingvars.File{}}, Output: namingvars.Vars{}},
 		FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: "3", Number: "3", Display: "3"},

@@ -213,7 +213,7 @@ describe("NamingTemplateFields", () => {
       fields: [
         ...catalog.fields,
         { path: "rt.title", type: "string", nullable: true, source: "source_facts.title_tags", sample_value: "Silent Witch" },
-        { path: "anibt.language", type: "string", nullable: true, source: "source_facts.anibt", sample_value: "CHS+CHT" },
+        { path: "anibt.lang", type: "string", nullable: true, source: "source_facts.anibt", sample_value: "CHS+CHT" },
       ],
     });
     renderWithQuery(<Controlled />);
@@ -223,7 +223,7 @@ describe("NamingTemplateFields", () => {
     expect(screen.getByText(t("templateFacts.roots.rt"))).toBeInTheDocument();
     expect(screen.getByText(t("templateFacts.roots.anibt"))).toBeInTheDocument();
     expect(screen.getAllByText("rt.title").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("anibt.language").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("anibt.lang").length).toBeGreaterThan(0);
   });
 
   it("点击变量插入带前导点的对象路径到当前聚焦的模板输入", async () => {
@@ -684,14 +684,14 @@ describe("NamingTemplateFields unified catalog", () => {
     expect(screen.getByText(t("templateFacts.noMatch"))).toBeInTheDocument();
   });
 
-  it("预览中下载后才有的值显示为〈名称〉占位", async () => {
-    previewNamingTemplate.mockResolvedValue(preview({ rendered: "示例动画 [⟨media.resolution⟩].mkv" }));
+  it("预览中下载后才有的值显示为极简占位", async () => {
+    previewNamingTemplate.mockResolvedValue(preview({ rendered: "示例动画 [⟨res⟩].mkv" }));
     renderWithQuery(<Controlled />);
     fireEvent.change(screen.getByLabelText(t("naming.filename")), { target: { value: "x" } });
 
-    const placeholder = await screen.findByText(`〈${t("facts.media.resolution.label")}〉`);
+    const placeholder = await screen.findByText("〈res〉");
     expect(placeholder.tagName).toBe("MARK");
-    expect(placeholder).toHaveAttribute("title", t("templateFacts.placeholderHint", { path: "media.resolution" }));
+    expect(placeholder).toHaveAttribute("title", t("templateFacts.placeholderHint", { path: "res" }));
     expect(previewNamingTemplate.mock.calls[0][0]).toMatchObject({ language: "js-naming-1" });
   });
 });

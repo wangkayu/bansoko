@@ -149,11 +149,11 @@ func TestScenarioObjectCarriesEveryFactAndNullsAbsentValues(t *testing.T) {
 		t.Fatalf("rt.title = %#v", object["rt"])
 	}
 	fileRoot := object["file"].(map[string]any)
-	if fileRoot["rt"].(map[string]any)["subgroup"] != "文件组" {
-		t.Fatalf("file.rt.subgroup = %#v", fileRoot["rt"])
+	if object["frt"].(map[string]any)["group"] != "文件组" {
+		t.Fatalf("frt.group = %#v", object["frt"])
 	}
-	if fileRoot["rt"].(map[string]any)["title"] != nil {
-		t.Fatalf("an absent file.rt value must be null, got %#v", fileRoot["rt"])
+	if object["frt"].(map[string]any)["title"] != nil {
+		t.Fatalf("an absent frt value must be null, got %#v", object["frt"])
 	}
 	if sub := fileRoot["sub"].(map[string]any); sub["forced"] != false {
 		t.Fatalf("file.sub.forced = %#v", sub["forced"])
@@ -171,16 +171,16 @@ func TestScenarioObjectCarriesEveryFactAndNullsAbsentValues(t *testing.T) {
 }
 
 // The release title parse and the file name parse are separate facts with the
-// same shape: rt.* reads the release title's tags and file.rt.* the file's own
+// same shape: rt.* reads the release title's tags and frt.* the file's own
 // name, and neither ever reads the other's values.
 func TestRegistryKeepsTheTwoReltitleParsesApart(t *testing.T) {
-	release, ok := Lookup("rt.subgroup")
+	release, ok := Lookup("rt.group")
 	if !ok {
-		t.Fatal("rt.subgroup is not registered")
+		t.Fatal("rt.group is not registered")
 	}
-	file, ok := Lookup("file.rt.subgroup")
+	file, ok := Lookup("frt.group")
 	if !ok {
-		t.Fatal("file.rt.subgroup is not registered")
+		t.Fatal("frt.group is not registered")
 	}
 	if release.Type != file.Type || release.Phase != file.Phase || release.Nullable != file.Nullable {
 		t.Fatalf("the two parses have different shapes: %+v / %+v", release, file)
@@ -192,22 +192,22 @@ func TestRegistryKeepsTheTwoReltitleParsesApart(t *testing.T) {
 	}
 	set := &FactSet{Rt: Values{"Subgroup": "发布组"}, FileRt: Values{"Subgroup": "文件组"}}
 	if got := release.Value(set); got != "发布组" {
-		t.Fatalf("rt.subgroup = %#v, want the release parse", got)
+		t.Fatalf("rt.group = %#v, want the release parse", got)
 	}
 	if got := file.Value(set); got != "文件组" {
-		t.Fatalf("file.rt.subgroup = %#v, want the file parse", got)
+		t.Fatalf("frt.group = %#v, want the file parse", got)
 	}
 	fileOnly := &FactSet{FileRt: Values{"Subgroup": "文件组"}}
 	if got := release.Value(fileOnly); got != nil {
-		t.Fatalf("rt.subgroup read the file parse: %#v", got)
+		t.Fatalf("rt.group read the file parse: %#v", got)
 	}
 	releaseOnly := &FactSet{Rt: Values{"Subgroup": "发布组"}}
 	if got := file.Value(releaseOnly); got != nil {
-		t.Fatalf("file.rt.subgroup read the release parse: %#v", got)
+		t.Fatalf("frt.group read the release parse: %#v", got)
 	}
 }
 
-// The file.rt catalog copy names the file as its source, so the editor's two
+// The frt catalog copy names the file as its source, so the editor's two
 // parses never read alike, and it covers every field of the shared list.
 func TestFileReltitleCopyCoversEveryField(t *testing.T) {
 	if len(fileReltitleCopy) != len(ReltitleFields) {
@@ -215,17 +215,17 @@ func TestFileReltitleCopyCoversEveryField(t *testing.T) {
 	}
 	for _, field := range ReltitleFields {
 		if _, ok := fileReltitleCopy[field.Name]; !ok {
-			t.Fatalf("%s has no file.rt copy", field.Name)
+			t.Fatalf("%s has no frt copy", field.Name)
 		}
-		fact, ok := Lookup("file.rt." + field.Name)
+		fact, ok := Lookup("frt." + field.Name)
 		if !ok {
-			t.Fatalf("file.rt.%s is not registered", field.Name)
+			t.Fatalf("frt.%s is not registered", field.Name)
 		}
 		if strings.TrimSpace(fact.Description.ZH) == "" || strings.TrimSpace(fact.Description.EN) == "" {
-			t.Fatalf("file.rt.%s copy is blank", field.Name)
+			t.Fatalf("frt.%s copy is blank", field.Name)
 		}
 		if fact.Description == field.Text {
-			t.Fatalf("file.rt.%s reuses the release copy", field.Name)
+			t.Fatalf("frt.%s reuses the release copy", field.Name)
 		}
 	}
 }

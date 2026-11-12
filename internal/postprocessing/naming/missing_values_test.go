@@ -220,7 +220,7 @@ func TestUndefinedVariableFailsNamingTheVariable(t *testing.T) {
 		{"no release for the title tags", "Show ${rt.title}.${file.ext}", "rt.title"},
 		{"not a mikan release", "Show ${mikan.groupid}.${file.ext}", "mikan.groupid"},
 		{"no episode identity", "Show ${ep.number}.${file.ext}", "ep.number"},
-		{"not an anibt release", "Show ${anibt.language}.${file.ext}", "anibt.language"},
+		{"not an anibt release", "Show ${anibt.lang}.${file.ext}", "anibt.lang"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := e.Compile(KindVideoFilename, tc.source)

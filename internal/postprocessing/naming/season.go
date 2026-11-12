@@ -106,7 +106,7 @@ func SeasonFolderFact(kind string, season *int64) string {
 //
 //   - S01E07 for season 1 episode 7; the episode is zero-padded to two digits
 //     and a longer or non-numeric number is kept as is (S01E107);
-//   - S01E07-E08 for a file holding episodes 7 to 8 (ep.number_end);
+//   - S01E07-E08 for a file holding episodes 7 to 8 (ep.end);
 //   - S00E07 for season 0, the season continuous specials are bound to;
 //   - E07 (E07-E08 for a multi-episode file) for a TV item with no bound
 //     season;

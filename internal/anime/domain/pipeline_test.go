@@ -55,12 +55,11 @@ func TestRenderPreviewFileForNameUsesReleaseResolutionWhenFilenameOmitsIt(t *tes
 		t.Fatalf("release resolution was not carried into target preview: %q", *outcome.RenderedTarget)
 	}
 
-	// The read-model preview (RSS list, draft) shows the media facts as
-	// placeholders: their real value exists only once the file is inspected.
-	// The exact render above is the frozen pre-download target and has none.
+	// The read-model preview keeps the release-derived resolution and uses a
+	// minimal placeholder only for the codec that still requires file inspection.
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${anime.title} [${media.resolution} ${media.video_codec}] ${s00e00}.${file.ext}"
 	preview := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), "Preview Show - 01.mkv", "video", 0, release.FrozenEpisode, false, true)
-	if !preview.Included || preview.RenderedTarget == nil || !strings.HasSuffix(*preview.RenderedTarget, "/Preview Show [⟨media.resolution⟩ ⟨media.video_codec⟩] S01E01.mkv") {
+	if !preview.Included || preview.RenderedTarget == nil || !strings.HasSuffix(*preview.RenderedTarget, "/Preview Show [1080p ⟨vc⟩] S01E01.mkv") {
 		t.Fatalf("preview placeholders = %+v %v", preview, preview.RenderedTarget)
 	}
 	for _, fact := range preview.EmptyFacts {
@@ -205,7 +204,7 @@ func TestManifestSubtitleFactsReachNamingContext(t *testing.T) {
 	// The real manifest projection reaches the naming template with its exact
 	// file kind and size, and the resolver normalizes the manifest language
 	// with the reltitle vocabulary (zh-Hans stays zh-Hans, not und).
-	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${file.kind}|${file.size}|${file.sub.format}|${file.sub.lang}|${file.ext}"
+	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${file.kind}|${file.size}|${file.sub.format}|${file.sub.lang_tag}|${file.ext}"
 	ctx = renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), files[1].Filename, files[1].MediaKind, files[1].SizeBytes, release.FrozenEpisode, false, false)
 	if ctx.RenderedTarget == nil || *ctx.RenderedTarget != "/media/TV/Preview Show (2025)/Season 01/subtitle|20|ass|zh-Hans|ass" {
 		t.Fatalf("manifest subtitle facts did not reach naming render: target=%v result=%+v", ctx.RenderedTarget, ctx)

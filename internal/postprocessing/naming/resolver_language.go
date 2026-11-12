@@ -111,7 +111,7 @@ func (v languageValue) String() string {
 //
 // The release namespace reads only the release: a standalone subtitle's own
 // filename language is a file fact and reaches templates as sub.* (file
-// first, then the release's rt.sub_lang, with sub.lang_source naming which).
+// first, then the release's rt.lang, with sub.lang_source naming which).
 // release.lang never reads the file name, so the two namespaces cannot
 // disagree about which source supplied a language.
 type languageResolver struct{}

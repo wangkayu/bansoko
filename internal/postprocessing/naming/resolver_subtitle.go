@@ -18,7 +18,7 @@ type subtitleValue struct {
 	Languages       []string
 	PrimaryLanguage string
 	// TagLanguages are the reltitle sub_lang codes read from the suffix (the
-	// vocabulary of rt.sub_lang); nil when reltitle reads none.
+	// vocabulary of rt.lang); nil when reltitle reads none.
 	TagLanguages []string
 	Flags        SubtitleFlags
 }

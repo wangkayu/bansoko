@@ -10,8 +10,8 @@ import (
 )
 
 // FileReltitleValues is the reltitle parse of the file's own name, projected
-// onto the file.rt namespace. It reads only the file stem, never the release
-// title; a render without a file name has no file.rt values. The projection is
+// onto the frt namespace. It reads only the file stem, never the release
+// title; a render without a file name has no frt values. The projection is
 // deliberately separate from rt.*: the release parse is never copied into the
 // file namespace and the file parse never into rt.*, so a template always
 // names the source it wants.
@@ -119,7 +119,7 @@ func SubtitleLanguageFacts(ctx NamingContext) templatefacts.SubFacts { return su
 
 // subtitleLanguage is the system subtitle language (sub.*) of a subtitle
 // file, resolved like the episode: the file's own tag first, normalized with
-// the reltitle sub_lang vocabulary, else the release title's rt.sub_lang.
+// the reltitle sub_lang vocabulary, else the release title's rt.lang.
 // A non-subtitle file, or a subtitle neither names, has none.
 func subtitleLanguage(ctx NamingContext) templatefacts.SubFacts {
 	if !strings.EqualFold(strings.TrimSpace(ctx.File.Kind), "subtitle") {

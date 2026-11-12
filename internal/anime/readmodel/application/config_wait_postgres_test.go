@@ -71,11 +71,11 @@ VALUES ('file-wait', 'artifact-wait', 'wait-root', 'primary', 'Wait Show - 01.mk
 // and offers no import retry; the anime workspace counts the files it blocks.
 func TestAcquisitionRecordShowsAnImportWaitingForConfiguration(t *testing.T) {
 	service, _, root := seedConfigWaitingImport(t,
-		`[{"item":"binding_missing:tmdb","files":1},{"item":"template_variable_undefined:anibt.language,rt.title","files":1}]`, 1)
+		`[{"item":"binding_missing:tmdb","files":1},{"item":"template_variable_undefined:anibt.lang,rt.title","files":1}]`, 1)
 	ctx := context.Background()
 	want := []AcquisitionConfigHoldItem{
 		{Missing: AcquisitionConfigMissingTMDB, Files: 1},
-		{Missing: AcquisitionConfigMissingVariable, Variables: []string{"anibt.language", "rt.title"}, Files: 1},
+		{Missing: AcquisitionConfigMissingVariable, Variables: []string{"anibt.lang", "rt.title"}, Files: 1},
 	}
 
 	detail, err := service.GetAcquisitionRecord(ctx, root)

@@ -310,7 +310,7 @@ type RecognitionOutcome struct {
 type recognitionFile struct {
 	inspection inspection
 	kind       string
-	// fileRt is the reltitle parse of the file's own name (the file.rt
+	// fileRt is the reltitle parse of the file's own name (the frt
 	// namespace). It is not the release parse: recognition has no release
 	// title, and rt.* stays empty in its renders.
 	fileRt   templatefacts.Values
@@ -559,8 +559,8 @@ func (s *Service) recognitionEntries(ctx context.Context, paths []string) ([]rec
 }
 
 // recognitionEvidence parses each file's own name: the episode identity of
-// every non-subtitle file, and the file.rt.* values of every file. A subtitle's
-// episode comes from its group's video; its own name supplies its file.rt
+// every non-subtitle file, and the frt.* values of every file. A subtitle's
+// episode comes from its group's video; its own name supplies its frt
 // values (its sub_lang tag) and the subtitle facts the resolver derives from it.
 func recognitionEvidence(ctx context.Context, files []recognitionFile, selection parser.ParserSelection, offset int) error {
 	resolver := episodeidentity.NewResolver()

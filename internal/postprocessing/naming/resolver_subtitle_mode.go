@@ -16,7 +16,7 @@ type subtitleModeValue struct {
 func (v subtitleModeValue) String() string { return v.SubtitleMode }
 
 // subtitleModeResolver classifies the whole release as embedded, external,
-// mixed, or unknown from the release's parsed subtitle flags (rt.sub_flag,
+// mixed, or unknown from the release's parsed subtitle flags (rt.subflag,
 // the flat reltitle sub_flag projection soft / hard / ex): soft or hard
 // alone embedded, ex alone external, ex beside either mixed, no flag value
 // unknown. A standalone subtitle ArtifactFile proves nothing.

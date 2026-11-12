@@ -17,6 +17,12 @@ export const enTemplateFactsCopy = {
   placeholderHint: "Known after the download: {path}",
   placeholder: "⟨{label}⟩",
   roots: {
+    a: "Anime",
+    r: "Release",
+    t: "Torrent",
+    f: "File",
+    m: "Media",
+    frt: "File-name reltitle values",
     anime: "Anime",
     bgm: "Bangumi",
     tmdb: "TMDB",

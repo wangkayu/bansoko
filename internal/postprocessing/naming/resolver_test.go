@@ -404,7 +404,7 @@ func TestSubtitleResolverSplitsHyphenBetweenLanguages(t *testing.T) {
 }
 
 func TestSubtitleModeResolver(t *testing.T) {
-	// The mode derives from the release's parsed subtitle flags (rt.sub_flag):
+	// The mode derives from the release's parsed subtitle flags (rt.subflag):
 	// soft or hard alone embedded, ex alone external, ex beside soft/hard
 	// mixed, no flag value unknown.
 	cases := []struct {

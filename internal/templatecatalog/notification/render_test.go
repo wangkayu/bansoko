@@ -73,7 +73,7 @@ func TestRenderReadsValueNamespacesOnEveryTrigger(t *testing.T) {
 	sourceFacts := []byte(`{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"x","tags":["resolution:1080p","sub_lang:CHT","sub_lang:chs","sub_lang:CHS"],"value_tags":["title:进击的巨人"]},"anibt":{"tags":["language:CHT","language:CHS","format:MKV"]}}`)
 	vars := map[string]any{"info": map[string]any{"tag": "WEB", "source_url": "https://x"}, "bad": "x"}
 	facts := ValueFacts(vars, sourceFacts, func(v string) any { return v })
-	for key, want := range map[string]any{"rt.title": "进击的巨人", "rt.resolution": "1080p", "rt.sub_lang": "chs+CHT", "rt.subgroup": nil, "anibt.language": "CHS+CHT", "anibt.format": "MKV", "anibt.tag": nil, "vars.info.tag": "WEB"} {
+	for key, want := range map[string]any{"rt.title": "进击的巨人", "rt.res": "1080p", "rt.lang": "chs+CHT", "rt.group": nil, "anibt.lang": "CHS+CHT", "anibt.format": "MKV", "anibt.tag": nil, "vars.info.tag": "WEB"} {
 		if got, ok := facts[key]; !ok || got != want {
 			t.Errorf("%s = %#v (%v); want %#v", key, got, ok, want)
 		}
@@ -91,7 +91,7 @@ func TestRenderReadsValueNamespacesOnEveryTrigger(t *testing.T) {
 			// release whose rt/anibt tags the payload froze.
 			continue
 		}
-		message, ok := RenderMessage(trigger, "{{vars.info.tag}} {{rt.sub_lang}}", "{{defaultIfEmpty(anibt.tag, '-')}} {{vars.info.missing}}", facts)
+		message, ok := RenderMessage(trigger, "{{vars.info.tag}} {{rt.lang}}", "{{defaultIfEmpty(anibt.tag, '-')}} {{vars.info.missing}}", facts)
 		if !ok || !message.Valid() || message.Title != "WEB chs+CHT" || message.Body != "- " {
 			t.Fatalf("%s: %+v", trigger, message)
 		}
@@ -113,7 +113,7 @@ func TestTitleFactsReadOnlyFrozenNativeTitles(t *testing.T) {
 		}
 	}
 	facts := TitleFacts([]byte(`{"schema_version":5,"media":{"bgm_titles":{"state":"known","value":{"title":"B","title_cn":null}},"tmdb_titles":{"state":"known","value":{"title_cn":"T","original_title":"O"}}}}`), identity)
-	if facts["bgm.title"] != "B" || facts["bgm.title_cn"] != nil || facts["tmdb.title_cn"] != "T" || facts["tmdb.original_title"] != "O" {
+	if facts["bgm.title"] != "B" || facts["bgm.title_cn"] != nil || facts["tmdb.title_cn"] != "T" || facts["tmdb.title"] != "O" {
 		t.Fatalf("facts = %+v", facts)
 	}
 }

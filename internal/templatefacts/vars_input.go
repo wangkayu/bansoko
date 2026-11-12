@@ -19,7 +19,7 @@ var varsInputSystemPaths = []string{
 	"anime.id", "anime.title", "anime.title_override", "anime.provider_title", "anime.title_base",
 	"anime.year", "anime.season",
 	"bgm.id", "bgm.title", "bgm.title_cn",
-	"tmdb.id", "tmdb.title_cn", "tmdb.original_title", "tmdb.kind", "tmdb.season",
+	"tmdb.id", "tmdb.title_cn", "tmdb.title", "tmdb.kind", "tmdb.season",
 	"release.id", "release.title",
 	"ep.number", "ep.raw", "ep.display", "ep.offset",
 	"torrent.size", "torrent.file_count", "torrent.hash_v1", "torrent.hash_v2",
@@ -29,7 +29,7 @@ var varsInputSystemPaths = []string{
 // them were frozen: a stored input may lack them (it keeps its exact canonical
 // form and digest), while every new input carries them. Keyed by root, then
 // leaf.
-var VarsInputOptionalMembers = map[string][]string{"anime": {"season"}, "rt": {"version", "uncensored", "audio_codec"}}
+var VarsInputOptionalMembers = map[string][]string{"anime": {"season"}, "rt": {"rev", "uncensored", "ac"}}
 
 // VarsInputFacts returns the registered facts of the Vars v2 input, in a
 // stable order: the system facts, then rt.*, then anibt.*.
@@ -43,7 +43,7 @@ func VarsInputFacts() []Fact {
 		out = append(out, fact)
 	}
 	for _, fact := range registry {
-		if root := fact.Root(); root == RootRt || root == RootAnibt {
+		if root := fact.Root(); !fact.Hidden && (root == RootRt || root == RootAnibt) {
 			out = append(out, fact)
 		}
 	}

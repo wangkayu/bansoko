@@ -3,8 +3,8 @@ package templatefacts
 import "strings"
 
 // languageBCP47 is the one language code -> BCP 47 table. Every fact that
-// offers a BCP 47 form of a language code (release.lang_tag,
-// sub.lang_tag, file.sub.lang/langs) reads it, so one code always has one
+// offers a BCP 47 form of a language code (release.lang_tags,
+// sub.lang_tag, file.sub.lang_tag/lang_tags) reads it, so one code always has one
 // tag. The keys are the reltitle sub_lang vocabulary (the codes reltitle
 // emits; the release title language resolver's lower-case codes sc, tc, jpsc,
 // jptc, jpn and eng fold onto them). Chinese uses script subtags (zh-Hans /

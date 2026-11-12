@@ -359,6 +359,13 @@ func TestSharedAdmissionRefusesOnlyAnInvalidRenderedName(t *testing.T) {
 			if planned.Admission.Admission != AdmissionFailed || len(planned.Set.Targets) != 0 {
 				t.Fatalf("%s %s admitted: %+v %+v", name, template, planned.Admission, planned.Set.Targets)
 			}
+			wantAdmissionReason := "target_render_failed"
+			if want == "naming_fact_missing_anime_title_override" {
+				wantAdmissionReason = want
+			}
+			if planned.Admission.Reason != wantAdmissionReason {
+				t.Fatalf("%s %s admission reason = %q, want %s", name, template, planned.Admission.Reason, wantAdmissionReason)
+			}
 			if len(planned.ReleaseFiles) != 1 || planned.ReleaseFiles[0].TargetPath != nil || planned.ReleaseFiles[0].TargetDiagnostic == nil ||
 				planned.ReleaseFiles[0].TargetDiagnostic.Code != want {
 				t.Fatalf("%s %s diagnostic = %+v, want %s", name, template, planned.ReleaseFiles, want)

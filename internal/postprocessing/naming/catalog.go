@@ -1,6 +1,8 @@
 package naming
 
 import (
+	"strings"
+
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/templatefacts"
 )
@@ -191,12 +193,13 @@ func sampleMovieContext() NamingContext {
 
 // generateCatalogFields is the naming language field list: every visible naming
 // fact of the templatefacts registry, in registry order, with the catalog's
-// type vocabulary.
+// type vocabulary. Display paths use the short roots; execution still reads the
+// canonical registry paths through real language bindings.
 func generateCatalogFields() []CatalogField {
 	facts := templatefacts.ScenarioFacts(templatefacts.ScenarioNaming)
 	fields := make([]CatalogField, 0, len(facts))
 	for _, fact := range facts {
-		if fact.Hidden {
+		if fact.Hidden || fact.HiddenIn&templatefacts.ScenarioNaming != 0 {
 			continue
 		}
 		fieldType := "string"
@@ -208,11 +211,25 @@ func generateCatalogFields() []CatalogField {
 		case templatefacts.TypeList:
 			fieldType = "list"
 		}
+		path := namingDisplayPath(fact.Path)
+		root, _, _ := strings.Cut(path, ".")
 		fields = append(fields, CatalogField{
-			Path: fact.Path, Type: fieldType, Nullable: fact.NullableIn(templatefacts.ScenarioNaming), Source: fact.Root(),
+			Path: path, Type: fieldType, Nullable: fact.NullableIn(templatefacts.ScenarioNaming), Source: root,
 			Description: fact.Description.EN, SampleValue: templatefacts.FormatSample(fact.SampleFor(templatefacts.ScenarioNaming)),
-			Phase: string(fact.Phase), LabelKey: fact.LabelKey(), DescriptionKey: fact.DescriptionKey(),
+			Phase: string(fact.Phase), LabelKey: "facts." + path + ".label", DescriptionKey: "facts." + path + ".description",
 		})
 	}
 	return fields
+}
+
+func namingDisplayPath(path string) string {
+	for alias, canonical := range shortRootAliases {
+		if path == canonical {
+			return alias
+		}
+		if strings.HasPrefix(path, canonical+".") {
+			return alias + strings.TrimPrefix(path, canonical)
+		}
+	}
+	return path
 }

@@ -56,7 +56,7 @@ func manifestPreviewSnapshotWithFiles(t *testing.T, group, torrentName string, f
 			SizeBytes:      &size,
 			StableSeedKey:  "seed-01",
 			// A subtitle row whose own name names no language takes the
-			// release title's (sub.lang falls back to rt.sub_lang), so the seed
+			// release title's (sub.lang falls back to rt.lang), so the seed
 			// title names the language the release ships.
 			Title:        "[RealGroup] Preview Show - 01 [CHS] [1080p]",
 			TorrentState: animecatalogdomain.TorrentAcquisitionAvailable,

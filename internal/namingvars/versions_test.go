@@ -110,7 +110,7 @@ func TestActivateRevisionRollsBack(t *testing.T) {
 }
 
 func TestDesignInputLetsAProgramReadReleaseFacts(t *testing.T) {
-	source := "vars.show = {title: input.anime.title ?? \"\", group: input.rt.subgroup ?? \"\", ep: input.ep.number ?? \"\"};"
+	source := "vars.show = {title: input.anime.title ?? \"\", group: input.rt.group ?? \"\", ep: input.ep.number ?? \"\"};"
 	vars, diagnostics := Validate(source)
 	if len(diagnostics) != 0 {
 		t.Fatalf("a program reading release facts must validate: %+v", diagnostics)

@@ -145,7 +145,7 @@ var unsafePayloadKey = regexp.MustCompile(`(secret|token|password|credential|url
 // sanitizes each value (nil drops it to null). Every rt/anibt key is present
 // (null when absent; rt.uncensored is a boolean); a Vars key is present only when the output has it.
 // Undecodable source facts yield no rt/anibt values. The SQL twin is
-// notification_value_facts (migration 130); a parity test keeps them equal.
+// notification_value_facts (last re-created by migration 132); a parity test keeps them equal.
 func ValueFacts(vars map[string]any, sourceFacts []byte, text func(string) any) map[string]any {
 	facts := make(map[string]any, len(ValueFactKeys)+len(vars))
 	for _, key := range ValueFactKeys {
@@ -210,15 +210,15 @@ func IsVarsPath(name string) bool {
 // the acquisition input (schema 5 media.bgm_titles / media.tmdb_titles; the
 // overview member is schema-optional: inputs frozen before it existed have no
 // summary).
-var TitleFactKeys = []string{"bgm.title", "bgm.title_cn", "tmdb.title_cn", "tmdb.original_title", "tmdb.summary"}
+var TitleFactKeys = []string{"bgm.title", "bgm.title_cn", "tmdb.title_cn", "tmdb.title", "tmdb.summary"}
 
 // TitleFacts projects TitleFactKeys from an acquisition input snapshot; text
 // bounds and sanitizes each value. Inputs before schema 5, unbound works and
 // works whose titles were never recorded read null; the overview reads null
 // when it was never observed. The SQL twin is notification_title_facts
-// (re-created by migration 047); a parity test keeps them equal.
+// (last re-created by migration 132); a parity test keeps them equal.
 func TitleFacts(snapshot []byte, text func(string) any) map[string]any {
-	facts := map[string]any{"bgm.title": nil, "bgm.title_cn": nil, "tmdb.title_cn": nil, "tmdb.original_title": nil, "tmdb.summary": nil}
+	facts := map[string]any{"bgm.title": nil, "bgm.title_cn": nil, "tmdb.title_cn": nil, "tmdb.title": nil, "tmdb.summary": nil}
 	input, ok := decodeObject(snapshot)
 	if !ok {
 		return facts
@@ -232,7 +232,7 @@ func TitleFacts(snapshot []byte, text func(string) any) map[string]any {
 	set("bgm.title", media["bgm_titles"], "title")
 	set("bgm.title_cn", media["bgm_titles"], "title_cn")
 	set("tmdb.title_cn", media["tmdb_titles"], "title_cn")
-	set("tmdb.original_title", media["tmdb_titles"], "original_title")
+	set("tmdb.title", media["tmdb_titles"], "original_title")
 	set("tmdb.summary", media["tmdb_titles"], "overview")
 	return facts
 }

@@ -38,7 +38,7 @@ func TestBuildInputFactsAndPayloadContracts(t *testing.T) {
 	if ep := payload["ep"].(map[string]any); ep["number"] != "3" || ep["offset"] != int64(0) {
 		t.Fatalf("ep = %+v", ep)
 	}
-	if rt := payload["rt"].(map[string]any); rt["resolution"] != "1080p" || rt["title"] != nil {
+	if rt := payload["rt"].(map[string]any); rt["res"] != "1080p" || rt["title"] != nil {
 		t.Fatalf("rt = %+v", rt)
 	}
 	if _, ok := payload["mediainfo"]; ok {

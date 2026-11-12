@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"bansoko/internal/templatefacts"
 )
 
 // shorthandContext builds a minimal naming context: an owner season that may
@@ -26,9 +28,10 @@ func shorthandContextYear(season int, seasonPresent bool, year *int, episode str
 		// The media-probe leaves, scroll group and effective kind let every
 		// registered shorthand render its catalog example (media.* only render
 		// those values they probed in a real run).
-		File:   FileNamingFacts{OriginalName: "Show - 12.mkv", Extension: "mkv", Media: MediaNamingFacts{Resolution: "1080p", VideoCodec: "HEVC", AudioCodec: "AAC", Container: "mkv"}},
+		File:   FileNamingFacts{OriginalName: "Show - 12.mkv", Basename: "Show - 12", Extension: "mkv", Kind: "subtitle", Media: MediaNamingFacts{Resolution: "1080p", VideoCodec: "HEVC", AudioCodec: "AAC", Container: "mkv", HDR: "hdr10"}},
 		Source: SourceNamingFacts{GroupName: "示例字幕组"},
-		Parsed: ParsedNamingVariables{Episode: EpisodeNamingVariables{Raw: episode, Display: episode}},
+		Parsed: ParsedNamingVariables{Episode: EpisodeNamingVariables{Raw: episode, Display: episode}, Subtitle: SubtitleNamingVariables{TagLanguages: []string{"SC", "JPN"}}},
+		Rt:     templatefacts.Values{"SubFlag": "soft"}, AniBTTags: templatefacts.Values{"Subtitle": "INTERNAL"},
 		Release: ReleaseNamingFacts{
 			FrozenEpisode: &FrozenEpisodeNamingFacts{Raw: episode, Number: episode, Display: episode},
 		},
@@ -41,8 +44,8 @@ func shorthandContextYear(season int, seasonPresent bool, year *int, episode str
 func TestNamingShorthandsRenderTheirCatalogExample(t *testing.T) {
 	engine := NewEngine()
 	ctx := shorthandContext(1, true, "12")
-	if len(Shorthands) != 20 {
-		t.Fatalf("shorthand table has %d entries, want the 20 approved ones", len(Shorthands))
+	if len(Shorthands) != 26 {
+		t.Fatalf("shorthand table has %d entries, want the 26 approved ones", len(Shorthands))
 	}
 	seen := map[string]bool{}
 	for _, shorthand := range Shorthands {
@@ -64,7 +67,11 @@ func TestNamingShorthandsRenderTheirCatalogExample(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s compile: %v", shorthand.Name, err)
 		}
-		got, err := engine.Render(compiled, ctx)
+		renderCtx := ctx
+		if shorthand.Name == "langname" {
+			renderCtx.Parsed.Subtitle.TagLanguages = []string{"SC", "TC", "JPN"}
+		}
+		got, err := engine.Render(compiled, renderCtx)
 		if err != nil {
 			t.Fatalf("%s render: %v", shorthand.Name, err)
 		}

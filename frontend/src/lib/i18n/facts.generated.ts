@@ -4,20 +4,54 @@
 import type { CopyShape } from "./types";
 
 export const factsCopy = {
+  a: {
+    group: {
+      label: "字幕组",
+      description: "采集值：订阅来源配置的字幕组显示名（来源目录的组、或自定义来源填写的组）；来源没有配置组名时为空。不含标题前缀组，也不回退到任何其他值。",
+    },
+    kind: {
+      label: "类型",
+      description: "派生值：tv 或 movie，决定使用剧集还是电影模板。TMDB 绑定为电影或文件识别为电影时为 movie，否则为 tv；始终有值。",
+    },
+    season: {
+      label: "季",
+      description: "采集值：在订阅中填写的季号；0 为特别篇。未填写时为空，不会默认为 1，也不读取 TMDB 绑定的季。匹配 TMDB 时，若季号尚未填写会一并填入。",
+    },
+    season_folder: {
+      label: "季目录",
+      description: "派生值：季目录名，如 Season 01；第 0 季为 Specials。未填写季或电影时为空。默认模板把这一目录作为季的一级目录，未填写季的剧集会因它为空而命名失败；修复是填写季。",
+    },
+    season_path: {
+      label: "季目录（含斜杠）",
+      description: "派生值：带前导斜杠的季目录，如 /Season 01；第 0 季（特别篇）为 /Specials。未填写季或电影时为空，接在作品目录后面也不会留下空目录。",
+    },
+    title: {
+      label: "标题",
+      description: "派生值：有效标题：自定义、来源标题、TMDB 中文、BGM 中文、BGM、基础标题，取第一个有值的。始终有定义；基础标题必填，所以实际不为空。原样输出，不做清理。",
+    },
+    year: {
+      label: "年份",
+      description: "采集值：在订阅中填写的年份（1900–2100）；未填写时为空，不读取元数据年份。匹配 TMDB 时可一键填入。",
+    },
+  },
   anibt: {
     format: {
       label: "AniBT 格式",
       description: "采集值：AniBT 格式标签。",
     },
+    group: {
+      label: "AniBT 来源组",
+      description: "采集值：RSS 来源配置的 AniBT 字幕组显示名；不读取发布解析或其他来源。",
+    },
     groupslug: {
       label: "AniBT 来源组 slug",
       description: "采集值：RSS 来源的 AniBT 字幕组 slug，分组策略使用的稳定键。",
     },
-    language: {
+    lang: {
       label: "AniBT 语言",
       description: "采集值：AniBT 语言标签，多个用 + 连接。",
     },
-    resolution: {
+    res: {
       label: "AniBT 分辨率",
       description: "采集值：AniBT 分辨率标签。",
     },
@@ -109,6 +143,10 @@ export const factsCopy = {
       label: "显示集数",
       description: "派生值：用于显示的集数；今天每个投影都把它设为 ep.number，尚无独立的显示文本生产者。",
     },
+    end: {
+      label: "结束集数",
+      description: "派生值：一个文件含多集时的最后一集，如 E01-E02 中的 2；单集为空。",
+    },
     kind: {
       label: "特别篇类型",
       description: "派生值：正片为空；ncop、nced 或 special。由发布标题里的关键词判定，不是解析器给出的集数身份证据。",
@@ -116,10 +154,6 @@ export const factsCopy = {
     number: {
       label: "集数",
       description: "派生值：应用偏移后的集数，如 12，不补零：由解析到的原文（ep.raw）与生效的偏移（ep.offset）算出，偏移只在身份解析时应用一次。有集数识别时才有定义；未识别的文件走未识别模板。",
-    },
-    number_end: {
-      label: "结束集数",
-      description: "派生值：一个文件含多集时的最后一集，如 E01-E02 中的 2；单集为空。",
     },
     offset: {
       label: "集数偏移",
@@ -160,6 +194,50 @@ export const factsCopy = {
       description: "派生值：触发通知的事件。",
     },
   },
+  f: {
+    ext: {
+      label: "扩展名",
+      description: "采集值：小写扩展名，不带点。无扩展名的文件为空。",
+    },
+    name: {
+      label: "文件名",
+      description: "采集值：原始完整文件名。",
+    },
+    stem: {
+      label: "文件主名",
+      description: "采集值：不含扩展名的文件名。",
+    },
+    sub: {
+      commentary: {
+        label: "评论字幕",
+        description: "解析值：后缀带评论标记。",
+      },
+      default: {
+        label: "默认字幕",
+        description: "解析值：后缀带 default 标记。",
+      },
+      forced: {
+        label: "强制字幕",
+        description: "解析值：后缀带 forced 标记。",
+      },
+      lang_tag: {
+        label: "字幕文件语言标签",
+        description: "解析值：字幕文件名标记中第一个语言的 BCP 47 标签，如 zh-Hans；仅字幕文件有值。",
+      },
+      lang_tags: {
+        label: "字幕文件语言标签集合",
+        description: "解析值：字幕文件名标记中每一段的 BCP 47 标签，读不出的段记为 und。",
+      },
+      sdh: {
+        label: "听障字幕",
+        description: "解析值：后缀带 SDH 标记。",
+      },
+      suffix: {
+        label: "字幕后缀",
+        description: "解析值：主名和扩展名之间的原始标记，原样不变，如 chs&jpn。",
+      },
+    },
+  },
   file: {
     ext: {
       label: "扩展名",
@@ -172,48 +250,6 @@ export const factsCopy = {
     name: {
       label: "文件名",
       description: "采集值：原始完整文件名。",
-    },
-    rt: {
-      audio_codec: {
-        label: "文件 reltitle 音频编码",
-        description: "解析值：reltitle 从文件名读出的音频编码。",
-      },
-      resolution: {
-        label: "文件 reltitle 分辨率",
-        description: "解析值：reltitle 从文件名读出的分辨率。",
-      },
-      source: {
-        label: "文件 reltitle 片源",
-        description: "解析值：reltitle 从文件名读出的片源类型。",
-      },
-      sub_flag: {
-        label: "文件 reltitle 字幕方式标志",
-        description: "解析值：reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。",
-      },
-      sub_lang: {
-        label: "文件 reltitle 字幕语言",
-        description: "解析值：reltitle 从文件名读出的字幕语言，多个用 + 连接。",
-      },
-      subgroup: {
-        label: "文件 reltitle 字幕组",
-        description: "解析值：reltitle 从文件名读出的字幕组。",
-      },
-      title: {
-        label: "文件 reltitle 标题",
-        description: "解析值：reltitle 从文件名读出的作品标题。",
-      },
-      uncensored: {
-        label: "文件 reltitle 无修正",
-        description: "解析值：文件名标有无修正（UNCENSORED）时为是。",
-      },
-      version: {
-        label: "文件 reltitle Rev",
-        description: "解析值：reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。",
-      },
-      video_codec: {
-        label: "文件 reltitle 视频编码",
-        description: "解析值：reltitle 从文件名读出的视频编码。",
-      },
     },
     size: {
       label: "文件大小",
@@ -240,11 +276,11 @@ export const factsCopy = {
         label: "字幕格式",
         description: "解析值：ass、ssa、srt 或 vtt。",
       },
-      lang: {
+      lang_tag: {
         label: "字幕文件语言标签",
         description: "解析值：字幕文件名标记中第一个语言的 BCP 47 标签，如 zh-Hans；仅字幕文件有值。",
       },
-      langs: {
+      lang_tags: {
         label: "字幕文件语言标签集合",
         description: "解析值：字幕文件名标记中每一段的 BCP 47 标签，读不出的段记为 und。",
       },
@@ -256,6 +292,70 @@ export const factsCopy = {
         label: "字幕后缀",
         description: "解析值：主名和扩展名之间的原始标记，原样不变，如 chs&jpn。",
       },
+    },
+  },
+  frt: {
+    ac: {
+      label: "文件 reltitle 音频编码",
+      description: "解析值：reltitle 从文件名读出的音频编码。",
+    },
+    group: {
+      label: "文件 reltitle 字幕组",
+      description: "解析值：reltitle 从文件名读出的字幕组。",
+    },
+    lang: {
+      label: "文件 reltitle 字幕语言",
+      description: "解析值：reltitle 从文件名读出的字幕语言，多个用 + 连接。",
+    },
+    res: {
+      label: "文件 reltitle 分辨率",
+      description: "解析值：reltitle 从文件名读出的分辨率。",
+    },
+    rev: {
+      label: "文件 reltitle Rev",
+      description: "解析值：reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。",
+    },
+    source: {
+      label: "文件 reltitle 片源",
+      description: "解析值：reltitle 从文件名读出的片源类型。",
+    },
+    subflag: {
+      label: "文件 reltitle 字幕方式标志",
+      description: "解析值：reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。",
+    },
+    title: {
+      label: "文件 reltitle 标题",
+      description: "解析值：reltitle 从文件名读出的作品标题。",
+    },
+    uncensored: {
+      label: "文件 reltitle 无修正",
+      description: "解析值：文件名标有无修正（UNCENSORED）时为是。",
+    },
+    vc: {
+      label: "文件 reltitle 视频编码",
+      description: "解析值：reltitle 从文件名读出的视频编码。",
+    },
+  },
+  m: {
+    audio_codec: {
+      label: "音频编码",
+      description: "采集值：检查文件得到的音频编码，如 AAC；读不到时为空。下载前的预览显示为占位。",
+    },
+    container: {
+      label: "容器",
+      description: "采集值：检查文件得到的容器格式，如 mkv；读不到时为空。下载前的预览显示为占位。",
+    },
+    hdr: {
+      label: "HDR 格式",
+      description: "采集值：检查文件得到的 HDR 格式，如 hdr10、hlg、dovi；多格式按文件中的顺序逗号连接（hdr10,dovi），SDR 或读不到时为空。下载前的预览显示为占位。",
+    },
+    resolution: {
+      label: "分辨率",
+      description: "采集值：检查文件得到的分辨率，如 1080p；文件未带时取发布标题中的分辨率，都没有时为空。下载前且没有已知值时显示⟨res⟩占位。",
+    },
+    video_codec: {
+      label: "视频编码",
+      description: "采集值：检查文件得到的视频编码，如 HEVC；读不到时为空。下载前的预览显示为占位。",
     },
   },
   media: {
@@ -273,7 +373,7 @@ export const factsCopy = {
     },
     resolution: {
       label: "分辨率",
-      description: "采集值：检查文件得到的分辨率，如 1080p；文件未带时取发布标题中的分辨率，都没有时为空。下载前的预览显示为占位。",
+      description: "采集值：检查文件得到的分辨率，如 1080p；文件未带时取发布标题中的分辨率，都没有时为空。下载前且没有已知值时显示⟨res⟩占位。",
     },
     video_codec: {
       label: "视频编码",
@@ -281,6 +381,10 @@ export const factsCopy = {
     },
   },
   mikan: {
+    group: {
+      label: "Mikan 来源组",
+      description: "采集值：RSS 来源配置的 Mikan 字幕组显示名；不读取发布解析或其他来源。",
+    },
     groupid: {
       label: "Mikan 来源组 ID",
       description: "采集值：RSS 来源的 Mikan 数字字幕组 ID，分组策略使用的稳定键。",
@@ -318,20 +422,16 @@ export const factsCopy = {
       description: "派生值：相对于入库位置根的完整路径。",
     },
   },
-  release: {
+  r: {
     episodes: {
       label: "下载集数",
       description: "派生值：这次下载要入库的集数，如 01-04 或 01, 03, 07；合集时单集字段为空。",
-    },
-    id: {
-      label: "发布 ID",
-      description: "采集值：发布条目的标识。",
     },
     lang: {
       label: "语言",
       description: "解析值：从标题识别的主语言代码，如 sc、tc、jpsc。",
     },
-    lang_tag: {
+    lang_tags: {
       label: "语言标签",
       description: "派生值：release.langs 里每个语言代码对应的 BCP 47 标签，如 zh-Hans、zh-Hant、ja；没有对应标签的代码不列出。由 release.langs 转换得到，不是另一路解析结果。",
     },
@@ -349,7 +449,45 @@ export const factsCopy = {
     },
     subtitle_mode: {
       label: "字幕方式",
-      description: "派生值：embedded、external、mixed 或 unknown，由发布标题解析的字幕方式标志 rt.sub_flag 归并：仅 soft 或 hard 为 embedded，仅 ex 为 external，ex 与 soft/hard 并存为 mixed，都没有时为 unknown。",
+      description: "派生值：embedded、external、mixed 或 unknown，由发布标题解析的字幕方式标志 rt.subflag 归并：仅 soft 或 hard 为 embedded，仅 ex 为 external，ex 与 soft/hard 并存为 mixed，都没有时为 unknown。",
+    },
+    title: {
+      label: "发布标题",
+      description: "采集值：RSS 中的原始标题。",
+    },
+  },
+  release: {
+    episodes: {
+      label: "下载集数",
+      description: "派生值：这次下载要入库的集数，如 01-04 或 01, 03, 07；合集时单集字段为空。",
+    },
+    id: {
+      label: "发布 ID",
+      description: "采集值：发布条目的标识。",
+    },
+    lang: {
+      label: "语言",
+      description: "解析值：从标题识别的主语言代码，如 sc、tc、jpsc。",
+    },
+    lang_tags: {
+      label: "语言标签",
+      description: "派生值：release.langs 里每个语言代码对应的 BCP 47 标签，如 zh-Hans、zh-Hant、ja；没有对应标签的代码不列出。由 release.langs 转换得到，不是另一路解析结果。",
+    },
+    langs: {
+      label: "语言集合",
+      description: "解析值：识别到的全部语言代码。",
+    },
+    published_at: {
+      label: "发布时间",
+      description: "采集值：发布时间，RFC 3339。",
+    },
+    src: {
+      label: "来源",
+      description: "采集值：发布所在的来源：媒体事件为 mikan 或 anibt；发布工作流事件为 provider_group 或 custom_rss；载荷未记录时为空。",
+    },
+    subtitle_mode: {
+      label: "字幕方式",
+      description: "派生值：embedded、external、mixed 或 unknown，由发布标题解析的字幕方式标志 rt.subflag 归并：仅 soft 或 hard 为 embedded，仅 ex 为 external，ex 与 soft/hard 并存为 mixed，都没有时为 unknown。",
     },
     title: {
       label: "发布标题",
@@ -385,29 +523,33 @@ export const factsCopy = {
     },
   },
   rt: {
-    audio_codec: {
+    ac: {
       label: "reltitle 音频编码",
       description: "解析值：reltitle 从发布标题读出的音频编码。",
     },
-    resolution: {
+    group: {
+      label: "reltitle 字幕组",
+      description: "解析值：reltitle 从发布标题读出的字幕组。",
+    },
+    lang: {
+      label: "reltitle 字幕语言",
+      description: "解析值：reltitle 从发布标题读出的字幕语言，多个用 + 连接。",
+    },
+    res: {
       label: "reltitle 分辨率",
       description: "解析值：reltitle 从发布标题读出的分辨率。",
+    },
+    rev: {
+      label: "reltitle Rev",
+      description: "解析值：reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。",
     },
     source: {
       label: "reltitle 片源",
       description: "解析值：reltitle 从发布标题读出的片源类型。",
     },
-    sub_flag: {
+    subflag: {
       label: "reltitle 字幕方式标志",
       description: "解析值：reltitle 从发布标题读出的字幕方式标志（soft、hard、ex），多个用 + 连接；标题没有明确的字幕方式时为空。",
-    },
-    sub_lang: {
-      label: "reltitle 字幕语言",
-      description: "解析值：reltitle 从发布标题读出的字幕语言，多个用 + 连接。",
-    },
-    subgroup: {
-      label: "reltitle 字幕组",
-      description: "解析值：reltitle 从发布标题读出的字幕组。",
     },
     title: {
       label: "reltitle 标题",
@@ -417,11 +559,7 @@ export const factsCopy = {
       label: "reltitle 无修正",
       description: "解析值：标题标有无修正（UNCENSORED）时为是。",
     },
-    version: {
-      label: "reltitle Rev",
-      description: "解析值：reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。",
-    },
-    video_codec: {
+    vc: {
       label: "reltitle 视频编码",
       description: "解析值：reltitle 从发布标题读出的视频编码。",
     },
@@ -429,7 +567,7 @@ export const factsCopy = {
   sub: {
     lang: {
       label: "字幕语言",
-      description: "派生值：字幕文件的语言代码，如 SC、TC、JPSC；多个用 + 连接。先读字幕文件名自己的标记，读不出时取发布标题的 rt.sub_lang；都没有时为空。仅字幕文件有值。",
+      description: "派生值：字幕文件的语言代码，如 SC、TC、JPSC；多个用 + 连接。先读字幕文件名自己的标记，读不出时取发布标题的 rt.lang；都没有时为空。仅字幕文件有值。",
     },
     lang_code: {
       label: "字幕语言短码",
@@ -437,7 +575,7 @@ export const factsCopy = {
     },
     lang_name: {
       label: "字幕语言显示",
-      description: "派生值：sub.lang 按整组语言列表组成的显示词（简体、繁体、简日、繁日、简繁、简繁日、简英、繁英），非中文列表显示单一语言的最高优先词（英文、日文、韩文）。中文显示追加 rt.sub_flag 的方式词（内封、内嵌、外挂、混合）；没有明确方式时组合显示补双语（AniBT INTERNAL 为内封），单个简体/繁体不带。",
+      description: "派生值：sub.lang 按整组语言列表组成的显示词（简体、繁体、简日、繁日、简繁、简繁日、简英、繁英），非中文列表显示单一语言的最高优先词（英文、日文、韩文）。中文显示追加 rt.subflag 的方式词（内封、内嵌、外挂、混合）；没有明确方式时组合显示补双语（AniBT INTERNAL 为内封），单个简体/繁体不带。",
     },
     lang_source: {
       label: "字幕语言来源",
@@ -450,6 +588,16 @@ export const factsCopy = {
     langs: {
       label: "字幕语言集合",
       description: "派生值：sub.lang 的全部语言代码。",
+    },
+  },
+  t: {
+    name: {
+      label: "种子名称",
+      description: "采集值：下载客户端确认的种子名称。",
+    },
+    tree: {
+      label: "种子结构",
+      description: "派生值：种子内顶层目录与文件的大小一览，每行一项；顶层目录带递归大小与文件数，末尾一行合计。没有种子载荷时为空。",
     },
   },
   taker: {
@@ -479,10 +627,6 @@ export const factsCopy = {
       label: "TMDB 类型",
       description: "采集值：tv 或 movie。",
     },
-    original_title: {
-      label: "TMDB 原标题",
-      description: "采集值：绑定作品在 TMDB 的原始标题，接受发布时冻结。",
-    },
     season: {
       label: "TMDB 季",
       description: "采集值：绑定的 TMDB 季号，用于查询 TMDB 剧集信息；命名的季见 anime.season。",
@@ -490,6 +634,10 @@ export const factsCopy = {
     summary: {
       label: "TMDB 简介",
       description: "采集值：绑定作品在 TMDB 的作品简介，匹配时记录、接受发布时冻结；通知发送时读取冻结值。未绑定 TMDB 或从未观察到简介时为空；之后匹配刷新记录只影响后续接受。",
+    },
+    title: {
+      label: "TMDB 原标题",
+      description: "采集值：绑定作品在 TMDB 的原始标题，接受发布时冻结。",
     },
     title_cn: {
       label: "TMDB 中文标题",
@@ -525,20 +673,54 @@ export const factsCopy = {
 } as const;
 
 export const enFactsCopy = {
+  a: {
+    group: {
+      label: "Group",
+      description: "Collected: The fansub group display name the subscription source recorded (a provider catalog group, or the group filled in for a custom source); empty when the source configures none. Not the release title's group and no fallback of any kind.",
+    },
+    kind: {
+      label: "Kind",
+      description: "Derived: tv or movie; selects the TV or movie template. movie when the TMDB binding or the file is a movie, otherwise tv; never empty.",
+    },
+    season: {
+      label: "Season",
+      description: "Collected: The season set on the subscription; 0 is specials. Empty when not set: it never defaults to 1 and never reads the TMDB binding's season. Matching TMDB fills it in when it is not set yet.",
+    },
+    season_folder: {
+      label: "Season folder",
+      description: "Derived: Season folder name, such as Season 01; season 0 reads Specials. Empty when the season is not set or for a movie. The default template keeps it as the season's folder level, so a TV episode with no season fails naming on it; the repair is setting the season.",
+    },
+    season_path: {
+      label: "Season folder path",
+      description: "Derived: The season folder with its leading slash, such as /Season 01; season 0 (specials) reads /Specials. Empty when the season is not set or for a movie, so appended to the work folder it never leaves an empty folder level.",
+    },
+    title: {
+      label: "Title",
+      description: "Derived: Effective title: custom, provider title, TMDB Chinese, BGM Chinese, BGM, then the base title, whichever comes first. Always defined; the base title is required, so it is never empty in practice. Output as stored, not cleaned.",
+    },
+    year: {
+      label: "Year",
+      description: "Collected: The year set on the subscription (1900–2100); empty when not set, never read from metadata. Matching TMDB can fill it in.",
+    },
+  },
   anibt: {
     format: {
       label: "AniBT Format",
       description: "Collected: AniBT format tag.",
     },
+    group: {
+      label: "AniBT Source group",
+      description: "Collected: Configured AniBT group display name of the RSS source; never read from release parsing or another provider.",
+    },
     groupslug: {
       label: "AniBT Source group slug",
       description: "Collected: AniBT provider group slug of the RSS source; the stable key the subgroup policy uses.",
     },
-    language: {
+    lang: {
       label: "AniBT Language",
       description: "Collected: AniBT language tags; several join with +.",
     },
-    resolution: {
+    res: {
       label: "AniBT Resolution",
       description: "Collected: AniBT resolution tag.",
     },
@@ -630,6 +812,10 @@ export const enFactsCopy = {
       label: "Display episode",
       description: "Derived: Episode text for display; every projection today sets it to ep.number, so it has no independent producer yet.",
     },
+    end: {
+      label: "Last episode",
+      description: "Derived: Last episode of a file holding several, such as 2 in E01-E02; empty for a single episode.",
+    },
     kind: {
       label: "Special kind",
       description: "Derived: Empty for a regular episode; ncop, nced or special. Decided by a keyword in the release title, not parser episode-identity evidence.",
@@ -637,10 +823,6 @@ export const enFactsCopy = {
     number: {
       label: "Episode",
       description: "Derived: Episode number after the offset, such as 12, not zero-padded: computed from the parsed capture (ep.raw) and the effective offset (ep.offset), which the identity resolver applies exactly once. Defined only with an episode identity; an unrecognized file uses the unknown template.",
-    },
-    number_end: {
-      label: "Last episode",
-      description: "Derived: Last episode of a file holding several, such as 2 in E01-E02; empty for a single episode.",
     },
     offset: {
       label: "Episode offset",
@@ -681,6 +863,50 @@ export const enFactsCopy = {
       description: "Derived: Event that triggered the notification.",
     },
   },
+  f: {
+    ext: {
+      label: "Extension",
+      description: "Collected: Lowercase extension without the dot. Empty for a file without one.",
+    },
+    name: {
+      label: "File name",
+      description: "Collected: Original full file name.",
+    },
+    stem: {
+      label: "File stem",
+      description: "Collected: File name without the extension.",
+    },
+    sub: {
+      commentary: {
+        label: "Commentary",
+        description: "Parsed: The suffix carries a commentary marker.",
+      },
+      default: {
+        label: "Default",
+        description: "Parsed: The suffix carries a default marker.",
+      },
+      forced: {
+        label: "Forced",
+        description: "Parsed: The suffix carries a forced marker.",
+      },
+      lang_tag: {
+        label: "Subtitle file language tag",
+        description: "Parsed: BCP 47 tag of the first language in the subtitle file name's tag, such as zh-Hans; subtitle files only.",
+      },
+      lang_tags: {
+        label: "Subtitle file language tags",
+        description: "Parsed: BCP 47 tag of each part of the subtitle file name's tag; a part that reads as no language is und.",
+      },
+      sdh: {
+        label: "SDH",
+        description: "Parsed: The suffix carries an SDH marker.",
+      },
+      suffix: {
+        label: "Subtitle suffix",
+        description: "Parsed: Original tag between the stem and the extension, verbatim, such as chs&jpn.",
+      },
+    },
+  },
   file: {
     ext: {
       label: "Extension",
@@ -693,48 +919,6 @@ export const enFactsCopy = {
     name: {
       label: "File name",
       description: "Collected: Original full file name.",
-    },
-    rt: {
-      audio_codec: {
-        label: "File reltitle Audio codec",
-        description: "Parsed: Audio codec reltitle read from the file name.",
-      },
-      resolution: {
-        label: "File reltitle Resolution",
-        description: "Parsed: Resolution reltitle read from the file name.",
-      },
-      source: {
-        label: "File reltitle Source",
-        description: "Parsed: Source type reltitle read from the file name.",
-      },
-      sub_flag: {
-        label: "File reltitle Subtitle flag",
-        description: "Parsed: Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly.",
-      },
-      sub_lang: {
-        label: "File reltitle Subtitle language",
-        description: "Parsed: Subtitle language reltitle read from the file name; several join with +.",
-      },
-      subgroup: {
-        label: "File reltitle Group",
-        description: "Parsed: Group reltitle read from the file name.",
-      },
-      title: {
-        label: "File reltitle Title",
-        description: "Parsed: Title reltitle read from the file name.",
-      },
-      uncensored: {
-        label: "File reltitle Uncensored",
-        description: "Parsed: Yes when the file name is marked uncensored (UNCENSORED).",
-      },
-      version: {
-        label: "File reltitle Rev",
-        description: "Parsed: The Rev reltitle read from the file name, such as v2. Empty when the file name has none.",
-      },
-      video_codec: {
-        label: "File reltitle Video codec",
-        description: "Parsed: Video codec reltitle read from the file name.",
-      },
     },
     size: {
       label: "File size",
@@ -761,11 +945,11 @@ export const enFactsCopy = {
         label: "Subtitle format",
         description: "Parsed: ass, ssa, srt or vtt.",
       },
-      lang: {
+      lang_tag: {
         label: "Subtitle file language tag",
         description: "Parsed: BCP 47 tag of the first language in the subtitle file name's tag, such as zh-Hans; subtitle files only.",
       },
-      langs: {
+      lang_tags: {
         label: "Subtitle file language tags",
         description: "Parsed: BCP 47 tag of each part of the subtitle file name's tag; a part that reads as no language is und.",
       },
@@ -777,6 +961,70 @@ export const enFactsCopy = {
         label: "Subtitle suffix",
         description: "Parsed: Original tag between the stem and the extension, verbatim, such as chs&jpn.",
       },
+    },
+  },
+  frt: {
+    ac: {
+      label: "File reltitle Audio codec",
+      description: "Parsed: Audio codec reltitle read from the file name.",
+    },
+    group: {
+      label: "File reltitle Group",
+      description: "Parsed: Group reltitle read from the file name.",
+    },
+    lang: {
+      label: "File reltitle Subtitle language",
+      description: "Parsed: Subtitle language reltitle read from the file name; several join with +.",
+    },
+    res: {
+      label: "File reltitle Resolution",
+      description: "Parsed: Resolution reltitle read from the file name.",
+    },
+    rev: {
+      label: "File reltitle Rev",
+      description: "Parsed: The Rev reltitle read from the file name, such as v2. Empty when the file name has none.",
+    },
+    source: {
+      label: "File reltitle Source",
+      description: "Parsed: Source type reltitle read from the file name.",
+    },
+    subflag: {
+      label: "File reltitle Subtitle flag",
+      description: "Parsed: Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly.",
+    },
+    title: {
+      label: "File reltitle Title",
+      description: "Parsed: Title reltitle read from the file name.",
+    },
+    uncensored: {
+      label: "File reltitle Uncensored",
+      description: "Parsed: Yes when the file name is marked uncensored (UNCENSORED).",
+    },
+    vc: {
+      label: "File reltitle Video codec",
+      description: "Parsed: Video codec reltitle read from the file name.",
+    },
+  },
+  m: {
+    audio_codec: {
+      label: "Audio codec",
+      description: "Collected: Audio codec read from the file, such as AAC; empty when it cannot be read. Previews before the download show a placeholder.",
+    },
+    container: {
+      label: "Container",
+      description: "Collected: Container format read from the file, such as mkv; empty when it cannot be read. Previews before the download show a placeholder.",
+    },
+    hdr: {
+      label: "HDR",
+      description: "Collected: HDR read from the file, such as hdr10, hlg or dovi; multiple formats join with commas in the file's order (hdr10,dovi); empty for SDR or when it cannot be read. Previews before the download show a placeholder.",
+    },
+    resolution: {
+      label: "Resolution",
+      description: "Collected: Resolution read from the file, such as 1080p; when the file has none, the release title's resolution, else empty. Previews show ⟨res⟩ only when no value is known before download.",
+    },
+    video_codec: {
+      label: "Video codec",
+      description: "Collected: Video codec read from the file, such as HEVC; empty when it cannot be read. Previews before the download show a placeholder.",
     },
   },
   media: {
@@ -794,7 +1042,7 @@ export const enFactsCopy = {
     },
     resolution: {
       label: "Resolution",
-      description: "Collected: Resolution read from the file, such as 1080p; when the file has none, the release title's resolution, else empty. Previews before the download show a placeholder.",
+      description: "Collected: Resolution read from the file, such as 1080p; when the file has none, the release title's resolution, else empty. Previews show ⟨res⟩ only when no value is known before download.",
     },
     video_codec: {
       label: "Video codec",
@@ -802,6 +1050,10 @@ export const enFactsCopy = {
     },
   },
   mikan: {
+    group: {
+      label: "Mikan Source group",
+      description: "Collected: Configured Mikan group display name of the RSS source; never read from release parsing or another provider.",
+    },
     groupid: {
       label: "Mikan Source group ID",
       description: "Collected: Mikan numeric provider group id of the RSS source; the stable key the subgroup policy uses.",
@@ -839,20 +1091,16 @@ export const enFactsCopy = {
       description: "Derived: Full path relative to the location's root.",
     },
   },
-  release: {
+  r: {
     episodes: {
       label: "Episodes",
       description: "Derived: Episodes this download will place, such as 01-04 or 01, 03, 07; for a batch the single-episode facts are empty.",
-    },
-    id: {
-      label: "Release ID",
-      description: "Collected: Identifier of the release.",
     },
     lang: {
       label: "Language",
       description: "Parsed: Main language code read from the title, such as sc, tc or jpsc.",
     },
-    lang_tag: {
+    lang_tags: {
       label: "Language tags",
       description: "Derived: The BCP 47 tag of each release.langs code, such as zh-Hans, zh-Hant or ja; a code with no tag is left out. Converted from release.langs, not a second parse.",
     },
@@ -870,7 +1118,45 @@ export const enFactsCopy = {
     },
     subtitle_mode: {
       label: "Subtitle mode",
-      description: "Derived: embedded, external, mixed or unknown, folded from the title-parse subtitle flags rt.sub_flag: soft or hard alone embedded, ex alone external, ex beside soft/hard mixed, none unknown.",
+      description: "Derived: embedded, external, mixed or unknown, folded from the title-parse subtitle flags rt.subflag: soft or hard alone embedded, ex alone external, ex beside soft/hard mixed, none unknown.",
+    },
+    title: {
+      label: "Release title",
+      description: "Collected: Original title from the feed.",
+    },
+  },
+  release: {
+    episodes: {
+      label: "Episodes",
+      description: "Derived: Episodes this download will place, such as 01-04 or 01, 03, 07; for a batch the single-episode facts are empty.",
+    },
+    id: {
+      label: "Release ID",
+      description: "Collected: Identifier of the release.",
+    },
+    lang: {
+      label: "Language",
+      description: "Parsed: Main language code read from the title, such as sc, tc or jpsc.",
+    },
+    lang_tags: {
+      label: "Language tags",
+      description: "Derived: The BCP 47 tag of each release.langs code, such as zh-Hans, zh-Hant or ja; a code with no tag is left out. Converted from release.langs, not a second parse.",
+    },
+    langs: {
+      label: "Languages",
+      description: "Parsed: Every language code read from the title.",
+    },
+    published_at: {
+      label: "Published at",
+      description: "Collected: Publication time, RFC 3339.",
+    },
+    src: {
+      label: "Source",
+      description: "Collected: Where the release came from: mikan or anibt for a media event, provider_group or custom_rss for a release workflow event; empty when the payload records none.",
+    },
+    subtitle_mode: {
+      label: "Subtitle mode",
+      description: "Derived: embedded, external, mixed or unknown, folded from the title-parse subtitle flags rt.subflag: soft or hard alone embedded, ex alone external, ex beside soft/hard mixed, none unknown.",
     },
     title: {
       label: "Release title",
@@ -906,29 +1192,33 @@ export const enFactsCopy = {
     },
   },
   rt: {
-    audio_codec: {
+    ac: {
       label: "reltitle Audio codec",
       description: "Parsed: Audio codec reltitle read from the release title.",
     },
-    resolution: {
+    group: {
+      label: "reltitle Group",
+      description: "Parsed: Group reltitle read from the release title.",
+    },
+    lang: {
+      label: "reltitle Subtitle language",
+      description: "Parsed: Subtitle language reltitle read from the release title; several join with +.",
+    },
+    res: {
       label: "reltitle Resolution",
       description: "Parsed: Resolution reltitle read from the release title.",
+    },
+    rev: {
+      label: "reltitle Rev",
+      description: "Parsed: The Rev reltitle read from the title, such as v2. Empty when the title has none.",
     },
     source: {
       label: "reltitle Source",
       description: "Parsed: Source type reltitle read from the release title.",
     },
-    sub_flag: {
+    subflag: {
       label: "reltitle Subtitle flag",
       description: "Parsed: Subtitle mode flag reltitle read from the release title (soft, hard, ex); several join with +. Empty when the release title names none explicitly.",
-    },
-    sub_lang: {
-      label: "reltitle Subtitle language",
-      description: "Parsed: Subtitle language reltitle read from the release title; several join with +.",
-    },
-    subgroup: {
-      label: "reltitle Group",
-      description: "Parsed: Group reltitle read from the release title.",
     },
     title: {
       label: "reltitle Title",
@@ -938,11 +1228,7 @@ export const enFactsCopy = {
       label: "reltitle Uncensored",
       description: "Parsed: Yes when the title is marked uncensored (UNCENSORED).",
     },
-    version: {
-      label: "reltitle Rev",
-      description: "Parsed: The Rev reltitle read from the title, such as v2. Empty when the title has none.",
-    },
-    video_codec: {
+    vc: {
       label: "reltitle Video codec",
       description: "Parsed: Video codec reltitle read from the release title.",
     },
@@ -950,7 +1236,7 @@ export const enFactsCopy = {
   sub: {
     lang: {
       label: "Subtitle language",
-      description: "Derived: Language code of the subtitle file, such as SC, TC or JPSC; several join with +. Read from the subtitle file name's own tag first, else the release title's rt.sub_lang; empty when neither has one. Subtitle files only.",
+      description: "Derived: Language code of the subtitle file, such as SC, TC or JPSC; several join with +. Read from the subtitle file name's own tag first, else the release title's rt.lang; empty when neither has one. Subtitle files only.",
     },
     lang_code: {
       label: "Subtitle language code",
@@ -958,7 +1244,7 @@ export const enFactsCopy = {
     },
     lang_name: {
       label: "Subtitle language name",
-      description: "Derived: Display word composed from the whole sub.lang list (Simplified, Traditional, Simplified+Japanese, Traditional+Japanese, Simplified+Traditional, the three-way and the two English combinations); a list without Chinese shows the top word of one language (English, Japanese, Korean). A Chinese display appends the rt.sub_flag mode word (muxed, hardcoded, external, mixed); with no resolved type a composite display takes bilingual (AniBT INTERNAL reads muxed), a single Simplified/Traditional stays bare.",
+      description: "Derived: Display word composed from the whole sub.lang list (Simplified, Traditional, Simplified+Japanese, Traditional+Japanese, Simplified+Traditional, the three-way and the two English combinations); a list without Chinese shows the top word of one language (English, Japanese, Korean). A Chinese display appends the rt.subflag mode word (muxed, hardcoded, external, mixed); with no resolved type a composite display takes bilingual (AniBT INTERNAL reads muxed), a single Simplified/Traditional stays bare.",
     },
     lang_source: {
       label: "Subtitle language source",
@@ -971,6 +1257,16 @@ export const enFactsCopy = {
     langs: {
       label: "Subtitle languages",
       description: "Derived: Every language code of sub.lang.",
+    },
+  },
+  t: {
+    name: {
+      label: "Torrent name",
+      description: "Collected: Torrent name confirmed by the download client.",
+    },
+    tree: {
+      label: "Torrent structure",
+      description: "Derived: One line per top-level folder or file in the torrent; a folder carries its recursive size and file count, and the last line is the total. Empty when there is no torrent payload.",
     },
   },
   taker: {
@@ -1000,10 +1296,6 @@ export const enFactsCopy = {
       label: "TMDB kind",
       description: "Collected: tv or movie.",
     },
-    original_title: {
-      label: "TMDB original title",
-      description: "Collected: Original title of the bound TMDB work, frozen at accept.",
-    },
     season: {
       label: "TMDB season",
       description: "Collected: Bound TMDB season number, used to look up TMDB episodes; the named season is anime.season.",
@@ -1011,6 +1303,10 @@ export const enFactsCopy = {
     summary: {
       label: "TMDB summary",
       description: "Collected: The TMDB overview of the bound work, recorded at match time and frozen at accept; notifications read the frozen value. Empty when TMDB is not bound or the overview was never observed; a later match refreshes the record and only subsequent acceptances freeze the new value.",
+    },
+    title: {
+      label: "TMDB original title",
+      description: "Collected: Original title of the bound TMDB work, frozen at accept.",
     },
     title_cn: {
       label: "TMDB Chinese title",

@@ -10,14 +10,14 @@ import (
 // naming language carries: the short code (sub.lang_code) and the display
 // word (sub.lang_name). Both are composed from the same two-stage chain the
 // other sub.* facts read (the subtitle file's own tag first, else the release
-// title's rt.sub_lang), so they mirror sub.lang's values and add no data
+// title's rt.lang), so they mirror sub.lang's values and add no data
 // source of their own; the type tail additionally reads the release's
-// subtitle-mode flags (rt.sub_flag) and the AniBT subtitle tag.
+// subtitle-mode flags (rt.subflag) and the AniBT subtitle tag.
 //
 // The word tables are owner rulings (10-22 evening): the code is the priority
 // pick jpsc > jptc > sc > tc > eng > jpn > other; the display word is a
 // priority pick over the Chinese composite family carrying the release's
-// subtitle-mode flag set (rt.sub_flag) as its type tail — dual-language
+// subtitle-mode flag set (rt.subflag) as its type tail — dual-language
 // tracks keep their composite word, non-Chinese lists keep one top word, and
 // only Chinese displays carry a tail at all.
 
@@ -104,7 +104,7 @@ var subtitleLangWordOrder = []string{
 }
 
 // subtitleLangFlagWord is the type tail word of one flag shape of the
-// rt.sub_flag set: the embedded flags (soft, hard) without ex name container
+// rt.subflag set: the embedded flags (soft, hard) without ex name container
 // tracks, ex alone the external files, and an ex beside either the mixed
 // display. soft and hard together stay on the soft word (the embedded shape).
 func subtitleLangFlagWord(flags map[string]bool) string {
@@ -124,9 +124,9 @@ func subtitleLangFlagWord(flags map[string]bool) string {
 // subtitleLangTail is one release's type tail: the word a Chinese display
 // appends, or "" for none.
 //
-// The data chain is RT-FIRST: rt.sub_flag wins outright. The AniBT subtitle
+// The data chain is RT-FIRST: rt.subflag wins outright. The AniBT subtitle
 // tag is only a fallback, consulted when the release title's parse shows a
-// dual-language subtitle list (rt.sub_lang with MULTI, the folded bilingual
+// dual-language subtitle list (rt.lang with MULTI, the folded bilingual
 // composites, or SC/TC beside ENG — the group shapes) and naming INTERNAL; a
 // tag naming anything else (EXTERNAL included) leaves the tail empty, and so
 // does no tag at all on a single-language display. Without any resolved type

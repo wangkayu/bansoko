@@ -7,9 +7,9 @@ import (
 )
 
 // TestFileReltitleParseStaysOutOfTheReleaseNamespace pins the two sources
-// apart: rt.* is the release title's reltitle parse and file.rt.* the parse of
+// apart: rt.* is the release title's reltitle parse and frt.* the parse of
 // the file's own name. A render names the source it wants; neither value ever
-// stands in for the other, so a template reading rt.subgroup cannot silently
+// stands in for the other, so a template reading rt.group cannot silently
 // pick up the file's group and vice versa.
 func TestFileReltitleParseStaysOutOfTheReleaseNamespace(t *testing.T) {
 	ctx := sampleTVContext()
@@ -24,13 +24,13 @@ func TestFileReltitleParseStaysOutOfTheReleaseNamespace(t *testing.T) {
 	resolved := DefaultRegistry().ResolveAll(ResolverInput{Facts: ctx}).Context
 	facts := UnifiedFacts(resolved)
 	if got, _ := facts.Rt.Get("Subgroup"); got != "发布组" {
-		t.Fatalf("rt.subgroup = %q, want the release parse", got)
+		t.Fatalf("rt.group = %q, want the release parse", got)
 	}
 	if got, _ := facts.FileRt.Get("Subgroup"); got != "文件组" {
-		t.Fatalf("file.rt.subgroup = %q, want the file parse", got)
+		t.Fatalf("frt.group = %q, want the file parse", got)
 	}
 
-	got, err := renderNamespaceTemplate(t, "${rt.subgroup}|${file.rt.subgroup}.${file.ext}", ctx)
+	got, err := renderNamespaceTemplate(t, "${rt.group}|${frt.group}.${file.ext}", ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,20 +55,20 @@ func TestFileReltitleParseWithoutARelease(t *testing.T) {
 	resolved := DefaultRegistry().ResolveAll(ResolverInput{Facts: ctx}).Context
 	facts := UnifiedFacts(resolved)
 	if got, _ := facts.Rt.Get("Subgroup"); got != "" {
-		t.Fatalf("rt.subgroup = %q, want none", got)
+		t.Fatalf("rt.group = %q, want none", got)
 	}
 	if got, _ := facts.FileRt.Get("Subgroup"); got != "文件组" {
-		t.Fatalf("file.rt.subgroup = %q, want the file parse", got)
+		t.Fatalf("frt.group = %q, want the file parse", got)
 	}
 
-	got, err := renderNamespaceTemplate(t, "${file.rt.subgroup}.${file.ext}", ctx)
+	got, err := renderNamespaceTemplate(t, "${frt.group}.${file.ext}", ctx)
 	if err != nil || got != "文件组.mkv" {
 		t.Fatalf("file render = %q, %v", got, err)
 	}
 	// rt.* has no value and no fallback: outside a `??` guard the render is the
 	// usual missing-fact refusal, never the file parse.
-	if got, err := renderNamespaceTemplate(t, "${rt.subgroup}.${file.ext}", ctx); err == nil {
-		t.Fatalf("rt.subgroup rendered %q without a release parse", got)
+	if got, err := renderNamespaceTemplate(t, "${rt.group}.${file.ext}", ctx); err == nil {
+		t.Fatalf("rt.group rendered %q without a release parse", got)
 	}
 }
 
@@ -77,9 +77,9 @@ func TestFileReltitleParseWithoutARelease(t *testing.T) {
 func TestFileReltitleParseFallsBackToTheOriginalName(t *testing.T) {
 	values := FileReltitleValues(FileNamingFacts{OriginalName: "[文件组] 进击的巨人 - 07 [1080p].mkv"})
 	if got, _ := values.Get("Subgroup"); got != "文件组" {
-		t.Fatalf("file.rt.subgroup = %q, want the parse of the original name", got)
+		t.Fatalf("frt.group = %q, want the parse of the original name", got)
 	}
 	if values := FileReltitleValues(FileNamingFacts{}); values != nil {
-		t.Fatalf("a nameless file has no file.rt values, got %#v", values)
+		t.Fatalf("a nameless file has no frt values, got %#v", values)
 	}
 }

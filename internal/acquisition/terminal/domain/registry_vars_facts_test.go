@@ -24,12 +24,12 @@ func TestVarsInputV1AcceptsTheBuiltFactObject(t *testing.T) {
 	if err := Validate("VarsInputV1", v); err != nil {
 		t.Fatal(err)
 	}
-	// Inputs frozen before rt.version was introduced remain valid unchanged.
+	// Inputs frozen before rt.rev was introduced remain valid unchanged.
 	delete(v.Object["facts"].Object["rt"].Object, "version")
-	// The same holds for rt.audio_codec, added after the first frozen inputs.
+	// The same holds for rt.ac, added after the first frozen inputs.
 	delete(v.Object["facts"].Object["rt"].Object, "audio_codec")
 	if err := Validate("VarsInputV1", v); err != nil {
-		t.Fatalf("old input without rt.version rejected: %v", err)
+		t.Fatalf("old input without rt.rev rejected: %v", err)
 	}
 	// A release of several hundred files is described in full.
 	file := v.Object["files"].Array[0]
