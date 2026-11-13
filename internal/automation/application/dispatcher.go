@@ -1376,6 +1376,16 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 		return counts, nil
 	}
 
+	// A supplied naming fact repairs the acquisitions that failed for exactly
+	// that fact, same as an owner metadata match or patch.
+	if _, err := animeapp.ScheduleNamingRecoveryTx(ctx, tx, d.WorkItems, managedAnimeID, animeapp.NamingRecoveryChange{
+		MediaKind: plan.NewMediaKind,
+		Year:      plan.NewYear,
+		Season:    plan.NewSeason,
+	}, "metadata_naming_recovery"); err != nil {
+		return counts, err
+	}
+
 	// If metadata is now complete, enqueue release_evaluate for waiting_metadata releases.
 	if plan.Merged.Complete() {
 		relRows, err := tx.QueryContext(ctx, `

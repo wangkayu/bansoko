@@ -3,8 +3,12 @@ package application
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/metadata/backfill"
 	"bansoko/internal/metadata/matcher"
 	observabilityapplication "bansoko/internal/observability/application"
@@ -109,6 +113,103 @@ WHERE subscription_id = 'sub-meta-complete' AND kind = 'metadata_applied'`).Scan
 	}
 	if appliedLogs != 1 {
 		t.Fatalf("second metadata cycle must not duplicate metadata_applied log, got %d", appliedLogs)
+	}
+}
+
+func TestMetadataMatchRecoversNamingFactFailures(t *testing.T) {
+	db := openDispatcherTestDB(t)
+	ctx := context.Background()
+	insertMetadataSubscriptionFixture(t, db, "anime-naming-recovery", "sub-naming-recovery", "Show")
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title)
+VALUES ('source-naming-recovery', 'sub-naming-recovery', 'custom_rss', 'https://example.test/rss', 'https://example.test/rss', 'Custom', 'Show')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO rss_source_runtime(rss_source_id) VALUES ('source-naming-recovery')`); err != nil {
+		t.Fatal(err)
+	}
+	for id, reason := range map[string]string{
+		"naming-recovery-season":    "naming_fact_missing_anime_season_folder",
+		"naming-recovery-year":      "naming_fact_missing_anime_year",
+		"naming-recovery-collision": "target_collision_blocked",
+	} {
+		if _, err := db.ExecContext(ctx, `
+INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, verdict, reason_code)
+VALUES ($1, 'source-naming-recovery', $1, '{}'::jsonb, '{}'::jsonb, 'acquisition_failed', $2)`, id, reason); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activityWriter, err := observabilityapplication.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/3/tv/42" {
+			t.Errorf("unexpected TMDB request: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"name":"节目","original_name":"Show","seasons":[{"season_number":1,"air_date":"2024-04-01"},{"season_number":2,"air_date":"2025-04-01"}]}`)
+	}))
+	defer tmdbServer.Close()
+	tmdbMatcher := &matcher.TMDBMatcher{
+		Connections: namingRecoveryConnections{{ID: "tmdb", Kind: configurationdomain.ConnectionTMDB, Endpoint: tmdbServer.URL + "/3", SecretRef: "tmdb-secret", State: configurationdomain.ConnectionConfigured}},
+		Secrets:     namingRecoverySecrets{"tmdb-secret": "v3-key"},
+		Client:      tmdbServer.Client(),
+	}
+	dispatcher := &Dispatcher{
+		DB:              db,
+		WorkItems:       store,
+		MetadataMatcher: matcher.NewMatcher(matcher.NewBangumiDataIndex([]matcher.DataItem{{BgmID: "bgm-naming", TmdbID: "tv/42/season/2", Titles: []string{"Show"}}}), nil, tmdbMatcher, nil),
+		ActivityWriter:  activityWriter,
+	}
+
+	if _, err := dispatcher.dispatchMetadataMatch(ctx); err != nil {
+		t.Fatalf("metadata dispatch: %v", err)
+	}
+	var season int
+	if err := db.QueryRowContext(ctx, `
+SELECT tmdb_season FROM anime_metadata WHERE managed_anime_id = 'anime-naming-recovery'`).Scan(&season); err != nil {
+		t.Fatal(err)
+	}
+	if season != 2 {
+		t.Fatalf("matched season = %d, want 2", season)
+	}
+	for releaseID, want := range map[string]int{
+		"naming-recovery-season":    1,
+		"naming-recovery-year":      0,
+		"naming-recovery-collision": 0,
+	} {
+		var got int
+		if err := db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM work_item_history
+WHERE owner_type = 'release' AND owner_id = $1 AND kind = 'release_evaluate'`, releaseID).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%s release evaluations = %d, want %d", releaseID, got, want)
+		}
+	}
+	var verdict, reason string
+	var version int
+	if err := db.QueryRowContext(ctx, `
+SELECT verdict, reason_code, version FROM releases WHERE id = 'naming-recovery-season'`).Scan(&verdict, &reason, &version); err != nil {
+		t.Fatal(err)
+	}
+	if verdict != "accepted_pending_download" || reason != "accepted" || version != 2 {
+		t.Fatalf("recovered release = %s/%s v%d, want reopened for automatic evaluation", verdict, reason, version)
+	}
+	if err := db.QueryRowContext(ctx, `
+SELECT verdict FROM releases WHERE id = 'naming-recovery-year'`).Scan(&verdict); err != nil {
+		t.Fatal(err)
+	}
+	if verdict != "acquisition_failed" {
+		t.Fatalf("unrelated failed release verdict = %s, want unchanged", verdict)
 	}
 }
 
@@ -477,4 +578,17 @@ VALUES ($1, $2, 'custom', 'Metadata test', 'active')`, subscriptionID, animeID);
 INSERT INTO anime_metadata(managed_anime_id) VALUES ($1)`, animeID); err != nil {
 		t.Fatalf("insert metadata owner: %v", err)
 	}
+}
+
+type namingRecoveryConnections []configurationdomain.Connection
+
+func (c namingRecoveryConnections) ListConnections(context.Context) ([]configurationdomain.Connection, error) {
+	return append([]configurationdomain.Connection(nil), c...), nil
+}
+
+type namingRecoverySecrets map[string]string
+
+func (s namingRecoverySecrets) Resolve(ref string) (string, bool) {
+	value, ok := s[ref]
+	return value, ok
 }
