@@ -73,12 +73,16 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 	if err != nil {
 		return episodetitle.List{}, err
 	}
+	query := parsed.Query()
+	query.Set("type", strconv.Itoa(bgmEpisodeTypeMain))
+	parsed.RawQuery = query.Encode()
 	var payload struct {
 		Data []struct {
-			Name    string `json:"name"`
-			NameCN  string `json:"name_cn"`
-			Airdate string `json:"airdate"`
-			Ep      string `json:"ep"`
+			Type    int             `json:"type"`
+			Name    string          `json:"name"`
+			NameCN  string          `json:"name_cn"`
+			Airdate string          `json:"airdate"`
+			Ep      json.RawMessage `json:"ep"`
 		} `json:"data"`
 	}
 	if err := getJSON(ctx, client, parsed, "", &payload); err != nil {
@@ -86,8 +90,13 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 	}
 	episodes := make([]episodetitle.Episode, 0, len(payload.Data))
 	for _, item := range payload.Data {
-		number, parseErr := strconv.ParseInt(strings.TrimSpace(item.Ep), 10, 64)
-		if parseErr != nil || number < 0 {
+		if item.Type != bgmEpisodeTypeMain {
+			// The type query already asks for main episodes; a proxy or a
+			// provider change that ignores it must not slip specials in.
+			continue
+		}
+		number, ok := bgmEpisodeNumber(item.Ep)
+		if !ok || number == 0 {
 			// OP/ED entries, fractional episodes and special tags (非正片 or
 			// decimal ep numbers like 1.5) are not tracked regular episodes.
 			continue
@@ -96,13 +105,14 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 		if title == "" {
 			title = strings.TrimSpace(item.Name)
 		}
-		episodes = append(episodes, episodetitle.Episode{Number: int(number), Title: title, AirDate: strings.TrimSpace(item.Airdate)})
+		episodes = append(episodes, episodetitle.Episode{Number: number, Title: title, AirDate: strings.TrimSpace(item.Airdate)})
 	}
 	return episodetitle.List{Episodes: episodes}, nil
 }
 
-// subjectEpisodesEndpoint resolves the episodes URL of one subject on the
-// configured bgm connection together with its egress client.
+// subjectEpisodesEndpoint resolves the episode list URL of one subject on the
+// configured bgm connection together with its egress client. Bangumi v0 lists
+// episodes at /v0/episodes?subject_id=...; it has no per-subject episodes path.
 func (c BGMClient) subjectEpisodesEndpoint(ctx context.Context, workID string) (*url.URL, *http.Client, error) {
 	endpoint, client, err := c.prepare(ctx)
 	if err != nil {
@@ -112,7 +122,10 @@ func (c BGMClient) subjectEpisodesEndpoint(ctx context.Context, workID string) (
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, nil, errors.New("BGM endpoint is invalid")
 	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/v0/subjects/" + workID + "/episodes"
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/v0/episodes"
+	query := parsed.Query()
+	query.Set("subject_id", workID)
+	parsed.RawQuery = query.Encode()
 	return parsed, client, nil
 }
 

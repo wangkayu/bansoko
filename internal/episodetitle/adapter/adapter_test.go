@@ -121,8 +121,11 @@ func bgmTestClient(endpoint string) BGMClient {
 
 func TestBGMSectionedEpisodesKeepMainAndSpecials(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v0/subjects/486109/episodes" {
+		if r.URL.Path != "/v0/episodes" {
 			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("subject_id") != "486109" {
+			t.Errorf("unexpected subject %s", r.URL.RawQuery)
 		}
 		if r.URL.Query().Get("limit") != "100" || r.URL.Query().Get("offset") != "0" {
 			t.Errorf("unexpected paging %s", r.URL.RawQuery)
@@ -178,5 +181,37 @@ func TestBGMSectionedEpisodesFetchEveryPage(t *testing.T) {
 	}
 	if len(list.Episodes) != 101 || list.Episodes[100].Number != 101 {
 		t.Fatalf("got %d episodes, last %+v", len(list.Episodes), list.Episodes[len(list.Episodes)-1])
+	}
+}
+
+func TestBGMEpisodesUsesSubjectScopedEndpointAndMainType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0/episodes" {
+			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("subject_id") != "363957" || r.URL.Query().Get("type") != "0" {
+			t.Errorf("unexpected query %s", r.URL.RawQuery)
+		}
+		// ep arrives as a JSON number in the real payload. The special and the
+		// OP prove a proxy that ignores the type query cannot slip one in.
+		_, _ = fmt.Fprint(w, `{"data":[
+			{"type":0,"ep":1,"name":"第一话","name_cn":"第一话","airdate":"2025-04-07"},
+			{"type":1,"ep":0,"name":"SP"},
+			{"type":0,"ep":"2","name":"第二话","airdate":"2025-04-14"},
+			{"type":2,"ep":1,"name":"OP"}
+		]}`)
+	}))
+	defer server.Close()
+
+	list, err := bgmTestClient(server.URL).Episodes(context.Background(), episodetitle.Key{Source: episodetitle.SourceBGM, WorkID: "363957"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []episodetitle.Episode{
+		{Number: 1, Title: "第一话", AirDate: "2025-04-07"},
+		{Number: 2, Title: "第二话", AirDate: "2025-04-14"},
+	}
+	if fmt.Sprint(list.Episodes) != fmt.Sprint(want) {
+		t.Fatalf("episodes = %v, want %v", list.Episodes, want)
 	}
 }
