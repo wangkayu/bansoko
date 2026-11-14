@@ -226,6 +226,20 @@ func Variables(trigger string) ([]Variable, bool) {
 			Phase: string(fact.Phase), LabelKey: fact.LabelKey(), DescriptionKey: fact.DescriptionKey(),
 		})
 	}
+	variables = append(variables,
+		Variable{
+			Name: ImageVariable, Type: TypeString, Label: "节目图片",
+			Description: "插入一张图片附件。服务端依次选择供应商封面、已绑定的 Bangumi／TMDB 海报和内置占位图；不接受模板传入图片地址。",
+			Source:      "system", Nullable: false,
+			LabelKey: "templateFacts.semantic.image.label", DescriptionKey: "templateFacts.semantic.image.description",
+		},
+		Variable{
+			Name: LinkVariable, Type: TypeString, Label: "元数据链接",
+			Description: "插入已绑定 Bangumi／TMDB 条目的可点击链接；没有有效绑定时不输出链接。",
+			Source:      "system", Nullable: true,
+			LabelKey: "templateFacts.semantic.link.label", DescriptionKey: "templateFacts.semantic.link.description",
+		},
+	)
 	return variables, true
 }
 
@@ -245,7 +259,7 @@ func DefaultsFor(trigger, locale string) (title, body string) {
 	if !ok {
 		return "", ""
 	}
-	return pair[0], pair[1]
+	return pair[0], "{{image}}\n" + pair[1] + "\n{{link}}"
 }
 
 var defaultsZH = map[string][2]string{

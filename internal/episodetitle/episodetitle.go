@@ -1,7 +1,8 @@
 // Package episodetitle reads provider season and episode lists with an
-// in-process TTL cache; the file manager's match lists the bound show's seasons
-// and episodes from it. Naming never reads it: provider episode titles are not
-// naming facts. One client call fetches the whole episode list of a season.
+// in-process TTL cache. Naming and notification admission resolve referenced
+// episode titles through PersistentCache; candidate browsing reads bound show
+// seasons and episodes from the same lookup. One client call fetches the whole
+// episode list of a season.
 package episodetitle
 
 import (

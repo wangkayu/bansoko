@@ -16,7 +16,19 @@ export const enTemplateFactsCopy = {
   example: "e.g. {value}",
   placeholderHint: "Known after the download: {path}",
   placeholder: "⟨{label}⟩",
+  semantic: {
+    image: {
+      label: "Show image",
+      description: "Insert an image attachment. Uses the provider cover, bound Bangumi/TMDB poster, or built-in placeholder. Template-provided image URLs are not accepted.",
+    },
+    link: {
+      label: "Metadata links",
+      description: "Insert links to bound Bangumi/TMDB entries. No link is emitted without a valid binding.",
+    },
+  },
   roots: {
+    image: "Attachments",
+    link: "Links",
     a: "Anime",
     r: "Release",
     t: "Torrent",

@@ -226,6 +226,9 @@ func (e literalExpression) evaluate(map[string]any) (string, bool, []Warning) {
 type variableExpression struct{ name string }
 
 func (e variableExpression) evaluate(facts map[string]any) (string, bool, []Warning) {
+	if e.name == ImageVariable || e.name == LinkVariable {
+		return "", true, nil
+	}
 	value, present := LookupFact(facts, e.name)
 	text := FormatFact(value)
 	if !present || value == nil || text == "" {
@@ -301,6 +304,11 @@ func isTruthy(value string) bool {
 	return strings.EqualFold(trimmed, "true") || trimmed == "1"
 }
 
+type templateSourceSegment struct {
+	text          string
+	originalStart int
+}
+
 func renderText(source string, facts map[string]any, known map[string]bool, field Field) renderResult {
 	var builder strings.Builder
 	var errors []SourceError
@@ -314,47 +322,49 @@ func renderText(source string, facts map[string]any, known map[string]bool, fiel
 		})
 		return renderResult{errors: errors}
 	}
-	remaining := source
-	cursor := 0
-	for len(remaining) > 0 {
-		start := strings.Index(remaining, "{{")
-		if start < 0 {
-			builder.WriteString(remaining)
-			break
+	for _, segment := range semanticSourceSegments(source) {
+		remaining := segment.text
+		cursor := segment.originalStart
+		for len(remaining) > 0 {
+			start := strings.Index(remaining, "{{")
+			if start < 0 {
+				builder.WriteString(remaining)
+				break
+			}
+			if start > 0 {
+				builder.WriteString(remaining[:start])
+			}
+			expressionStart := cursor + start
+			afterOpen := remaining[start+2:]
+			end := strings.Index(afterOpen, "}}")
+			if end < 0 {
+				errors = append(errors, SourceError{
+					Code:    "unterminated_expression",
+					End:     len(source),
+					Field:   field,
+					Message: "表达式未正确闭合。",
+					Start:   expressionStart,
+				})
+				break
+			}
+			inner := afterOpen[:end]
+			expressionEnd := expressionStart + 2 + end + 2
+			text, exprWarnings, exprError := evaluateExpression(inner, facts, known)
+			if exprError != nil {
+				errors = append(errors, SourceError{
+					Code:    exprError.code,
+					End:     expressionEnd,
+					Field:   field,
+					Message: exprError.message,
+					Start:   expressionStart,
+				})
+			} else {
+				builder.WriteString(text)
+				warnings = append(warnings, exprWarnings...)
+			}
+			cursor = expressionEnd
+			remaining = afterOpen[end+2:]
 		}
-		if start > 0 {
-			builder.WriteString(remaining[:start])
-		}
-		expressionStart := cursor + start
-		afterOpen := remaining[start+2:]
-		end := strings.Index(afterOpen, "}}")
-		if end < 0 {
-			errors = append(errors, SourceError{
-				Code:    "unterminated_expression",
-				End:     len(source),
-				Field:   field,
-				Message: "表达式未正确闭合。",
-				Start:   expressionStart,
-			})
-			break
-		}
-		inner := afterOpen[:end]
-		expressionEnd := expressionStart + 2 + end + 2
-		text, exprWarnings, exprError := evaluateExpression(inner, facts, known)
-		if exprError != nil {
-			errors = append(errors, SourceError{
-				Code:    exprError.code,
-				End:     expressionEnd,
-				Field:   field,
-				Message: exprError.message,
-				Start:   expressionStart,
-			})
-		} else {
-			builder.WriteString(text)
-			warnings = append(warnings, exprWarnings...)
-		}
-		cursor = expressionEnd
-		remaining = afterOpen[end+2:]
 	}
 	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
 }

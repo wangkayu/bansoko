@@ -12,7 +12,19 @@ export const templateFactsCopy = {
   example: "例 {value}",
   placeholderHint: "下载后确定的值：{path}",
   placeholder: "〈{label}〉",
+  semantic: {
+    image: {
+      label: "节目图片",
+      description: "插入图片附件。依次选择来源封面、已绑定的 Bangumi／TMDB 海报和内置占位图，不接受模板传入图片地址。",
+    },
+    link: {
+      label: "元数据链接",
+      description: "插入已绑定 Bangumi／TMDB 条目的链接；没有有效绑定时不输出链接。",
+    },
+  },
   roots: {
+    image: "附件",
+    link: "链接",
     a: "番剧",
     r: "发布",
     t: "种子",

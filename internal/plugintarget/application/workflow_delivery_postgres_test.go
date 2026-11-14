@@ -240,7 +240,7 @@ func TestBusinessDeliveryRetriesOnBackoffToVisibleTerminal(t *testing.T) {
 				if request.header.Get(HeaderWebhookID) != id || doc["delivery_id"] != id {
 					t.Fatalf("attempt %d delivery_id header=%q body=%v, want %s", index+1, request.header.Get(HeaderWebhookID), doc["delivery_id"], id)
 				}
-				if doc["attempt"] != float64(index+1) || doc["version"] != WebhookEnvelopeVersion || doc["event"] != "subscription_changed" {
+				if doc["attempt"] != float64(index+1) || doc["event"] != "subscription_changed" {
 					t.Fatalf("attempt %d document=%v", index+1, doc)
 				}
 				if request.header.Get(HeaderWebhookSignature) == "" {

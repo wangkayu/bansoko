@@ -341,12 +341,11 @@ func runServe(args []string) {
 	fileMaintenanceGraph.metadataRefresher = metadataRefresherOwnershipAdapter{ownership: ownershipService}
 	fileMaintenanceService := initializeFileMaintenanceService(db, fileMaintenanceGraph, reconciliationService, observabilityService, runtimeLogger)
 
-	// The provider episode titles (bgm.ep_title / tmdb.ep_title) are the one
-	// shared Querier of the two whitelisted naming lanes: the library rename
-	// render (fileoperation prepare) and the anime-files alignment and match
-	// renders (filemaintenance). Every other render stays network-free by
-	// never receiving it. The same persistent cache is the store the 刷新元
-	// 数据 re-pull overwrites — the only positive-cache bypass.
+	// The provider episode titles (bgm.ep_title / tmdb.ep_title) share one
+	// cache-first Querier across the whitelisted naming renders and
+	// notification admission. Other renders and all delivery retries stay
+	// network-free. The same persistent cache is the store the 刷新元数据
+	// re-pull overwrites — the only positive-cache bypass.
 	episodeTitleQueries := provideEpisodeTitleQueries(db, runtimeConfiguration, dbSecretStore)
 	coreGraph.fileOperationService.SetEpisodeTitleQueries(episodeTitleQueries)
 	fileMaintenanceGraph.namingRenderer.SetEpisodeTitleQueries(episodeTitleQueries)
@@ -429,6 +428,10 @@ func runServe(args []string) {
 		fileOperationService,
 		rssService,
 		observabilityService,
+		catalogDBSource,
+		runtimeConfiguration,
+		dbSecretStore,
+		episodeTitleQueries,
 	)
 	if err != nil {
 		fatalStartup(runtimeLogger, "plugin runtime build failed", "plugin_runtime_build_failed")

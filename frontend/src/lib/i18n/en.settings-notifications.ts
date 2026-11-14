@@ -107,6 +107,7 @@ export const enSettingsNotificationsCopy = {
       invalid: "Template invalid",
       previewTitle: "Title: ",
       previewBody: "Body: ",
+      previewAttachments: "This previews text only. Save and send a test to check images and links.",
       variables: "Available variables ({n}) and functions, checked on save",
       functions: "Functions: {names}",
       catalogLoading: "Loading variables…",

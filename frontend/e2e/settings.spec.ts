@@ -241,6 +241,51 @@ async function mockSettingsReads(page: Page) {
   await page.route("**/api/v1/plugin-targets", (route) =>
     getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ targets: [] }) })),
   );
+  await page.route("**/api/v1/config/notifications/trigger-kinds", (route) =>
+    getOnly(route, () => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ trigger_kinds: ["download_submitted"] }),
+    })),
+  );
+  await page.route("**/api/v1/template-catalogs/notification/*", (route) =>
+    getOnly(route, () => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        language_version: "bansoko-template-1",
+        catalog_version: "notification-catalog-v1",
+        trigger_kind: "download_submitted",
+        variables: [
+          { name: "anime.title", label: "标题", type: "string", nullable: false, source: "anime", sample_value: "示例动画", phase: "release", label_key: "facts.anime.title.label" },
+          { name: "image", label: "节目图片", type: "string", nullable: false, source: "system", phase: "release", label_key: "templateFacts.semantic.image.label", description_key: "templateFacts.semantic.image.description" },
+          { name: "link", label: "元数据链接", type: "string", nullable: true, source: "system", phase: "release", label_key: "templateFacts.semantic.link.label", description_key: "templateFacts.semantic.link.description" },
+        ],
+        functions: [],
+        default_template: { mode: "custom", title_template: "默认标题", body_template: "{{image}}\n默认正文\n{{link}}" },
+        sample: { values: {} },
+      }),
+    })),
+  );
+  await page.route("**/api/v1/template-previews/notification", (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "method_not_allowed", allowed: ["POST"] }) });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        language_version: "bansoko-template-1",
+        catalog_version: "notification-catalog-v1",
+        title: "预览标题",
+        body: "默认正文",
+        valid: true,
+        errors: [],
+        warnings: [],
+        variables: [],
+      }),
+    });
+  });
   // 默认内嵌升级页：更新状态接口未接入时返回 404，页面展示默认空态。
   await page.route("**/api/v1/update/status", (route) =>
     getOnly(route, () =>
@@ -490,6 +535,34 @@ test.describe("settings functional closure", () => {
 // 可达。live 模式不断言这些分区内容（真实实例的更新服务状态不定）。
 test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
+
+  test("通知模板预览说明图片与链接的验证方式且不溢出", async ({ page }, testInfo) => {
+    await openSettings(page, "/#/settings/notifications");
+    const settings = page.getByRole("dialog");
+    await settings.getByRole("button", { name: "新建渠道" }).click();
+    const editor = page.getByRole("dialog", { name: "新建通知渠道" });
+    await expect(editor).toBeVisible();
+    await editor.getByRole("combobox", { name: "下载已提交的模板模式" }).click();
+    await page.getByRole("option", { name: "自定义模板" }).click();
+    await expect(editor.getByLabel("正文模板")).toHaveValue("{{image}}\n默认正文\n{{link}}");
+    await editor.getByRole("button", { name: "预览", exact: true }).click();
+
+    const hint = editor.getByText("此处仅预览文本；图片与链接请保存后通过测试发送检查。");
+    await expect(hint).toBeVisible();
+    await expect(editor.getByText("正文：默认正文", { exact: true })).toBeVisible();
+    await hint.scrollIntoViewIfNeeded();
+    await expect(hint).toBeInViewport();
+    const hintBox = await hint.boundingBox();
+    const editorBox = await editor.boundingBox();
+    expect(hintBox).not.toBeNull();
+    expect(editorBox).not.toBeNull();
+    expect(hintBox!.x).toBeGreaterThanOrEqual(editorBox!.x - 1);
+    expect(hintBox!.x + hintBox!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    const screenshot = testInfo.outputPath("notification-template-preview.png");
+    await page.screenshot({ path: screenshot, fullPage: true });
+    await testInfo.attach("notification-template-preview", { path: screenshot, contentType: "image/png" });
+  });
 
   test("provider 配置页可达：AniBT 与 Mikan", async ({ page }) => {
     test.skip(isMobile(page), "sidebar 链接交互是桌面形态，手机另有两级导航用例");

@@ -17,11 +17,10 @@ import (
 // whole lookup scope, so cached BGM rows are keyed with season 0.
 const SourceBGM Source = "bgm"
 
-// PersistentCache is the persistent store of the provider episode titles the
-// whitelisted naming renders query (migration 046). Naming used never to read
-// it: the owner decree of 2026-10-22 says renders on that whitelist may query
-// TMDB/BGM once per (source, work, season, episode), and this table is the
-// freeze point.
+// PersistentCache is the persistent store of provider episode titles
+// (migration 046). Whitelisted naming renders and notification admission query
+// TMDB/BGM once per (source, work, season, episode), only when their actual
+// templates reference the fact; this table is their shared cache-first boundary.
 //
 //   - a `known` row (the provider's list carries a title) never expires;
 //   - an `absent` row (the provider has no title, or the episode sits beyond

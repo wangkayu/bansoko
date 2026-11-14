@@ -117,6 +117,18 @@ function stubFetch(
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (init?.method === "POST" && url.includes("/template-previews/notification")) {
+      return new Response(JSON.stringify({
+        language_version: "bansoko-template-1",
+        catalog_version: "notification-catalog-v1",
+        title: "预览标题",
+        body: "预览正文",
+        valid: true,
+        errors: [],
+        warnings: [],
+        variables: [],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (init?.method === "POST" && url.includes("/test")) {
       return new Response(JSON.stringify({ accepted: true, delivery_id: "delivery-1" }), {
         status: 200,
@@ -346,6 +358,20 @@ describe("SettingsNotifications 模板变量", () => {
     fireEvent.click(within(catalog as HTMLElement).getByRole("button", { name: /ep\.display/ }));
     expect(title).toHaveValue("默认标题{{ep.display}}");
     expect(body).toHaveValue("默认正文");
+  });
+
+  it("文本预览说明图片与链接需要测试发送检查", async () => {
+    stubFetch();
+    renderNotifications();
+    await openNewDialog();
+
+    const event = t("settings.notifications.trigger.download_submitted");
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.template.modeLabel", { event }) }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.template.modeCustom") }));
+    await userEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
+
+    expect(await screen.findByText(t("settings.notifications.template.previewAttachments"))).toBeInTheDocument();
+    expect(screen.getByText("预览正文")).toBeInTheDocument();
   });
 });
 

@@ -19,6 +19,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 	adapterconfig "bansoko/internal/plugintarget/config"
 	deliverypayload "bansoko/internal/plugintarget/payload"
+	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
 )
@@ -82,6 +83,8 @@ type PluginDeliverHandler struct {
 	secrets       SecretResolver
 	workItems     *workitems.Store
 	client        HTTPDoer
+	imageClient   HTTPDoer
+	imageResolver plugintargetport.NotificationImageResolver
 	renderer      TemplateRenderer
 	observability observabilityport.Recorder
 	logger        observabilityport.RuntimeLogger
@@ -105,6 +108,14 @@ func (h *PluginDeliverHandler) SetDiagnosticRecorder(recorder observabilityport.
 	h.logger = logger
 }
 
+// SetNotificationImageResolver installs the trusted provider-image boundary.
+// A nil resolver is valid: rich notifications then use the built-in placeholder.
+func (h *PluginDeliverHandler) SetNotificationImageResolver(resolver plugintargetport.NotificationImageResolver) {
+	if h != nil {
+		h.imageResolver = resolver
+	}
+}
+
 var _ worker.Handler = (*PluginDeliverHandler)(nil)
 
 type deliveryRow struct {
@@ -118,6 +129,7 @@ type deliveryRow struct {
 	secretRef           sql.NullString
 	deliveryKind        string
 	triggerKind         string
+	managedAnimeID      sql.NullString
 	state               string
 	version             int64
 	attemptCount        int
@@ -139,12 +151,14 @@ type durableAttempt struct {
 }
 
 type attemptResult struct {
-	responseStatus *int
-	responseBytes  int64
-	providerAck    json.RawMessage
-	errorCode      string
-	err            string
-	state          string
+	responseStatus        *int
+	responseBytes         int64
+	providerAck           json.RawMessage
+	errorCode             string
+	err                   string
+	state                 string
+	telegramImageRejected bool
+	telegramModes         []string
 	// retryAfter is the wait before the next automatic attempt; it is set
 	// only when the attempt settles waiting_retry.
 	retryAfter time.Duration
@@ -220,12 +234,17 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 	if err != nil {
 		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
 	}
+	message, err := h.resolveOutboundMessage(ctx, row, title, body)
+	if err != nil {
+		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification message is invalid", newSecretRedactor("")), nil
+	}
 	secret, err := h.resolveSecret(row)
 	if err != nil {
 		return h.prepareFailure(claim, row, attempt, "secret_resolve_failed", err.Error(), newSecretRedactor("")), nil
 	}
 	redactor := newSecretRedactor(secret)
-	req, err := h.buildRequest(ctx, row, title, body, secret, claim.Owner.ID, attempt.number)
+	var req *http.Request
+	req, telegramMode, err := h.buildRequest(ctx, row, message, secret, claim.Owner.ID, attempt.number)
 	if err != nil {
 		return h.prepareFailure(claim, row, attempt, "request_build_failed", err.Error(), redactor), nil
 	}
@@ -241,7 +260,13 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		}
 	}
 
-	result, sendErr := h.sendRequest(req, row.adapterKind, redactor)
+	var result attemptResult
+	var sendErr error
+	if row.adapterKind == "telegram" {
+		result, sendErr = h.sendTelegramMessage(ctx, req, telegramMode, row, message, secret, redactor)
+	} else {
+		result, sendErr = h.sendRequest(req, row.adapterKind, redactor)
+	}
 	if h.hooks.afterResponseBeforeFinal != nil {
 		if err := h.hooks.afterResponseBeforeFinal(); err != nil {
 			return worker.Outcome{}, err
@@ -345,7 +370,7 @@ func (h *PluginDeliverHandler) notifyDiagnostic(row deliveryRow, variant observa
 
 func (h *PluginDeliverHandler) loadDelivery(ctx context.Context, id string) (deliveryRow, error) {
 	var row deliveryRow
-	err := h.db.QueryRowContext(ctx, `SELECT id, plugin_target_config_id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body, (SELECT t.name FROM plugin_target_configs t WHERE t.id = plugin_deliveries.plugin_target_config_id) FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
+	err := h.db.QueryRowContext(ctx, `SELECT id, plugin_target_config_id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, managed_anime_id, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body, (SELECT t.name FROM plugin_target_configs t WHERE t.id = plugin_deliveries.plugin_target_config_id) FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.managedAnimeID, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, errors.New("plugin delivery not found")
 	}
@@ -379,62 +404,22 @@ func (h *PluginDeliverHandler) resolveSecret(row deliveryRow) (string, error) {
 	return value, nil
 }
 
-func (h *PluginDeliverHandler) buildRequest(ctx context.Context, row deliveryRow, title, body, secretValue, deliveryID string, attemptNumber int) (*http.Request, error) {
+func (h *PluginDeliverHandler) buildRequest(ctx context.Context, row deliveryRow, message outboundMessage, secretValue, deliveryID string, attemptNumber int) (*http.Request, telegramRequestMode, error) {
 	switch row.adapterKind {
 	case "telegram":
-		return h.buildTelegramRequest(ctx, row, title+"\n\n"+body, secretValue)
+		return h.buildTelegramMessageRequest(ctx, row, message, secretValue)
 	case "feishu":
-		return h.buildFeishuRequest(ctx, title+"\n\n"+body, secretValue)
+		req, err := h.buildFeishuRequest(ctx, message, secretValue)
+		return req, telegramRequestMode{}, err
 	case "webhook":
-		return h.buildWebhookRequest(ctx, row, title, body, secretValue, deliveryID, attemptNumber)
+		req, err := h.buildWebhookRequest(ctx, row, message, secretValue, deliveryID, attemptNumber)
+		return req, telegramRequestMode{}, err
 	default:
-		return nil, errors.New("unsupported adapter kind")
+		return nil, telegramRequestMode{}, errors.New("unsupported adapter kind")
 	}
 }
 
-func (h *PluginDeliverHandler) buildTelegramRequest(ctx context.Context, row deliveryRow, message, secretValue string) (*http.Request, error) {
-	var config struct {
-		ChatID string `json:"chat_id"`
-	}
-	if json.Unmarshal(row.adapterConfigJSON, &config) != nil || config.ChatID == "" {
-		return nil, errors.New("telegram config missing chat_id")
-	}
-	var secret struct {
-		BotToken *string `json:"bot_token"`
-	}
-	if json.Unmarshal([]byte(secretValue), &secret) != nil || secret.BotToken == nil || *secret.BotToken == "" {
-		return nil, errors.New("telegram secret missing bot_token")
-	}
-	payload, _ := json.Marshal(map[string]string{"chat_id": config.ChatID, "text": message, "parse_mode": ""})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.telegram.org/bot"+*secret.BotToken+"/sendMessage", bytes.NewReader(payload))
-	if err != nil {
-		return nil, errors.New("telegram request is invalid")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return req, nil
-}
-
-func (h *PluginDeliverHandler) buildFeishuRequest(ctx context.Context, message, secretValue string) (*http.Request, error) {
-	var secret struct {
-		WebhookURL *string `json:"webhook_url"`
-	}
-	if json.Unmarshal([]byte(secretValue), &secret) != nil || secret.WebhookURL == nil {
-		return nil, errors.New("feishu secret missing webhook_url")
-	}
-	endpoint, err := parseHTTPSURL(*secret.WebhookURL)
-	if err != nil {
-		return nil, err
-	}
-	payload, _ := json.Marshal(map[string]any{"msg_type": "text", "content": map[string]string{"text": message}})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
-	if err != nil {
-		return nil, errors.New("feishu request is invalid")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return req, nil
-}
-
-func (h *PluginDeliverHandler) buildWebhookRequest(ctx context.Context, row deliveryRow, title, body, secretValue, deliveryID string, attemptNumber int) (*http.Request, error) {
+func (h *PluginDeliverHandler) buildWebhookRequest(ctx context.Context, row deliveryRow, message outboundMessage, secretValue, deliveryID string, attemptNumber int) (*http.Request, error) {
 	var secret struct {
 		EndpointURL   *string `json:"endpoint_url"`
 		AuthValue     *string `json:"auth_value"`
@@ -454,15 +439,14 @@ func (h *PluginDeliverHandler) buildWebhookRequest(ctx context.Context, row deli
 	if json.Unmarshal(row.adapterConfigJSON, &config) != nil {
 		return nil, errors.New("webhook config is invalid")
 	}
-	// The version 2 document carries the frozen facts under the unified fact
-	// paths. Every attempt of one delivery sends the same delivery_id, in the
-	// body and in X-Webhook-Id, so a receiver can drop a repeat. Vendor-shaped
-	// adapters (telegram, feishu) keep their fixed text formats.
+	// Every attempt of one delivery sends the same delivery_id, in the body and
+	// in X-Webhook-Id, so a receiver can drop a repeat. The document carries
+	// typed message attachments alongside the frozen facts.
 	now := time.Now()
 	if h.now != nil {
 		now = h.now()
 	}
-	payload, err := buildWebhookEnvelope(deliveryID, row.triggerKind, attemptNumber, now, title, body, row.payload)
+	payload, err := buildWebhookEnvelope(deliveryID, row.triggerKind, attemptNumber, now, message, row.payload)
 	if err != nil {
 		return nil, err
 	}
@@ -526,6 +510,7 @@ func readResponseResult(resp *http.Response, adapterKind string, redactor secret
 	default:
 		result.providerAck = allowlistedProviderAck(adapterKind, body)
 	}
+	result.telegramImageRejected = bodyErrorCode == "" && adapterKind == "telegram" && telegramResponseImageRejected(resp.StatusCode, body)
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		if bodyErrorCode == "" {
@@ -743,7 +728,12 @@ func (h *PluginDeliverHandler) finalWriter(claim workitems.Claim, attempt durabl
 			ack = result.providerAck
 		}
 		redactedErr := redactor.text(result.err, 4096)
-		updated, err := tx.ExecContext(ctx, `UPDATE plugin_delivery_attempts SET response_received_at=CASE WHEN $3::integer IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END,duration_ms=CASE WHEN $3::integer IS NULL THEN NULL ELSE GREATEST(0,(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-started_at))*1000)::integer) END,response_status=$3,response_preview=$4,provider_ack=$5,error_code=NULLIF($6,''),error=NULLIF($7,'') WHERE id=$1 AND plugin_delivery_id=$2 AND response_received_at IS NULL AND error_code IS NULL`, attempt.id, claim.Owner.ID, result.responseStatus, preview, ack, result.errorCode, redactedErr)
+		var evidence any
+		if value := telegramAttemptEvidence(result); value != nil {
+			encoded, _ := json.Marshal(value)
+			evidence = encoded
+		}
+		updated, err := tx.ExecContext(ctx, `UPDATE plugin_delivery_attempts SET response_received_at=CASE WHEN $3::integer IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END,duration_ms=CASE WHEN $3::integer IS NULL THEN NULL ELSE GREATEST(0,(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP-started_at))*1000)::integer) END,response_status=$3,response_preview=$4,provider_ack=$5,error_code=NULLIF($6,''),error=NULLIF($7,''),request_summary=COALESCE(request_summary,'{}'::jsonb)||COALESCE($8::jsonb,'{}'::jsonb) WHERE id=$1 AND plugin_delivery_id=$2 AND response_received_at IS NULL AND error_code IS NULL`, attempt.id, claim.Owner.ID, result.responseStatus, preview, ack, result.errorCode, redactedErr, evidence)
 		if err != nil {
 			return 0, err
 		}

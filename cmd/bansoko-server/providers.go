@@ -133,6 +133,10 @@ func providePluginRuntime(
 	fileOperationService *fileoperationapplication.Service,
 	rssService *rssapplication.Service,
 	observabilityService *observabilityapplication.Service,
+	posterConnections metadataadapter.ConnectionSource,
+	posterClientResolver metadataadapter.HTTPClientResolver,
+	metadataSecrets metadataadapter.SecretResolver,
+	episodeTitleQueries *namingfacts.Querier,
 ) (*pluginRuntime, error) {
 	targetService, err := plugintargetapplication.NewService(db, secretStore, workStore)
 	if err != nil {
@@ -140,6 +144,7 @@ func providePluginRuntime(
 	}
 	templateService := templatecatalogapplication.NewService()
 	deliverHandler := plugintargetapplication.NewPluginDeliverHandler(db, secretResolver, workStore, nil, templateService)
+	deliverHandler.SetNotificationImageResolver(metadataadapter.NewNotificationImageResolver(db, posterConnections, posterClientResolver, metadataSecrets))
 	deliverHandler.SetDiagnosticRecorder(observabilityService, logger)
 	rssService.SetDiagnosticRecorder(observabilityService, logger)
 	rssService.SetBusinessDeliveryEnqueuer(targetService)
@@ -148,9 +153,12 @@ func providePluginRuntime(
 	fileOperationService.SetBusinessDeliveryEnqueuer(targetService)
 	fileOperationService.SetDiagnosticRecorder(observabilityService, logger)
 	return &pluginRuntime{
-		targetService:   targetService,
-		deliverHandler:  deliverHandler,
-		admissionRunner: &plugintargetapplication.AdmissionResolver{Service: targetService, Logger: logger, SweepInterval: time.Second},
+		targetService:  targetService,
+		deliverHandler: deliverHandler,
+		admissionRunner: &plugintargetapplication.AdmissionResolver{
+			Service: targetService, Logger: logger, SweepInterval: time.Second,
+			EpisodeTitles: &metadataadapter.NotificationEpisodeTitleResolver{Cache: episodeTitleQueries.Cache},
+		},
 		templateService: templateService,
 	}, nil
 }
@@ -632,9 +640,9 @@ type coreApplicationGraph struct {
 // provider-connection wiring of the metadata search: one enabled connection
 // per source, the deployment secrets for the TMDB API key, and the egress
 // route resolver. The persistent cache (migration 046) is the freeze point
-// the whitelisted naming renders query — the library rename render and the
-// anime-files alignment and match renders; every other render stays
-// network-free by never receiving this Querier.
+// shared by the whitelisted naming renders and notification admission. Every
+// other render stays network-free by never receiving this Querier; delivery
+// rendering and retries receive only the admission-frozen payload.
 func provideEpisodeTitleQueries(db *sql.DB, runtimeConfiguration *configurationapplication.Service, secretStore *configurationapplication.DatabaseSecretStore) *namingfacts.Querier {
 	connections := catalogadapter.DBConnectionSource{DB: db}
 	return &namingfacts.Querier{

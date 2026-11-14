@@ -517,10 +517,10 @@ var systemFacts = []Fact{
 		Text{"TMDB 季", "TMDB season"}, Text{"绑定的 TMDB 季号，用于查询 TMDB 剧集信息；命名的季见 anime.season。", "Bound TMDB season number, used to look up TMDB episodes; the named season is anime.season."},
 		int64(1), func(f *FactSet) any { return f.Tmdb.Season }).hideIn(ScenarioNaming),
 	fact("bgm.ep_title", TypeString, PhaseExecution, ScenarioNaming|scenarioFile, ScenarioNaming|scenarioFile,
-		Text{"BGM 集标题", "BGM episode title"}, Text{"查询 Bangumi 条目分集得到的本集标题，查询结果会缓存。未绑定 Bangumi、没有集数、该集没有标题或查询尚未成功时为空；重命名执行时才查询，下载前的预览显示为占位。", "The episode title of the bound Bangumi subject, queried and cached; empty when Bangumi is not bound, there is no episode number, the provider has no title for that episode, or the lookup has not succeeded yet. Queried at the rename execution only; previews before the download show a placeholder."},
+		Text{"BGM 集标题", "BGM episode title"}, Text{"查询 Bangumi 条目分集得到的本集标题，查询结果会缓存。命名渲染或通知受理引用此变量时查询；未绑定 Bangumi、没有集数、该集没有标题或查询尚未成功时为空，下载前的命名预览显示为占位。", "The episode title of the bound Bangumi subject, queried and cached when a naming render or notification admission references it; empty when Bangumi is not bound, there is no episode number, the provider has no title for that episode, or the lookup has not succeeded yet. Naming previews before the download show a placeholder."},
 		"炎の七夕 祭り", func(f *FactSet) any { return f.Bgm.EpTitle }),
 	fact("tmdb.ep_title", TypeString, PhaseExecution, ScenarioNaming|scenarioFile, ScenarioNaming|scenarioFile,
-		Text{"TMDB 集标题", "TMDB episode title"}, Text{"查询绑定 TMDB 作品分集得到的本集标题（按请求语言 zh-CN），查询结果会缓存。未绑定 TMDB、没有集数、该集没有标题或查询尚未成功时为空；重命名执行时才查询，下载前的预览显示为占位。", "The episode title of the bound TMDB work in the request language (language=zh-CN), queried and cached; empty when TMDB is not bound, there is no episode number, the provider has no title for that episode, or the lookup has not succeeded yet. Queried at the rename execution only; previews before the download show a placeholder."},
+		Text{"TMDB 集标题", "TMDB episode title"}, Text{"查询绑定 TMDB 作品分集得到的本集标题（按请求语言 zh-CN），查询结果会缓存。命名渲染或通知受理引用此变量时查询；未绑定 TMDB、没有集数、该集没有标题或查询尚未成功时为空，下载前的命名预览显示为占位。", "The episode title of the bound TMDB work in the request language (language=zh-CN), queried and cached when a naming render or notification admission references it; empty when TMDB is not bound, there is no episode number, the provider has no title for that episode, or the lookup has not succeeded yet. Naming previews before the download show a placeholder."},
 		"炎の七夕 祭り", func(f *FactSet) any { return f.Tmdb.EpTitle }),
 
 	// release

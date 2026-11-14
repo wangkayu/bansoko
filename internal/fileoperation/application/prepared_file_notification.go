@@ -49,10 +49,10 @@ func successfulFileNotificationPayload(input json.RawMessage, file artifactFileC
 	for key, value := range notification.TitleFacts(protocol.Canonical(accepted), notificationText) {
 		fields.frozen[key] = value
 	}
-	// The render is the fact's only producer: the notification never queries
-	// the store, it reads the frozen episode_titles block the whitelisted
-	// render landed (absent while the lookup was down — the notification is
-	// then emitted without the keys).
+	// Project titles already frozen by a whitelisted naming render. If the
+	// notification target also references a title this block withheld, its
+	// admission resolver performs the independent cache-first lookup before
+	// freezing the delivery; neither this producer nor delivery rendering queries.
 	for key, value := range notification.EpisodeTitleFacts(render, notificationText) {
 		fields.frozen[key] = value
 	}

@@ -25,6 +25,9 @@ import (
 type AdmissionResolver struct {
 	Service *Service
 	Logger  observabilityport.RuntimeLogger
+	// EpisodeTitles resolves only facts referenced by the target template being
+	// admitted. It is never passed to delivery rendering or retry.
+	EpisodeTitles plugintargetport.NotificationEpisodeTitleResolver
 	// SweepInterval is the ledger polling period.
 	SweepInterval time.Duration
 	// Now, Backoff and MaxAttempts bound retries of a failing admission; zero
@@ -206,8 +209,8 @@ type targetLister interface {
 
 // enumerateEligibleTargets lists the live targets subscribed to one trigger. The
 // list is the resolution-time snapshot; each target is re-read under a row lock
-// when its delivery is created, so a concurrent edit is either fully seen or not
-// at all.
+// when its delivery is created, so an edit or disable during provider resolution
+// is fully observed before the delivery freezes.
 func enumerateEligibleTargets(ctx context.Context, querier targetLister, triggerKind string) ([]string, error) {
 	rows, err := querier.QueryContext(ctx, `
 SELECT id FROM plugin_target_configs
@@ -252,24 +255,8 @@ func (r *AdmissionResolver) createCurrentDeliveries(ctx context.Context, admissi
 	}
 	created, failed := 0, 0
 	for _, targetID := range targetIDs {
-		tx, err := r.Service.db.BeginTx(ctx, nil)
+		target, delivered, err := r.createCurrentTargetDelivery(ctx, targetID, entry, request)
 		if err != nil {
-			return created, fmt.Errorf("begin delivery creation: %w", err)
-		}
-		target, err := r.Service.lockTargetTx(ctx, tx, targetID)
-		if err != nil {
-			_ = tx.Rollback()
-			var missing *apperrors.NotFound
-			if errors.As(err, &missing) {
-				// Deleted between enumeration and resolution: it delivers
-				// nothing, and its siblings still deliver.
-				continue
-			}
-			return created, fmt.Errorf("read notification target: %w", err)
-		}
-		err = r.Service.enqueueForTargetWithKey(ctx, tx, target, request, StableKey(target.ID, target.Version, entry))
-		if err != nil {
-			_ = tx.Rollback()
 			if failure, ok := deterministicTargetFailure(err); ok {
 				// Retrying cannot change the outcome: settle this target now
 				// with its own evidence and keep going with its siblings.
@@ -281,15 +268,135 @@ func (r *AdmissionResolver) createCurrentDeliveries(ctx context.Context, admissi
 			}
 			return created, fmt.Errorf("create current delivery: %w", err)
 		}
-		if err := tx.Commit(); err != nil {
-			return created, err
+		if delivered {
+			created++
 		}
-		created++
 	}
 	if err := r.settleAdmission(ctx, admissionID, failed); err != nil {
 		return created, fmt.Errorf("settle notification admission: %w", err)
 	}
 	return created, nil
+}
+
+// notificationTargetEligible rechecks the admission-time trigger subscription.
+// Enumeration alone is insufficient because provider resolution happens before
+// the target row lock and may allow an edit or disable to complete meanwhile.
+func notificationTargetEligible(enabled bool, triggerKinds []TriggerKind, trigger string) bool {
+	if !enabled {
+		return false
+	}
+	for _, kind := range triggerKinds {
+		if string(kind) == trigger {
+			return true
+		}
+	}
+	return false
+}
+
+type admissionDeliveryQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// admissionDeliveryExists recognizes an already frozen target delivery without
+// comparing a newly resolved payload. The existing row is authoritative when an
+// admission is replayed after a crash or a sibling target failure.
+func admissionDeliveryExists(ctx context.Context, querier admissionDeliveryQuerier, targetID string, request plugintargetport.BusinessDeliveryRequest) (bool, error) {
+	var exists bool
+	err := querier.QueryRowContext(ctx, `
+SELECT EXISTS(
+    SELECT 1 FROM plugin_deliveries
+    WHERE plugin_target_config_id = $1
+      AND trigger_kind = $2
+      AND source_owner_type = $3
+      AND source_owner_id = $4
+      AND source_owner_version = $5
+      AND source_result_key = $6
+)`, targetID, request.TriggerKind, request.SourceOwnerType, request.SourceOwnerID, request.SourceOwnerVersion, request.ResultKey).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check existing admission delivery: %w", err)
+	}
+	return exists, nil
+}
+
+// createCurrentTargetDelivery resolves provider facts outside the database
+// transaction, then locks the same target version for the atomic delivery
+// freeze. An edit during resolution discards the prepared facts and retries
+// against the new version, so template references and frozen facts cannot come
+// from different target revisions. A delivery that already exists wins over any
+// later provider answer; replay never rewrites or conflicts with its frozen
+// facts, and does not perform another provider lookup.
+func (r *AdmissionResolver) createCurrentTargetDelivery(ctx context.Context, targetID string, entry LedgerEntry, request plugintargetport.BusinessDeliveryRequest) (targetRecord, bool, error) {
+	exists, err := admissionDeliveryExists(ctx, r.Service.db, targetID, request)
+	if err != nil {
+		return targetRecord{}, false, err
+	}
+	if exists {
+		return targetRecord{}, false, nil
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		snapshot, err := r.Service.getTarget(ctx, targetID)
+		if err != nil {
+			var missing *apperrors.NotFound
+			if errors.As(err, &missing) {
+				return targetRecord{}, false, nil
+			}
+			return targetRecord{}, false, fmt.Errorf("read notification target before episode title resolution: %w", err)
+		}
+		if !notificationTargetEligible(snapshot.Enabled, snapshot.TriggerKinds, request.TriggerKind) {
+			return targetRecord{}, false, nil
+		}
+		targetRequest := request
+		targetRequest.Payload, err = r.resolveAdmissionEpisodeTitles(ctx, snapshot, request)
+		if err != nil {
+			return targetRecord{}, false, err
+		}
+		validated := entry
+		validated.Payload = targetRequest.Payload
+		if err := validateLedgerEntry(validated); err != nil {
+			return targetRecord{}, false, fmt.Errorf("validate enriched notification payload: %w", err)
+		}
+
+		tx, err := r.Service.db.BeginTx(ctx, nil)
+		if err != nil {
+			return targetRecord{}, false, fmt.Errorf("begin delivery creation: %w", err)
+		}
+		target, err := r.Service.lockTargetTx(ctx, tx, targetID)
+		if err != nil {
+			_ = tx.Rollback()
+			var missing *apperrors.NotFound
+			if errors.As(err, &missing) {
+				return targetRecord{}, false, nil
+			}
+			return targetRecord{}, false, fmt.Errorf("read notification target: %w", err)
+		}
+		if !notificationTargetEligible(target.Enabled, target.TriggerKinds, request.TriggerKind) {
+			_ = tx.Rollback()
+			return target, false, nil
+		}
+		if target.Version != snapshot.Version {
+			_ = tx.Rollback()
+			continue
+		}
+		exists, err = admissionDeliveryExists(ctx, tx, targetID, request)
+		if err != nil {
+			_ = tx.Rollback()
+			return targetRecord{}, false, err
+		}
+		if exists {
+			_ = tx.Rollback()
+			return target, false, nil
+		}
+		err = r.Service.enqueueForTargetWithKey(ctx, tx, target, targetRequest, StableKey(target.ID, target.Version, entry))
+		if err != nil {
+			_ = tx.Rollback()
+			return target, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return targetRecord{}, false, err
+		}
+		return target, true, nil
+	}
+	return targetRecord{}, false, errors.New("notification target changed repeatedly during episode title resolution")
 }
 
 // settleAdmission closes a fully attempted admission: resolved when every

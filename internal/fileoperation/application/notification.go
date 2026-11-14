@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"strings"
-	"unicode"
-)
 
-const maxNotificationFactLength = 512
+	"bansoko/internal/templatecatalog/notification"
+)
 
 type fileOperationNotificationFacts struct {
 	managedAnimeID     string
@@ -96,33 +95,11 @@ func notificationMediaFacts(raw []byte) map[string]any {
 }
 
 func notificationTextValue(value any) any {
-	stringValue, ok := value.(string)
-	if !ok {
-		return nil
-	}
-	return notificationText(stringValue)
+	return notification.TextValue(value)
 }
 
 func notificationText(value string) any {
-	value = strings.TrimSpace(value)
-	if value == "" || len(value) > maxNotificationFactLength {
-		return nil
-	}
-	value = strings.TrimSpace(safeString(value))
-	if value == "" || len(value) > maxNotificationFactLength || filepath.IsAbs(value) || strings.Contains(value, "://") {
-		return nil
-	}
-	for _, marker := range []string{"password=", "passwd=", "token=", "secret=", "credential=", "authorization=", "cookie="} {
-		if strings.Contains(strings.ToLower(value), marker) {
-			return nil
-		}
-	}
-	for _, char := range value {
-		if unicode.IsControl(char) {
-			return nil
-		}
-	}
-	return value
+	return notification.Text(value)
 }
 
 func notificationFileParts(path string) (any, any) {

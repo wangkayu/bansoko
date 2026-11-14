@@ -18,6 +18,7 @@ import (
 	application8 "bansoko/internal/configuration/application"
 	application2 "bansoko/internal/download/application"
 	"bansoko/internal/downloadcompletion"
+	"bansoko/internal/episodetitle/namingfacts"
 	"bansoko/internal/events"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/filemanager"
@@ -40,8 +41,8 @@ import (
 
 // Injectors from wire.go:
 
-func initializePluginRuntime(db *sql.DB, secretStore application.SecretStore, secretResolver application.SecretResolver, workStore *workitems.Store, logger port.RuntimeLogger, downloadService *application2.Service, fileOperationService *application3.Service, rssService *application4.Service, observabilityService *application5.Service) (*pluginRuntime, error) {
-	mainPluginRuntime, err := providePluginRuntime(db, secretStore, secretResolver, workStore, logger, downloadService, fileOperationService, rssService, observabilityService)
+func initializePluginRuntime(db *sql.DB, secretStore application.SecretStore, secretResolver application.SecretResolver, workStore *workitems.Store, logger port.RuntimeLogger, downloadService *application2.Service, fileOperationService *application3.Service, rssService *application4.Service, observabilityService *application5.Service, posterConnections adapter2.ConnectionSource, posterClientResolver adapter2.HTTPClientResolver, metadataSecrets adapter2.SecretResolver, episodeTitleQueries *namingfacts.Querier) (*pluginRuntime, error) {
+	mainPluginRuntime, err := providePluginRuntime(db, secretStore, secretResolver, workStore, logger, downloadService, fileOperationService, rssService, observabilityService, posterConnections, posterClientResolver, metadataSecrets, episodeTitleQueries)
 	if err != nil {
 		return nil, err
 	}

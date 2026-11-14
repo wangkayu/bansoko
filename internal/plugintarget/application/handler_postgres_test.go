@@ -1,12 +1,15 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"testing"
@@ -664,10 +667,11 @@ func (r *recordingHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 // TestHandlerTelegramDeliveryShape proves the telegram adapter end-to-end path:
 // create a telegram target (chat_id + bot_token) -> TestTarget -> claim the
-// WorkItem -> Handle dials api.telegram.org/bot{token}/sendMessage with the
-// expected JSON body (chat_id/text/parse_mode) -> the delivery row is marked
-// delivered. This is the integration-level evidence the handler unit tests
-// (which only exercise buildRequest) do not cover.
+// WorkItem -> Handle dials api.telegram.org/bot{token}/sendPhoto with the
+// default template's photo attachment (the built-in placeholder when no
+// provider image resolves) -> the delivery row is marked delivered. This is the
+// integration-level evidence the handler unit tests (which only exercise
+// buildRequest) do not cover.
 func TestHandlerTelegramDeliveryShape(t *testing.T) {
 	service, id, claim := seedHandlerDelivery(t)
 	client := &recordingHTTPClient{}
@@ -687,27 +691,52 @@ func TestHandlerTelegramDeliveryShape(t *testing.T) {
 	if client.lastReq.Method != http.MethodPost {
 		t.Errorf("telegram method = %q, want POST", client.lastReq.Method)
 	}
-	// seedHandlerDelivery uses bot_token "123:abc" (see secretSetInput).
-	wantURL := "https://api.telegram.org/bot123:abc/sendMessage"
+	// seedHandlerDelivery uses bot_token "123:abc" (see secretSetInput) and a
+	// delivery whose default template asks for the photo attachment.
+	wantURL := "https://api.telegram.org/bot123:abc/sendPhoto"
 	if client.lastReq.URL.String() != wantURL {
 		t.Errorf("telegram URL = %q, want %q", client.lastReq.URL.String(), wantURL)
 	}
-	if got := client.lastReq.Header.Get("Content-Type"); got != "application/json" {
-		t.Errorf("telegram content-type = %q, want application/json", got)
+	mediaType, params, err := mime.ParseMediaType(client.lastReq.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" || params["boundary"] == "" {
+		t.Fatalf("telegram content-type = %q, want multipart/form-data with a boundary", client.lastReq.Header.Get("Content-Type"))
 	}
-	var payload map[string]string
-	if err := json.Unmarshal(client.lastBody, &payload); err != nil {
-		t.Fatalf("decode telegram body: %v", err)
+	fields := map[string]string{}
+	var photo []byte
+	reader := multipart.NewReader(bytes.NewReader(client.lastBody), params["boundary"])
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("read telegram multipart: %v", err)
+		}
+		data, err := io.ReadAll(part)
+		if err != nil {
+			t.Fatalf("read telegram multipart part: %v", err)
+		}
+		if part.FormName() == "photo" {
+			if part.FileName() != "notification.jpg" {
+				t.Errorf("telegram photo filename = %q, want notification.jpg", part.FileName())
+			}
+			photo = data
+			continue
+		}
+		fields[part.FormName()] = string(data)
 	}
 	// seedHandlerDelivery uses chat_id "12345" (see validCreateInput).
-	if payload["chat_id"] != "12345" {
-		t.Errorf("telegram chat_id = %q, want 12345", payload["chat_id"])
+	if fields["chat_id"] != "12345" {
+		t.Errorf("telegram chat_id = %q, want 12345", fields["chat_id"])
 	}
-	if payload["text"] != "Title\n\nBody" {
-		t.Errorf("telegram text = %q, want combined title/body", payload["text"])
+	if fields["parse_mode"] != "HTML" {
+		t.Errorf("telegram parse_mode = %q, want HTML", fields["parse_mode"])
 	}
-	if _, ok := payload["parse_mode"]; !ok {
-		t.Errorf("telegram body missing parse_mode: %v", payload)
+	if !strings.HasPrefix(fields["caption"], "<b>Title</b>\n\nBody") {
+		t.Errorf("telegram caption = %q, want bold title and body", fields["caption"])
+	}
+	if len(photo) == 0 || !bytes.Equal(photo, notificationPlaceholderJPEG) {
+		t.Errorf("telegram photo = %d bytes, want the built-in placeholder (%d bytes)", len(photo), len(notificationPlaceholderJPEG))
 	}
 
 	var deliveryState, itemState, reasonCode, providerAck string
@@ -808,8 +837,8 @@ func TestHandlerSendsTheFrozenPayloadAndFailsClosedOnMalformed(t *testing.T) {
 	if string(frozenInBody) != string(want) {
 		t.Fatalf("submitted payload = %s, want the frozen facts %s", frozenInBody, want)
 	}
-	if string(body["version"]) != `"`+WebhookEnvelopeVersion+`"` || string(body["delivery_id"]) != `"`+id+`"` {
-		t.Fatalf("envelope version/delivery_id = %s %s", body["version"], body["delivery_id"])
+	if string(body["delivery_id"]) != `"`+id+`"` {
+		t.Fatalf("envelope delivery_id = %s", body["delivery_id"])
 	}
 
 	// A legacy row keeps its old bytes and fails closed: no attempt, no send.

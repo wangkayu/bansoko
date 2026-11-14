@@ -40,7 +40,9 @@ const (
 )
 
 type tmdbDetailsResponse struct {
-	Seasons []struct {
+	ID         int    `json:"id"`
+	PosterPath string `json:"poster_path"`
+	Seasons    []struct {
 		SeasonNumber int    `json:"season_number"`
 		Name         string `json:"name"`
 		EpisodeCount int    `json:"episode_count"`

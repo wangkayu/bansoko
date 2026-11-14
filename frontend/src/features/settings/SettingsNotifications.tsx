@@ -972,6 +972,7 @@ function EventTemplateEditor({
                   <p className="settings-notifications-template-copy text-caption">
                     <span className="tw:text-muted-foreground">{t("settings.notifications.template.previewBody")}</span>{draft.preview.body}
                   </p>
+                  <p className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.previewAttachments")}</p>
                   {draft.preview.errors.map((item, index) => (
                     <div key={index}>
                       <span className="text-caption tw:text-destructive">

@@ -106,6 +106,7 @@ export const settingsNotificationsCopy = {
       invalid: "模板无效",
       previewTitle: "标题：",
       previewBody: "正文：",
+      previewAttachments: "此处仅预览文本；图片与链接请保存后通过测试发送检查。",
       variables: "可用变量（{n}）与函数，保存时会检查",
       functions: "函数：{names}",
       catalogLoading: "变量列表加载中…",

@@ -197,15 +197,16 @@ func TestPreviewNotificationUnknownVariable(t *testing.T) {
 	}
 }
 
-// Every catalog variable has a real sample: a preview that uses all of them
-// renders with no null warnings.
+// Every text fact has a real sample: a preview that uses all catalog entries
+// renders with no null warnings. Image/link are attachment directives and
+// deliberately have no text sample.
 func TestPreviewNotificationSamplesEveryVariable(t *testing.T) {
 	service := NewService()
 	for _, trigger := range []NotificationTriggerKind{NotificationTriggerKindDownloadSubmitted, NotificationTriggerKindFileOperationCompleted, NotificationTriggerKindFileOperationFailed} {
 		variables, _ := notification.Variables(string(trigger))
 		body := ""
 		for _, variable := range variables {
-			if variable.SampleValue == "" {
+			if variable.SampleValue == "" && variable.Name != notification.ImageVariable && variable.Name != notification.LinkVariable {
 				t.Fatalf("%s: %s has no sample value", trigger, variable.Name)
 			}
 			body += variable.Name + "={{" + variable.Name + "}}\n"

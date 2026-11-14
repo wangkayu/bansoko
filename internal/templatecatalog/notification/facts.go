@@ -237,8 +237,9 @@ func TitleFacts(snapshot []byte, text func(string) any) map[string]any {
 	return facts
 }
 
-// EpisodeTitleFactKeys are the provider episode titles a whitelisted render
-// resolved and froze into its render snapshot's episode_titles block.
+// EpisodeTitleFactKeys are provider episode titles. A naming render may
+// already have frozen them; notification admission fills a referenced title
+// independently through the shared persistent cache before delivery creation.
 var EpisodeTitleFactKeys = []string{"bgm.ep_title", "tmdb.ep_title"}
 
 // EpisodeTitleFacts projects EpisodeTitleFactKeys from a frozen render

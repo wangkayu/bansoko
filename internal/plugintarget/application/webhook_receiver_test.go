@@ -103,7 +103,7 @@ func TestWebhookReachesAVerifyingReceiver(t *testing.T) {
 	bundle := `{"endpoint_url":"https://example.com/hook","signing_secret":"` + secret + `"}`
 	send := func(secretValue string, attempt int, tamper bool) int {
 		t.Helper()
-		req, err := handler.buildRequest(context.Background(), row, "T", "B", secretValue, "delivery-receiver-1", attempt)
+		req, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "T", Body: "B"}, secretValue, "delivery-receiver-1", attempt)
 		if err != nil {
 			t.Fatalf("buildRequest: %v", err)
 		}

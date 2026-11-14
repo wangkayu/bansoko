@@ -148,6 +148,10 @@ func TestEveryDefaultRendersWithItsSampleFacts(t *testing.T) {
 			if !message.Valid() {
 				t.Fatalf("%s/%s default does not render: %+v", trigger, locale, message.Errors)
 			}
+			refs := TemplateReferences(title, body)
+			if !refs[ImageVariable] || !refs[LinkVariable] {
+				t.Fatalf("%s/%s default has not migrated to semantic attachments: %v", trigger, locale, refs)
+			}
 		}
 	}
 }

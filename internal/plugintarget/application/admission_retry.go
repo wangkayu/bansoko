@@ -13,14 +13,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"bansoko/internal/apperrors"
+	"bansoko/internal/episodetitle"
 	observabilityport "bansoko/internal/observability/port"
 	plugintargetport "bansoko/internal/plugintarget/port"
 )
 
 // Admission retry policy. A failing admission is retried with exponential
 // backoff; after DefaultAdmissionMaxAttempts counted failures it becomes
-// admission_failed. Transient database errors back off without counting, so an
-// outage never exhausts the budget.
+// admission_failed. Transient database and provider metadata errors back off
+// without counting, so an outage never exhausts the budget.
 const (
 	DefaultAdmissionMaxAttempts = 8
 	admissionBackoffBase        = 5 * time.Second
@@ -75,9 +76,10 @@ func (r *AdmissionResolver) maxAttempts() int {
 }
 
 // isTransientError reports connection loss, serialization/deadlock, resource
-// exhaustion and operator intervention: failures a later attempt can clear.
+// exhaustion, operator intervention and transient provider metadata failures:
+// failures a later attempt can clear.
 func isTransientError(err error) bool {
-	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, episodetitle.ErrTransient) {
 		return true
 	}
 	var pg *pgconn.PgError

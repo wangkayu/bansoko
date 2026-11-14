@@ -102,7 +102,7 @@ func TestPluginDeliverHandler_Handle_2xx_Delivered(t *testing.T) {
 		t.Fatalf("expected rendered values, got title=%q body=%q", title, body)
 	}
 
-	req, err := handler.buildRequest(context.Background(), row, title, body, `{"adapter_kind":"telegram","bot_token":"123:ABC"}`, "delivery-1", 1)
+	req, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: title, Body: body}, `{"adapter_kind":"telegram","bot_token":"123:ABC"}`, "delivery-1", 1)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -164,34 +164,26 @@ func TestPluginDeliverHandler_ResolveMessage_PartialState(t *testing.T) {
 	}
 }
 
-func TestPluginDeliverHandler_BuildTelegramRequest(t *testing.T) {
+func TestPluginDeliverHandler_BuildTelegramRequestUsesHTMLWithoutLegacyBranch(t *testing.T) {
 	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
 	row := deliveryRow{
 		adapterKind:       "telegram",
 		adapterConfigJSON: []byte(`{"adapter_kind":"telegram","chat_id":"99999"}`),
 	}
 
-	req, err := handler.buildRequest(context.Background(), row, "Hello", "World", `{"bot_token":"tok123"}`, "d-1", 1)
+	req, mode, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "Hello", Body: "World"}, `{"bot_token":"tok123"}`, "d-1", 1)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
-	if !strings.Contains(req.URL.String(), "bot tok123") && !strings.Contains(req.URL.String(), "bottok123") {
-		// URL should be https://api.telegram.org/bottok123/sendMessage
-		if req.URL.String() != "https://api.telegram.org/bottok123/sendMessage" {
-			t.Errorf("unexpected URL: %s", req.URL.String())
-		}
+	if req.URL.String() != "https://api.telegram.org/bottok123/sendMessage" || mode.Method != "sendMessage" {
+		t.Fatalf("request = %s, mode = %s", req.URL, mode.String())
 	}
-
-	bodyBytes, _ := io.ReadAll(req.Body)
 	var payload map[string]string
-	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if payload["chat_id"] != "99999" {
-		t.Errorf("expected chat_id 99999, got %q", payload["chat_id"])
-	}
-	if payload["text"] != "Hello\n\nWorld" {
-		t.Errorf("expected combined message, got %q", payload["text"])
+	if payload["chat_id"] != "99999" || payload["parse_mode"] != "HTML" || payload["text"] != "<b>Hello</b>\n\nWorld" {
+		t.Fatalf("typed Telegram payload = %v", payload)
 	}
 }
 
@@ -203,7 +195,8 @@ func TestPluginDeliverHandler_BuildFeishuRequest(t *testing.T) {
 	}
 
 	secretValue := `{"webhook_url":"https://open.feishu.cn/hook/abc123"}`
-	req, err := handler.buildRequest(context.Background(), row, "Title", "Body", secretValue, "d-2", 1)
+	message := outboundMessage{Title: "Title", Body: "Body", Image: &outboundImage{Source: "bgm", URL: "https://lain.bgm.tv/pic/1.jpg"}}
+	req, _, err := handler.buildRequest(context.Background(), row, message, secretValue, "d-2", 1)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -211,20 +204,27 @@ func TestPluginDeliverHandler_BuildFeishuRequest(t *testing.T) {
 		t.Errorf("unexpected URL: %s", req.URL.String())
 	}
 
-	bodyBytes, _ := io.ReadAll(req.Body)
-	var payload map[string]any
-	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+	var payload struct {
+		MsgType string `json:"msg_type"`
+		Content struct {
+			Post struct {
+				ZH struct {
+					Title   string                `json:"title"`
+					Content [][]feishuPostElement `json:"content"`
+				} `json:"zh_cn"`
+			} `json:"post"`
+		} `json:"content"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if payload["msg_type"] != "text" {
-		t.Errorf("expected msg_type text, got %v", payload["msg_type"])
+	post := payload.Content.Post.ZH
+	if payload.MsgType != "post" || post.Title != "Title" || len(post.Content) != 2 || post.Content[0][0].Text != "Body" {
+		t.Fatalf("typed Feishu payload = %+v", payload)
 	}
-	content, ok := payload["content"].(map[string]any)
-	if !ok {
-		t.Fatal("content is not a map")
-	}
-	if content["text"] != "Title\n\nBody" {
-		t.Errorf("expected combined message, got %q", content["text"])
+	image := post.Content[1][0]
+	if image.Tag != "a" || image.Text != "Bangumi" || image.Href != message.Image.URL {
+		t.Fatalf("Feishu image link = %+v", image)
 	}
 }
 
@@ -249,7 +249,7 @@ func TestPluginDeliverHandler_BuildWebhookRequest(t *testing.T) {
 	}
 
 	secretValue := `{"endpoint_url":"https://example.com/hook","auth_value":"secret-tok"}`
-	req, err := handler.buildRequest(context.Background(), row, "Title", "Body", secretValue, "d-3", 2)
+	req, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "Title", Body: "Body"}, secretValue, "d-3", 2)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestPluginDeliverHandler_BuildWebhookRequest(t *testing.T) {
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if payload["version"] != WebhookEnvelopeVersion || payload["event"] != "download_submitted" || payload["delivery_id"] != "d-3" {
+	if payload["event"] != "download_submitted" || payload["delivery_id"] != "d-3" {
 		t.Errorf("envelope = %v", payload)
 	}
 	if payload["attempt"] != float64(2) || payload["timestamp"] != "2026-01-01T00:00:00Z" {
@@ -304,7 +304,7 @@ func TestPluginDeliverHandler_WebhookSignatureCoversTimestampAndBody(t *testing.
 		triggerKind:       "download_failed",
 		payload:           []byte(`{"schema_version":1,"trigger_kind":"download_failed","facts":{"anime.title":"A"}}`),
 	}
-	req, err := handler.buildRequest(context.Background(), row, "T", "B", `{"endpoint_url":"https://example.com/hook","signing_secret":"whsec-test"}`, "d-9", 1)
+	req, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "T", Body: "B"}, `{"endpoint_url":"https://example.com/hook","signing_secret":"whsec-test"}`, "d-9", 1)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -321,8 +321,8 @@ func TestPluginDeliverHandler_WebhookSignatureCoversTimestampAndBody(t *testing.
 // "<timestamp>.<raw body>", lowercase hex, "sha256=" prefix. The expected
 // value was computed independently (openssl dgst -sha256 -hmac).
 func TestSignWebhookKnownVector(t *testing.T) {
-	got := SignWebhook("whsec_test_secret", 1767225600, []byte(`{"version":"1","delivery_id":"d-1"}`))
-	const want = "sha256=66695cf7a3300b8ab63db2154980ffe45db24b2748b9f184a430ba04ce173d59"
+	got := SignWebhook("whsec_test_secret", 1767225600, []byte(`{"delivery_id":"d-1"}`))
+	const want = "sha256=d2791b1ce9f739072e8001a72dfe8191817c559634a7964149e045db3f861d73"
 	if got != want {
 		t.Fatalf("SignWebhook = %q, want %q", got, want)
 	}
@@ -335,7 +335,7 @@ func TestPluginDeliverHandler_BuildTelegramRequest_MissingBotToken(t *testing.T)
 		adapterConfigJSON: []byte(`{"adapter_kind":"telegram","chat_id":"12345"}`),
 	}
 
-	_, err := handler.buildRequest(context.Background(), row, "T", "B", `{"bot_token":null}`, "d-4", 1)
+	_, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "T", Body: "B"}, `{"bot_token":null}`, "d-4", 1)
 	if err == nil {
 		t.Fatal("expected error for missing bot_token")
 	}
@@ -348,7 +348,7 @@ func TestPluginDeliverHandler_BuildFeishuRequest_MissingWebhookURL(t *testing.T)
 		adapterConfigJSON: []byte(`{"adapter_kind":"feishu"}`),
 	}
 
-	_, err := handler.buildRequest(context.Background(), row, "T", "B", `{}`, "d-5", 1)
+	_, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "T", Body: "B"}, `{}`, "d-5", 1)
 	if err == nil {
 		t.Fatal("expected error for missing webhook_url")
 	}
@@ -361,7 +361,7 @@ func TestPluginDeliverHandler_BuildWebhookRequest_MissingEndpointURL(t *testing.
 		adapterConfigJSON: []byte(`{"adapter_kind":"webhook","auth_kind":"none"}`),
 	}
 
-	_, err := handler.buildRequest(context.Background(), row, "T", "B", `{}`, "d-6", 1)
+	_, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "T", Body: "B"}, `{}`, "d-6", 1)
 	if err == nil {
 		t.Fatal("expected error for missing endpoint_url")
 	}
@@ -374,7 +374,7 @@ func TestPluginDeliverHandler_UnsupportedAdapterKind(t *testing.T) {
 		adapterConfigJSON: []byte(`{}`),
 	}
 
-	_, err := handler.buildRequest(context.Background(), row, "T", "B", "", "d-7", 1)
+	_, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "T", Body: "B"}, "", "d-7", 1)
 	if err == nil {
 		t.Fatal("expected error for unsupported adapter kind")
 	}
@@ -472,7 +472,7 @@ func TestPluginDeliverHandler_WebhookAuthKinds(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			row := deliveryRow{adapterKind: "webhook", adapterConfigJSON: []byte(tc.config), triggerKind: "download_submitted", payload: []byte(`{"schema_version":1,"trigger_kind":"download_submitted","facts":{}}`)}
-			req, err := handler.buildRequest(context.Background(), row, "title", "body", secret, "delivery", 1)
+			req, _, err := handler.buildRequest(context.Background(), row, outboundMessage{Title: "title", Body: "body"}, secret, "delivery", 1)
 			if err != nil {
 				t.Fatal(err)
 			}

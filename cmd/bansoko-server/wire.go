@@ -18,6 +18,7 @@ import (
 	configurationapplication "bansoko/internal/configuration/application"
 	downloadapplication "bansoko/internal/download/application"
 	"bansoko/internal/downloadcompletion"
+	"bansoko/internal/episodetitle/namingfacts"
 	"bansoko/internal/events"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/filemanager"
@@ -46,6 +47,10 @@ func initializePluginRuntime(
 	fileOperationService *fileoperationapplication.Service,
 	rssService *rssapplication.Service,
 	observabilityService *observabilityapplication.Service,
+	posterConnections metadataadapter.ConnectionSource,
+	posterClientResolver metadataadapter.HTTPClientResolver,
+	metadataSecrets metadataadapter.SecretResolver,
+	episodeTitleQueries *namingfacts.Querier,
 ) (*pluginRuntime, error) {
 	wire.Build(providePluginRuntime)
 	return nil, nil

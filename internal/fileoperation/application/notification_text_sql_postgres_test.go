@@ -9,7 +9,7 @@ import (
 func TestNotificationTextSQLParity(t *testing.T) {
 	_, _ = preparedPlanPGFixture(t)
 	db := ownerTestDB(t)
-	values := []string{"", "Show", "  Show  ", "中文标题", "/home/media", "../media", "a/b", "secret", "password=x", "bearer abc", "payload", "panic: x", "https://example.invalid", "magnet:abc", "C:\\media", "\\\\host\\media", "name\nline", "\u00a0Title\u00a0", strings.Repeat("a", 512), strings.Repeat("a", 513)}
+	values := []string{"", "\n", "Show", "  Show  ", "中文标题", "/home/media", "../media", "a/b", "secret", "password=x", "bearer abc", "payload", "panic: x", "https://example.invalid", "magnet:abc", "C:\\media", "\\\\host\\media", "name\nline", "\u00a0Title\u00a0", strings.Repeat("a", 512), strings.Repeat("a", 513)}
 	for _, space := range []rune{'\t', '\n', '\r', '\v', '\f', 0x85, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000} {
 		values = append(values, string(space)+"Title"+string(space))
 	}
