@@ -152,7 +152,7 @@ func indexOf(s, needle string) int {
 // release, and every old version by file name plus whatever identity that
 // version recorded.
 func TestReplacementAppliedRequest(t *testing.T) {
-	request, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "GroupA", "[GroupA] Show - 01 [1080p]", []DisplacedTarget{
+	request, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "GroupA", "[GroupA] Show - 01 [1080p]", "winning-release", []DisplacedTarget{
 		{File: "/library/Show/ep.mkv", Group: "GroupA", Title: "[GroupA] Show - 01 [720p]"},
 		{File: "/library/Show/extra.mkv"},
 	})
@@ -185,10 +185,10 @@ func TestReplacementAppliedRequest(t *testing.T) {
 	if len(second) != 1 || second["path"] != "extra.mkv" {
 		t.Fatalf("second target = %v", second)
 	}
-	if _, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "", "", nil); err == nil {
+	if _, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "", "", "winning-release", nil); err == nil {
 		t.Fatal("a replacement that replaced nothing must not build a notice")
 	}
-	untitled, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "", "", "", []DisplacedTarget{{File: "ep.mkv"}})
+	untitled, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "", "", "", "winning-release", []DisplacedTarget{{File: "ep.mkv"}})
 	if err != nil {
 		t.Fatal(err)
 	}

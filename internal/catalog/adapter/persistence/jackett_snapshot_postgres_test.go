@@ -18,6 +18,8 @@ func TestJackettSearchSnapshotPersistsClosedSourceSite(t *testing.T) {
 	repository := NewRepository(db)
 	now := time.Now().UTC()
 	seeds := []catalogdomain.ProviderFeedSnapshotSeed{snapshotSeed("jackett-seed")}
+	seeds[0].SourceGUID = "tracker-entry-123"
+	seeds[0].DetailsURL = "https://tracker.example.test/details/123"
 	seeds[0].SourceSite = &acquisitiondomain.SeedSourceSite{ID: "example-indexer", Name: "Example Tracker", Type: "semi-private"}
 	contentHash, err := catalogdomain.CanonicalFeedSnapshotContentHash(seeds)
 	if err != nil {
@@ -39,6 +41,9 @@ func TestJackettSearchSnapshotPersistsClosedSourceSite(t *testing.T) {
 	}
 	if read.Provider != "jackett" || read.SnapshotKind != catalogdomain.FeedSnapshotKindSearch || len(read.Seeds) != 1 {
 		t.Fatalf("unexpected Jackett snapshot: %+v", read)
+	}
+	if read.Seeds[0].SourceGUID != seeds[0].SourceGUID || read.Seeds[0].DetailsURL != seeds[0].DetailsURL {
+		t.Fatalf("source page did not round trip: %+v", read.Seeds[0])
 	}
 	site := read.Seeds[0].SourceSite
 	if site == nil || site.ID != "example-indexer" || site.Name != "Example Tracker" || site.Type != "semi-private" {

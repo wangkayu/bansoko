@@ -139,14 +139,14 @@ func TestAcquireSeedOnceAdmitsExpandedSeedWithoutFeedInfoHash(t *testing.T) {
 	if result.DownloadTaskID == nil || animetest.CountRows(t, db, "download_tasks") != 1 {
 		t.Fatal("the expanded seed created no download task")
 	}
-	// The one-shot item's identity falls back to the seed's torrent URL, which
-	// can carry a tracker key: the release stores its digest, as RSS does.
+	// The server snapshot now preserves the feed GUID, so the release uses the
+	// same stable item identity as RSS instead of falling back to its download URL.
 	var stableItemKey string
 	if err := db.QueryRowContext(ctx, `SELECT stable_item_key FROM releases`).Scan(&stableItemKey); err != nil {
 		t.Fatal(err)
 	}
-	if stableItemKey == fixture.item.Enclosure || strings.Contains(stableItemKey, "torrent.example.test") || !strings.HasPrefix(stableItemKey, "sha256:") {
-		t.Fatalf("release stable_item_key = %q, want the digest of the torrent URL", stableItemKey)
+	if stableItemKey != fixture.item.GUID {
+		t.Fatalf("release stable_item_key = %q, want captured GUID %q", stableItemKey, fixture.item.GUID)
 	}
 
 	marker, err := fixture.service.oneShotMarkers.GetByRequestIdempotencyKey(ctx, "one-shot-lazy-expanded-0001")

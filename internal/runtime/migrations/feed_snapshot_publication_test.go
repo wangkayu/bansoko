@@ -79,7 +79,7 @@ func TestFeedSnapshotFinalSealRejectsPartialGraph(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := inTx(db, func(tx *sql.Tx) error {
-				if _, err := tx.ExecContext(ctx, `INSERT INTO provider_feed_snapshots(id,provider,provider_entry_ref,provider_group_ref,version,content_hash,hash_schema,projection_schema,seed_count) VALUES('partial','mikan','123','456',1,$1,'provider-feed-snapshot-v1','torrent-manifest-v1',1)`, acqDigest("a")); err != nil {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO provider_feed_snapshots(id,provider,provider_entry_ref,provider_group_ref,version,content_hash,hash_schema,projection_schema,seed_count) VALUES('partial','mikan','123','456',1,$1,'provider-feed-snapshot-v2','torrent-manifest-v1',1)`, acqDigest("a")); err != nil {
 					return err
 				}
 				if tc.extra != "" {

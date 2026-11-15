@@ -42,6 +42,11 @@ func checkQualifiedQueuedPostgres(t *testing.T, ctx context.Context, db *sql.DB,
 		t.Fatal(err)
 	}
 	inputValue.Object["source"].Object["kind"] = protocol.Value{Kind: protocol.KindString, String: "automatic_source"}
+	provenance, err := protocol.ParseStrict(c.material.release.provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputValue.Object["source"].Object["provenance"] = provenance
 	if c.configKind == "owner" {
 		resolved := captureSections(c.material)
 		for i, section := range inputValue.Object["config"].Object["sections"].Array {

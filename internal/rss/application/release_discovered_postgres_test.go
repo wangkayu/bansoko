@@ -186,7 +186,7 @@ func TestReleaseDiscoveredSkipsBaselineAndNotifiesOnce(t *testing.T) {
 	if err := json.Unmarshal(request.Payload, &facts); err != nil {
 		t.Fatal(err)
 	}
-	if facts["anime.title"] != "Test Show" || facts["release.src"] != "custom_rss" || facts["release.id"] != newReleaseID ||
+	if facts["anime.title"] != "Test Show" || facts["release.src"] != "custom" || facts["release.id"] != newReleaseID ||
 		!strings.Contains(fmt.Sprint(facts["release.title"]), "Test Show - 02") {
 		t.Fatalf("facts=%v", facts)
 	}

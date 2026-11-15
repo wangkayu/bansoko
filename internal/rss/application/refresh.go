@@ -198,7 +198,11 @@ func buildFeedEvaluations(ctx context.Context, items []acquisitiondomain.FeedIte
 		if err != nil {
 			return nil, fmt.Errorf("encode feed facts: %w", err)
 		}
-		internalFacts, err := encodeInternalFeedFacts(item)
+		channel := item.Provider
+		if snapshot.sourceKind == "custom_rss" {
+			channel = "custom"
+		}
+		internalFacts, err := encodeInternalFeedFactsForChannel(item, channel)
 		if err != nil {
 			return nil, fmt.Errorf("encode internal feed facts: %w", err)
 		}

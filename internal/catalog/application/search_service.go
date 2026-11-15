@@ -281,6 +281,7 @@ func (a SeedSearchApplication) ReadSearchSeedPayload(ctx context.Context, provid
 		TorrentState: catalogdomain.TorrentAcquisitionAvailable,
 		Payload:      entry.Payload, PayloadDigest: &digest, Manifest: fact.Manifest,
 		AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite,
+		SourceGUID: seed.SourceGUID, DetailsURL: seed.DetailsURL,
 	}, nil
 }
 

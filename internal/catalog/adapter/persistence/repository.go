@@ -177,6 +177,8 @@ func (r *Repository) readProviderFeedSnapshot(ctx context.Context, queries *gene
 			return catalogdomain.ProviderFeedSnapshot{}, err
 		}
 		fact.SourceSite = sourceSite
+		fact.SourceGUID = seed.SourceGuid
+		fact.DetailsURL = seed.DetailsUrl
 		if seed.ManifestTorrentParserVersion.Valid {
 			manifest := &catalogdomain.TorrentManifest{
 				PayloadDigest:    seed.PayloadDigest.String,

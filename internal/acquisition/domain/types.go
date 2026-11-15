@@ -36,9 +36,11 @@ type FeedItem struct {
 	GUID string
 	// SourceSite attributes one result to the tracker that Jackett aggregated.
 	// It is independent of the subtitle group parsed from the release title.
-	SourceSite        *SeedSourceSite `json:"-"`
-	Title             string
-	Link              string
+	SourceSite *SeedSourceSite `json:"-"`
+	Title      string
+	Link       string
+	// DetailsURL is an explicit page supplied by an adapter, never DownloadURL.
+	DetailsURL        string
 	Description       string
 	Enclosure         string
 	EnclosureType     string
@@ -300,6 +302,7 @@ type rssItem struct {
 	GUID        string         `xml:"guid"`
 	Title       string         `xml:"title"`
 	Link        string         `xml:"link"`
+	Comments    string         `xml:"comments"`
 	Description string         `xml:"description"`
 	PubDate     string         `xml:"pubDate"`
 	Enclosures  []rssEnclosure `xml:"enclosure"`
@@ -559,8 +562,12 @@ func normalizeAtomEntry(entry atomEntry) (FeedItem, bool) {
 	if guid == "" {
 		guid = firstNonEmpty(download, link)
 	}
+	details := fallback
+	if !isHTTPURL(details) || download == "" || details == download || isTorrentDownload(details, "") {
+		details = ""
+	}
 	return FeedItem{
-		GUID: guid, Title: title, Link: link, Enclosure: download,
+		GUID: guid, Title: title, Link: link, DetailsURL: details, Enclosure: download,
 		EnclosureType: strings.TrimSpace(selected.Type), TorrentURL: torrentURL,
 		TorrentInfoHash: infoHash, Published: parseTime(firstNonEmpty(entry.Updated, entry.Created)),
 	}, sawMagnet
@@ -632,6 +639,15 @@ func normalizeRSSItem(item rssItem) (FeedItem, bool) {
 	if torrent.size > 0 {
 		length = torrent.size
 	}
+	// RSS link denotes the item page only when an independent torrent location
+	// exists. Never reuse the normalizer's enclosure fallback as a page.
+	details := strings.TrimSpace(item.Comments)
+	if !isHTTPURL(details) {
+		details = strings.TrimSpace(item.Link)
+		if !isHTTPURL(details) || torrent.url == "" || details == torrent.url || isTorrentDownload(details, "") {
+			details = ""
+		}
+	}
 	guid := strings.TrimSpace(item.GUID)
 	if guid == "" {
 		guid = firstNonEmpty(strings.TrimSpace(enclosure.URL), strings.TrimSpace(torrent.url), link)
@@ -640,6 +656,7 @@ func normalizeRSSItem(item rssItem) (FeedItem, bool) {
 		GUID:             guid,
 		Title:            strings.TrimSpace(item.Title),
 		Link:             link,
+		DetailsURL:       details,
 		Description:      strings.TrimSpace(item.Description),
 		Enclosure:        strings.TrimSpace(enclosure.URL),
 		EnclosureType:    strings.TrimSpace(enclosure.Type),

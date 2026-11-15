@@ -47,6 +47,7 @@
       }
     },
     "source": {
+      "provenance": null,
       "kind": "one_shot_seed",
       "release": {
         "$fixture": "absent"
@@ -807,8 +808,8 @@
       "type": "SourceV1",
       "domain": "acquisition-input:source:v1",
       "definition": "source",
-      "expected_sha256": "d638e67be9bab4a6ad902967d2dd2d07361b241606f16a99747d14156ac92794",
-      "expected_bytes": 1555
+      "expected_sha256": "f7072ce92a5fe473b83baca4e48bebefaa334b8ddb760769d6c5d868fbe75fc3",
+      "expected_bytes": 1573
     },
     {
       "id": "GV02",
@@ -863,8 +864,8 @@
       "type": "AcquisitionInputV1",
       "domain": "acquisition-input:v1",
       "definition": "input",
-      "expected_sha256": "4b79df31913bc8f13b09c36eba35263c035f1b72ac33230f7252887010733542",
-      "expected_bytes": 6446
+      "expected_sha256": "36b5ffb6aa27fb1a087b1633cd7a91941e7c990213970a82b0a46c307946c5ec",
+      "expected_bytes": 6464
     },
     {
       "id": "GV09",

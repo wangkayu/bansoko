@@ -306,6 +306,8 @@ type ProviderRSSPreviewSeed struct {
 	// snapshot written before the column existed); a non-nil set may be empty.
 	AniBTTags  *acquisitiondomain.StoredAniBTTags
 	SourceSite *acquisitiondomain.SeedSourceSite
+	SourceGUID string
+	DetailsURL string
 }
 
 type ProviderRSSPreviewResult struct {

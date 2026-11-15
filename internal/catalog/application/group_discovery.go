@@ -318,7 +318,8 @@ func (s *Service) expandedSeedTorrentPayload(ctx context.Context, provider, cata
 		// Expansion replaces the bytes and the projection, not the feed facts:
 		// the tag set is provider XML the snapshot froze, and a caller of this
 		// read must see the same seed facts whichever branch served it.
-		AniBTTags: seed.AniBTTags,
+		AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite,
+		SourceGUID: seed.SourceGUID, DetailsURL: seed.DetailsURL,
 	}, nil
 }
 
@@ -475,6 +476,8 @@ func mapFeedItemsToSnapshotSeeds(items []acquisitiondomain.FeedItem) ([]catalogd
 		// means the provider has no tag block; an AniBT item is always non-nil.
 		seed.AniBTTags = acquisitiondomain.StoredAniBTTagsFromSet(item.AniBTTags)
 		seed.SourceSite = item.SourceSite
+		seed.SourceGUID = item.GUID
+		seed.DetailsURL = item.DetailsURL
 		if len(item.TorrentPayload) > 0 {
 			payloadDigest := catalogdomain.DigestBytes(item.TorrentPayload)
 			seed.Payload = append([]byte(nil), item.TorrentPayload...)
@@ -606,6 +609,8 @@ func mapProviderFeedSnapshot(snapshot catalogdomain.ProviderFeedSnapshot) catalo
 		mapped.Manifest = seed.Manifest
 		mapped.AniBTTags = seed.AniBTTags
 		mapped.SourceSite = seed.SourceSite
+		mapped.SourceGUID = seed.SourceGUID
+		mapped.DetailsURL = seed.DetailsURL
 		seeds = append(seeds, mapped)
 	}
 	return catalogdomain.ProviderRSSPreviewResult{

@@ -1,92 +1,72 @@
 package application
 
 import (
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"bansoko/internal/templatecatalog/notification"
 )
 
-func TestBusinessDeliveryLinkFactsDeriveProviderAndDownloadURLs(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		provider     string
-		internalJSON string
-		wantKey      string
-		wantURL      string
-	}{
-		{
-			name: "AniBT release page", provider: "anibt",
-			internalJSON: `{"link":"https://anibt.net/release/123","download_url":"https://cdn.example.test/123.torrent"}`,
-			wantKey:      notification.AniBTLinkVariable, wantURL: "https://anibt.net/release/123",
-		},
-		{
-			name: "AniBT numeric GUID fallback", provider: "anibt",
-			internalJSON: `{"guid":"123"}`,
-			wantKey:      notification.AniBTLinkVariable, wantURL: "https://anibt.net/release/123",
-		},
-		{
-			name: "Mikan release page", provider: "mikan",
-			internalJSON: `{"link":"https://mikanani.me/Home/Episode/ABCDEF"}`,
-			wantKey:      notification.MikanLinkVariable, wantURL: "https://mikanani.me/Home/Episode/ABCDEF",
-		},
-		{
-			name: "Mikan info hash fallback", provider: "mikan",
-			internalJSON: `{"torrent_info_hash_v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}`,
-			wantKey:      notification.MikanLinkVariable, wantURL: "https://mikanani.me/Home/Episode/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		},
+func TestBusinessDeliverySourceFacts(t *testing.T) {
+	for _, tc := range []struct{ provider, site, page, special string }{
+		{"anibt", "AniBT", "https://anibt.net/release/123", "anibt.link"},
+		{"mikan", "Mikan", "https://mikanani.me/Home/Episode/abc", "mikan.link"},
+		{"nyaa", "Nyaa", "https://nyaa.si/view/123", ""},
+		{"jackett", "Sample Tracker", "https://tracker.example.test/details/123", ""},
+		{"custom", "", "https://feed.example.test/posts/123", ""},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			facts := map[string]any{"release.id": "release-1"}
-			applyBusinessDeliveryLinkFacts(facts, tc.provider, []byte(tc.internalJSON))
-			if got := facts[tc.wantKey]; got != tc.wantURL {
-				t.Fatalf("%s = %#v, want %q", tc.wantKey, got, tc.wantURL)
+		t.Run(tc.provider, func(t *testing.T) {
+			evidence, _ := json.Marshal(map[string]any{"provider": tc.provider, "details_url": tc.page, "download_url": "https://cdn.example.test/123.torrent", "source_site": map[string]string{"id": "sample", "name": "Sample Tracker", "type": "private"}})
+			facts := map[string]any{}
+			applyBusinessDeliverySourceFacts(facts, "download_submitted", evidence)
+			if facts["release.src"] != tc.provider || notificationFactString(facts, "release.site") != tc.site || facts["release.link"] != tc.page || facts["download.link"] != "https://cdn.example.test/123.torrent" {
+				t.Fatalf("facts=%v", facts)
+			}
+			for _, key := range []string{"anibt.link", "mikan.link"} {
+				want := ""
+				if key == tc.special {
+					want = tc.page
+				}
+				if notificationFactString(facts, key) != want {
+					t.Fatalf("%s=%v", key, facts[key])
+				}
 			}
 		})
 	}
 }
 
-func TestBusinessDeliveryDownloadLinkSkipsCredentials(t *testing.T) {
-	facts := map[string]any{}
-	applyBusinessDeliveryLinkFacts(facts, "custom", []byte(`{
-		"download_url":"https://downloads.example.test/1.torrent?passkey=secret",
-		"torrent_url":"https://user:pass@downloads.example.test/2.torrent",
-		"enclosure":"https://downloads.example.test/3.torrent?token=secret"
-	}`))
-	if _, exists := facts[notification.DownloadLinkVariable]; exists {
-		t.Fatalf("credentialed download URL was exported: %#v", facts[notification.DownloadLinkVariable])
-	}
-
-	applyBusinessDeliveryLinkFacts(facts, "custom", []byte(`{
-		"download_url":"https://downloads.example.test/1.torrent?token=secret",
-		"torrent_url":"https://downloads.example.test/2.torrent"
-	}`))
-	if got := facts[notification.DownloadLinkVariable]; got != "https://downloads.example.test/2.torrent" {
-		t.Fatalf("safe fallback = %#v", got)
-	}
-}
-
-func TestBusinessDeliveryLinkFactsFailClosedOnMalformedSnapshot(t *testing.T) {
-	facts := map[string]any{"release.src": "anibt"}
-	applyBusinessDeliveryLinkFacts(facts, "", []byte(`{"link":`))
-	for _, key := range []string{notification.AniBTLinkVariable, notification.MikanLinkVariable, notification.DownloadLinkVariable} {
-		if value, exists := facts[key]; exists {
-			t.Fatalf("malformed snapshot produced %s=%#v", key, value)
+func TestBusinessDeliverySourceUnknownAndUnsafe(t *testing.T) {
+	for _, raw := range []string{
+		`{`, `{}`, `{"provider":"custom","details_url":"https://example.test/page","download_url":123}`, `{"provider":"provider_group"}`, `{"provider":"custom","download_url":"https://downloads.example.test/file.torrent?passkey=secret"}`,
+		`{"provider":"anibt","details_url":"https://anibt.net/release/123?auth=secret","download_url":"https://downloads.example.test/file.torrent?signature=secret"}`,
+		`{"provider":"custom","details_url":"https://user@tracker.example.test/details/1"}`,
+	} {
+		facts := map[string]any{"release.src": "stale", "release.link": "https://stale.example.test", "anibt.link": "https://anibt.net/release/1"}
+		applyBusinessDeliverySourceFacts(facts, "download_failed", []byte(raw))
+		for _, key := range []string{"release.link", "download.link", "anibt.link", "mikan.link"} {
+			if facts[key] != nil {
+				t.Fatalf("unsafe evidence=%s key=%s value=%v", raw, key, facts[key])
+			}
 		}
 	}
+	// A download proxy and a GUID are not page evidence. Missing tracker attribution
+	// never changes the channel to the proxy host or manufactures a site name.
+	facts := map[string]any{}
+	applyBusinessDeliverySourceFacts(facts, "release_discovered", []byte(`{"provider":"jackett","guid":"123","download_url":"https://proxy.example.test/123.torrent"}`))
+	if facts["release.site"] != nil || facts["release.link"] != nil || facts["release.src"] != "jackett" {
+		t.Fatal(facts)
+	}
+	if notification.LinkValue(facts, "download.link") == "" {
+		t.Fatal("independent download link missing")
+	}
 }
 
-func TestBusinessDeliveryLinkFactsNeverExposeCredentialNames(t *testing.T) {
-	facts := map[string]any{}
-	applyBusinessDeliveryLinkFacts(facts, "anibt", []byte(`{
-		"link":"https://anibt.net/release/123?auth=secret",
-		"download_url":"https://downloads.example.test/1.torrent?signature=secret"
-	}`))
-	encoded := strings.Join([]string{
-		notificationFactString(facts, notification.AniBTLinkVariable),
-		notificationFactString(facts, notification.DownloadLinkVariable),
-	}, "\n")
-	if strings.Contains(encoded, "secret") || strings.Contains(encoded, "auth=") || strings.Contains(encoded, "signature=") {
-		t.Fatalf("credential material escaped into derived links: %q", encoded)
+func TestBusinessDeliverySourceEventScope(t *testing.T) {
+	for _, trigger := range []string{"subscription_changed", "file_displaced", "replacement_deletion_failed"} {
+		facts := map[string]any{}
+		applyBusinessDeliverySourceFacts(facts, trigger, []byte(`{"provider":"anibt","details_url":"https://anibt.net/release/123"}`))
+		if len(facts) != 0 {
+			t.Fatalf("%s gained ambiguous source facts: %v", trigger, facts)
+		}
 	}
 }

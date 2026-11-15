@@ -1,5 +1,6 @@
 ## New
 
+- Download, import and unrecognized-file notifications support task.origin to distinguish subscription tasks (subscription) from one-shot tasks (one_shot). Source-aware events add release.site for the publishing site and release.link for an explicit release details page; download.link remains the download address.
 - Containers now support bansoko-server update check|apply|status for embedded update checks, admission and status, with human-readable and JSON output. Access is limited to root or the serving PUID and requires no web session or API token.
 - Library import completion and execution failure notifications support original file-name attributes through frt.*. File displacement notifications can show both files using frt.* and taker.frt.*.
 
@@ -18,6 +19,9 @@
 
 ## Important
 
+- New notifications use release.src consistently for the acquisition channel: anibt, mikan, nyaa, jackett or custom, instead of provider_group/custom_rss. Custom templates that compare the old values need manual adjustment. This source change does not append source lines to default or custom templates.
+- Source evidence is captured when a task is accepted or an event is created; delayed delivery and retries do not query the current source again. Missing site or details-page evidence stays empty. Credential-bearing or malformed links are withheld, and a download address never substitutes for a details page.
+- This change does not support replay of old task inputs, search snapshot digests or request protocols, and does not backfill historical sources. Finish in-flight tasks before upgrading, then search again and issue new requests. Frozen notification content is not rewritten; replay of historical pending notifications is not guaranteed.
 - Local update commands require the new server; older images and overlays do not gain them retroactively, so the first upgrade still uses the Web UI or an image switch. After an overlay upgrade, /app/bansoko-server may remain the old base. Read current under BANSOKO_UPDATES_ROOT and invoke the bansoko-server in the releases directory it points to, or /app/bansoko-server when no overlay exists. update help includes the complete container invocation; it needs neither /proc/1/exe access nor a Docker management socket. apply reports admission only by default. --wait retries only while the command remains alive: handoff can terminate docker exec, and neither disconnection nor a Docker exit code establishes the update outcome. After restart, query update status with a new exec.
 - Notification targets using system defaults adopt the new wording; custom templates remain unchanged.
 - frt.* is supported only in naming, library import completion, execution failure and file displacement. Existing references in other events must be removed. taker.frt.* is supported only in file displacement.

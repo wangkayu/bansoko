@@ -13,6 +13,7 @@ import (
 func TestFileNotificationPayloadCoversCatalog(t *testing.T) {
 	for _, trigger := range []string{plugintargetport.TriggerFileOperationCompleted, plugintargetport.TriggerFileOperationFailed} {
 		fields := fileOperationNotificationFacts{frozen: notification.InputFacts(nil)}
+		fields.frozen["task.origin"] = notification.TaskOrigin("")
 		for key, value := range notification.EpisodeFacts(nil) {
 			fields.frozen[key] = value
 		}
@@ -25,8 +26,8 @@ func TestFileNotificationPayloadCoversCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, key := range notification.PayloadKeys(trigger) {
-			if key == "event.at" {
-				continue // filled by the admission resolver from the ledger row
+			if key == "event.at" || key == "release.site" {
+				continue // filled by the resolver from the ledger time and frozen source evidence
 			}
 			if _, ok := payload[key]; !ok {
 				t.Errorf("%s: payload never writes %s", trigger, key)

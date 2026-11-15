@@ -160,6 +160,11 @@ func seedDownloadTask(t *testing.T, db *sql.DB, taskID, state string, correlatio
 
 func seedDownloadTaskWithInput(t *testing.T, db *sql.DB, taskID, state string, correlation string, withInput bool) {
 	t.Helper()
+	seedDownloadTaskWithEntry(t, db, taskID, state, correlation, withInput, "one_shot")
+}
+
+func seedDownloadTaskWithEntry(t *testing.T, db *sql.DB, taskID, state string, correlation string, withInput bool, entryKind string) {
+	t.Helper()
 	ctx := context.Background()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -210,7 +215,16 @@ VALUES ('torrent-input-qb-test', 'release-qb-test', $1, $2, 'sha256:test', 'QB T
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("commit owner seed: %v", err)
 	}
-	acquisitionfixture.SeedDownload(t, ownerTestDB(t), "acq-"+taskID, taskID, "release-qb-test", "anime-qb-test", "sub-qb-test", "source-qb-test", "qb:release-qb-test", payload, metadata.InfoHashV1, string(frozenInputRaw))
+	var fixturePolicy map[string]any
+	if err := json.Unmarshal(frozenInputRaw, &fixturePolicy); err != nil {
+		t.Fatal(err)
+	}
+	fixturePolicy["fixture_entry_kind"] = entryKind
+	fixtureRaw, err := json.Marshal(fixturePolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acquisitionfixture.SeedDownload(t, ownerTestDB(t), "acq-"+taskID, taskID, "release-qb-test", "anime-qb-test", "sub-qb-test", "source-qb-test", "qb:release-qb-test", payload, metadata.InfoHashV1, string(fixtureRaw))
 	if _, err := ownerTestDB(t).ExecContext(ctx, `UPDATE download_tasks SET state=$2,provider_correlation=NULLIF($3,'null')::jsonb WHERE id=$1`, taskID, state, correlation); err != nil {
 		t.Fatal(err)
 	}

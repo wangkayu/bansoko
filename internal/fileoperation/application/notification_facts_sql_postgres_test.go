@@ -15,6 +15,13 @@ import (
 func TestNotificationFactsSQLParity(t *testing.T) {
 	_, _ = preparedPlanPGFixture(t)
 	db := ownerTestDB(t)
+	for _, entry := range []string{"automatic", "subscription_add", "one_shot", "", "anibt"} {
+		var got []byte
+		if err := db.QueryRow(`SELECT jsonb_build_object('task.origin', public.notification_task_origin($1))`, entry).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		assertSameFacts(t, entry, got, map[string]any{"task.origin": notification.TaskOrigin(entry)})
+	}
 	inputs := []string{
 		`{}`,
 		`{"source":{"provider":{"state":"absent","value":null},"infohash_v1":{"state":"absent","value":null},"infohash_v2":{"state":"absent","value":null}},"media":{"bgm":{"state":"absent","value":null},"tmdb":{"state":"absent","value":null}},"config":{"identity":{"kind":"submitted","managed_anime_ref":{"state":"absent","value":null}}}}`,
@@ -22,6 +29,9 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 		`{"source":{"provider":{"state":"known","value":""}},"media":{"tmdb":{"state":"known","value":{"work_ref":"9","kind":"movie","season":0,"version":1}}}}`,
 		// Input schema 4 freezes the torrent totals.
 		`{"schema_version":4,"source":{"torrent_size":{"state":"known","value":734003200,"reason_code":null},"torrent_file_count":{"state":"known","value":2,"reason_code":null}}}`,
+	}
+	for _, provider := range []string{"anibt", "mikan", "nyaa", "jackett", "custom", "provider_group", ""} {
+		inputs = append(inputs, `{"source":{"provenance":{"provider":"`+provider+`"}}}`)
 	}
 	for _, input := range inputs {
 		var got []byte

@@ -167,9 +167,15 @@ func releaseDiscoveredFacts(snapshot releaseSnapshot, item acquisitiondomain.Fee
 		}
 		return value
 	}
+	var channel any
+	if snapshot.sourceKind == "custom_rss" {
+		channel = "custom"
+	} else if snapshot.sourceProvider.String == "anibt" || snapshot.sourceProvider.String == "mikan" {
+		channel = snapshot.sourceProvider.String
+	}
 	facts := map[string]any{
 		"anime.id": snapshot.managedAnimeID, "anime.title": text(animeTitle),
-		"release.src": text(snapshot.sourceKind), "anime.group": text(snapshot.groupName),
+		"release.src": channel, "anime.group": text(snapshot.groupName),
 		"release.id":           text(snapshot.releaseID),
 		"release.title":        text(item.Title),
 		"release.published_at": nil, "release.episodes": nil,

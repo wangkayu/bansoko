@@ -65,12 +65,12 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 	var task sql.NullString
 	var rawTitleOverride, rawProviderTitle sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT r.id,r.version,r.rss_source_id,src.version,src.episode_offset,src.subscription_id,
- sub.managed_anime_id,sub.id,sub.version,sub.state,lc.lifecycle_version,lc.lifecycle_state,r.download_task_id,lc.title,lc.title_override,lc.provider_title,src.group_name
+ sub.managed_anime_id,sub.id,sub.version,sub.state,lc.lifecycle_version,lc.lifecycle_state,r.download_task_id,lc.title,lc.title_override,lc.provider_title,src.group_name,public.release_source_evidence(r.id)
  FROM releases r JOIN rss_sources src ON src.id=r.rss_source_id
  JOIN subscriptions sub ON sub.id=src.subscription_id
  JOIN managed_anime lc ON lc.id=sub.managed_anime_id
  WHERE r.id=$1`, req.releaseID).Scan(&r.id, &r.version, &r.sourceID, &r.sourceVersion, &r.offset, &r.subscriptionID,
-		&mg.managedID, &mg.subscriptionID, &mg.subscriptionVersion, &subscriptionState, &mg.lifecycleVersion, &lifecycleState, &task, &mg.title, &rawTitleOverride, &rawProviderTitle, &r.groupName)
+		&mg.managedID, &mg.subscriptionID, &mg.subscriptionVersion, &subscriptionState, &mg.lifecycleVersion, &lifecycleState, &task, &mg.title, &rawTitleOverride, &rawProviderTitle, &r.groupName, &r.provenance)
 	if err != nil {
 		return admissionCapture{}, materialError("source", err)
 	}

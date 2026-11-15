@@ -172,6 +172,9 @@ func validQueued(t *testing.T, id, key, tag string) queuedParams {
 		t.Fatal(err)
 	}
 	input["source"].(map[string]any)["kind"] = "subscription_direct"
+	input["source"].(map[string]any)["provenance"] = map[string]any{
+		"provider": "custom", "guid": "", "details_url": "", "download_url": "", "source_site": nil,
+	}
 	input["source"].(map[string]any)["manifest_digest"] = acqDigest("8")
 	manifestFiles := []map[string]any{
 		{"file_ref": "file-a", "ordinal": 0, "relative_path": "a/file-a.mkv", "exact_size": 1000, "media_kind": "video", "identity_evidence": map[string]any{"source": "test"}},

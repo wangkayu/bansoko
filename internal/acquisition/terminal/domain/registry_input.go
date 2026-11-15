@@ -55,6 +55,12 @@ func init() {
 		F("connection", Ref("RefVersion")), F("namespace", Ref("NamespaceV1")), F("credential_ref", FVOf(Ref("RefVersion"))),
 	))
 
+	register("ReleaseSourceEvidenceV1", Obj(
+		F("provider", Nullable(Enum("anibt", "mikan", "nyaa", "jackett", "custom"))),
+		F("guid", Text(0, 8192)), F("details_url", Text(0, 8192)), F("download_url", Text(0, 8192)),
+		F("source_site", Nullable(Obj(F("id", Text(1, 256)), F("name", Text(1, 256)), F("type", Enum("public", "private", "semi-private"))))),
+	))
+
 	// --- SourceV1 ---------------------------------------------------------------
 	register("SourceV1", Obj(
 		F("kind", Enum("subscription_source", "subscription_direct", "one_shot_snapshot", "one_shot_seed", "automatic_source")),
@@ -63,6 +69,7 @@ func init() {
 		F("title", FVOf(Title)),
 		F("published_at", FVOf(Time)),
 		F("provider", FVOf(Text(1, 256))),
+		F("provenance", Nullable(Ref("ReleaseSourceEvidenceV1"))),
 		F("group", FVOf(Display)),
 		F("payload_digest", DigestOf),
 		F("manifest_digest", DigestOf),

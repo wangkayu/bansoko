@@ -37,6 +37,9 @@ export const enTemplateFactsCopy = {
       link: { label: "Mikan release link", description: "Safe page URL of the current Mikan release; empty for other providers." },
       image: { label: "Mikan image", description: "Use the current Mikan work cover, falling back to the built-in placeholder." },
     },
+    release: {
+      link: { label: "Release page", description: "Safe details page URL of the current release; empty when no explicit page is recorded." },
+    },
     download: {
       link: { label: "Download link", description: "Download URL without a passkey, token, or other credential; empty when no URL is safe to share." },
     },

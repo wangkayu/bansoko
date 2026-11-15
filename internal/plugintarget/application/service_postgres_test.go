@@ -993,6 +993,8 @@ WHERE plugin_target_config_id = $1 AND source_owner_id = 'task-frozen-payload'`,
 	}
 	expectedPayload, err := deliverypayload.Encode(string(plugintargetport.TriggerDownloadSubmitted), map[string]any{
 		"download_task_id": "task-frozen-payload", "anime.title": "Frozen Payload Anime",
+		"release.src": nil, "release.site": nil, "release.link": nil,
+		"anibt.link": nil, "mikan.link": nil, "download.link": nil,
 	})
 	if err != nil {
 		t.Fatal(err)

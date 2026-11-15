@@ -29,10 +29,10 @@ const (
 
 // EventCatalogVersion is the frozen admission catalog boundary. Bump when the
 // admission contract changes (schema or semantics).
-const EventCatalogVersion = "plugin-event-catalog-v1"
+const EventCatalogVersion = "plugin-event-catalog-v2"
 
 // TemplateCatalogVersion is the frozen template catalog boundary at admission.
-const TemplateCatalogVersion = "notification-template-catalog-v1"
+const TemplateCatalogVersion = "notification-template-catalog-v2"
 
 // LedgerEntry is the deterministic row appended inside the core owner
 // transaction. It freezes the source result and the catalog boundary; it never
@@ -48,6 +48,7 @@ type LedgerEntry struct {
 	EventCatalogVersion         string
 	EventTemplateCatalogVersion string
 	Payload                     json.RawMessage
+	SourceEvidence              json.RawMessage
 }
 
 // StableKey builds the canonical idempotency anchor for one target admission:

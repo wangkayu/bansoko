@@ -249,6 +249,7 @@ var mikanFeedZone = time.FixedZone("UTC+8", 8*60*60)
 // generic parser already lifts the hash from the file name); torrent:pubDate
 // has no timezone and means +0800.
 func adaptMikanItem(raw rssItem, item *FeedItem) bool {
+	item.DetailsURL = ProviderDetailsURL("mikan", raw.Link)
 	if strings.TrimSpace(raw.PubDate) == "" {
 		if value := collectTorrentFields(raw.Children).pubDate; value != "" {
 			if published, ok := parseZonelessTime(value, mikanFeedZone); ok {
@@ -262,13 +263,15 @@ func adaptMikanItem(raw rssItem, item *FeedItem) bool {
 // adaptAniBTItem: anibt:torrentUrl (or the enclosure) is the .torrent;
 // torrent/infohash is the feed identity. The provenance facts and structured
 // tags are added by the provider fetcher.
-func adaptAniBTItem(_ rssItem, item *FeedItem) bool {
+func adaptAniBTItem(raw rssItem, item *FeedItem) bool {
+	item.DetailsURL = ProviderDetailsURL("anibt", raw.Link)
 	return looksLikeTorrentURL(item.TorrentURL)
 }
 
 // adaptNyaaItem: <link> is /download/<id>.torrent, nyaa:infoHash the identity,
 // nyaa:size a human string such as "1.4 GiB".
 func adaptNyaaItem(raw rssItem, item *FeedItem) bool {
+	item.DetailsURL = ProviderDetailsURL("nyaa", raw.Comments)
 	hash := ""
 	sizeText := ""
 	for _, element := range raw.Children {

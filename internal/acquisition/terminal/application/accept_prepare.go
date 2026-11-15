@@ -124,6 +124,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	// NOT NULL with a non-blank CHECK, so the name is always present: there is no
 	// "source without a recorded name" for this entry to fall back for.
 	source := map[string]any{"kind": intent.entryMode, "release": frozenValue("known", map[string]any{"ref": c.material.release.id, "version": c.material.release.version}), "stable_item_key": frozenValue("known", seed.StableSeedKey), "title": frozenValue("known", seed.Title), "published_at": frozenValue("absent", nil), "provider": frozenValue("absent", nil), "group": frozenValue("known", strings.TrimSpace(c.material.release.groupName)), "payload_digest": c.payloadDigest, "manifest_digest": seed.Manifest.ProjectionDigest, "infohash_v1": frozenValue("absent", nil), "infohash_v2": frozenValue("absent", nil), "locator_display": frozenValue("known", seed.LocatorDisplay), "locator_digest": frozenValue("known", catalog.DigestBytes([]byte(seed.Locator))), "download_provider": frozenValue("absent", nil)}
+	source["provenance"] = c.material.release.provenance
 	if c.material.catalog != nil {
 		source["provider"] = frozenValue("known", c.material.catalog.feed.Provider)
 	}

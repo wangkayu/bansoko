@@ -49,12 +49,19 @@ func encodeInternalFeedFacts(item acquisitiondomain.FeedItem) ([]byte, error) {
 // EncodeInternalFeedFacts serializes the internal acquisition facts for one
 // feed item. Exported so the one-shot path reuses the same shape.
 func EncodeInternalFeedFacts(item acquisitiondomain.FeedItem) ([]byte, error) {
+	return encodeInternalFeedFactsForChannel(item, item.Provider)
+}
+
+func encodeInternalFeedFactsForChannel(item acquisitiondomain.FeedItem, channel string) ([]byte, error) {
 	published := item.Published.UTC()
 	var publishedPtr *time.Time
 	if !item.Published.IsZero() {
 		publishedPtr = &published
 	}
 	return json.Marshal(storedFeedFacts{
+		Channel:            channel,
+		SourceSite:         item.SourceSite,
+		DetailsURL:         item.DetailsURL,
 		GUID:               item.GUID,
 		Title:              item.Title,
 		Link:               item.Link,
@@ -362,6 +369,8 @@ func decodeFeedItemWithInternal(rawFacts, internalFacts, sourceFacts, parsedFact
 		TorrentErrorCode:   stored.TorrentErrorCode,
 		TorrentErrorReason: stored.TorrentErrorReason,
 		Provider:           stored.Provider,
+		SourceSite:         stored.SourceSite,
+		DetailsURL:         stored.DetailsURL,
 		ReleaseFiles:       decodeStoredReleaseFiles(stored.ReleaseFiles),
 	}
 	if stored.Published != nil {

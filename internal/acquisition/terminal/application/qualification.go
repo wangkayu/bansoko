@@ -54,7 +54,8 @@ type releaseMaterial struct {
 	groupName string
 	// offset is the release's RSS link episode offset, read with the link's
 	// version. A one-shot placeholder link carries the input's own offset.
-	offset int
+	offset     int
+	provenance json.RawMessage
 }
 type catalogMaterial struct {
 	observation catalog.GroupObservation

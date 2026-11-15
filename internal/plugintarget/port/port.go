@@ -94,7 +94,10 @@ type BusinessDeliveryRequest struct {
 	ManagedAnimeID     string
 	TriggerKind        string
 	Payload            json.RawMessage
-	ResultKey          string
+	// SourceEvidence is resolver-only: Enqueue ignores caller values and the
+	// admission trigger captures it from the owner transaction.
+	SourceEvidence json.RawMessage
+	ResultKey      string
 }
 
 // Subscription transition actions carried by subscription_changed.
@@ -172,7 +175,7 @@ type DisplacedTarget struct{ File, Group, Title string }
 // settled replace decision. animeTitle names the anime whose versions changed,
 // group and releaseTitle the release that won; replaced names the old versions
 // it took over, at least one. File names travel as base names, never paths.
-func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID, animeTitle, group, releaseTitle string, replaced []DisplacedTarget) (BusinessDeliveryRequest, error) {
+func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID, animeTitle, group, releaseTitle, releaseID string, replaced []DisplacedTarget) (BusinessDeliveryRequest, error) {
 	if len(replaced) == 0 {
 		return BusinessDeliveryRequest{}, errors.New("replacement_applied needs at least one replaced version")
 	}
@@ -199,6 +202,7 @@ func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID,
 	facts := map[string]any{
 		"anime.id": managedAnimeID, "anime.title": optionalText(animeTitle),
 		"replaced.count": len(targets), "replaced.targets": targets,
+		"release.id": optionalText(releaseID),
 	}
 	if group != "" {
 		facts["anime.group"] = group

@@ -118,6 +118,11 @@ type SelectedSeed struct {
 	// unchanged, and it is what lets a human adapter prove the seed came from a
 	// keyword search instead of a feed.
 	SnapshotKind string `json:"-"`
+	// Server-resolved provenance is stored by the snapshot wire type below,
+	// not supplied by the caller or folded into its idempotency identity.
+	SourceGUID string                            `json:"-"`
+	DetailsURL string                            `json:"-"`
+	SourceSite *acquisitiondomain.SeedSourceSite `json:"-"`
 }
 
 const maxOneShotInputSnapshotBytes = 262144
@@ -193,7 +198,10 @@ type oneShotSelectedSeedJSON struct {
 	// AniBTTags is a read model of the verified snapshot, not a request fact:
 	// it never enters the request hash and a replay compares it by identity
 	// only. `omitempty` keeps every previously frozen snapshot byte-identical.
-	AniBTTags *acquisitiondomain.StoredAniBTTags `json:"anibt_tags,omitempty"`
+	AniBTTags  *acquisitiondomain.StoredAniBTTags `json:"anibt_tags,omitempty"`
+	SourceGUID string                             `json:"source_guid"`
+	DetailsURL string                             `json:"details_url"`
+	SourceSite *acquisitiondomain.SeedSourceSite  `json:"source_site"`
 }
 
 func (snapshot OneShotInputSnapshot) MarshalJSON() ([]byte, error) {
@@ -268,6 +276,9 @@ func oneShotSelectedSeedJSONFromDomain(seed SelectedSeed) oneShotSelectedSeedJSO
 		StableSeedKey:         seed.StableSeedKey,
 		Title:                 seed.Title,
 		AniBTTags:             cloneStoredAniBTTags(seed.AniBTTags),
+		SourceGUID:            seed.SourceGUID,
+		DetailsURL:            seed.DetailsURL,
+		SourceSite:            cloneSeedSourceSite(seed.SourceSite),
 	}
 }
 
@@ -287,7 +298,18 @@ func (seed oneShotSelectedSeedJSON) toDomain() SelectedSeed {
 		StableSeedKey:         seed.StableSeedKey,
 		Title:                 seed.Title,
 		AniBTTags:             cloneStoredAniBTTags(seed.AniBTTags),
+		SourceGUID:            seed.SourceGUID,
+		DetailsURL:            seed.DetailsURL,
+		SourceSite:            cloneSeedSourceSite(seed.SourceSite),
 	}
+}
+
+func cloneSeedSourceSite(site *acquisitiondomain.SeedSourceSite) *acquisitiondomain.SeedSourceSite {
+	if site == nil {
+		return nil
+	}
+	clone := *site
+	return &clone
 }
 
 // cloneStoredAniBTTags keeps a frozen tag block detached from the slice it was
@@ -740,6 +762,9 @@ func (s *Service) AcquireSeedOnce(ctx context.Context, input AcquireSeedInput, r
 			return OneShotAdmissionResult{}, err
 		}
 		input.Seed.AniBTTags = cloneStoredAniBTTags(fact.AniBTTags)
+		input.Seed.SourceGUID = fact.SourceGUID
+		input.Seed.DetailsURL = fact.DetailsURL
+		input.Seed.SourceSite = cloneSeedSourceSite(fact.SourceSite)
 	}
 
 	result, err := s.admitOneShotSeed(ctx, input, requestIdempotencyKey, requestHash, payload, saved)
@@ -1941,6 +1966,9 @@ func buildOneShotFeedItem(payload animeapplication.TorrentPayload, seed Selected
 		published = time.Now().UTC()
 	}
 	return acquisitiondomain.FeedItem{
+		GUID:              seed.SourceGUID,
+		DetailsURL:        seed.DetailsURL,
+		SourceSite:        cloneSeedSourceSite(seed.SourceSite),
 		Title:             strings.TrimSpace(seed.Title),
 		Enclosure:         seed.Locator,
 		EnclosureType:     "application/x-bittorrent",

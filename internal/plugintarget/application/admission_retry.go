@@ -195,10 +195,10 @@ func (r *AdmissionResolver) exhaustAdmission(ctx context.Context, admissionID st
 	var anime sql.NullString
 	var payload []byte
 	err = tx.QueryRowContext(ctx, `
-SELECT trigger_kind, source_owner_type, source_owner_id, source_owner_version, result_key, managed_anime_id, payload
+SELECT trigger_kind, source_owner_type, source_owner_id, source_owner_version, result_key, managed_anime_id, payload, source_evidence
 FROM notification_admissions
 WHERE id = $1 AND state = $2
-FOR UPDATE SKIP LOCKED`, admissionID, AdmissionPendingTargetResolution).Scan(&entry.TriggerKind, &entry.SourceOwnerType, &entry.SourceOwnerID, &entry.SourceOwnerVersion, &entry.ResultKey, &anime, &payload)
+FOR UPDATE SKIP LOCKED`, admissionID, AdmissionPendingTargetResolution).Scan(&entry.TriggerKind, &entry.SourceOwnerType, &entry.SourceOwnerID, &entry.SourceOwnerVersion, &entry.ResultKey, &anime, &payload, &entry.SourceEvidence)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -239,7 +239,7 @@ func (s *Service) recordFailedDeliveryBestEffortTx(ctx context.Context, tx *sql.
 		return
 	}
 	insert := func() error {
-		request := plugintargetport.BusinessDeliveryRequest{SourceOwnerType: entry.SourceOwnerType, SourceOwnerID: entry.SourceOwnerID, SourceOwnerVersion: entry.SourceOwnerVersion, ManagedAnimeID: entry.ManagedAnimeID, TriggerKind: entry.TriggerKind, ResultKey: entry.ResultKey, Payload: entry.Payload}
+		request := plugintargetport.BusinessDeliveryRequest{SourceOwnerType: entry.SourceOwnerType, SourceOwnerID: entry.SourceOwnerID, SourceOwnerVersion: entry.SourceOwnerVersion, ManagedAnimeID: entry.ManagedAnimeID, TriggerKind: entry.TriggerKind, ResultKey: entry.ResultKey, Payload: entry.Payload, SourceEvidence: entry.SourceEvidence}
 		return s.insertFailedDeliveryTx(ctx, tx, target, request, stableKey, code, reason)
 	}
 	if err := insert(); err != nil {

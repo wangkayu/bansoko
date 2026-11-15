@@ -204,6 +204,7 @@ type torznabItem struct {
 	Title    string `xml:"title"`
 	GUID     string `xml:"guid"`
 	Link     string `xml:"link"`
+	Comments string `xml:"comments"`
 	PubDate  string `xml:"pubDate"`
 	Enclosur []struct {
 		URL    string `xml:"url,attr"`
@@ -315,7 +316,7 @@ func parseTorznabSearch(payload []byte) (SeedSearchResult, error) {
 // location's own claims are never used as content identity, and a missing
 // identity is not guessed from the title.
 func torznabSearchItem(raw torznabItem) (domain.FeedItem, string) {
-	item := domain.FeedItem{GUID: strings.TrimSpace(raw.GUID), Title: strings.TrimSpace(raw.Title), Link: strings.TrimSpace(raw.Link), Provider: "anibt"}
+	item := domain.FeedItem{GUID: strings.TrimSpace(raw.GUID), Title: strings.TrimSpace(raw.Title), Link: strings.TrimSpace(raw.Link), DetailsURL: strings.TrimSpace(raw.Comments), Provider: "anibt"}
 	if item.Title == "" {
 		return domain.FeedItem{}, "title_missing"
 	}

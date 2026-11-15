@@ -31,6 +31,16 @@ func torznabItemXML(title, guid, pubDate, infohash, size string) string {
 		attrs + `</item>`
 }
 
+func TestTorznabDetailsUseCommentsNotDownloadLink(t *testing.T) {
+	for _, page := range []string{"", "https://tracker.example.test/details/123"} {
+		raw := torznabItem{Title: "Sample", GUID: "123", PubDate: "Fri, 23 Oct 2026 02:00:47 +0800", Link: "https://proxy.example.test/sample.torrent", Comments: page}
+		item, reason := torznabSearchItem(raw)
+		if reason != "" || item.DetailsURL != page || item.DownloadURL() != raw.Link {
+			t.Fatalf("item=%+v reason=%q", item, reason)
+		}
+	}
+}
+
 func torznabDocument(items ...string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">

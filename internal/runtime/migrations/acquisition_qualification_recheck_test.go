@@ -132,7 +132,7 @@ func (f qualificationFixture) qualification(mutate func(map[string]any)) string 
 		"source":      map[string]any{"kind": "release", "release_ref": f.relID, "expected_version": 1, "source_ref": map[string]any{"ref": f.srcID, "version": 1}},
 		"observation": map[string]any{"scope": scope(), "snapshot_ref": f.groupID, "snapshot_version": f.groupVersion, "observation_digest": f.groupDigest},
 		"feed": map[string]any{"snapshot_ref": f.feed.ID, "snapshot_version": f.feed.Version, "scope": scope(), "group_ref": "10",
-			"content_hash": f.feed.ContentHash, "hash_schema": "provider-feed-snapshot-v1", "projection_schema": "torrent-manifest-v1",
+			"content_hash": f.feed.ContentHash, "hash_schema": "provider-feed-snapshot-v2", "projection_schema": "torrent-manifest-v1",
 			"stable_seed_key": "seed", "payload_digest": f.payloadDigest, "manifest_digest": f.projectionDigest},
 		"programs":  map[string]any{"attr_fingerprint": f.attrDigest, "vars_digest": f.varsDigest, "translation": nil},
 		"placement": map[string]any{"kind": "none"},

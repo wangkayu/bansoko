@@ -93,7 +93,7 @@ func (r *AdmissionResolver) SweepOnce(ctx context.Context) (int, error) {
 	rows, err := r.Service.db.QueryContext(ctx, `
 SELECT id, trigger_kind, source_owner_type, source_owner_id, source_owner_version,
        result_key, managed_anime_id, occurred_at, event_catalog_version,
-       event_template_catalog_version, payload, attempt_count
+       event_template_catalog_version, payload, source_evidence, attempt_count
 FROM notification_admissions
 WHERE state = 'pending_target_resolution'
   AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
@@ -115,7 +115,7 @@ LIMIT 20`, r.now())
 		var payload []byte
 		if err := rows.Scan(&pa.id, &pa.entry.TriggerKind, &pa.entry.SourceOwnerType, &pa.entry.SourceOwnerID,
 			&pa.entry.SourceOwnerVersion, &pa.entry.ResultKey, &managedAnimeID, &occurredAt,
-			&pa.entry.EventCatalogVersion, &pa.entry.EventTemplateCatalogVersion, &payload, &pa.attempts); err != nil {
+			&pa.entry.EventCatalogVersion, &pa.entry.EventTemplateCatalogVersion, &payload, &pa.entry.SourceEvidence, &pa.attempts); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("scan pending admission: %w", err)
 		}
@@ -252,6 +252,7 @@ func (r *AdmissionResolver) createCurrentDeliveries(ctx context.Context, admissi
 		TriggerKind:        entry.TriggerKind,
 		ResultKey:          entry.ResultKey,
 		Payload:            withEventFacts(entry.Payload, entry.TriggerKind, entry.OccurredAt),
+		SourceEvidence:     entry.SourceEvidence,
 	}
 	created, failed := 0, 0
 	for _, targetID := range targetIDs {

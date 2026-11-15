@@ -491,7 +491,9 @@ SELECT
     seed.manifest_projection_digest,
     seed.files,
     seed.anibt_tags,
-    seed.source_site
+    seed.source_site,
+    seed.source_guid,
+    seed.details_url
 FROM provider_feed_snapshot_seeds AS seed
 WHERE seed.snapshot_id = $1
 ORDER BY seed.published_at DESC NULLS LAST, seed.stable_seed_key, seed.id
@@ -524,6 +526,8 @@ type ReadProviderFeedSnapshotSeedsRow struct {
 	Files                        json.RawMessage
 	AnibtTags                    pqtype.NullRawMessage
 	SourceSite                   pqtype.NullRawMessage
+	SourceGuid                   string
+	DetailsUrl                   string
 }
 
 // ReadProviderFeedSnapshotSeeds
@@ -554,7 +558,9 @@ type ReadProviderFeedSnapshotSeedsRow struct {
 //	    seed.manifest_projection_digest,
 //	    seed.files,
 //	    seed.anibt_tags,
-//	    seed.source_site
+//	    seed.source_site,
+//	    seed.source_guid,
+//	    seed.details_url
 //	FROM provider_feed_snapshot_seeds AS seed
 //	WHERE seed.snapshot_id = $1
 //	ORDER BY seed.published_at DESC NULLS LAST, seed.stable_seed_key, seed.id
@@ -594,6 +600,8 @@ func (q *Queries) ReadProviderFeedSnapshotSeeds(ctx context.Context, snapshotID 
 			&i.Files,
 			&i.AnibtTags,
 			&i.SourceSite,
+			&i.SourceGuid,
+			&i.DetailsUrl,
 		); err != nil {
 			return nil, err
 		}

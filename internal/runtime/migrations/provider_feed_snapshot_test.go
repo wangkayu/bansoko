@@ -22,14 +22,14 @@ func TestProviderFeedSnapshotHashSchemaAndAppendOnly(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT hash_schema FROM provider_feed_snapshots WHERE id = $1`, snapshot.ID).Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
-	if schema != "provider-feed-snapshot-v1" {
-		t.Fatalf("snapshot hash schema = %q, want provider-feed-snapshot-v1", schema)
+	if schema != "provider-feed-snapshot-v2" {
+		t.Fatalf("snapshot hash schema = %q, want provider-feed-snapshot-v2", schema)
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO provider_feed_snapshots(
     id, provider, provider_entry_ref, provider_group_ref, version, content_hash, hash_schema, seed_count, projection_schema
 )
-VALUES ('snap-foreign-schema', 'anibt', 'entry-1', 'group-1', 3, $1, 'provider-feed-snapshot-v2', 1, 'torrent-manifest-v1')`, sha256Fixture("e"))
+VALUES ('snap-foreign-schema', 'anibt', 'entry-1', 'group-1', 3, $1, 'provider-feed-snapshot-v999', 1, 'torrent-manifest-v1')`, sha256Fixture("e"))
 	expectPgErrorCode(t, err, "23514")
 	_, err = db.ExecContext(ctx, `
 INSERT INTO provider_feed_snapshots(

@@ -13,7 +13,7 @@ func TestDownloadSubmittedFactsFillEpisodeAndCatalog(t *testing.T) {
 	row := downloadNotificationRow{
 		animeTitle: "示例动画", titleOverride: "自定义",
 		rawFacts:        []byte(`{"title":"[组] 示例动画 13","published_at":"2026-01-02T03:04:05Z","author":"组"}`),
-		inputSnapshot:   []byte(`{"source":{"provider":{"state":"known","value":"mikan"},"group":{"state":"known","value":"示例组"},"infohash_v1":{"state":"known","value":"0123456789abcdef0123456789abcdef01234567"},"infohash_v2":{"state":"absent","value":null}},"media":{"bgm":{"state":"known","value":{"ref":"42","version":1}},"tmdb":{"state":"absent","value":null}},"config":{"identity":{"kind":"submitted","managed_anime_ref":{"state":"known","value":"anime-1"}}}}`),
+		inputSnapshot:   []byte(`{"source":{"provider":{"state":"known","value":"mikan"},"provenance":{"provider":"mikan"},"group":{"state":"known","value":"示例组"},"infohash_v1":{"state":"known","value":"0123456789abcdef0123456789abcdef01234567"},"infohash_v2":{"state":"absent","value":null}},"media":{"bgm":{"state":"known","value":{"ref":"42","version":1}},"tmdb":{"state":"absent","value":null}},"config":{"identity":{"kind":"submitted","managed_anime_ref":{"state":"known","value":"anime-1"}}}}`),
 		clientName:      sql.NullString{String: "家里的 qB", Valid: true},
 		releaseIdentity: []byte(`{"State":"resolved","Kind":"tv_episode","Shape":"single","RawEpisode":"13","Offset":-12,"Episode":"1"}`),
 	}
@@ -31,8 +31,8 @@ func TestDownloadSubmittedFactsFillEpisodeAndCatalog(t *testing.T) {
 		t.Errorf("ep.offset=%v", offset)
 	}
 	for _, key := range notification.PayloadKeys(plugintargetport.TriggerDownloadSubmitted) {
-		if key == "event.at" {
-			continue // filled by the admission resolver from the ledger row
+		if key == "event.at" || key == "release.site" {
+			continue // filled by the resolver from the ledger time and frozen source evidence
 		}
 		if _, ok := facts[key]; !ok {
 			t.Errorf("payload never writes %s", key)

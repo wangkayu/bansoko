@@ -529,6 +529,11 @@ var systemFacts = []Fact{
 		Text{"TMDB 集标题", "TMDB episode title"}, Text{"查询绑定 TMDB 作品分集得到的本集标题（按请求语言 zh-CN），查询结果会缓存。命名渲染或通知受理引用此变量时查询；未绑定 TMDB、没有集数、该集没有标题或查询尚未成功时为空，下载前的命名预览显示为占位。", "The episode title of the bound TMDB work in the request language (language=zh-CN), queried and cached when a naming render or notification admission references it; empty when TMDB is not bound, there is no episode number, the provider has no title for that episode, or the lookup has not succeeded yet. Naming previews before the download show a placeholder."},
 		"炎の七夕 祭り", func(f *FactSet) any { return f.Tmdb.EpTitle }),
 
+	// Task origin folds the acquisition entry vocabulary, never metadata origin.
+	fact("task.origin", TypeString, PhaseRelease, scenarioMedia|ScenarioDownloadFailed|ScenarioUnknownImported, scenarioMedia|ScenarioDownloadFailed|ScenarioUnknownImported,
+		Text{"任务入口", "Task origin"}, Text{"本次任务的入口：订阅为 subscription，一次性下载为 one_shot；没有任务记录时为空。", "Entry of this task: subscription or one_shot; empty when no acquisition is recorded."},
+		"subscription", func(f *FactSet) any { return f.Task.Origin }).derived(),
+
 	// release
 	fact("release.id", TypeString, PhaseRelease, scenarioAll|scenarioRelease, ScenarioNaming|scenarioFile|ScenarioDownloadFailed|ScenarioUnknownImported,
 		Text{"发布 ID", "Release ID"}, Text{"发布条目的标识。", "Identifier of the release."},
@@ -542,9 +547,12 @@ var systemFacts = []Fact{
 	fact("release.episodes", TypeString, PhaseRelease, ScenarioDownloadSubmitted|ScenarioReleaseDiscovered, ScenarioDownloadSubmitted|ScenarioReleaseDiscovered,
 		Text{"下载集数", "Episodes"}, Text{"这次下载要入库的集数，如 01-04 或 01, 03, 07；合集时单集字段为空。", "Episodes this download will place, such as 01-04 or 01, 03, 07; for a batch the single-episode facts are empty."},
 		"01-04", func(f *FactSet) any { return f.Release.Episodes }).derived(),
-	fact("release.src", TypeString, PhaseRelease, scenarioMedia|ScenarioReleaseDiscovered|ScenarioDownloadFailed, scenarioMedia|ScenarioReleaseDiscovered|ScenarioDownloadFailed,
-		Text{"来源", "Source"}, Text{"发布所在的来源：媒体事件为 mikan 或 anibt；发布工作流事件为 provider_group 或 custom_rss；载荷未记录时为空。", "Where the release came from: mikan or anibt for a media event, provider_group or custom_rss for a release workflow event; empty when the payload records none."},
+	fact("release.src", TypeString, PhaseRelease, scenarioMedia|ScenarioReleaseDiscovered|ScenarioDownloadFailed|ScenarioUnknownImported|ScenarioReplacementApplied, scenarioMedia|ScenarioReleaseDiscovered|ScenarioDownloadFailed|ScenarioUnknownImported|ScenarioReplacementApplied,
+		Text{"来源", "Source"}, Text{"获取渠道：anibt、mikan、nyaa、jackett 或 custom；custom 表示自定义 RSS，未知时为空。", "Acquisition channel: anibt, mikan, nyaa, jackett or custom; custom means a custom RSS feed, and unknown sources are empty."},
 		"anibt", func(f *FactSet) any { return f.Release.Src }),
+	fact("release.site", TypeString, PhaseRelease, scenarioMedia|ScenarioReleaseDiscovered|ScenarioDownloadFailed|ScenarioUnknownImported|ScenarioReplacementApplied, scenarioMedia|ScenarioReleaseDiscovered|ScenarioDownloadFailed|ScenarioUnknownImported|ScenarioReplacementApplied,
+		Text{"发布站点", "Release site"}, Text{"发布站点的名称；Jackett 使用索引站提供的名称，没有站点证据时为空。", "Name of the release site; Jackett uses the indexer's site name, and absent attribution stays empty."},
+		"AniBT", func(f *FactSet) any { return f.Release.Site }),
 	fact("release.subtitle_mode", TypeString, PhaseRelease, ScenarioNaming, 0,
 		Text{"字幕方式", "Subtitle mode"}, Text{"embedded、external、mixed 或 unknown，由发布标题解析的字幕方式标志 rt.subflag 归并：仅 soft 或 hard 为 embedded，仅 ex 为 external，ex 与 soft/hard 并存为 mixed，都没有时为 unknown。", "embedded, external, mixed or unknown, folded from the title-parse subtitle flags rt.subflag: soft or hard alone embedded, ex alone external, ex beside soft/hard mixed, none unknown."},
 		"embedded", func(f *FactSet) any { return f.Release.SubtitleMode }).derived(),

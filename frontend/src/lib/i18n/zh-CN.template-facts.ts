@@ -33,6 +33,9 @@ export const templateFactsCopy = {
       link: { label: "Mikan 发布链接", description: "当前 Mikan 发布的安全页面地址；非 Mikan 发布为空。" },
       image: { label: "Mikan 图片", description: "指定使用当前 Mikan 作品的封面；不可用时使用内置占位图。" },
     },
+    release: {
+      link: { label: "发布页面", description: "当前发布的安全详情页地址；没有明确页面证据时为空。" },
+    },
     download: {
       link: { label: "下载链接", description: "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。" },
     },

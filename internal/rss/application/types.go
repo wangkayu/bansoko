@@ -509,26 +509,29 @@ type feedEvaluation struct {
 }
 
 type storedFeedFacts struct {
-	GUID               string              `json:"guid,omitempty"`
-	Title              string              `json:"title"`
-	Link               string              `json:"link,omitempty"`
-	Description        string              `json:"description,omitempty"`
-	Enclosure          string              `json:"enclosure,omitempty"`
-	EnclosureType      string              `json:"enclosure_type,omitempty"`
-	EnclosureLength    int64               `json:"enclosure_length,omitempty"`
-	TorrentURL         string              `json:"torrent_url,omitempty"`
-	TorrentInfoHash    string              `json:"torrent_info_hash,omitempty"`
-	TorrentInfoHashV1  string              `json:"torrent_info_hash_v1,omitempty"`
-	TorrentInfoHashV2  string              `json:"torrent_info_hash_v2,omitempty"`
-	TorrentVersion     string              `json:"torrent_version,omitempty"`
-	TorrentFilename    string              `json:"torrent_filename,omitempty"`
-	TorrentSizeBytes   int64               `json:"torrent_size_bytes,omitempty"`
-	TorrentErrorCode   string              `json:"torrent_error_code,omitempty"`
-	TorrentErrorReason string              `json:"torrent_error_reason,omitempty"`
-	DownloadURL        string              `json:"download_url,omitempty"`
-	Published          *time.Time          `json:"published_at,omitempty"`
-	Provider           string              `json:"provider,omitempty"`
-	ReleaseFiles       []storedReleaseFile `json:"release_files,omitempty"`
+	Channel            string                            `json:"channel,omitempty"`
+	SourceSite         *acquisitiondomain.SeedSourceSite `json:"source_site,omitempty"`
+	DetailsURL         string                            `json:"details_url,omitempty"`
+	GUID               string                            `json:"guid,omitempty"`
+	Title              string                            `json:"title"`
+	Link               string                            `json:"link,omitempty"`
+	Description        string                            `json:"description,omitempty"`
+	Enclosure          string                            `json:"enclosure,omitempty"`
+	EnclosureType      string                            `json:"enclosure_type,omitempty"`
+	EnclosureLength    int64                             `json:"enclosure_length,omitempty"`
+	TorrentURL         string                            `json:"torrent_url,omitempty"`
+	TorrentInfoHash    string                            `json:"torrent_info_hash,omitempty"`
+	TorrentInfoHashV1  string                            `json:"torrent_info_hash_v1,omitempty"`
+	TorrentInfoHashV2  string                            `json:"torrent_info_hash_v2,omitempty"`
+	TorrentVersion     string                            `json:"torrent_version,omitempty"`
+	TorrentFilename    string                            `json:"torrent_filename,omitempty"`
+	TorrentSizeBytes   int64                             `json:"torrent_size_bytes,omitempty"`
+	TorrentErrorCode   string                            `json:"torrent_error_code,omitempty"`
+	TorrentErrorReason string                            `json:"torrent_error_reason,omitempty"`
+	DownloadURL        string                            `json:"download_url,omitempty"`
+	Published          *time.Time                        `json:"published_at,omitempty"`
+	Provider           string                            `json:"provider,omitempty"`
+	ReleaseFiles       []storedReleaseFile               `json:"release_files,omitempty"`
 }
 
 type storedReleaseFile struct {

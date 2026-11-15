@@ -1416,7 +1416,7 @@ func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Conte
 	if err != nil || !found {
 		return err
 	}
-	request, err := plugintargetport.ReplacementAppliedRequest(decision.ID, 1, decision.AnimeID, animeTitle, group, releaseTitle, replaced)
+	request, err := plugintargetport.ReplacementAppliedRequest(decision.ID, 1, decision.AnimeID, animeTitle, group, releaseTitle, releaseID, replaced)
 	if err != nil {
 		return fmt.Errorf("encode replacement notice: %w", err)
 	}

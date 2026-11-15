@@ -447,9 +447,13 @@ export const factsCopy = {
       label: "发布时间",
       description: "采集值：发布时间，RFC 3339。",
     },
+    site: {
+      label: "发布站点",
+      description: "采集值：发布站点的名称；Jackett 使用索引站提供的名称，没有站点证据时为空。",
+    },
     src: {
       label: "来源",
-      description: "采集值：发布所在的来源：媒体事件为 mikan 或 anibt；发布工作流事件为 provider_group 或 custom_rss；载荷未记录时为空。",
+      description: "采集值：获取渠道：anibt、mikan、nyaa、jackett 或 custom；custom 表示自定义 RSS，未知时为空。",
     },
     subtitle_mode: {
       label: "字幕方式",
@@ -485,9 +489,13 @@ export const factsCopy = {
       label: "发布时间",
       description: "采集值：发布时间，RFC 3339。",
     },
+    site: {
+      label: "发布站点",
+      description: "采集值：发布站点的名称；Jackett 使用索引站提供的名称，没有站点证据时为空。",
+    },
     src: {
       label: "来源",
-      description: "采集值：发布所在的来源：媒体事件为 mikan 或 anibt；发布工作流事件为 provider_group 或 custom_rss；载荷未记录时为空。",
+      description: "采集值：获取渠道：anibt、mikan、nyaa、jackett 或 custom；custom 表示自定义 RSS，未知时为空。",
     },
     subtitle_mode: {
       label: "字幕方式",
@@ -658,6 +666,12 @@ export const factsCopy = {
     title: {
       label: "顶替者发布标题",
       description: "采集值：顶掉这个位置的文件所属发布的原始标题；来源没有记录时为空。",
+    },
+  },
+  task: {
+    origin: {
+      label: "任务入口",
+      description: "派生值：本次任务的入口：订阅为 subscription，一次性下载为 one_shot；没有任务记录时为空。",
     },
   },
   tmdb: {
@@ -1162,9 +1176,13 @@ export const enFactsCopy = {
       label: "Published at",
       description: "Collected: Publication time, RFC 3339.",
     },
+    site: {
+      label: "Release site",
+      description: "Collected: Name of the release site; Jackett uses the indexer's site name, and absent attribution stays empty.",
+    },
     src: {
       label: "Source",
-      description: "Collected: Where the release came from: mikan or anibt for a media event, provider_group or custom_rss for a release workflow event; empty when the payload records none.",
+      description: "Collected: Acquisition channel: anibt, mikan, nyaa, jackett or custom; custom means a custom RSS feed, and unknown sources are empty.",
     },
     subtitle_mode: {
       label: "Subtitle mode",
@@ -1200,9 +1218,13 @@ export const enFactsCopy = {
       label: "Published at",
       description: "Collected: Publication time, RFC 3339.",
     },
+    site: {
+      label: "Release site",
+      description: "Collected: Name of the release site; Jackett uses the indexer's site name, and absent attribution stays empty.",
+    },
     src: {
       label: "Source",
-      description: "Collected: Where the release came from: mikan or anibt for a media event, provider_group or custom_rss for a release workflow event; empty when the payload records none.",
+      description: "Collected: Acquisition channel: anibt, mikan, nyaa, jackett or custom; custom means a custom RSS feed, and unknown sources are empty.",
     },
     subtitle_mode: {
       label: "Subtitle mode",
@@ -1373,6 +1395,12 @@ export const enFactsCopy = {
     title: {
       label: "Taker release title",
       description: "Collected: Original title of the release behind the file that took the place; empty when the source recorded none.",
+    },
+  },
+  task: {
+    origin: {
+      label: "Task origin",
+      description: "Derived: Entry of this task: subscription or one_shot; empty when no acquisition is recorded.",
     },
   },
   tmdb: {

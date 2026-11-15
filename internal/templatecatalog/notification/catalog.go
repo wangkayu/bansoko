@@ -134,10 +134,12 @@ type payloadKeyDef struct {
 // writes. A payload key is the fact's registry path: payloads are stored
 // under registry paths with no translation layer.
 var payloadKeyDefs = []payloadKeyDef{
+	{"task.origin", onAll},
 	{"anime.id", onAll},
 	{"anime.title", onAll},
 	{"anime.title_override", onDownload},
 	{"release.src", onAll},
+	{"release.site", onAll},
 	{"anime.group", onAll},
 	{"release.id", onAll},
 	{"release.title", onAll},
@@ -257,7 +259,8 @@ func derivedLinkVariables(available map[string]bool) []Variable {
 		{TMDBLinkVariable, "tmdb.id", "TMDB 链接", "已绑定 TMDB 条目的安全页面地址。"},
 		{AniBTLinkVariable, "release.src", "AniBT 发布链接", "当前 AniBT 发布的安全页面地址；非 AniBT 发布为空。"},
 		{MikanLinkVariable, "release.src", "Mikan 发布链接", "当前 Mikan 发布的安全页面地址；非 Mikan 发布为空。"},
-		{DownloadLinkVariable, "release.id", "下载链接", "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。"},
+		{ReleaseLinkVariable, "release.src", "发布页面", "当前发布的安全详情页地址；没有明确页面证据时为空。"},
+		{DownloadLinkVariable, "release.src", "下载链接", "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。"},
 	}
 	variables := make([]Variable, 0, len(defs))
 	for _, def := range defs {
@@ -386,9 +389,8 @@ func Sample(trigger string) map[string]any {
 	}
 	if _, ok := facts["release.src"]; ok {
 		facts[AniBTLinkVariable] = "https://anibt.net/release/10001"
+		facts[ReleaseLinkVariable] = facts[AniBTLinkVariable]
 		facts[MikanLinkVariable] = "https://mikanani.me/Home/Episode/0123456789abcdef0123456789abcdef01234567"
-	}
-	if _, ok := facts["release.id"]; ok {
 		facts[DownloadLinkVariable] = "https://example.com/download/sample.torrent"
 	}
 	return facts

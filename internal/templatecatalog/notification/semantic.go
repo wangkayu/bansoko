@@ -19,6 +19,7 @@ const (
 	AniBTLinkVariable    = "anibt.link"
 	MikanLinkVariable    = "mikan.link"
 	DownloadLinkVariable = "download.link"
+	ReleaseLinkVariable  = "release.link"
 	BGMImageVariable     = "bgm.image"
 	TMDBImageVariable    = "tmdb.image"
 	AniBTImageVariable   = "anibt.image"
@@ -26,7 +27,7 @@ const (
 )
 
 var (
-	LinkVariables  = []string{BGMLinkVariable, TMDBLinkVariable, AniBTLinkVariable, MikanLinkVariable, DownloadLinkVariable}
+	LinkVariables  = []string{BGMLinkVariable, TMDBLinkVariable, AniBTLinkVariable, MikanLinkVariable, DownloadLinkVariable, ReleaseLinkVariable}
 	ImageVariables = []string{BGMImageVariable, TMDBImageVariable, AniBTImageVariable, MikanImageVariable}
 )
 
@@ -69,7 +70,11 @@ func SafeExternalURL(raw string, httpsOnly bool) string {
 	if parsed.Scheme != "https" && (!(!httpsOnly && parsed.Scheme == "http")) {
 		return ""
 	}
-	for key := range parsed.Query() {
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return ""
+	}
+	for key := range query {
 		normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "-", ""), "_", ""))
 		switch normalized {
 		case "passkey", "token", "secret", "password", "credential", "credentials", "auth", "authorization", "key", "apikey", "signature", "sig", "cookie", "rsskey":
@@ -132,7 +137,7 @@ func LinkValue(facts map[string]any, name string) string {
 		if id := providerWorkID(facts, "tmdb.id"); id != "" && (kind == "tv" || kind == "movie") {
 			return (&url.URL{Scheme: "https", Host: "www.themoviedb.org", Path: "/" + kind + "/" + id}).String()
 		}
-	case AniBTLinkVariable, MikanLinkVariable, DownloadLinkVariable:
+	case AniBTLinkVariable, MikanLinkVariable, DownloadLinkVariable, ReleaseLinkVariable:
 		raw := strings.TrimSpace(FormatFact(mustLookupFact(facts, name)))
 		safe := SafeExternalURL(raw, false)
 		if safe == "" {
@@ -141,11 +146,11 @@ func LinkValue(facts map[string]any, name string) string {
 		parsed, _ := url.Parse(safe)
 		switch name {
 		case AniBTLinkVariable:
-			if !strings.EqualFold(parsed.Hostname(), "anibt.net") || !strings.HasPrefix(parsed.Path, "/release/") {
+			if !strings.EqualFold(parsed.Hostname(), "anibt.net") || !strings.HasPrefix(parsed.Path, "/release/") || strings.TrimPrefix(parsed.Path, "/release/") == "" {
 				return ""
 			}
 		case MikanLinkVariable:
-			if !strings.EqualFold(parsed.Hostname(), "mikanani.me") || !strings.HasPrefix(parsed.Path, "/Home/Episode/") {
+			if (!strings.EqualFold(parsed.Hostname(), "mikanani.me") && !strings.EqualFold(parsed.Hostname(), "mikanime.tv")) || !strings.HasPrefix(parsed.Path, "/Home/Episode/") || strings.TrimPrefix(parsed.Path, "/Home/Episode/") == "" {
 				return ""
 			}
 		}

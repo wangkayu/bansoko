@@ -39,6 +39,8 @@ type feedSeedDeclaration struct {
 	// a nil block marshals as JSON null and is persisted as SQL NULL.
 	AniBTTags  *acquisitiondomain.StoredAniBTTags `json:"anibt_tags"`
 	SourceSite *acquisitiondomain.SeedSourceSite  `json:"source_site"`
+	SourceGUID string                             `json:"source_guid"`
+	DetailsURL string                             `json:"details_url"`
 }
 
 type feedManifestDeclaration struct {
@@ -88,7 +90,8 @@ func feedPublication(input catalogdomain.ProviderFeedSnapshotWrite, version int6
 		d := feedSeedDeclaration{ID: uuid.NewString(), StableSeedKey: seed.StableSeedKey, Locator: seed.Locator, LocatorDisplay: seed.LocatorDisplay,
 			Title: seed.Title, PublishedAt: seed.PublishedAt, SizeBytes: seed.SizeBytes, InfoHash: seed.InfoHash, PayloadDigest: seed.PayloadDigest,
 			TorrentFilename: seed.TorrentFilename, TorrentState: seed.NormalizedTorrentState(), TorrentErrorCode: seed.TorrentErrorCode, TorrentErrorReason: seed.TorrentErrorReason,
-			Files: make([]feedFileDeclaration, 0, fileCount), AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite}
+			Files: make([]feedFileDeclaration, 0, fileCount), AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite,
+			SourceGUID: seed.SourceGUID, DetailsURL: seed.DetailsURL}
 		if len(seed.Payload) > 0 {
 			params.Payloads = append(params.Payloads, seed.Payload)
 			index := len(params.Payloads)

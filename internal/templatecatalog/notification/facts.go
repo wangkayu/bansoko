@@ -22,11 +22,9 @@ var EpisodeFactKeys = []string{"ep.raw", "ep.number", "ep.display", "ep.offset"}
 
 // InputFacts projects InputFactKeys from an acquisition input snapshot. Only
 // known frozen values are used; anything else is null. release.src reads the
-// accepted release's provider (anibt|mikan; a custom source has none) and
-// anime.group the source's configured group name; neither has a fallback of
-// any kind. The SQL twin is notification_input_facts (migration 054); a
-// parity test keeps them equal. torrent.size / torrent.file_count exist from
-// input schema 4 on and read null for older inputs.
+// captured provenance channel and anime.group the configured group name.
+// Neither guesses a value from another identity. The SQL twin is
+// notification_input_facts (migration 139); a parity test keeps them equal.
 func InputFacts(snapshot []byte) map[string]any {
 	facts := make(map[string]any, len(InputFactKeys))
 	for _, key := range InputFactKeys {
@@ -41,7 +39,11 @@ func InputFacts(snapshot []byte) map[string]any {
 	config, _ := input["config"].(map[string]any)
 	identity, _ := config["identity"].(map[string]any)
 	facts["anime.id"] = knownFact(identity["managed_anime_ref"])
-	facts["release.src"] = knownFact(source["provider"])
+	provenance, _ := source["provenance"].(map[string]any)
+	switch provider := provenance["provider"]; provider {
+	case "anibt", "mikan", "nyaa", "jackett", "custom":
+		facts["release.src"] = provider
+	}
 	facts["anime.group"] = knownFact(source["group"])
 	facts["bgm.id"] = knownFact(media["bgm"], "ref")
 	facts["tmdb.id"] = knownFact(media["tmdb"], "work_ref")

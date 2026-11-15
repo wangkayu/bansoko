@@ -811,7 +811,7 @@ func (s *Service) enqueueDownloadSubmittedTx(ctx context.Context, tx *sql.Tx, ta
 	var row downloadNotificationRow
 	if err := tx.QueryRowContext(ctx, `
 SELECT anime.title, COALESCE(anime.title_override, ''), release.raw_facts, release.parsed_facts, release.source_facts,
-       input.input, connection.name,
+       input.input, input.entry_kind, connection.name,
        (SELECT snap.release_identity FROM media_fact_snapshots snap
         WHERE snap.release_id = task.release_id ORDER BY snap.created_at DESC, snap.id DESC LIMIT 1),
        (SELECT snap.release_facts->'batch_plan'->'coverage_keys' FROM media_fact_snapshots snap
@@ -826,7 +826,7 @@ JOIN acquisitions input ON input.id = task.acquisition_id
 LEFT JOIN connections connection ON connection.id = task.qbittorrent_connection_id
 LEFT JOIN release_torrent_inputs torrent_input ON torrent_input.release_id = task.release_id
 WHERE task.id = $1`, task.id).Scan(&row.animeTitle, &row.titleOverride, &row.rawFacts, &row.parsedFacts, &row.sourceFacts,
-		&row.inputSnapshot, &row.clientName, &row.releaseIdentity, &row.coverageKeys, &row.torrentPayload); err != nil {
+		&row.inputSnapshot, &row.entryKind, &row.clientName, &row.releaseIdentity, &row.coverageKeys, &row.torrentPayload); err != nil {
 		return fmt.Errorf("read download notification facts: %w", err)
 	}
 	{
@@ -896,6 +896,7 @@ func clampProgress(value float64) float64 {
 }
 
 type downloadNotificationRow struct {
+	entryKind                 string
 	animeTitle, titleOverride string
 	rawFacts, parsedFacts     []byte
 	sourceFacts               []byte
@@ -948,6 +949,7 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 		animeTitle, customTitle = row.titleOverride, row.titleOverride
 	}
 	facts := notification.InputFacts(row.inputSnapshot)
+	facts["task.origin"] = notification.TaskOrigin(row.entryKind)
 	facts["torrent.tree"] = torrentTreeText(row.torrentPayload)
 	for key, value := range notification.EpisodeFacts(releaseIdentityFact(row.releaseIdentity)) {
 		facts[key] = value

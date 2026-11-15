@@ -184,6 +184,9 @@ func seedFromSnapshotFact(reference SelectedSeed, fact animeapplication.SeedPrev
 	// the item carried no tags and every `anibt.*` filter would fail a release
 	// the subscribed path accepts.
 	seed.AniBTTags = cloneStoredAniBTTags(fact.AniBTTags)
+	seed.SourceGUID = fact.SourceGUID
+	seed.DetailsURL = fact.DetailsURL
+	seed.SourceSite = cloneSeedSourceSite(fact.SourceSite)
 	return canonicalSelectedSeed(seed)
 }
 

@@ -152,16 +152,15 @@ type ProviderFeedSnapshotSeed struct {
 	// snapshot was published, in the persisted (public) block shape the release
 	// path already stores. The tags are namespaced XML fields, not title text,
 	// so they can never be re-derived from a persisted seed; without this field
-	// every surface rebuilt from a snapshot lost `anibt.*`. It is deliberately
-	// OUTSIDE the content hash: provider-feed-snapshot-v1 is part of the hashed
-	// payload and every append-only snapshot published before this field existed
-	// carries none, so folding it in would fail closed on all of them. nil means
-	// "no tag set" (non-AniBT provider, or a row written before the column
-	// existed); a set observed with no tags is the non-nil block with no tags.
+	// every surface rebuilt from a snapshot lost `anibt.*`. This block remains
+	// outside the content hash; v2 adds only source provenance to the existing
+	// hash members. nil means no observed tag set; an observed empty set is a
+	// non-nil block with no tags.
 	AniBTTags *acquisitiondomain.StoredAniBTTags
-	// SourceSite is the optional tracker attribution of an aggregated result.
-	// Like AniBTTags it stays outside the legacy content hash.
+	// Source provenance is covered by the v2 content hash, including attribution.
 	SourceSite *acquisitiondomain.SeedSourceSite
+	SourceGUID string
+	DetailsURL string
 }
 
 type ProviderFeedSnapshotWrite struct {
@@ -395,6 +394,9 @@ func (s ProviderFeedSnapshotSeed) Validate() error {
 	if err := s.validateAniBTTags(); err != nil {
 		return err
 	}
+	if len(s.SourceGUID) > 8192 || len(s.DetailsURL) > 8192 {
+		return errors.New("seed source provenance exceeds its bound")
+	}
 	if s.SourceSite != nil {
 		if err := s.SourceSite.Validate(); err != nil {
 			return fmt.Errorf("seed source site: %w", err)
@@ -525,16 +527,19 @@ func DigestBytes(payload []byte) string {
 }
 
 type canonicalFeedSeed struct {
-	StableSeedKey    string  `json:"stable_seed_key"`
-	Locator          string  `json:"locator"`
-	Title            string  `json:"title"`
-	PublishedAt      *string `json:"published_at,omitempty"`
-	SizeBytes        *int64  `json:"size_bytes,omitempty"`
-	InfoHash         *string `json:"info_hash,omitempty"`
-	PayloadDigest    *string `json:"payload_digest,omitempty"`
-	TorrentFilename  *string `json:"torrent_filename,omitempty"`
-	TorrentState     string  `json:"torrent_state"`
-	ProjectionDigest *string `json:"projection_digest,omitempty"`
+	StableSeedKey    string                            `json:"stable_seed_key"`
+	Locator          string                            `json:"locator"`
+	Title            string                            `json:"title"`
+	PublishedAt      *string                           `json:"published_at,omitempty"`
+	SizeBytes        *int64                            `json:"size_bytes,omitempty"`
+	InfoHash         *string                           `json:"info_hash,omitempty"`
+	PayloadDigest    *string                           `json:"payload_digest,omitempty"`
+	TorrentFilename  *string                           `json:"torrent_filename,omitempty"`
+	TorrentState     string                            `json:"torrent_state"`
+	ProjectionDigest *string                           `json:"projection_digest,omitempty"`
+	SourceGUID       string                            `json:"source_guid"`
+	DetailsURL       string                            `json:"details_url"`
+	SourceSite       *acquisitiondomain.SeedSourceSite `json:"source_site"`
 }
 
 // ProviderFeedSnapshotContentHashSchema is the canonical content-hash schema
@@ -542,7 +547,7 @@ type canonicalFeedSeed struct {
 // key, torrent filename, torrent acquisition state and manifest projection
 // digest, so the snapshot's content identity covers the file tree the read
 // model renders and not only the seed list that produced it.
-const ProviderFeedSnapshotContentHashSchema = "provider-feed-snapshot-v1"
+const ProviderFeedSnapshotContentHashSchema = "provider-feed-snapshot-v2"
 
 type canonicalFeedSnapshot struct {
 	Schema string              `json:"schema"`
@@ -577,6 +582,7 @@ func CanonicalFeedSnapshotContentHash(seeds []ProviderFeedSnapshotSeed) (string,
 			TorrentFilename:  filename,
 			TorrentState:     seed.NormalizedTorrentState(),
 			ProjectionDigest: projectionDigest,
+			SourceGUID:       seed.SourceGUID, DetailsURL: seed.DetailsURL, SourceSite: seed.SourceSite,
 		})
 	}
 	sort.SliceStable(canonical, func(i, j int) bool {

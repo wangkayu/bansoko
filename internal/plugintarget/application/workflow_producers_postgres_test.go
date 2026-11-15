@@ -118,7 +118,7 @@ func TestDownloadFailedNoticeOncePerTask(t *testing.T) {
 	// The fixture root is a one-shot acquisition, which the RSS page cannot
 	// retry, so the notice predicts no retry.
 	if facts["result.outcome"] != "failure" || facts["result.category"] != "stalled" || facts["result.retryable"] != false ||
-		facts["release.src"] != "custom_rss" || facts["release.id"] != releaseID {
+		facts["release.src"] != "custom" || facts["release.id"] != releaseID || facts["task.origin"] != "one_shot" {
 		t.Fatalf("download_failed facts=%v", facts)
 	}
 	for key := range facts {
@@ -283,7 +283,7 @@ func TestUnknownFilesImportedNoticeOncePerAcquisition(t *testing.T) {
 		t.Fatalf("admissions=%d owner=%s key=%s, want one for the acquisition", count, ownerID, resultKey)
 	}
 	files, _ := facts["out.files"].([]any)
-	if facts["out.count"] != float64(2) || len(files) != 2 {
+	if facts["out.count"] != float64(2) || len(files) != 2 || facts["task.origin"] != "one_shot" {
 		t.Fatalf("unknown files facts=%v", facts)
 	}
 	wantFiles := []map[string]any{

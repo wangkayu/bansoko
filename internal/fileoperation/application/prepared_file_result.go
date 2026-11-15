@@ -187,7 +187,11 @@ func captureSuccessfulFileResultTx(ctx context.Context, tx *sql.Tx, claim workit
 	if err != nil {
 		return preparedFileResult{}, err
 	}
-	payload, err := successfulFileNotificationPayload(frozen.Input, selected, v, checkpoint, collision, sourceFacts, render)
+	var entryKind string
+	if err := tx.QueryRowContext(ctx, `SELECT entry_kind FROM public.acquisitions WHERE id=$1`, p.root).Scan(&entryKind); err != nil {
+		return preparedFileResult{}, err
+	}
+	payload, err := successfulFileNotificationPayload(frozen.Input, selected, v, checkpoint, collision, entryKind, sourceFacts, render)
 	if err != nil {
 		return preparedFileResult{}, err
 	}

@@ -63,11 +63,18 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 	if err := json.Unmarshal([]byte(input), &body); err != nil {
 		t.Fatal(err)
 	}
+	var provenance json.RawMessage
+	if err := db.QueryRowContext(ctx, `SELECT public.release_source_evidence($1)`, release).Scan(&provenance); err != nil {
+		t.Fatal(err)
+	}
+	body["source"].(map[string]any)["provenance"] = provenance
 	body["source"].(map[string]any)["kind"] = "subscription_direct"
 	body["source"].(map[string]any)["manifest_digest"] = digest([]byte(root))
 	// Golden DTO templates demonstrate wire values, not executable JS. Downstream
 	// application fixtures must freeze the actual policy's naming sections.
 	var frozenPolicy struct {
+		// EntryKind selects the accepted owner entry for notification matrix tests.
+		EntryKind string `json:"fixture_entry_kind"`
 		// RouteRoot is the delivery route root the accepted input freezes: the
 		// work's tree top, which is also what the notify projectors relativize
 		// an unrecognized file's path against.
@@ -101,6 +108,19 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 	}
 	if err := json.Unmarshal([]byte(frozen), &frozenPolicy); err != nil {
 		t.Fatal(err)
+	}
+	if frozenPolicy.EntryKind != "" {
+		// The fixture selector is not part of the downloader's closed input DTO.
+		var persisted map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(frozen), &persisted); err != nil {
+			t.Fatal(err)
+		}
+		delete(persisted, "fixture_entry_kind")
+		raw, err := json.Marshal(persisted)
+		if err != nil {
+			t.Fatal(err)
+		}
+		frozen = string(raw)
 	}
 	if frozenPolicy.RouteRoot != "" {
 		body["delivery"].(map[string]any)["route"].(map[string]any)["root"] = map[string]any{"state": "known", "value": frozenPolicy.RouteRoot, "reason_code": nil}
@@ -290,6 +310,16 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 		defaults[name] = json.RawMessage(encode(section))
 	}
 	args := []any{root, "one_shot", "deployment_owner_v1", "manual_acquire_v1", root, d, `{}`, protocol.Digest("acquisition-input:v1", canonical), encode(map[string]any{"kind": "one_shot", "intent_digest": d}), `{"state":"known","value":"fixture","reason_code":null}`, animeID, 2592000, 2592000, 5184000, "none", nil, nil, string(canonical), payload, hash, nil, d, manifest, release, task, key, nil, frozen, `{}`, "fixture-submit-" + task, "fixture-settle-" + task, "fixture-settle-" + task, `{}`, 3, qualification, encode(business), 0, 0, "fixture-corr", "release", release, encode(defaults)}
+	if entryKind := frozenPolicy.EntryKind; entryKind != "" {
+		switch entryKind {
+		case "automatic":
+			args[1], args[3] = entryKind, "auto_acquire_v1"
+		case "subscription_add", "one_shot":
+			args[1] = entryKind
+		default:
+			t.Fatalf("unsupported fixture entry kind %q", entryKind)
+		}
+	}
 	var evidenceProtocol bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='accept_acquisition_queued_with_vars')`).Scan(&evidenceProtocol); err != nil {
 		t.Fatal(err)

@@ -39,6 +39,8 @@ type SeedPreviewFact struct {
 	// `anibt.*` against an empty set.
 	AniBTTags  *acquisitiondomain.StoredAniBTTags
 	SourceSite *acquisitiondomain.SeedSourceSite
+	SourceGUID string
+	DetailsURL string
 	// LocatorDisplay is the redacted display form of the seed's source
 	// location. The raw locator is deliberately not part of this fact set.
 	LocatorDisplay string

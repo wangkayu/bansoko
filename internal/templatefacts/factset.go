@@ -12,6 +12,7 @@ import (
 // and a nil slice are "no value": the getters turn them into null, never into
 // a guessed value.
 type FactSet struct {
+	Task     TaskFacts
 	Anime    AnimeFacts
 	Bgm      BgmFacts
 	Tmdb     TmdbFacts
@@ -40,6 +41,10 @@ type FactSet struct {
 	Mikan  Values
 	Vars   map[string]map[string]string
 }
+
+// TaskFacts describes this acquisition's entry, not the anime's metadata origin.
+// Origin is subscription or one_shot; absent acquisition evidence stays empty.
+type TaskFacts struct{ Origin string }
 
 type AnimeFacts struct {
 	ID            string
@@ -113,11 +118,9 @@ type ReleaseFacts struct {
 	ID string
 	// Title is the RSS item's original title, frozen at accept.
 	Title string
-	// Src is the source the release came from (release.src): the provider
-	// kind (anibt|mikan) a media event delivered, or the source type
-	// (provider_group|custom_rss) a release workflow event delivered; empty
-	// when the payload records none.
+	// Src is the acquisition channel: anibt/mikan/nyaa/jackett/custom.
 	Src          string
+	Site         string
 	PublishedAt  string
 	Episodes     string
 	SubtitleMode string
