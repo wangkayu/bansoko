@@ -17,6 +17,7 @@ func TestRuntimeCommand(t *testing.T) {
 		{name: "serve flags stay unchanged", args: []string{"--listen", "127.0.0.1:0"}, mode: "serve", rest: []string{"--listen", "127.0.0.1:0"}},
 		{name: "bootstrap", args: []string{"bootstrap", "recover", "status"}, mode: "bootstrap", rest: []string{"recover", "status"}},
 		{name: "migrate", args: []string{"migrate", "rotate-secret-key"}, mode: "migrate", rest: []string{"rotate-secret-key"}},
+		{name: "local update", args: []string{"update", "check", "--json"}, mode: "update", rest: []string{"check", "--json"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			mode, rest := runtimeCommand(test.args)

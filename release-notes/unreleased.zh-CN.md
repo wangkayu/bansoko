@@ -1,5 +1,6 @@
 ## 新增
 
+- 容器内可通过 bansoko-server update check|apply|status 检查、受理和查询内嵌更新，支持人读及 JSON 输出；仅限 root 或服务 PUID，不需要 Web 会话或 API token。
 - 入库完成和执行失败通知支持原始文件名解析属性 frt.*；文件被替换通知可分别使用 frt.* 和 taker.frt.* 展示新旧文件属性。
 
 ## 改进
@@ -15,6 +16,7 @@
 
 ## 注意
 
+- 本地更新命令仅在新版服务端提供；旧镜像或旧 overlay 不会自动获得该能力，首次升级仍使用 WebUI 或切换镜像。WebUI 升级后 /app/bansoko-server 可能仍是旧 base；应读取 BANSOKO_UPDATES_ROOT 下的 current 文件，用它指向的 releases 目录中的 bansoko-server 调用命令，没有 overlay 时使用 /app/bansoko-server。update help 提供完整容器调用示例，不依赖 /proc/1/exe 权限，也不增加 Docker 管理 socket。apply 默认只表示已受理；--wait 仅在命令进程存活时等待重连，handoff 可能终止 docker exec。断连或 Docker 返回码不代表更新成败，重启后须用新的 exec 查询 update status。
 - 已选择“系统默认”的通知目标会采用新版文案，自定义模板不变。
 - frt.* 仅支持命名、入库完成、执行失败和文件被替换场景；其他事件中原有的 frt.* 引用需要移除。taker.frt.* 仅支持文件被替换事件。
 - 旧记录没有保存的文件解析属性保持为空，不重新解析已改名的文件；准备阶段命名失败的通知覆盖不在本次调整范围内。

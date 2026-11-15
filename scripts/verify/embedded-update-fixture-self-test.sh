@@ -3,7 +3,9 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 fixture="$root/scripts/ci/embedded-update-docker-fixture.sh"
 matrix="$root/scripts/verify/embedded-crash-matrix.sh"
-bash -n "$fixture" "$matrix"
+bash -n "$fixture"
+bash -n "$matrix"
+python3 -I "$root/scripts/maintainer/transform-embedded-compose-test.py"
 "$matrix" --self-test >/dev/null
 [[ "$("$matrix" --list | wc -l | tr -d '[:space:]')" == 9 ]]
 expected="$( {
@@ -23,7 +25,7 @@ if BANSOKO_CRASH_MATRIX=1 BANSOKO_EMBEDDED_E2E=1 BANSOKO_ENVIRONMENT=production 
 python3 - "$matrix" "$fixture" <<'PY'
 import pathlib,re,sys
 matrix,fixture=(pathlib.Path(x).read_text() for x in sys.argv[1:])
-required=['"evidence_kind":"real_docker"','"self_test":False','image_cleanup','source_identity','source_commit','source_tree_hash','image_id','resources_clean','pending.json','release_sequence','previous_release_id']
+required=['"evidence_kind":"real_docker"','"self_test":False','image_cleanup','source_identity','source_commit','source_tree_hash','image_id','resources_clean','pending.json','release_sequence','previous_release_id','binary="$root/releases/$release/bansoko-server"','"exited 0"','"exited 70"','docker start "$app_container_id"','backup-verified.json','pg_restore --list','--local-cli-legacy-base','verify_current_operation_backup "embedded-$operation_id"']
 missing=[item for item in required if item not in matrix+fixture]
 if missing: raise SystemExit(f"static fixture contract missing: {missing}")
 if re.search(r'cp\s+.*(?:journal|\.log).*evidence',matrix,re.I): raise SystemExit("raw evidence copy detected")

@@ -36,17 +36,23 @@ base_digest="${BANSOKO_EMBEDDED_E2E_BASE_IMAGE_DIGEST:-}"
 keep="${BANSOKO_EMBEDDED_E2E_KEEP:-0}"
 scenario_arg="all"
 self_test=0
- docker_fixture=0
+docker_fixture=0
+local_cli=0
 for arg in "$@"; do
   case "$arg" in
     --scenario=normal|--scenario=migrate-failure|--scenario=rollback-blocked|--scenario=min-image-version|--scenario=all)
       scenario_arg="${arg#--scenario=}" ;;
     --self-test) self_test=1 ;;
     --docker-fixture) docker_fixture=1 ;;
+    --local-cli|--local-cli-legacy-base) local_cli=1 ;;
     --keep) keep=1 ;;
-    *) echo "unknown argument: $arg (use --scenario=normal|migrate-failure|rollback-blocked|min-image-version|all [--self-test] [--docker-fixture] [--keep])" >&2; exit 2 ;;
+    *) echo "unknown argument: $arg (use --scenario=normal|migrate-failure|rollback-blocked|min-image-version|all [--self-test] [--docker-fixture] [--local-cli|--local-cli-legacy-base] [--keep])" >&2; exit 2 ;;
   esac
 done
+if (( local_cli == 1 && docker_fixture == 0 )); then
+  echo "refusing: --local-cli requires --docker-fixture" >&2
+  exit 2
+fi
 
 if [[ "$docker_fixture" == 1 ]]; then
   [[ "$scenario_arg" == all ]] && scenario_arg=normal

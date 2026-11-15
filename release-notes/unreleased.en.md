@@ -1,5 +1,6 @@
 ## New
 
+- Containers now support bansoko-server update check|apply|status for embedded update checks, admission and status, with human-readable and JSON output. Access is limited to root or the serving PUID and requires no web session or API token.
 - Library import completion and execution failure notifications support original file-name attributes through frt.*. File displacement notifications can show both files using frt.* and taker.frt.*.
 
 ## Improved
@@ -15,6 +16,7 @@
 
 ## Important
 
+- Local update commands require the new server; older images and overlays do not gain them retroactively, so the first upgrade still uses the Web UI or an image switch. After an overlay upgrade, /app/bansoko-server may remain the old base. Read current under BANSOKO_UPDATES_ROOT and invoke the bansoko-server in the releases directory it points to, or /app/bansoko-server when no overlay exists. update help includes the complete container invocation; it needs neither /proc/1/exe access nor a Docker management socket. apply reports admission only by default. --wait retries only while the command remains alive: handoff can terminate docker exec, and neither disconnection nor a Docker exit code establishes the update outcome. After restart, query update status with a new exec.
 - Notification targets using system defaults adopt the new wording; custom templates remain unchanged.
 - frt.* is supported only in naming, library import completion, execution failure and file displacement. Existing references in other events must be removed. taker.frt.* is supported only in file displacement.
 - Older records without stored file-name attributes remain empty; renamed library files are not reparsed. Notifications for preparation-stage naming failures are outside this change.

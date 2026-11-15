@@ -66,6 +66,7 @@ import (
 	"bansoko/internal/runtime/readiness"
 	"bansoko/internal/transport/httpapi"
 	updateapplication "bansoko/internal/update/application"
+	localupdate "bansoko/internal/update/local"
 	"bansoko/internal/workitems"
 )
 
@@ -101,6 +102,8 @@ func main() {
 	case "migrate":
 		migratecmd.Main(args)
 		return
+	case "update":
+		os.Exit(localupdate.Main(args))
 	default:
 		runServe(args)
 	}
@@ -111,7 +114,7 @@ func runtimeCommand(args []string) (string, []string) {
 		return "serve", args
 	}
 	switch args[0] {
-	case "bootstrap", "migrate", "serve":
+	case "bootstrap", "migrate", "serve", "update":
 		return args[0], args[1:]
 	default:
 		return "serve", args
@@ -793,6 +796,23 @@ func runServe(args []string) {
 		Lane:       rtLane,
 	}))
 
+	// The local command talks to the updater in this actual base/overlay
+	// process. It never derives a second updater from /app or the current
+	// pointer. Manual mode and bootstrap maintenance intentionally have no
+	// listener; the CLI reports those intervals as temporarily unavailable.
+	var localUpdateServer *localupdate.Server
+	if embeddedUpdateService != nil {
+		localUpdateServer, err = localupdate.Listen(updatesRootForIdentity, embeddedUpdateService, localupdate.Options{Logger: runtimeLogger})
+		if err != nil {
+			fatalStartup(runtimeLogger, "local update control listener failed", "local_update_listener_failed")
+		}
+		defer func() {
+			if closeErr := localUpdateServer.Close(); closeErr != nil {
+				runtimeLogger.Warn(context.Background(), observabilityport.RuntimeEvent{Message: "local update socket cleanup failed", Component: "update", Operation: "local_close", Outcome: "warning", ReasonCode: "update_local_close_failed", ErrorClass: "update_local"})
+			}
+		}()
+	}
+
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           apiServer.Handler(),
@@ -816,6 +836,9 @@ func runServe(args []string) {
 				return
 			case <-embeddedUpdateService.ExitRequested():
 				runtimeLogger.Warn(context.Background(), observabilityport.RuntimeEvent{Message: "embedded update marker published; draining and exiting for bootstrap", Component: "runtime", Operation: "embedded_update_exit", Outcome: "warning", ReasonCode: "embedded_update_handoff"})
+				if localUpdateServer != nil {
+					_ = localUpdateServer.Close()
+				}
 				if err := backgroundRuntime.Stop(); err != nil {
 					fatalStartup(runtimeLogger, "update drain failed; handlers are not stopped", "embedded_update_drain_failed")
 					return
@@ -840,6 +863,9 @@ func runServe(args []string) {
 		case <-backupService.HandoffRequested():
 		}
 		runtimeLogger.Warn(context.Background(), observabilityport.RuntimeEvent{Message: "backup restore ready; draining and switching databases", Component: "runtime", Operation: "backup_restore_exit", Outcome: "warning", ReasonCode: "backup_restore_handoff"})
+		if localUpdateServer != nil {
+			_ = localUpdateServer.Close()
+		}
 		maintenanceGate.EnterMaintenance()
 		switchCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
@@ -867,6 +893,9 @@ func runServe(args []string) {
 		ReasonCode: "server_listening",
 	})
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if localUpdateServer != nil {
+			_ = localUpdateServer.Close()
+		}
 		_ = db.Close()
 		fatalStartup(runtimeLogger, "http server failed", "http_server_failed")
 	}

@@ -14,6 +14,8 @@ daemon_restart_cmd="${BANSOKO_EMBEDDED_DAEMON_RESTART_CMD:-}"
 readmission_check=0
 higher_sequence_admission=0
 channel_discovery=0
+local_cli=0
+legacy_base=0
 keep=0
 for arg in "$@"; do
   case "$arg" in
@@ -27,6 +29,8 @@ for arg in "$@"; do
     --readmission-check) readmission_check=1 ;;
     --higher-sequence-admission) higher_sequence_admission=1 ;;
     --channel-discovery) channel_discovery=1 ;;
+    --local-cli) local_cli=1 ;;
+    --local-cli-legacy-base) local_cli=1; legacy_base=1 ;;
     --scenario=*) echo "refusing: unsupported Docker fixture scenario" >&2; exit 2 ;;
     --action=*|--negative=*|--restart=*) echo "refusing: unsupported fixture option" >&2; exit 2 ;;
     --keep) keep=1 ;;
@@ -43,6 +47,14 @@ if [[ "$scenario" != crash-* && "$scenario" != daemon-restart-bootstrap && ( "$n
 fi
 if (( higher_sequence_admission == 1 )) && [[ "$recovery_action" != abort || "$readmission_check" != 1 || "$negative_case" != none ]]; then
   echo "refusing: higher-sequence admission requires a successful abort plus --readmission-check" >&2
+  exit 2
+fi
+if (( local_cli == 1 )) && [[ "$scenario" != normal ]]; then
+  echo "refusing: local CLI coverage currently requires the normal accepted/restart/status chain" >&2
+  exit 2
+fi
+if (( legacy_base == 1 )) && [[ "${BANSOKO_EMBEDDED_E2E_REUSE_IMAGE:-0}" == "1" ]]; then
+  echo "refusing: --local-cli-legacy-base must build its explicitly old base image" >&2
   exit 2
 fi
 [[ "${BANSOKO_EMBEDDED_E2E:-0}" == 1 ]] || { echo "refusing: BANSOKO_EMBEDDED_E2E=1 is required" >&2; exit 2; }
@@ -96,6 +108,33 @@ journal_field() {
 
 journal_step() { journal_field step; }
 
+# Prove one operation-owned backup before bootstrap's successful cleanup. The
+# caller supplies the identity from the checkpoint (journal or deterministic
+# marker operation id); random operation ids prevent historical-dump reuse.
+verify_current_operation_backup() {
+  backup_id="$1"
+  [[ -n "$operation_id" && "$backup_id" =~ ^[A-Za-z0-9._-]+$ ]] || fail_blocked "verified backup identity was not observed before cleanup"
+  docker run --rm --entrypoint sh -v "$volume":/updates "$image" -c 'set -eu; dump="/updates/backups/$1.dump"; test -s "$dump"; test -f "$dump.sha256"; actual="$(sha256sum "$dump" | cut -d" " -f1)"; stated="$(tr -d "[:space:]" < "$dump.sha256")"; test "$actual" = "$stated"; pg_restore --list "$dump" >/dev/null; printf "%s\n" "$actual"' sh "$backup_id" >"$workdir/backup-digest" || fail_blocked "current operation backup failed pre-cleanup verification"
+  python3 - "$backup_evidence" "$operation_id" "$backup_id" "$workdir/backup-digest" <<'PY'
+import json,pathlib,sys
+out,op,backup,digest=sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({"operation_id":op,"backup_id":backup,"sha256":pathlib.Path(digest).read_text().strip(),"pg_restore_list":True},indent=2,sort_keys=True)+"\n")
+PY
+}
+
+local_update() {
+  docker compose -p "$project" -f "$compose" exec -T --user "${local_cli_uid:-0}" app sh -c '
+    root=${BANSOKO_UPDATES_ROOT:-/config/updates}
+    binary=/app/bansoko-server
+    if [ -f "$root/current" ]; then
+      release=$(cat "$root/current")
+      case "$release" in ""|*[!A-Za-z0-9._-]*|.|..) exit 2;; esac
+      binary="$root/releases/$release/bansoko-server"
+    fi
+    exec "$binary" update "$@"
+  ' sh "$@" --json
+}
+
 app_log_count() { docker compose -p "$project" -f "$compose" logs --no-color app 2>/dev/null | grep -cF "$1" || true; }
 
 case "$scenario" in
@@ -148,11 +187,30 @@ trap cleanup EXIT
 fail_blocked() {
   local reason="$1" detail="${2:-}"
   printf '%s\n' "$detail" >>"$log" 2>/dev/null || true
-  python3 - "$result" "$reason" "$scenario" "$recovery_action" "$negative_case" "$restart_kind" <<'PY'
-import json, pathlib, sys
-out, reason, scenario, action, negative, restart = sys.argv[1:]
+  python3 - "$result" "$reason" "$scenario" "$recovery_action" "$negative_case" "$restart_kind" "$compose" "$project" <<'PY'
+import json, pathlib, re, subprocess, sys
+out, reason, scenario, action, negative, restart, compose, project = sys.argv[1:]
 acceptance = "ac-b1" if scenario == "normal" else ("ac-b2" if scenario.startswith("crash-") else ("ac-b3" if scenario == "migrate-failure" else "ac-b4"))
 data = {"acceptance":acceptance, "scenario":scenario, "scope":"docker-fixture", "evidence_kind":"real_docker", "self_test":False, "passed":False, "blocked":True, "reason":reason, "recovery_action":action, "negative_case":negative, "restart_kind":restart}
+# Capture bounded startup diagnostics before cleanup removes the container.
+# Never copy owner/login responses, environment, or credential-bearing log lines.
+if pathlib.Path(compose).is_file():
+    try:
+        command=["docker","compose","-p",project,"-f",compose]
+        logs=subprocess.run(command+["logs","--no-color","--no-log-prefix","--tail","80","app"],capture_output=True,text=True,timeout=15).stdout
+        safe=[]
+        for line in logs.splitlines():
+            if re.search(r"(?i)password|secret|token|authorization|cookie|dsn|postgres(?:ql)?://",line): continue
+            try:
+                record=json.loads(line)
+            except ValueError:
+                if re.search(r"(?i)bootstrap|failed|fatal|error|panic|permission|migration|fixture injection",line): safe.append(line[:1200])
+                continue
+            if isinstance(record,dict):
+                safe.append({key:record[key] for key in ("level","message","msg","error","component","reason_code","error_class") if isinstance(record.get(key),str)})
+        data["app_diagnostics"]=safe
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        data["app_diagnostics_unavailable"]=type(exc).__name__
 pathlib.Path(out).write_text(json.dumps(data, indent=2, sort_keys=True)+"\n")
 print(json.dumps(data, indent=2, sort_keys=True))
 PY
@@ -190,6 +248,15 @@ PY
 cp "$source_manifest" "$evidence_dir/source-tree-manifest.json"
 if [[ "${BANSOKO_EMBEDDED_E2E_REUSE_IMAGE:-0}" == "1" ]]; then
   docker image inspect "$image" >/dev/null 2>&1 || fail_blocked "requested fixture image is unavailable" "$image"
+elif (( legacy_base == 1 )); then
+  legacy_ref="${BANSOKO_EMBEDDED_E2E_LEGACY_BASE_REF:-${source_commit}^}"
+  legacy_commit="$(git -C "$root" rev-parse "${legacy_ref}^{commit}" 2>/dev/null || true)"
+  [[ "$legacy_commit" =~ ^[0-9a-f]{40}$ && "$legacy_commit" != "$source_commit" ]] || fail_blocked "legacy base commit is unavailable" "$legacy_ref"
+  legacy_root="$workdir/legacy-base-source"; mkdir -p "$legacy_root"
+  # The acceptance runner protects evidence with umask 077. Archive modes are
+  # copied into the image, so source extraction alone needs ordinary read bits.
+  (umask 022; git -C "$root" archive "$legacy_commit" | tar -x -C "$legacy_root") || fail_blocked "legacy base source archive failed" "$legacy_commit"
+  docker buildx build --load --platform "linux/${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}" --build-arg VERSION=embedded-e2e-legacy --build-arg SOURCE_COMMIT="$legacy_commit" --build-arg BUILD_ID=fixture-legacy-base --build-arg BUILD_TIME=embedded-fixture --build-arg BUILD_DIRTY=false --build-arg BASE_COMPATIBILITY_VERSION=base-v1 -t "$image" "$legacy_root" >"$log" 2>&1 || fail_blocked "legacy base image build failed" "$log"
 else
   docker buildx build --load --platform "linux/${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}" --build-arg VERSION=embedded-e2e --build-arg SOURCE_COMMIT="$source_commit" --build-arg BUILD_ID=fixture-base --build-arg BUILD_TIME=embedded-fixture --build-arg BUILD_DIRTY="$source_dirty" --build-arg BASE_COMPATIBILITY_VERSION=base-v1 -t "$image" "$root" >"$log" 2>&1 || fail_blocked "local image build failed" "$log"
 fi
@@ -198,7 +265,13 @@ image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 # The app drops to PUID:PGID; use the invoking account so cleanup needs no root.
 image_uid="$(id -u)"; image_gid="$(id -g)"
 [[ "$image_uid" =~ ^[0-9]+$ && "$image_gid" =~ ^[0-9]+$ ]] || fail_blocked "fixture image user identity is not numeric"
-docker volume create --label "bansoko.update-e2e.run=${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" >/dev/null
+if (( legacy_base == 1 )); then
+  docker run --rm --user "$image_uid:$image_gid" --entrypoint sh "$image" -c 'set -eu; for dir in /app/db/migrations /app/deployment/defaults; do test -r "$dir"; test -x "$dir"; done; for file in /app/db/migrations/*.sql /app/deployment/defaults/*; do [ -f "$file" ] || continue; test -r "$file"; done' || fail_blocked "legacy image source files are unreadable by the serving UID"
+fi
+# Production mounts only /config. This helper-only named view points at that
+# same bind's updates subtree; it is never an extra mount on the app container.
+mkdir -p "$workdir/config/updates"
+docker volume create --driver local --opt type=none --opt o=bind --opt "device=$workdir/config/updates" --label "bansoko.update-e2e.run=${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" >/dev/null
 pick_port() { python3 - "${1:-0}" <<'PY'
 import socket,sys
 requested=int(sys.argv[1])
@@ -278,9 +351,9 @@ go -C "$root" run ./cmd/bansoko-release channel-write \
 for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:${artifact_port}/update-channel/channel-v1.json" >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS "http://127.0.0.1:${artifact_port}/update-channel/channel-v1.json" >/dev/null 2>&1 || fail_blocked "artifact HTTP server did not become ready" "$workdir/artifact-http.log"
 python3 "$root/scripts/ci/transform-embedded-compose.py" "$root/deployment/maintainer/docker-compose.production.yml" "$compose" "$volume" "$image"
-python3 - "$compose" "$channel_base" "$scenario" "$crash_target_step" "${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" <<'PY'
+python3 - "$compose" "$channel_base" "$scenario" "$crash_target_step" "${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" "$local_cli" <<'PY'
 import pathlib,sys
-dst=pathlib.Path(sys.argv[1]); channel_base,scenario,crash_target_step,run_id,volume=sys.argv[2:]
+dst=pathlib.Path(sys.argv[1]); channel_base,scenario,crash_target_step,run_id,volume,local_cli=sys.argv[2:]
 text=dst.read_text()
 def set_env(text,values):
     prefixes={key:f"      {key}:" for key in values}; found=set(); out=[]
@@ -300,25 +373,51 @@ if scenario=="crash-staging": text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_STOP_
 if scenario in ("crash-marker-before-backup","daemon-restart-bootstrap"): text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER":'"pending_marker"'})
 if scenario=="crash-after-backup": text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER":'"pending_backup"'})
 if scenario=="crash-migrate": text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER":'"migration_succeeded"'})
+if local_cli=="1":
+    text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER":'"pending_backup"'})
+if local_cli=="1" or scenario=="crash-after-backup":
+    head,app=text.split("  app:\n",1)
+    app=app.replace("    restart: unless-stopped","    restart: \"no\"",1)
+    text=head+"  app:\n"+app
 for service in ("postgres","app"):
     anchor=f"  {service}:\n"
     if anchor not in text: raise SystemExit(f"service anchor missing: {service}")
+    text=text.replace(anchor,anchor+f"    labels:\n      bansoko.update-e2e.run: {run_id}\n",1)
 anchor="  postgres_data:\n"
 if anchor not in text: raise SystemExit("postgres volume anchor missing")
 text=text.replace(anchor,anchor+f"    labels:\n      bansoko.update-e2e.run: {run_id}\n",1)
 text=set_env(text,{"BANSOKO_UPDATE_LANE":'"stable"',"BANSOKO_UPDATE_CHANNEL_BASE":channel_base})
 text=text.replace("    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:8080\"","    extra_hosts:\n      - host.docker.internal:host-gateway\n    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:8080\"").replace('      - "127.0.0.1:29000:29000"\n','')
-if f"  {volume}:\n" not in text: raise SystemExit("updates volume anchor missing")
+config_bind="        source: ${BANSOKO_CONFIG_DIR:?BANSOKO_CONFIG_DIR must be set}\n        target: /config\n"
+if config_bind not in text or "BANSOKO_UPDATES_ROOT: /config/updates" not in text:
+    raise SystemExit("single config bind and updates subtree contract missing")
 dst.write_text(text)
 PY
 docker compose -p "$project" -f "$compose" up -d postgres app >>"$log" 2>&1 || fail_blocked "real Compose startup failed" "$log"
 for _ in $(seq 1 60); do curl -fsS "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/livez" >/dev/null 2>&1 && break; sleep 2; done
 curl -fsS "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/livez" >/dev/null 2>&1 || fail_blocked "real app process did not become live" "$log"
 inspect="$(docker compose -p "$project" -f "$compose" exec -T app sh -c 'printf "BANSOKO_UPDATE_MODE=%s\\nBANSOKO_EMBEDDED_FIXTURE_STOP_AFTER=%s\\nBANSOKO_EMBEDDED_FIXTURE_STOP_BEFORE_MARKER=%s\\nBANSOKO_EMBEDDED_FIXTURE_FAIL_READINESS=%s\\n" "$BANSOKO_UPDATE_MODE" "$BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER" "$BANSOKO_EMBEDDED_FIXTURE_STOP_BEFORE_MARKER" "$BANSOKO_EMBEDDED_FIXTURE_FAIL_READINESS"; test -x /app/bansoko-server; test ! -e /app/bootstrap; test ! -e /app/bansoko-migrate; test -x /usr/local/bin/pg_dump')" || fail_blocked "container runtime contract failed" "$log"
+if (( local_cli == 1 && legacy_base == 0 )); then
+  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test -S "$BANSOKO_UPDATES_ROOT/update-control.sock" && [ "$(stat -c %a "$BANSOKO_UPDATES_ROOT/update-control.sock")" = 600 ]' || fail_blocked "local update socket contract failed"
+  if docker compose -p "$project" -f "$compose" exec -T --user 65534 app /app/bansoko-server update check --json >"$workdir/local-unauthorized.json" 2>"$workdir/local-unauthorized.log"; then unauthorized_rc=0; else unauthorized_rc=$?; fi
+  [[ "$unauthorized_rc" == 3 ]] || fail_blocked "local update control accepted an unrelated uid" "rc=$unauthorized_rc"
+  python3 - "$workdir/local-unauthorized.json" <<'PY'
+import json,pathlib,sys
+body=json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert body["error"]["code"]=="UPDATE_LOCAL_PERMISSION", body
+assert body["error"]["exit_code"]==3, body
+PY
+fi
+if (( legacy_base == 1 )); then
+  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test ! -e "$BANSOKO_UPDATES_ROOT/update-control.sock" && test ! -e "$BANSOKO_UPDATES_ROOT/current" && ! grep -a -q "Container-local embedded update control" /app/bansoko-server' || fail_blocked "fixture base is not a pre-local-CLI release"
+fi
 app_container_id="$(docker compose -p "$project" -f "$compose" ps -q app)"; [[ -n "$app_container_id" ]] || fail_blocked "app container identity unavailable" "$log"
 restart_count_before="$(docker inspect --format '{{.RestartCount}}' "$app_container_id")"; events_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 crash_events_file="$workdir/app-die-events.jsonl"; docker events --filter "container=$app_container_id" --filter event=die --format '{{json .}}' >"$crash_events_file" 2>/dev/null & crash_events_pid=$!
-seed_id="embedded-fixture-business-row"; seed_sql="INSERT INTO managed_anime (id,title) VALUES ('$seed_id','Embedded fixture business row')"
+# The disposable database seeds a configured GitHub gateway. Disable that test
+# row so the deployment-owned local channel override is not rewritten to GitHub.
+# This only initializes the fresh fixture database, never an existing instance.
+seed_id="embedded-fixture-business-row"; seed_sql="UPDATE connections SET state='disabled' WHERE kind='github'; INSERT INTO managed_anime (id,title) VALUES ('$seed_id','Embedded fixture business row')"
 docker compose -p "$project" -f "$compose" exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"' sh "$seed_sql" >>"$log" 2>&1 || fail_blocked "real PostgreSQL business seed failed" "$log"
 seed_rows_before="$(docker compose -p "$project" -f "$compose" exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FROM managed_anime WHERE id='\''embedded-fixture-business-row'\''"' || true)"
 schema_before="$(docker compose -p "$project" -f "$compose" exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT max(version) FROM schema_migrations"' || true)"
@@ -327,15 +426,64 @@ owner_body="$workdir/owner.json"; curl -fsS -X POST "http://127.0.0.1:${BANSOKO_
 session="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["session_token"])' "$owner_body")"
 login_body="$workdir/login.json"; curl -fsS -X POST "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/auth/login" -H 'Content-Type: application/json' --data '{"username":"fixture-owner","password":"correct horse battery","session_transport":"token"}' >"$login_body" || fail_blocked "owner login API failed"
 session="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["session_token"])' "$login_body")"
-check_body="$workdir/check.json"; check_code="$(curl -sS -o "$check_body" -w '%{http_code}' -H "Authorization: Bearer $session" "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/check" || true)"
-[[ "$check_code" == 200 ]] || fail_blocked "real embedded update check failed" "http=$check_code"
+check_body="$workdir/check.json"
+if (( local_cli == 1 && legacy_base == 0 )); then
+  if local_update check >"$check_body"; then check_code=200; else check_code=$?; fi
+else
+  check_code="$(curl -sS -o "$check_body" -w '%{http_code}' -H "Authorization: Bearer $session" "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/check" || true)"
+fi
+if [[ "$check_code" != 200 ]]; then
+  # Keep only the failure envelope, never the owner/login response or its token.
+  if (( local_cli == 1 )); then
+    curl -sS -o "$workdir/check-http-diagnostic.json" -H "Authorization: Bearer $session" "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/check" || true
+  fi
+  python3 - "$check_body" "$workdir/check-http-diagnostic.json" <<'PY' >>"$log"
+import json,pathlib,re,sys
+for name in sys.argv[1:]:
+    p=pathlib.Path(name)
+    if not p.is_file(): continue
+    try: doc=json.loads(p.read_text())
+    except Exception: print(p.name+": invalid JSON"); continue
+    error=doc.get("error",doc)
+    if isinstance(error,dict):
+        safe={k:error[k] for k in ("code","message","exit_code") if k in error}
+        for k,v in list(safe.items()):
+            if isinstance(v,str) and re.search(r'(?i)secret|token|authorization|cookie|postgres(?:ql)?://',v): safe[k]="[redacted]"
+        print(p.name+": "+json.dumps(safe,ensure_ascii=True))
+PY
+  docker compose -p "$project" -f "$compose" logs --no-color app 2>/dev/null | python3 -c '
+import json,re,sys
+for line in sys.stdin:
+    try: d=json.loads(line[line.index("{"):])
+    except (ValueError,TypeError): continue
+    if d.get("level") not in ("error","warn","warning"): continue
+    safe={k:d[k] for k in ("level","message","component","operation","reason_code","error_class") if k in d}
+    for k,v in list(safe.items()):
+        if isinstance(v,str) and re.search(r"(?i)secret|token|authorization|cookie|postgres(?:ql)?://",v): safe[k]="[redacted]"
+    print(json.dumps(safe,ensure_ascii=True))
+' >>"$log" || true
+  fail_blocked "real embedded update check failed" "http_or_cli_exit=$check_code"
+fi
+if (( local_cli == 1 && legacy_base == 0 )); then
+  local_cli_uid="$image_uid" local_update check >"$workdir/local-puid-check.json" || fail_blocked "serving UID local update check failed"
+  python3 - "$check_body" "$workdir/local-puid-check.json" <<'PY'
+import json,pathlib,sys
+root_result,puid_result=(json.loads(pathlib.Path(p).read_text()) for p in sys.argv[1:])
+assert root_result.get("candidate")==puid_result.get("candidate"), "root and serving UID observed different candidates"
+PY
+fi
 candidate_json="$workdir/candidate.json"; python3 - "$check_body" "$candidate_json" <<'PY'
 import json,pathlib,sys
 candidate=json.loads(pathlib.Path(sys.argv[1]).read_text()).get("candidate")
 if not isinstance(candidate,dict) or not candidate.get("release_id") or not candidate.get("manifest_digest"): raise SystemExit("candidate identity missing")
 pathlib.Path(sys.argv[2]).write_text(json.dumps({"target_release_id":candidate["release_id"],"manifest_digest":candidate["manifest_digest"]})+"\n")
 PY
-admit_body="$workdir/admit.json"; admit_code="$(curl -sS -o "$admit_body" -w '%{http_code}' -X POST "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/admit" -H "Authorization: Bearer $session" -H 'Content-Type: application/json' -H 'Idempotency-Key: embedded-fixture-update029' --data-binary "@$candidate_json" || true)"
+admit_body="$workdir/admit.json"
+if (( local_cli == 1 && legacy_base == 0 )); then
+  if local_update apply >"$admit_body"; then admit_code=201; else admit_code=$?; fi
+else
+  admit_code="$(curl -sS -o "$admit_body" -w '%{http_code}' -X POST "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/admit" -H "Authorization: Bearer $session" -H 'Content-Type: application/json' -H 'Idempotency-Key: embedded-fixture-update029' --data-binary "@$candidate_json" || true)"
+fi
 if [[ "$scenario" == min-image-version ]]; then
   [[ "$admit_code" == 409 ]] || fail_blocked "incompatible image admission was not rejected" "http=$admit_code"
   docker compose -p "$project" -f "$compose" exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT to_jsonb(t) FROM embedded_update_locks t"' >"$workdir/fence-negative.json"
@@ -361,6 +509,47 @@ except Exception: print("")
 PY
 )"
 if [[ -z "$operation_id" && -f "$volume/pending.json" ]]; then operation_id=""; fi
+backup_id=""; backup_evidence="$workdir/backup-verified.json"
+if (( local_cli == 1 )) || [[ "$scenario" == crash-after-backup ]]; then
+  # These lanes disable automatic restart to inspect the backup before cleanup.
+  # First observe the application's real marker handoff, then start bootstrap;
+  # merely waiting for a journal with restart=no would never consume the marker.
+  for _ in $(seq 1 120); do
+    app_state="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$app_container_id")"
+    [[ "$app_state" == "exited 0" ]] && break
+    [[ "$app_state" != exited\ * ]] || fail_blocked "application exited before a clean marker handoff" "$app_state"
+    sleep 1
+  done
+  [[ "$app_state" == "exited 0" ]] || fail_blocked "application marker handoff did not exit"
+  marker="$(docker run --rm -v "$volume":/updates alpine:3.20 sh -c 'cat /updates/pending.json')" || fail_blocked "handoff pending marker missing"
+  python3 -c 'import json,sys; marker=json.load(sys.stdin); assert marker.get("operation_id")==sys.argv[1], marker' "$operation_id" <<<"$marker" || fail_blocked "handoff marker belongs to another operation"
+  docker start "$app_container_id" >/dev/null || fail_blocked "bootstrap did not start after handoff"
+  checkpoint=pending_backup
+  for _ in $(seq 1 120); do
+    app_state="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$app_container_id")"
+    [[ "$app_state" == "exited 70" ]] && break
+    [[ "$app_state" != exited\ * ]] || fail_blocked "bootstrap exited outside the backup checkpoint" "$app_state"
+    sleep 1
+  done
+  [[ "$app_state" == "exited 70" ]] || fail_blocked "backup checkpoint did not stop bootstrap" "app_state=$app_state checkpoint=$checkpoint journal_step=$(journal_step)"
+  (( $(app_log_count "FIXTURE INJECTION: durable checkpoint \"$checkpoint\"") > 0 )) || fail_blocked "backup checkpoint injection was not observed"
+fi
+if (( local_cli == 1 )); then
+  [[ -n "$operation_id" ]] || fail_blocked "local apply returned no operation identity"
+  python3 - "$admit_body" "$operation_id" <<'PY'
+import json,pathlib,sys
+body=json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert body.get("operation_id")==sys.argv[2], body
+assert body.get("step")=="accepted", body
+PY
+  # pending_backup is after the dump/sidecar are durable but before the journal
+  # is created. The checked marker owns this deterministic backup identity;
+  # terminal evidence below verifies the same identity in the completed journal.
+  verify_current_operation_backup "embedded-$operation_id"
+  # The local fixture disables restart only at this injected checkpoint. The
+  # exact operation backup is proven before bootstrap resumes and deletes it.
+  docker restart "$app_container_id" >/dev/null 2>&1 || fail_blocked "restart after verified backup checkpoint failed"
+fi
 if [[ "$scenario" == crash-staging ]]; then operation_id="staging-only"; fi
 crash_record="not_requested"; crash_observed_step=""; restart_count_after="$restart_count_before"; daemon_restart_observed="not_requested"
 if [[ "$scenario" == daemon-restart-bootstrap ]]; then
@@ -399,6 +588,10 @@ if [[ -n "$crash_target_step" ]]; then
     sleep 2
   done
   [[ "$crashed" == 1 ]] || fail_blocked "disposable crash boundary was not reached" "$scenario"
+  if [[ "$scenario" == crash-after-backup ]]; then
+    python3 -c 'import json,sys; marker=json.load(sys.stdin); assert marker.get("operation_id")==sys.argv[1], marker' "$operation_id" <<<"$marker" || fail_blocked "pending backup marker belongs to another operation"
+    verify_current_operation_backup "embedded-$operation_id"
+  fi
   if [[ "$scenario" != daemon-restart-bootstrap ]]; then
     docker restart "$app_container_id" >/dev/null 2>&1 || fail_blocked "bootstrap crash recovery restart failed" "$scenario"
   fi
@@ -428,7 +621,26 @@ else
     sleep 2
   done
 fi
-status_code="$(curl -sS -o "$workdir/status.json" -w '%{http_code}' -H "Authorization: Bearer $session" "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/status" || true)"
+if (( local_cli == 1 )); then
+  if local_update status >"$workdir/status.json"; then status_code=200; else status_code=$?; fi
+  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test -S "$BANSOKO_UPDATES_ROOT/update-control.sock" && [ "$(stat -c %a "$BANSOKO_UPDATES_ROOT/update-control.sock")" = 600 ]' || fail_blocked "restarted local update socket contract failed"
+  if (( legacy_base == 1 )); then
+    current_release="$(docker compose -p "$project" -f "$compose" exec -T app sh -c 'cat "$BANSOKO_UPDATES_ROOT/current"')"
+    [[ "$current_release" == "$target_id" ]] || fail_blocked "current executable selector is not the new overlay" "$current_release"
+    docker compose -p "$project" -f "$compose" exec -T app sh -c '! grep -a -q "Container-local embedded update control" /app/bansoko-server' || fail_blocked "legacy /app binary changed during overlay update"
+    local_update check >"$workdir/legacy-overlay-check.json" || fail_blocked "new overlay CLI check failed through current release selector"
+    if local_update apply >"$workdir/legacy-overlay-current-apply.json"; then current_apply_rc=0; else current_apply_rc=$?; fi
+    [[ "$current_apply_rc" == 5 ]] || fail_blocked "current overlay apply did not reach the running update service" "rc=$current_apply_rc"
+    python3 - "$workdir/legacy-overlay-check.json" "$workdir/legacy-overlay-current-apply.json" "$target_id" <<'PY'
+import json,pathlib,sys
+checked=json.loads(pathlib.Path(sys.argv[1]).read_text()); applied=json.loads(pathlib.Path(sys.argv[2]).read_text())
+assert checked.get("status")=="up_to_date" and checked.get("current",{}).get("release_id")==sys.argv[3], checked
+assert applied.get("error",{}).get("code")=="UPDATE_TARGET_CURRENT" and applied.get("error",{}).get("exit_code")==5, applied
+PY
+  fi
+else
+  status_code="$(curl -sS -o "$workdir/status.json" -w '%{http_code}' -H "Authorization: Bearer $session" "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/update/status" || true)"
+fi
 final_status="$(cat "$workdir/status.json" 2>/dev/null || true)"; ready_after="$(curl -sS -w '\n%{http_code}' "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/readyz" || true)"
 pointer="$(docker run --rm -v "$volume":/updates alpine:3.20 sh -c 'cat /updates/current 2>/dev/null || true')"
 volume_listing="$(docker run --rm -v "$volume":/updates alpine:3.20 sh -c 'find /updates -maxdepth 3 -type d -o -type f | sort' 2>&1 || true)"
@@ -461,9 +673,9 @@ if (( ${#row_containers[@]} > 0 || ${#row_volumes[@]} > 0 )); then
   (( ${#row_volumes[@]} == 0 )) || docker volume rm "${row_volumes[@]}" >/dev/null 2>&1 || true
 fi
 if docker ps -aq --filter "label=bansoko.update-e2e.run=${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" | grep -q . || docker volume ls -q --filter "label=bansoko.update-e2e.run=${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" | grep -q .; then resources_clean=false; else resources_clean=true; fi
-python3 - "$result" "$project" "$volume" "$image" "$operation_id" "$final_status" "$ready_after" "$pointer" "$volume_listing" "$db_evidence" "$db_diagnostics" "$bootstrap_app_logs" "$compose_status" "$target_id" "$target_version" "$schema_version" "$seed_id" "$scenario" "$journal_raw" "$fence_evidence" "$pointer_before" "$schema_before" "$seed_rows_before" "$marker_json" "$crash_record" "$crash_observed_step" "$crash_die_exit_codes" "$restart_count_before" "$restart_count_after" "$daemon_restart_observed" "$source_commit" "$source_dirty" "$source_tree_hash" "$image_id" "$inspect" "$resources_clean" <<'PY'
+python3 - "$result" "$project" "$volume" "$image" "$operation_id" "$final_status" "$ready_after" "$pointer" "$volume_listing" "$db_evidence" "$db_diagnostics" "$bootstrap_app_logs" "$compose_status" "$target_id" "$target_version" "$schema_version" "$seed_id" "$scenario" "$journal_raw" "$fence_evidence" "$pointer_before" "$schema_before" "$seed_rows_before" "$marker_json" "$crash_record" "$crash_observed_step" "$crash_die_exit_codes" "$restart_count_before" "$restart_count_after" "$daemon_restart_observed" "$source_commit" "$source_dirty" "$source_tree_hash" "$image_id" "$inspect" "$resources_clean" "$local_cli" "$backup_id" "$backup_evidence" "$legacy_base" <<'PY'
 import json,pathlib,re,sys
-(out,project,volume,image,op,status_raw,ready_raw,pointer,listing,db_path,diagnostics_path,logs_path,compose_path,target_id,target_version,target_schema,seed_id,scenario,journal_raw,fence_path,pointer_before,schema_before,seed_rows_before,marker_raw,crash_record,crash_checkpoint,die_codes,restart_before,restart_after,daemon_restart,source_commit,source_dirty,source_tree_hash,image_id,runtime_env,resources_clean)=sys.argv[1:]
+(out,project,volume,image,op,status_raw,ready_raw,pointer,listing,db_path,diagnostics_path,logs_path,compose_path,target_id,target_version,target_schema,seed_id,scenario,journal_raw,fence_path,pointer_before,schema_before,seed_rows_before,marker_raw,crash_record,crash_checkpoint,die_codes,restart_before,restart_after,daemon_restart,source_commit,source_dirty,source_tree_hash,image_id,runtime_env,resources_clean,local_cli,backup_id,backup_evidence,legacy_base)=sys.argv[1:]
 def blocked(reason):
     pathlib.Path(out).write_text(json.dumps({"acceptance":"ac-b2" if scenario.startswith("crash-") else ("ac-b1" if scenario=="normal" else "ac-b3" if scenario=="migrate-failure" else "ac-b4"),"scenario":scenario,"scope":"docker-fixture","evidence_kind":"real_docker","self_test":False,"passed":False,"blocked":True,"reason":reason,"resources_clean":None},indent=2,sort_keys=True)+"\n"); raise SystemExit(reason)
 try:
@@ -489,6 +701,16 @@ temporary=[p for p in paths if re.search(r"(^|/)(\.|.*\.tmp|.*\.partial|.*\.inpr
 if temporary: blocked("updates volume contains temporary files")
 if seed_after!="1" or seed_before!="1" or identity!="bansoko:baseline" or not baseline or not baseline_exists.lower()=="t": blocked("database identity/baseline/business seed mismatch")
 terminal=str(record.get("step","")); expected_ac="ac-b1" if scenario=="normal" else "ac-b2" if scenario.startswith("crash-") else "ac-b3" if scenario=="migrate-failure" else "ac-b4"
+backup_verified=None; backup_cleaned=None
+if local_cli=="1" or scenario=="crash-after-backup":
+    if local_cli=="1" and status.get("operation_id")!=op: blocked("local status returned a different or historical operation")
+    try: backup_proof=json.loads(pathlib.Path(backup_evidence).read_text())
+    except Exception as exc: blocked(f"current operation backup proof missing: {exc}")
+    if backup_proof.get("operation_id")!=op or backup_proof.get("backup_id")!=backup_id or not backup_proof.get("sha256") or backup_proof.get("pg_restore_list") is not True: blocked("current operation backup proof identity mismatch")
+    if record.get("operation_id")!=op or record.get("backup_id")!=backup_id: blocked("terminal journal backup identity differs from the verified operation backup")
+    backup_verified=True
+    if f"backups/{backup_id}.dump" in paths or f"backups/{backup_id}.dump.sha256" in paths: blocked("successful operation backup artifacts were not cleaned")
+    backup_cleaned=True
 if scenario in ("normal","crash-marker-before-backup","crash-after-backup","crash-migrate"):
     if terminal!="succeeded" or status.get("step")!="succeeded" or pointer.strip()!=target_id or code!="200" or ready.get("ready") is not True: blocked("update replay did not succeed with target pointer and ready service")
     if migration!=f"{target_schema}.sql" or target_exists.lower()!="t": blocked("target schema migration absent")
@@ -528,13 +750,12 @@ if marker_raw:
     if set(marker)!=required: blocked("pending marker fields differ from exact contract")
 if scenario.startswith("crash-") and scenario!="crash-staging" and marker_raw: blocked("bootstrap did not consume disposable pending marker")
 if pointer.strip()==target_id and any(p.startswith(f"releases/{target_id}/") for p in paths) and f"provenance/{target_id}.json" not in paths: blocked("current release provenance missing")
-if scenario=="crash-after-backup" and "backups/" not in "\n".join(paths): blocked("verified backup missing")
 try: fence=json.loads(pathlib.Path(fence_path).read_text().strip() or "null")
 except Exception: fence=None
 if terminal=="succeeded" and op and (not isinstance(fence,dict) or fence.get("op_id")!=op or fence.get("sequence")!=2 or fence.get("manifest_digest")!=record.get("manifest_digest") or fence.get("state")!="settled" or not fence.get("released_at")): blocked("terminal operation fence identity mismatch")
 if terminal=="rolled_back" and op and (not isinstance(fence,dict) or fence.get("op_id")!=op or fence.get("manifest_digest")!=record.get("manifest_digest") or fence.get("state")!="failed" or not fence.get("released_at")): blocked("rolled-back operation fence identity mismatch")
 if scenario=="rollback-blocked" and (not isinstance(fence,dict) or fence.get("op_id")!=op or fence.get("sequence")!=2 or fence.get("manifest_digest")!=record.get("manifest_digest") or fence.get("state")!="active" or fence.get("released_at") is not None): blocked("rollback-blocked exact fence was not retained open")
-data={"acceptance":expected_ac,"scenario":scenario,"scope":"docker-fixture","evidence_kind":"real_docker","self_test":False,"passed":True,"blocked":False,"operation_id":op,"status":status,"source":{"base_head":source_commit,"dirty":source_dirty=="true","tree_hash":source_tree_hash},"image_id":image_id,"crash_checkpoint":crash_checkpoint or None,"crash_exit_code_observed":"70" in die_codes if scenario.startswith("crash-") else None,"daemon_restart_observed":daemon_restart,"terminal_step":terminal,"pointer_role":"target" if pointer.strip()==target_id else "previous_or_base","ready":code=="200" and ready.get("ready") is True,"artifacts":{"pending_marker_present":bool(marker_raw),"backup_dump_count":sum(p.startswith("backups/") and p.endswith(".dump") for p in paths),"archive_present":any(p.startswith("archive/journal-") for p in paths),"temporary_files":len(temporary)},"resources_clean":resources_clean=="true"}
+data={"acceptance":expected_ac,"scenario":scenario,"scope":"docker-fixture","evidence_kind":"real_docker","self_test":False,"passed":True,"blocked":False,"entry_channel":"local_cli_legacy_base" if legacy_base=="1" else "local_cli" if local_cli=="1" else "http_api","operation_id":op,"status":status,"source":{"base_head":source_commit,"dirty":source_dirty=="true","tree_hash":source_tree_hash},"image_id":image_id,"crash_checkpoint":crash_checkpoint or None,"crash_exit_code_observed":"70" in die_codes if scenario.startswith("crash-") else None,"daemon_restart_observed":daemon_restart,"terminal_step":terminal,"pointer_role":"target" if pointer.strip()==target_id else "previous_or_base","ready":code=="200" and ready.get("ready") is True,"artifacts":{"pending_marker_present":bool(marker_raw),"backup_verified":backup_verified,"backup_cleaned":backup_cleaned,"backup_dump_count":sum(p.startswith("backups/") and p.endswith(".dump") for p in paths),"archive_present":any(p.startswith("archive/journal-") for p in paths),"temporary_files":len(temporary)},"resources_clean":resources_clean=="true"}
 data["resources_clean"]=resources_clean=="true"
 pathlib.Path(out).write_text(json.dumps(data,indent=2,sort_keys=True)+"\n"); print(json.dumps(data,indent=2,sort_keys=True))
 PY
