@@ -615,8 +615,8 @@ var systemFacts = []Fact{
 		Text{"InfoHash v2", "InfoHash v2"}, Text{"BitTorrent v2 info hash。", "BitTorrent v2 info hash."},
 		"8f2e6d4c1a9b7e5d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d", func(f *FactSet) any { return f.Torrent.HashV2 }).parsed().hideIn(ScenarioNaming),
 	fact("torrent.tree", TypeString, PhaseRelease, ScenarioDownloadSubmitted|ScenarioReleaseDiscovered, ScenarioDownloadSubmitted|ScenarioReleaseDiscovered,
-		Text{"种子结构", "Torrent structure"}, Text{"种子内顶层目录与文件的大小一览，每行一项；顶层目录带递归大小与文件数，末尾一行合计。没有种子载荷时为空。", "One line per top-level folder or file in the torrent; a folder carries its recursive size and file count, and the last line is the total. Empty when there is no torrent payload."},
-		"Show S01/   12.4 GiB · 24 files\nreadme.txt  4.0 KiB\n合计: 12.4 GiB · 25 files", func(f *FactSet) any { return f.Torrent.Tree }).derived(),
+		Text{"种子结构", "Torrent structure"}, Text{"种子内顶层目录与文件的大小一览：名称占一行，下一行以「└」缩进给出大小，目录另附递归文件数；末尾空行后是一行完整合计。没有种子载荷时为空。", "The size of the torrent's top-level folders and files: each name on one line, its size on the next line after an indented └, with a folder's recursive file count; one blank line then the complete total. Empty when there is no torrent payload."},
+		"Show S01/\n  └ 12.4 GiB · 24 files\nreadme.txt\n  └ 4.0 KiB\n\n合计: 12.4 GiB · 25 files", func(f *FactSet) any { return f.Torrent.Tree }).derived(),
 
 	// file
 	fact("file.name", TypeString, PhaseRelease, ScenarioNaming|scenarioFile|ScenarioDeletionFailed|ScenarioFileDisplaced, scenarioFile,
@@ -777,6 +777,25 @@ var fileReltitleCopy = map[string]Text{
 	"uncensored": {"文件名标有无修正（UNCENSORED）时为是。", "Yes when the file name is marked uncensored (UNCENSORED)."},
 }
 
+// takerFileReltitleCopy is frt.*'s copy for the taker side: the same fields,
+// read from the taker's own original download file name. Neither side falls
+// back to the other or to the renamed library name.
+var takerFileReltitleCopy = func() map[string]Text {
+	out := make(map[string]Text, len(fileReltitleCopy))
+	for key, text := range fileReltitleCopy {
+		out[key] = Text{
+			ZH: strings.Replace(text.ZH, "文件名", "顶替者原始文件名", 1),
+			EN: strings.Replace(text.EN, "file name", "taker's original file name", 1),
+		}
+	}
+	return out
+}()
+
+// fileReltitleScenarios are the template kinds that read frt.*: naming and
+// the two file operation outcomes, plus the displaced event whose old file
+// kept its own parse.
+const fileReltitleScenarios = ScenarioNaming | ScenarioFileCompleted | ScenarioFileFailed | ScenarioFileDisplaced
+
 // namespaceFacts registers the rt and anibt value namespaces, and the source
 // group identity namespaces, from the templatefacts field lists. Every field is
 // a nullable string (boolean rt fields: a nullable boolean): rt and anibt are nullable in every scenario that concerns
@@ -802,7 +821,10 @@ func namespaceFacts() []Fact {
 		parsed    bool
 	}{
 		{RootRt, Text{"reltitle", "reltitle"}, ReltitleFields, nil, func(f *FactSet) Values { return f.Rt }, allRelease, true},
-		{"frt", Text{"文件 reltitle", "File reltitle"}, ReltitleFields, fileReltitleCopy, func(f *FactSet) Values { return f.FileRt }, allRelease, true},
+		{"frt", Text{"文件 reltitle", "File reltitle"}, ReltitleFields, fileReltitleCopy, func(f *FactSet) Values { return f.FileRt }, fileReltitleScenarios, true},
+		// taker.frt is the displacing file's own parse, available only where a
+		// file_displaced event names both sides.
+		{"taker.frt", Text{"顶替者 reltitle", "Taker reltitle"}, ReltitleFields, takerFileReltitleCopy, func(f *FactSet) Values { return f.Taker.FileRt }, ScenarioFileDisplaced, true},
 		{RootAnibt, Text{"AniBT", "AniBT"}, AniBTTagFields, nil, func(f *FactSet) Values { return f.Anibt }, allRelease, false},
 		// The source group identity is the subscription source's own identity,
 		// not a tag value: it shares the anibt root with the AniBT tag fields

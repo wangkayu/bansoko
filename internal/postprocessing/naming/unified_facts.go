@@ -5,26 +5,53 @@ import (
 	"strconv"
 	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/templatefacts"
 )
+
+// FileTitleStem is the text frt.* parses: the original download file name
+// without its last extension. Basename is authoritative; OriginalName is the
+// fallback for callers that carry only the full name.
+func FileTitleStem(file FileNamingFacts) string {
+	stem := strings.TrimSpace(file.Basename)
+	if stem == "" {
+		stem = strings.TrimSpace(strings.TrimSuffix(file.OriginalName, filepath.Ext(file.OriginalName)))
+	}
+	return stem
+}
+
+// ParseFileTitleTags parses the file's own name once, exactly the way frt.*
+// renders it. It never reads the release title. A render without a file name
+// has no set.
+func ParseFileTitleTags(file FileNamingFacts) *acquisitiondomain.TitleTagSet {
+	stem := FileTitleStem(file)
+	if stem == "" {
+		return nil
+	}
+	tags := reltitletags.Extract(stem)
+	return &tags
+}
+
+// FileReltitleValuesFromTags projects one frozen file title tag set onto the
+// frt namespace; a nil set has no values.
+func FileReltitleValuesFromTags(set *acquisitiondomain.TitleTagSet) templatefacts.Values {
+	if set == nil {
+		return nil
+	}
+	return templatefacts.ReltitleValues(set)
+}
 
 // FileReltitleValues is the reltitle parse of the file's own name, projected
 // onto the frt namespace. It reads only the file stem, never the release
 // title; a render without a file name has no frt values. The projection is
 // deliberately separate from rt.*: the release parse is never copied into the
 // file namespace and the file parse never into rt.*, so a template always
-// names the source it wants.
+// names the source it wants. Operation preparation freezes one set and
+// leaves it on NamingContext.FileTitleTags; this helper parses on demand for
+// the paths that have no prepared set.
 func FileReltitleValues(file FileNamingFacts) templatefacts.Values {
-	stem := strings.TrimSpace(file.Basename)
-	if stem == "" {
-		stem = strings.TrimSpace(strings.TrimSuffix(file.OriginalName, filepath.Ext(file.OriginalName)))
-	}
-	if stem == "" {
-		return nil
-	}
-	tags := reltitletags.Extract(stem)
-	return templatefacts.ReltitleValues(&tags)
+	return FileReltitleValuesFromTags(ParseFileTitleTags(file))
 }
 
 // UnifiedFacts projects a resolved naming context onto the unified fact set
@@ -74,6 +101,13 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 			anibt[key] = value
 		}
 	}
+	// The prepared set is the operation's one parse; without one (naming
+	// preview, maintenance replay) the projection parses the rendered file
+	// name. A set is never rebuilt from the release namespace.
+	fileRt := FileReltitleValuesFromTags(ctx.FileTitleTags)
+	if ctx.FileTitleTags == nil {
+		fileRt = FileReltitleValues(ctx.File)
+	}
 	return templatefacts.FactSet{
 		Anime: templatefacts.AnimeFacts{
 			ID: ctx.Anime.ID, Title: title, TitleSource: titleSource, TitleOverride: ctx.Anime.TitleOverride, ProviderTitle: ctx.Anime.ProviderTitle, TitleBase: ctx.Anime.Title,
@@ -106,7 +140,7 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 		},
 		Info:   templatefacts.InfoFacts{HDR: ctx.File.Media.HDR},
 		Rt:     ctx.Rt,
-		FileRt: FileReltitleValues(ctx.File),
+		FileRt: fileRt,
 		Anibt:  anibt,
 		Mikan:  mikanGroup,
 		Vars:   ctx.Vars,

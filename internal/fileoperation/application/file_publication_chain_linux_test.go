@@ -1064,6 +1064,17 @@ func runPublicationProofChain(t *testing.T, operation domain.OperationKind, faul
 		return
 	}
 	verifyFileSuccessProjection(t, ctx, db, c, preparedResult)
+	// The success payload carries the prepared operation snapshot's frt block:
+	// the fixture downloads source.mkv, so its own name parses to title
+	// "source" (no group), and a successful parse without the marker answers
+	// frt.uncensored=false.
+	var successFacts map[string]any
+	if err := json.Unmarshal([]byte(preparedResult.notificationPayload), &successFacts); err != nil {
+		t.Fatal(err)
+	}
+	if successFacts["frt.title"] != "source" || successFacts["frt.group"] != nil || successFacts["frt.uncensored"] != false {
+		t.Fatalf("success notification frt title=%#v group=%#v uncensored=%#v", successFacts["frt.title"], successFacts["frt.group"], successFacts["frt.uncensored"])
+	}
 	if preparedResult.operation != c.Owner.ID || preparedResult.originalWork != c.ID || preparedResult.finalObjectCanonical == "" || preparedResult.evidenceDigest == "" {
 		t.Fatal("incomplete prepared result")
 	}

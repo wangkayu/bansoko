@@ -10,10 +10,13 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
+	notificationcatalog "bansoko/internal/templatecatalog/notification"
 )
 
 // displacedPlacement is one managed file another file took over in this
-// transaction.
+// transaction. Version and PhysicalPath are the facts the transition left on
+// the victim; its own frozen frt block (placements.file_title_tags) is read
+// by placement id below, so the source operation may already be gone.
 type displacedPlacement struct {
 	PlacementID    string
 	ManagedAnimeID string
@@ -77,10 +80,22 @@ func appendDisplacedActivityTx(ctx context.Context, scope txscope.Tx, sinks disp
 	}
 	var successorPath, successorReleaseID string
 	if err := tx.QueryRowContext(ctx, `
-SELECT physical_path, COALESCE(quality_facts_ref, '') FROM placements WHERE id = $1`, successorPlacementID).Scan(&successorPath, &successorReleaseID); err != nil {
+SELECT physical_path, COALESCE(quality_facts_ref, '')
+FROM placements WHERE id = $1`, successorPlacementID).Scan(&successorPath, &successorReleaseID); err != nil {
 		return fmt.Errorf("read displacing placement: %w", err)
 	}
 	taker, err := releaseRunContextTx(ctx, tx, successorReleaseID)
+	if err != nil {
+		return err
+	}
+	// frt.* reads each side's own frozen parse from its placement's
+	// file_title_tags. The block was copied from the placing file operation
+	// when the placement was admitted, so an operation compacted since then
+	// does not take the original name's parse with it. A side without one (a
+	// reconciliation or recovery placement, an old placement) keeps its fields
+	// empty; nothing is parsed from the current library name and neither side
+	// stands in for the other.
+	takerTags, err := placementFileTitleTagsTx(ctx, tx, successorPlacementID, "taker.frt")
 	if err != nil {
 		return err
 	}
@@ -144,8 +159,13 @@ SELECT physical_path, COALESCE(quality_facts_ref, '') FROM placements WHERE id =
 			if !found {
 				continue
 			}
+			victimTags, err := placementFileTitleTagsTx(ctx, tx, victim.PlacementID, "frt")
+			if err != nil {
+				return err
+			}
 			request, err := plugintargetport.FileDisplacedRequest(victim.PlacementID, version, victim.ManagedAnimeID, title,
-				businesslog.FileName(victim.PhysicalPath), victim.Cause, businesslog.FileName(successorPath), takerGroup, takerTitle)
+				businesslog.FileName(victim.PhysicalPath), victim.Cause, businesslog.FileName(successorPath), takerGroup, takerTitle,
+				victimTags, takerTags)
 			if err != nil {
 				return fmt.Errorf("encode displaced notice: %w", err)
 			}
@@ -155,6 +175,32 @@ SELECT physical_path, COALESCE(quality_facts_ref, '') FROM placements WHERE id =
 		}
 	}
 	return nil
+}
+
+// placementFileTitleTagsTx projects one side's frozen frt.* facts from the
+// placement's own copy of the original file_title_tags block. The placement
+// admitted from a file operation copied the block at creation, so the source
+// operation may be compacted away by then; a placement without one (an old
+// record, a reconciliation or recovery placement) reads as empty. The renamed
+// library path is never parsed.
+func placementFileTitleTagsTx(ctx context.Context, tx *sql.Tx, placementID, prefix string) (map[string]any, error) {
+	if placementID == "" {
+		return nil, nil
+	}
+	var block sql.NullString
+	err := tx.QueryRowContext(ctx, `
+SELECT CASE WHEN jsonb_typeof(file_title_tags) = 'object' THEN file_title_tags::text END
+FROM placements WHERE id = $1`, placementID).Scan(&block)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read displaced placement title tags: %w", err)
+	}
+	if !block.Valid {
+		return nil, nil
+	}
+	return notificationcatalog.FileReltitleFactsFromTitleTags([]byte(block.String), prefix, notificationcatalog.Text), nil
 }
 
 // managedAnimeTitleTx reads the display title of one managed anime; found is

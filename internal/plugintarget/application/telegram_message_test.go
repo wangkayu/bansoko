@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	deliverypayload "bansoko/internal/plugintarget/payload"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/templatecatalog/notification"
+	"bansoko/internal/torrenttree"
 )
 
 type fakeNotificationImageResolver struct {
@@ -190,6 +192,34 @@ func TestTelegramLongCaptionFallsBackToBoundedHTMLText(t *testing.T) {
 	}
 	if telegramTextLength(payload["text"]) > telegramTextLimit || !strings.Contains(payload["text"], "Bangumi") || payload["parse_mode"] != "HTML" {
 		t.Fatalf("bounded text length=%d payload=%v", telegramTextLength(payload["text"]), payload)
+	}
+}
+
+// The largest tree a release can freeze (30 entries with long names) fits the
+// Telegram text budget alongside a normal title and link, so the two-line
+// format never truncates the complete totals away by itself.
+func TestTelegramFullTorrentTreeKeepsTheCompleteTotals(t *testing.T) {
+	files := make([]torrenttree.File, 0, torrenttree.MaxEntries)
+	for index := 0; index < torrenttree.MaxEntries; index++ {
+		files = append(files, torrenttree.File{
+			Path:      fmt.Sprintf("Show/%02d %s/01.mkv", index, strings.Repeat("界", 24)),
+			SizeBytes: 1 << 30,
+		})
+	}
+	message := outboundMessage{
+		Title: "Show 第一季",
+		Body:  torrenttree.Render(files),
+		Links: []notification.Link{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+	}
+	got := fitTelegramHTML(message, telegramTextLimit)
+	if telegramTextLength(got) > telegramTextLimit {
+		t.Fatalf("full tree text is %d units", telegramTextLength(got))
+	}
+	if !strings.Contains(got, "合计: 30.0 GiB · 30 files") {
+		t.Fatalf("the complete totals were truncated:\n%s", got)
+	}
+	if strings.Contains(got, "… 折叠") {
+		t.Fatalf("a 30-entry tree must not fold:\n%s", got)
 	}
 }
 

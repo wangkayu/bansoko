@@ -69,6 +69,7 @@ func (s *Service) applyFrozenTargetTx(ctx context.Context, tx *sql.Tx, artifact 
 		"filename":         filename,
 		"target":           plan.targetPath,
 		"binding_facts":    artifactBindingFacts(artifact),
+		"file_title_tags":  fileTitleTagsBlock(prep.fileTitleTags(file)),
 	}, record.renderSnapshot)
 	if err != nil {
 		return nil, false, fmt.Errorf("marshal frozen render snapshot: %w", err)

@@ -479,7 +479,7 @@ func (s *Service) prepareContext(ctx context.Context, tx *sql.Tx, artifact artif
 	// Targets are absolute by construction: the naming template carries its own
 	// deployment path, so there is no library anchor to resolve. The executor
 	// owns the read/write boundary; the app authorizes no location.
-	return prepareContext{config: config, configErr: configErr, replanTargets: override != nil && len(override.frozenPolicy) > 0}
+	return prepareContext{config: config, configErr: configErr, replanTargets: override != nil && len(override.frozenPolicy) > 0, titleTagCache: newFileTitleTagCache()}
 }
 
 // plannedVideoTarget is the frozen target of one planned video operation,
@@ -612,6 +612,8 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 	if err != nil {
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
+	// The render and every snapshot below read this one frt parse.
+	resolved.Context.FileTitleTags = prep.fileTitleTags(file)
 	// An unknown video is one whose snapshot row carries no resolved episode
 	// identity (range/list/season-only/special/fractional/missing): naming
 	// never re-derives an episode from a title or filename. A video without a
@@ -675,6 +677,7 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 		"resolved":          frozenResolvedValues(resolved.Results),
 		"binding_facts":     renderBindingFacts(resolved.Context),
 		"render_facts":      naming.ReplayFactValues(resolved.Context),
+		"file_title_tags":   fileTitleTagsBlock(prep.fileTitleTags(file)),
 	}
 	// The block lands only when a template referenced an ep_title fact; note
 	// 025's render validator accepts snapshots without the key.
@@ -933,6 +936,8 @@ func (s *Service) prepareSubtitleFileTx(ctx context.Context, tx *sql.Tx, artifac
 	if err != nil {
 		return s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
+	// The suffix render and the snapshot read this one frt parse.
+	resolved.Context.FileTitleTags = prep.fileTitleTags(file)
 	// The subtitle suffix template may read the episode title facts too. Same
 	// only-if-used semantics as the video render, including stopping on a
 	// transient lookup failure rather than planning an invalid placeholder.
@@ -970,6 +975,7 @@ func (s *Service) prepareSubtitleFileTx(ctx context.Context, tx *sql.Tx, artifac
 		"resolved":          frozenResolvedValues(resolved.Results),
 		"binding_facts":     renderBindingFacts(resolved.Context),
 		"render_facts":      naming.ReplayFactValues(resolved.Context),
+		"file_title_tags":   fileTitleTagsBlock(prep.fileTitleTags(file)),
 		"suffix":            suffix,
 		"binding": map[string]any{
 			"state":                    bindingStateBound,
@@ -1045,6 +1051,13 @@ func (s *Service) insertInvalidPlanTx(ctx context.Context, tx *sql.Tx, plan oper
 	if !isJSONObject(plan.sourceFingerprint) {
 		return fmt.Errorf("%w: artifact fingerprint is not an object", ErrArtifactFingerprintMismatch)
 	}
+	// A failed preparation is declared, not executed: the typed plan records
+	// this file as kind=failed and typed_plan_operations commits only the
+	// execute declarations, so no file_operations row (and no failure event)
+	// carries this snapshot. Nothing here can freeze a placement's frt block;
+	// the operations that do run freeze their own, and their placements copy
+	// it at admission. (A preparation failure currently has no
+	// file_operation_failed event; that gap is tracked separately.)
 	plan.renderSnapshot, _ = marshalObject(map[string]any{
 		"renderer_version": rendererVersion,
 		"validation": map[string]any{

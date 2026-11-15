@@ -56,6 +56,12 @@ func successfulFileNotificationPayload(input json.RawMessage, file artifactFileC
 	for key, value := range notification.EpisodeTitleFacts(render, notificationText) {
 		fields.frozen[key] = value
 	}
+	// frt.* is the frozen parse of the original download file name: the same
+	// block naming rendered with, never the release title and never a parse of
+	// the output name.
+	for key, value := range notification.FileReltitleFacts(render, "frt", notificationText) {
+		fields.frozen[key] = value
+	}
 	target := checkpoint.Object["publish_target"].Object["proof"].Object["target"].Object["location"]
 	var renderFields struct {
 		NotificationRoot string `json:"notification_root"`

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -240,15 +239,7 @@ func namingContextFacts(artifact artifactContext, file artifactFileContext, froz
 	ctx.Release.Version = int(artifact.releaseVersion)
 	ctx.Release.FrozenEpisode = frozenEpisode
 
-	base := filepath.Base(file.sourcePath)
-	extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(base)), ".")
-	ctx.File = naming.FileNamingFacts{
-		OriginalName: base,
-		Basename:     strings.TrimSuffix(base, filepath.Ext(base)),
-		Extension:    extension,
-		SizeBytes:    file.sizeBytes,
-		Kind:         file.mediaKind,
-	}
+	ctx.File = fileNamingFacts(file)
 
 	var rawFacts struct {
 		Title string `json:"title"`

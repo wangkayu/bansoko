@@ -233,9 +233,13 @@ type ReplacedFacts struct {
 }
 
 // TakerFacts is the file that displaced another one: its file name and, when
-// the release behind it is known, its subgroup and release title.
+// the release behind it is known, its subgroup and release title. FileRt is
+// the reltitle parse of the taker's own original download file name (frozen
+// when its file operation was prepared); it is never the renamed library
+// name and never another namespace's values.
 type TakerFacts struct {
 	File, Group, Title string
+	FileRt             Values
 }
 
 type ResultFacts struct {

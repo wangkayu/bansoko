@@ -496,17 +496,39 @@ func (s *PlacementService) admitTx(ctx context.Context, tx *sql.Tx, input placem
 	if input.SnapshotGeneration > 0 {
 		generation = input.SnapshotGeneration
 	}
+	// The placement owns a copy of its original file-name parse. A file
+	// operation froze the parse of the download file's name into its render
+	// snapshot; the placement copies that small block at admission so a
+	// displaced notice still reads it after acquisition_compact deletes the
+	// operation (detail_expired) or a redownload clears the Release's task id.
+	// Any other evidence type (reconciliation, recovery, calibration) has no
+	// original download file and stays NULL, as do old operations without the
+	// block; nothing is reparsed from the renamed library path.
+	// ON CONFLICT DO NOTHING keeps the block an existing placement committed.
+	var fileTitleTags sql.NullString
+	if input.SourceEvidenceType == "file_operation" && input.SourceOwnerRef != "" {
+		if err := tx.QueryRowContext(ctx, `
+SELECT CASE WHEN jsonb_typeof(frozen_render_snapshot->'file_title_tags') = 'object'
+            THEN (frozen_render_snapshot->'file_title_tags')::text END
+FROM public.file_operations WHERE id = $1`, input.SourceOwnerRef).Scan(&fileTitleTags); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("read source file title tags: %w", err)
+		}
+	}
+	var titleTags any
+	if fileTitleTags.Valid && fileTitleTags.String != "" {
+		titleTags = fileTitleTags.String
+	}
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO placements
 (id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
  source_fingerprint, target_fingerprint, quality_facts_ref, facts_version, snapshot_generation,
- correlation_id, causation_type, causation_id, replacement_eligible, version, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ correlation_id, causation_type, causation_id, replacement_eligible, file_title_tags, version, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (source_evidence_type, source_owner_ref) DO NOTHING`,
 		placementID, input.PhysicalPath, input.ManagedAnimeID, input.SourceEvidenceType, input.SourceOwnerRef,
 		input.SourceFingerprint, input.TargetFingerprint, nullableText(input.QualityFactsRef), input.FactsVersion, generation,
 		nullableText(input.CorrelationID), nullableText(input.CausationType), nullableText(input.CausationID),
-		input.ReplacementEligible)
+		input.ReplacementEligible, titleTags)
 	if err != nil {
 		return "", err
 	}

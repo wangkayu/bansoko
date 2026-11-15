@@ -337,6 +337,9 @@ type prepareContext struct {
 	// targetVersions holds the version number the frozen plan gives a video
 	// (file ref -> number, recordTargetVersion); a re-render applies it.
 	targetVersions map[string]int
+	// titleTagCache is this prepare run's one frt parse per artifact file,
+	// shared by the naming render and every snapshot writer.
+	titleTagCache *fileTitleTagCache
 }
 
 // mediaFactsErr is the prepare-time integrity check of one video: it must

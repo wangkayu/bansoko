@@ -22,6 +22,28 @@ func assertSealedNamingFailureCannotReprepare(t *testing.T) {
 	if reason == "" {
 		t.Fatal("invalid naming lacks failed result")
 	}
+	// A preparation failure (insertInvalidPlanTx) is declared, not executed:
+	// the plan item is kind=failed and typed_plan_operations commits only
+	// execute items, so committed_operations is empty. With no operation there
+	// is no file_operation_failed notification either — the missing failure
+	// event is tracked separately; this pins the current shape.
+	var failedItems, committed, failureAdmissions int
+	if err := db.QueryRow(`
+SELECT (SELECT count(*) FROM postprocessing_plans p, jsonb_array_elements(p.canonical_plan::jsonb->'items') item
+        WHERE p.artifact_id = $1 AND item->>'kind' = 'failed'),
+       (SELECT COALESCE(jsonb_array_length(p.committed_operations), 0) FROM postprocessing_plans p WHERE p.artifact_id = $1)`,
+		f.artifactID).Scan(&failedItems, &committed); err != nil {
+		t.Fatal(err)
+	}
+	if failedItems != 1 || committed != 0 {
+		t.Fatalf("preparation failure must declare one failed item and commit no operation (items=%d committed=%d)", failedItems, committed)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM notification_admissions WHERE trigger_kind='file_operation_failed'`).Scan(&failureAdmissions); err != nil {
+		t.Fatal(err)
+	}
+	if failureAdmissions != 0 {
+		t.Fatalf("a preparation failure has no operation and must admit no failure notice, got %d", failureAdmissions)
+	}
 	before := planGraphSnapshot(t, db)
 	setFrozenSectionValue(t, db, "download-file-test", animedomain.SectionNamingRules, naming.DefaultNamingRules())
 	after := planGraphSnapshot(t, db)

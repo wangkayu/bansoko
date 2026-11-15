@@ -329,9 +329,9 @@ var defaultsZH = map[string][2]string{
 	TriggerDownloadSubmitted: {"已加入下载：{{anime.title}}",
 		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{defaultIfEmpty(ep.display, '未识别')}}"},
 	TriggerFileOperationCompleted: {"入库完成：{{anime.title}}",
-		"{{release.title}}\n文件：{{out.name}}\n字幕：{{out.subtitles}}\n目录：{{out.dir}}"},
+		"{{release.title}}\n文件：{{out.name}}\n字幕：{{out.subtitles}}\n目录：{{out.dir}}\n{{showIf(frt.group)}}原文件字幕组：{{frt.group}}"},
 	TriggerFileOperationFailed: {"入库失败：{{anime.title}}",
-		"{{release.title}}\n原因：{{defaultIfEmpty(result.reason, '未知错误')}}"},
+		"{{release.title}}\n文件：{{file.name}}\n{{showIf(frt.group)}}原文件字幕组：{{frt.group}}\n原因：{{defaultIfEmpty(result.reason, '未知错误')}}"},
 	TriggerReleaseDiscovered: {"发现新发布：{{anime.title}}",
 		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{coalesce(release.episodes, ep.display, '未识别')}}"},
 	TriggerDownloadFailed: {"下载失败：{{anime.title}}",
@@ -345,16 +345,16 @@ var defaultsZH = map[string][2]string{
 	TriggerReplacementApplied: {"已替换旧版本：{{anime.title}}",
 		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n替换了 {{replaced.count}} 个旧版本：\n{{replaced.targets}}"},
 	TriggerFileDisplaced: {"{{if(eq(event.cause, 'redownload'), '重新下载覆盖了旧文件', '新文件覆盖了旧文件')}}：{{anime.title}}",
-		"{{file.name}}\n顶替者：{{defaultIfEmpty(taker.title, taker.file)}}\n字幕组：{{defaultIfEmpty(taker.group, '未知')}}"},
+		"{{showIf(taker.title)}}{{taker.title}}\n旧文件：{{file.name}}\n{{showIf(taker.file)}}新文件：{{taker.file}}\n{{showIf(frt.group)}}旧文件字幕组：{{frt.group}}\n{{showIf(taker.frt.group)}}新文件字幕组：{{taker.frt.group}}\n{{showIf(frt.res)}}旧文件分辨率：{{frt.res}}\n{{showIf(taker.frt.res)}}新文件分辨率：{{taker.frt.res}}\n{{showIf(frt.vc)}}旧文件视频编码：{{frt.vc}}\n{{showIf(taker.frt.vc)}}新文件视频编码：{{taker.frt.vc}}\n{{showIf(frt.ac)}}旧文件音频编码：{{frt.ac}}\n{{showIf(taker.frt.ac)}}新文件音频编码：{{taker.frt.ac}}"},
 }
 
 var defaultsEN = map[string][2]string{
 	TriggerDownloadSubmitted: {"Download started: {{anime.title}}",
 		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisode: {{defaultIfEmpty(ep.display, 'not recognized')}}"},
 	TriggerFileOperationCompleted: {"Added to library: {{anime.title}}",
-		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\nDirectory: {{out.dir}}"},
+		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\nDirectory: {{out.dir}}\n{{showIf(frt.group)}}Original file group: {{frt.group}}"},
 	TriggerFileOperationFailed: {"Library import failed: {{anime.title}}",
-		"{{release.title}}\nReason: {{defaultIfEmpty(result.reason, 'unknown error')}}"},
+		"{{release.title}}\nFile: {{file.name}}\n{{showIf(frt.group)}}Original file group: {{frt.group}}\nReason: {{defaultIfEmpty(result.reason, 'unknown error')}}"},
 	TriggerReleaseDiscovered: {"New release: {{anime.title}}",
 		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}"},
 	TriggerDownloadFailed: {"Download failed: {{anime.title}}",
@@ -368,7 +368,7 @@ var defaultsEN = map[string][2]string{
 	TriggerReplacementApplied: {"Replaced an old version: {{anime.title}}",
 		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nReplaced {{replaced.count}} old version(s):\n{{replaced.targets}}"},
 	TriggerFileDisplaced: {"{{if(eq(event.cause, 'redownload'), 'A redownload replaced the old file', 'A new file replaced the old file')}}: {{anime.title}}",
-		"{{file.name}}\nTaker: {{defaultIfEmpty(taker.title, taker.file)}}\nGroup: {{defaultIfEmpty(taker.group, 'unknown')}}"},
+		"{{showIf(taker.title)}}{{taker.title}}\nOld file: {{file.name}}\n{{showIf(taker.file)}}New file: {{taker.file}}\n{{showIf(frt.group)}}Old file group: {{frt.group}}\n{{showIf(taker.frt.group)}}New file group: {{taker.frt.group}}\n{{showIf(frt.res)}}Old file resolution: {{frt.res}}\n{{showIf(taker.frt.res)}}New file resolution: {{taker.frt.res}}\n{{showIf(frt.vc)}}Old file video codec: {{frt.vc}}\n{{showIf(taker.frt.vc)}}New file video codec: {{taker.frt.vc}}\n{{showIf(frt.ac)}}Old file audio codec: {{frt.ac}}\n{{showIf(taker.frt.ac)}}New file audio codec: {{taker.frt.ac}}"},
 }
 
 // Sample returns the fixed redacted sample facts for a trigger, keyed by the

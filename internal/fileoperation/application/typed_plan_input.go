@@ -131,7 +131,7 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 	// unclassified_route switch is the instance policy, read by
 	// captureArtifactBatch; until then unknown files fail closed to skip.
 	config.unclassifiedRoute = "skip"
-	b.prep = prepareContext{config: config, replanTargets: true}
+	b.prep = prepareContext{config: config, replanTargets: true, titleTagCache: newFileTitleTagCache()}
 	b.artifact.animeTitle = ""
 	b.artifact.titleOverride = sql.NullString{}
 	b.artifact.providerTitle = ""

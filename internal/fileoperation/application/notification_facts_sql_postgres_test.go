@@ -138,6 +138,31 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 		}
 		assertSameFacts(t, render, got, notification.EpisodeTitleFacts([]byte(render), notificationText))
 	}
+	// frt (135): the file operation preparation froze the original download
+	// file name's parse into render.file_title_tags; both sides project that
+	// block through the same sanitizer. A missing block (old snapshot), an
+	// unknown schema, a diagnostic and a malformed block all read null.
+	tagRenders := []string{
+		`{}`,
+		`{"file_title_tags":null}`,
+		`{"renderer_version":"fileoperation-render-v1"}`,
+		`{"file_title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@v0.1.0","config_digest":"lexicon:sha256:135","tags":["resolution:2160p","video_codec:HEVC","audio_codec:AAC","source_type:WEBRip","sub_lang:CHT","sub_lang:CHS","sub_flag:soft","content_rating:UNCENSORED"],"value_tags":["title:[文件组] 进击的巨人 - 07 [2160p]","group:文件组","version:v2"]}}`,
+		`{"file_title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":[]}}`,
+		`{"file_title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":null}}`,
+		`{"file_title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":["resolution:1080p"],"diagnostic":"reltitle_parse_failed"}}`,
+		`{"file_title_tags":{"schema":"reltitle-attrs-v0","implementation":"r","tags":["resolution:720p","content_rating:UNCENSORED"],"value_tags":["title:ignored"]}}`,
+		`{"file_title_tags":{"tags":["resolution:720p",null]}}`,
+		`{"file_title_tags":{"tags":["resolution:720p",7]}}`,
+		`{"file_title_tags":"broken"}`,
+		`{"file_title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":["resolution:1080p"],"value_tags":["title:see https://x/y"]}}`,
+	}
+	for _, render := range tagRenders {
+		var got []byte
+		if err := db.QueryRow(`SELECT public.notification_file_reltitle_facts($1::jsonb)`, render).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		assertSameFacts(t, render, got, notification.FileReltitleFacts([]byte(render), "frt", notificationText))
+	}
 }
 
 // The render snapshot schema check: a snapshot without episode_titles is valid

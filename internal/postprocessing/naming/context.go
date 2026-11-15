@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/namingvars"
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/templatefacts"
@@ -32,6 +33,12 @@ type NamingContext struct {
 	// a missing value is null there.
 	Rt        templatefacts.Values `json:"-"`
 	AniBTTags templatefacts.Values `json:"-"`
+	// FileTitleTags is the reltitle parse of the file's own name (frt.*). An
+	// operation preparation parses it once and hands the same set to the
+	// naming render and to the frozen snapshots the notification producers
+	// read. A caller without a prepared set leaves it nil and the projection
+	// parses the rendered file name (naming previews and maintenance replays).
+	FileTitleTags *acquisitiondomain.TitleTagSet `json:"-"`
 	// Torrent is the torrent metadata frozen in the acquisition input. It is
 	// the torrent.* root.
 	Torrent TorrentNamingFacts `json:"-"`

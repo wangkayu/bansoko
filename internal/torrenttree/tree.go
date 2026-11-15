@@ -8,15 +8,16 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 const (
 	// MaxEntries bounds the top-level entries one rendered listing shows. The
 	// folded remainder is reported on one line and the totals stay complete.
 	MaxEntries = 30
-	// minNameCells keeps short listings aligned to a readable column;
-	// maxNameCells stops one very long name from pushing the sizes away.
-	minNameCells = 16
+	// maxNameCells bounds one entry name so a single long name cannot crowd
+	// the complete totals out of a channel's text limit. A folder keeps its
+	// trailing slash inside the same bound.
 	maxNameCells = 48
 )
 
@@ -95,11 +96,15 @@ func Totals(files []File) (int64, int) {
 	return total, len(relative)
 }
 
-// Render is the plain-text listing: one line per top-level entry, aligned on
-// a name column, folders carrying their recursive size and file count, then
-// one folded remainder line when the entries overflow MaxEntries, then the
-// complete totals. It returns "" when there is nothing to show, so a missing
-// payload renders nothing instead of a placeholder.
+// Render is the plain-text listing. Each top-level entry takes two lines: its
+// name, then an indented "└ size" line carrying the recursive file count for a
+// folder. Past MaxEntries one folded remainder line follows, then a blank line
+// and the complete totals. Nothing depends on column alignment, so the listing
+// stays readable in proportional fonts and plain-text channels. The output is
+// bounded by MaxEntries and maxNameCells, which keeps the totals inside a
+// channel's text limit when the tree is the body; every shown entry is
+// complete. It returns "" when there is nothing to show, so a missing payload
+// renders nothing instead of a placeholder.
 func Render(files []File) string {
 	entries := Build(files)
 	if len(entries) == 0 {
@@ -110,21 +115,10 @@ func Render(files []File) string {
 	if len(entries) > MaxEntries {
 		shown, hidden = entries[:MaxEntries], len(entries)-MaxEntries
 	}
-	width := minNameCells
-	for _, entry := range shown {
-		if cells := displayCells(label(entry)); cells > width {
-			width = cells
-		}
-	}
-	if width > maxNameCells {
-		width = maxNameCells
-	}
 	var builder strings.Builder
 	for _, entry := range shown {
-		text := truncateCells(label(entry), width)
-		builder.WriteString(text)
-		builder.WriteString(strings.Repeat(" ", width-displayCells(text)))
-		builder.WriteString("  ")
+		builder.WriteString(entryName(entry))
+		builder.WriteString("\n  └ ")
 		builder.WriteString(HumanSize(entry.Size))
 		if entry.Dir {
 			fmt.Fprintf(&builder, " · %d files", entry.Count)
@@ -134,12 +128,12 @@ func Render(files []File) string {
 	if hidden > 0 {
 		fmt.Fprintf(&builder, "… 折叠 %d 项\n", hidden)
 	}
+	builder.WriteString("\n")
 	fmt.Fprintf(&builder, "合计: %s · %d files", HumanSize(totalSize), totalCount)
 	return builder.String()
 }
 
-// HumanSize formats a byte count with binary units and one decimal, so the
-// sizes line up in a monospace block.
+// HumanSize formats a byte count with binary units and one decimal.
 func HumanSize(size int64) string {
 	switch {
 	case size >= 1<<30:
@@ -153,11 +147,41 @@ func HumanSize(size int64) string {
 	}
 }
 
-func label(entry Entry) string {
+// entryName is the display line of one entry: the sanitized name, cut to
+// maxNameCells, with a trailing slash for a folder. A stored path component is
+// arbitrary bytes, so control characters can never break the line or fabricate
+// a second entry.
+func entryName(entry Entry) string {
+	limit := maxNameCells
 	if entry.Dir {
-		return entry.Name + "/"
+		// The slash is part of the bound, not extra width.
+		limit--
 	}
-	return entry.Name
+	name := truncateCells(sanitizeName(entry.Name), limit)
+	if entry.Dir {
+		return name + "/"
+	}
+	return name
+}
+
+// sanitizeName replaces control characters and Unicode line separators with a
+// space and trims the result. A name made only of them is still one stored
+// entry, so it renders as the replacement character instead of disappearing.
+func sanitizeName(name string) string {
+	var builder strings.Builder
+	builder.Grow(len(name))
+	for _, r := range name {
+		if unicode.IsControl(r) || r == 0x2028 || r == 0x2029 {
+			builder.WriteByte(' ')
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	name = strings.TrimSpace(builder.String())
+	if name == "" {
+		return string(rune(0xFFFD))
+	}
+	return name
 }
 
 func sharedRoot(files []File) string {

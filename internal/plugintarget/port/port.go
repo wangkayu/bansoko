@@ -225,10 +225,19 @@ const FileDisplacedResultKey = "displaced"
 // another file took over. victimFileName and takerFile are base names only;
 // cause is overwrite or redownload; takerGroup and takerTitle name the release
 // behind the displacing file and may be empty when the source recorded none.
-func FileDisplacedRequest(victimPlacementID string, version int64, managedAnimeID, animeTitle, victimFileName, cause, takerFile, takerGroup, takerTitle string) (BusinessDeliveryRequest, error) {
+// victimTags and takerTags are the two files' frozen frt.* payload facts
+// (takerTags already keyed taker.frt.*): each side reads its own original
+// download file parse and is present only when that operation froze one.
+func FileDisplacedRequest(victimPlacementID string, version int64, managedAnimeID, animeTitle, victimFileName, cause, takerFile, takerGroup, takerTitle string, victimTags, takerTags map[string]any) (BusinessDeliveryRequest, error) {
 	facts := map[string]any{
 		"anime.id": managedAnimeID, "anime.title": optionalText(animeTitle),
 		"file.name": baseName(victimFileName), "event.cause": cause,
+	}
+	for key, value := range victimTags {
+		facts[key] = value
+	}
+	for key, value := range takerTags {
+		facts[key] = value
 	}
 	if name := baseName(takerFile); name != "" {
 		facts["taker.file"] = name

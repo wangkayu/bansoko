@@ -202,7 +202,7 @@ func TestReplacementAppliedRequest(t *testing.T) {
 // that lost its place, and the taker beside it.
 func TestFileDisplacedRequest(t *testing.T) {
 	request, err := FileDisplacedRequest("plc-1", 2, "anime-1", "Show", "/library/Show/EP01.mkv", "redownload",
-		"/library/Show/EP01.new.mkv", "GroupB", "[GroupB] Show - 01 [1080p]")
+		"/library/Show/EP01.new.mkv", "GroupB", "[GroupB] Show - 01 [1080p]", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestFileDisplacedRequest(t *testing.T) {
 			t.Fatalf("payload[%s] = %v, want %v", key, payload[key], value)
 		}
 	}
-	anonymous, err := FileDisplacedRequest("plc-1", 2, "anime-1", "", "/library/Show/EP01.mkv", "overwrite", "/library/Show/EP02.mkv", "", "")
+	anonymous, err := FileDisplacedRequest("plc-1", 2, "anime-1", "", "/library/Show/EP01.mkv", "overwrite", "/library/Show/EP02.mkv", "", "", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

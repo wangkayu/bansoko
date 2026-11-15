@@ -38,7 +38,7 @@ func verifyFileSuccessProjection(t *testing.T, ctx context.Context, db *sql.DB, 
 			t.Fatal("unsafe notification changed graph")
 		}
 	}
-	for _, field := range []string{"event.type", "result.outcome", "result.reason", "anime.id", "anime.title_override", "op.kind", "op.conflict", "file.size", "anime.title", "release.id", "release.title", "anime.group", "release.src", "file.name", "file.stem", "file.ext", "file.kind", "media.container", "media.resolution", "media.video_codec", "media.audio_codec", "out.dir", "out.name", "out.path", "bgm.id", "tmdb.id", "tmdb.kind", "tmdb.season", "torrent.hash_v1", "torrent.hash_v2", "ep.raw", "ep.number", "ep.display", "ep.offset", "unexpected_field"} {
+	for _, field := range []string{"event.type", "result.outcome", "result.reason", "anime.id", "anime.title_override", "op.kind", "op.conflict", "file.size", "anime.title", "release.id", "release.title", "anime.group", "release.src", "file.name", "file.stem", "file.ext", "file.kind", "media.container", "media.resolution", "media.video_codec", "media.audio_codec", "out.dir", "out.name", "out.path", "bgm.id", "tmdb.id", "tmdb.kind", "tmdb.season", "torrent.hash_v1", "torrent.hash_v2", "ep.raw", "ep.number", "ep.display", "ep.offset", "frt.title", "frt.group", "frt.rev", "frt.res", "frt.source", "frt.vc", "frt.ac", "frt.lang", "frt.subflag", "frt.uncensored", "unexpected_field"} {
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(p.notificationPayload), &payload); err != nil {
 			t.Fatal(err)

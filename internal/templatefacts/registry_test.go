@@ -182,8 +182,22 @@ func TestRegistryKeepsTheTwoReltitleParsesApart(t *testing.T) {
 	if !ok {
 		t.Fatal("frt.group is not registered")
 	}
-	if release.Type != file.Type || release.Phase != file.Phase || release.Nullable != file.Nullable {
+	if release.Type != file.Type || release.Phase != file.Phase {
 		t.Fatalf("the two parses have different shapes: %+v / %+v", release, file)
+	}
+	// frt is frozen by the file operation producer, so it is advertised only
+	// where that producer exists: naming and the two file outcomes (plus the
+	// displaced event, read from the old file's own frozen parse).
+	for _, scenario := range []Scenario{ScenarioNaming, ScenarioFileCompleted, ScenarioFileFailed, ScenarioFileDisplaced} {
+		if !file.In(scenario) || !file.NullableIn(scenario) {
+			t.Fatalf("frt must be available and nullable in scenario %d", scenario)
+		}
+	}
+	for _, scenario := range []Scenario{ScenarioDownloadSubmitted, ScenarioReleaseDiscovered, ScenarioDownloadFailed,
+		ScenarioSubscriptionChanged, ScenarioUnknownImported, ScenarioDeletionFailed, ScenarioReplacementApplied} {
+		if file.In(scenario) {
+			t.Fatalf("frt must not be advertised in scenario %d", scenario)
+		}
 	}
 	for _, fact := range []Fact{release, file} {
 		if !fact.In(ScenarioNaming) || !fact.NullableIn(ScenarioNaming) {
@@ -204,6 +218,53 @@ func TestRegistryKeepsTheTwoReltitleParsesApart(t *testing.T) {
 	releaseOnly := &FactSet{Rt: Values{"Subgroup": "发布组"}}
 	if got := file.Value(releaseOnly); got != nil {
 		t.Fatalf("frt.group read the release parse: %#v", got)
+	}
+}
+
+// taker.frt is the displacing file's own parse: only the one-to-one
+// file_displaced event names it, and it never borrows the old file's values.
+func TestTakerFileReltitleIsOnlyForDisplaced(t *testing.T) {
+	fact, ok := Lookup("taker.frt.group")
+	if !ok {
+		t.Fatal("taker.frt.group is not registered")
+	}
+	for _, scenario := range Scenarios {
+		if scenario == ScenarioFileDisplaced {
+			if !fact.In(scenario) || !fact.NullableIn(scenario) {
+				t.Fatalf("taker.frt must be available and nullable in file_displaced")
+			}
+			continue
+		}
+		if fact.In(scenario) {
+			t.Fatalf("taker.frt must not be advertised in scenario %d", scenario)
+		}
+	}
+	set := &FactSet{FileRt: Values{"Subgroup": "旧组"}, Taker: TakerFacts{FileRt: Values{"Subgroup": "新组"}}}
+	if got := fact.Value(set); got != "新组" {
+		t.Fatalf("taker.frt.group = %#v, want the taker parse", got)
+	}
+	old, _ := Lookup("frt.group")
+	if got := old.Value(set); got != "旧组" {
+		t.Fatalf("frt.group = %#v, want the old file parse", got)
+	}
+	oldOnly := &FactSet{FileRt: Values{"Subgroup": "旧组"}}
+	if got := fact.Value(oldOnly); got != nil {
+		t.Fatalf("taker.frt read the old file parse: %#v", got)
+	}
+	for _, key := range []string{"frt.group", "taker.frt.group"} {
+		if NotificationPayloadKeys[key] != key {
+			t.Fatalf("%s is not a notification payload key", key)
+		}
+	}
+	// The taker copy names the taker, so the editor's three parses never read
+	// alike.
+	if len(takerFileReltitleCopy) != len(ReltitleFields) {
+		t.Fatalf("taker copy entries = %d, fields = %d", len(takerFileReltitleCopy), len(ReltitleFields))
+	}
+	for _, field := range ReltitleFields {
+		if takerFileReltitleCopy[field.Name] == fileReltitleCopy[field.Name] {
+			t.Fatalf("taker.frt.%s reuses the old-file copy", field.Name)
+		}
 	}
 }
 

@@ -227,6 +227,19 @@ FROM subscription_log_entries WHERE kind = 'file_alignment_completed'`).Scan(&re
 		if admissions != 1 || managed.Valid || outcome != "failure" || event != "file_operation_failed" {
 			t.Fatalf("failure admission count=%d managed=%v outcome=%q event=%q", admissions, managed, outcome, event)
 		}
+		// The failed payload carries the operation snapshot's frozen file-name
+		// parse (the fixture's download file is source.mkv -> title "source"),
+		// projected by the SQL file_failure_notification twin.
+		var frtKeys int
+		var frtTitle, frtGroup, frtUncensored string
+		if err := x.db.QueryRow(`SELECT (SELECT count(*) FROM jsonb_object_keys(payload) k WHERE k LIKE 'frt.%'),
+       COALESCE(payload->>'frt.title',''), COALESCE(payload->>'frt.group',''), COALESCE(payload->>'frt.uncensored','')
+FROM notification_admissions WHERE trigger_kind='file_operation_failed' AND source_owner_type='file_operation' AND source_owner_id=$1`, x.opID).Scan(&frtKeys, &frtTitle, &frtGroup, &frtUncensored); err != nil {
+			t.Fatalf("failure notification frt: %v", err)
+		}
+		if frtKeys != 10 || frtTitle != "source" || frtGroup != "" || frtUncensored != "false" {
+			t.Fatalf("failure notification frt keys=%d title=%q group=%q uncensored=%q", frtKeys, frtTitle, frtGroup, frtUncensored)
+		}
 		asSubscriptionRoot(t, x)
 		if _, err := consumer.ConsumeOnce(ctx); err != nil {
 			t.Fatal(err)

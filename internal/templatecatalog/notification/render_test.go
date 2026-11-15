@@ -144,6 +144,9 @@ func TestEveryDefaultRendersWithItsSampleFacts(t *testing.T) {
 			if title == "" || body == "" {
 				t.Fatalf("%s/%s has no system default", trigger, locale)
 			}
+			if errors, ok := Compile(trigger, title, body); !ok || len(errors) != 0 {
+				t.Fatalf("%s/%s default does not compile: %+v", trigger, locale, errors)
+			}
 			message, _ := RenderMessage(trigger, title, body, Sample(trigger))
 			if !message.Valid() {
 				t.Fatalf("%s/%s default does not render: %+v", trigger, locale, message.Errors)
@@ -191,5 +194,234 @@ func TestReplacementAndDisplacementDefaultsWordTheEvent(t *testing.T) {
 	redownload, ok := RenderMessage(TriggerFileDisplaced, "{{if(eq(event.cause, 'redownload'), '重新下载覆盖了旧文件', '新文件覆盖了旧文件')}}", "{{file.name}}", redownloadFacts)
 	if !ok || !redownload.Valid() || redownload.Title != "重新下载覆盖了旧文件" {
 		t.Fatalf("redownload render = %+v", redownload)
+	}
+}
+
+// The file outcome defaults name the original download file's parse only when
+// its frozen block recorded that field: the label and its line disappear
+// together, and the completed notice keeps its existing subtitle line.
+func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		groupLabel, subtitleLabel, fileLabel, reasonLabel := "原文件字幕组", "字幕：", "文件：", "原因："
+		if locale == LocaleEN {
+			groupLabel, subtitleLabel, fileLabel, reasonLabel = "Original file group", "Subtitles: ", "File: ", "Reason: "
+		}
+		for _, trigger := range []string{TriggerFileOperationCompleted, TriggerFileOperationFailed} {
+			facts := Sample(trigger)
+			facts["frt.group"] = "文件组A"
+			message := renderDefault(t, trigger, locale, facts)
+			if !strings.Contains(message.Body, groupLabel+"：文件组A") && !strings.Contains(message.Body, groupLabel+": 文件组A") {
+				t.Fatalf("%s/%s group line = %q", trigger, locale, message.Body)
+			}
+			assertNoEmptyLabels(t, message.Body)
+			if trigger == TriggerFileOperationCompleted && !strings.Contains(message.Body, subtitleLabel) {
+				t.Fatalf("%s/%s lost its subtitle line: %q", trigger, locale, message.Body)
+			}
+			if trigger == TriggerFileOperationFailed {
+				if !strings.Contains(message.Body, fileLabel) || !strings.Contains(message.Body, reasonLabel) {
+					t.Fatalf("%s/%s lost its file or reason line: %q", trigger, locale, message.Body)
+				}
+			}
+
+			partial := Sample(trigger)
+			delete(partial, "frt.group")
+			partial["frt.res"] = "1080p"
+			message = renderDefault(t, trigger, locale, partial)
+			if strings.Contains(message.Body, groupLabel) {
+				t.Fatalf("%s/%s kept an unvalued group label: %q", trigger, locale, message.Body)
+			}
+			if trigger == TriggerFileOperationCompleted && !strings.Contains(message.Body, subtitleLabel) {
+				t.Fatalf("%s/%s lost its subtitle line without the group: %q", trigger, locale, message.Body)
+			}
+
+			empty := Sample(trigger)
+			empty["frt.group"] = ""
+			message = renderDefault(t, trigger, locale, empty)
+			if strings.Contains(message.Body, groupLabel) {
+				t.Fatalf("%s/%s kept the group label for an empty parse: %q", trigger, locale, message.Body)
+			}
+			assertNoEmptyLabels(t, message.Body)
+			assertNoFrtWarnings(t, message)
+
+			missing := deleteFactsWithPrefix(Sample(trigger), "frt.")
+			message = renderDefault(t, trigger, locale, missing)
+			if strings.Contains(message.Body, groupLabel) {
+				t.Fatalf("%s/%s kept the group label without any frt: %q", trigger, locale, message.Body)
+			}
+			assertNoEmptyLabels(t, message.Body)
+			assertNoFrtWarnings(t, message)
+		}
+	}
+}
+
+type displacedLabels struct {
+	oldGroup, newGroup, oldRes, newRes, oldVideo, newVideo, oldAudio, newAudio string
+}
+
+func displacedLabelsFor(locale string) displacedLabels {
+	if locale == LocaleEN {
+		return displacedLabels{
+			oldGroup: "Old file group: ", newGroup: "New file group: ",
+			oldRes: "Old file resolution: ", newRes: "New file resolution: ",
+			oldVideo: "Old file video codec: ", newVideo: "New file video codec: ",
+			oldAudio: "Old file audio codec: ", newAudio: "New file audio codec: ",
+		}
+	}
+	return displacedLabels{
+		oldGroup: "旧文件字幕组：", newGroup: "新文件字幕组：",
+		oldRes: "旧文件分辨率：", newRes: "新文件分辨率：",
+		oldVideo: "旧文件视频编码：", newVideo: "新文件视频编码：",
+		oldAudio: "旧文件音频编码：", newAudio: "新文件音频编码：",
+	}
+}
+
+// The displacement default shows both files and each file's own frozen parse.
+// The old side never borrows the new side's values (or the release group), and
+// a side without a recorded parse keeps its labels hidden.
+func TestDisplacedDefaultKeepsTheTwoFileParsesApart(t *testing.T) {
+	const (
+		oldGroup, newGroup = "旧组OLD", "新组NEW"
+		oldRes, newRes     = "480p-old", "2160p-new"
+		oldVideo, newVideo = "OLDVC", "NEWVC"
+		oldAudio, newAudio = "OLDAC", "NEWAC"
+	)
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		labels := displacedLabelsFor(locale)
+		full := Sample(TriggerFileDisplaced)
+		full["frt.group"], full["frt.res"], full["frt.vc"], full["frt.ac"] = oldGroup, oldRes, oldVideo, oldAudio
+		full["taker.frt.group"], full["taker.frt.res"], full["taker.frt.vc"], full["taker.frt.ac"] = newGroup, newRes, newVideo, newAudio
+		message := renderDefault(t, TriggerFileDisplaced, locale, full)
+		for _, want := range []string{
+			labels.oldGroup + oldGroup, labels.newGroup + newGroup,
+			labels.oldRes + oldRes, labels.newRes + newRes,
+			labels.oldVideo + oldVideo, labels.newVideo + newVideo,
+			labels.oldAudio + oldAudio, labels.newAudio + newAudio,
+		} {
+			if !strings.Contains(message.Body, want) {
+				t.Fatalf("%s: body misses %q: %q", locale, want, message.Body)
+			}
+		}
+		assertNoEmptyLabels(t, message.Body)
+
+		oldOnly := deleteFactsWithPrefix(Sample(TriggerFileDisplaced), "taker.frt.")
+		oldOnly["frt.group"], oldOnly["frt.res"], oldOnly["frt.vc"], oldOnly["frt.ac"] = oldGroup, oldRes, oldVideo, oldAudio
+		oldOnly["taker.group"] = "发布组MISUSE"
+		message = renderDefault(t, TriggerFileDisplaced, locale, oldOnly)
+		for _, want := range []string{labels.oldGroup + oldGroup, labels.oldRes + oldRes, labels.oldVideo + oldVideo, labels.oldAudio + oldAudio} {
+			if !strings.Contains(message.Body, want) {
+				t.Fatalf("%s old-only: body misses %q: %q", locale, want, message.Body)
+			}
+		}
+		for _, unwanted := range []string{
+			labels.newGroup, labels.newRes, labels.newVideo, labels.newAudio,
+			newGroup, newRes, newVideo, newAudio, "发布组MISUSE",
+		} {
+			if strings.Contains(message.Body, unwanted) {
+				t.Fatalf("%s old-only: body borrowed %q: %q", locale, unwanted, message.Body)
+			}
+		}
+		assertNoEmptyLabels(t, message.Body)
+		assertNoFrtWarnings(t, message)
+
+		newOnly := deleteFactsWithPrefix(Sample(TriggerFileDisplaced), "frt.")
+		newOnly["taker.frt.group"], newOnly["taker.frt.res"], newOnly["taker.frt.vc"], newOnly["taker.frt.ac"] = newGroup, newRes, newVideo, newAudio
+		message = renderDefault(t, TriggerFileDisplaced, locale, newOnly)
+		for _, want := range []string{labels.newGroup + newGroup, labels.newRes + newRes, labels.newVideo + newVideo, labels.newAudio + newAudio} {
+			if !strings.Contains(message.Body, want) {
+				t.Fatalf("%s new-only: body misses %q: %q", locale, want, message.Body)
+			}
+		}
+		for _, unwanted := range []string{
+			labels.oldGroup, labels.oldRes, labels.oldVideo, labels.oldAudio,
+			oldGroup, oldRes, oldVideo, oldAudio,
+		} {
+			if strings.Contains(message.Body, unwanted) {
+				t.Fatalf("%s new-only: body borrowed %q: %q", locale, unwanted, message.Body)
+			}
+		}
+		assertNoEmptyLabels(t, message.Body)
+		assertNoFrtWarnings(t, message)
+
+		none := deleteFactsWithPrefix(Sample(TriggerFileDisplaced), "frt.", "taker.frt.")
+		message = renderDefault(t, TriggerFileDisplaced, locale, none)
+		for _, unwanted := range []string{labels.oldGroup, labels.newGroup, labels.oldRes, labels.newRes, labels.oldVideo, labels.newVideo, labels.oldAudio, labels.newAudio} {
+			if strings.Contains(message.Body, unwanted) {
+				t.Fatalf("%s no-parse: body kept label %q: %q", locale, unwanted, message.Body)
+			}
+		}
+		oldFile, newFile := "旧文件：", "新文件："
+		if locale == LocaleEN {
+			oldFile, newFile = "Old file: ", "New file: "
+		}
+		if !strings.Contains(message.Body, oldFile) || !strings.Contains(message.Body, newFile) {
+			t.Fatalf("%s no-parse: body lost the file names: %q", locale, message.Body)
+		}
+		assertNoEmptyLabels(t, message.Body)
+		assertNoFrtWarnings(t, message)
+	}
+}
+
+// The release group of the displacing release is not the file parse; the
+// default must not present it in the file-group lines, even when it is known.
+func TestDisplacedDefaultDoesNotUseTheReleaseGroupAsTheFileParse(t *testing.T) {
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		_, body := DefaultsFor(TriggerFileDisplaced, locale)
+		if strings.Contains(body, "taker.group") {
+			t.Fatalf("%s: default reads the release group %q", locale, body)
+		}
+		facts := deleteFactsWithPrefix(Sample(TriggerFileDisplaced), "frt.", "taker.frt.")
+		facts["taker.group"] = "发布组MISUSE"
+		message := renderDefault(t, TriggerFileDisplaced, locale, facts)
+		if strings.Contains(message.Body, "发布组MISUSE") {
+			t.Fatalf("%s: body presented the release group as the file parse: %q", locale, message.Body)
+		}
+	}
+}
+
+func renderDefault(t *testing.T, trigger, locale string, facts map[string]any) Message {
+	t.Helper()
+	title, body := DefaultsFor(trigger, locale)
+	message, ok := RenderMessage(trigger, title, body, facts)
+	if !ok {
+		t.Fatalf("%s/%s: unknown trigger", trigger, locale)
+	}
+	if !message.Valid() {
+		t.Fatalf("%s/%s: default does not render: %+v", trigger, locale, message.Errors)
+	}
+	return message
+}
+
+func deleteFactsWithPrefix(facts map[string]any, prefixes ...string) map[string]any {
+	for key := range facts {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				delete(facts, key)
+			}
+		}
+	}
+	return facts
+}
+
+// A label whose value is empty must not survive as a dangling line; the
+// showIf gate removes the whole line instead.
+func assertNoEmptyLabels(t *testing.T, body string) {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasSuffix(line, "：") || strings.HasSuffix(line, ":") {
+			t.Fatalf("body has an empty label line %q in %q", line, body)
+		}
+	}
+}
+
+func assertNoFrtWarnings(t *testing.T, message Message) {
+	t.Helper()
+	for _, warning := range message.Warnings {
+		if strings.HasPrefix(warning.Variable, "frt.") || strings.HasPrefix(warning.Variable, "taker.frt.") {
+			t.Fatalf("a frt label rendered empty: %+v", warning)
+		}
 	}
 }

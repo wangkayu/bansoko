@@ -601,13 +601,55 @@ export const factsCopy = {
     },
     tree: {
       label: "种子结构",
-      description: "派生值：种子内顶层目录与文件的大小一览，每行一项；顶层目录带递归大小与文件数，末尾一行合计。没有种子载荷时为空。",
+      description: "派生值：种子内顶层目录与文件的大小一览：名称占一行，下一行以「└」缩进给出大小，目录另附递归文件数；末尾空行后是一行完整合计。没有种子载荷时为空。",
     },
   },
   taker: {
     file: {
       label: "顶替的文件",
       description: "采集值：顶掉这个位置的文件名，不含路径。",
+    },
+    frt: {
+      ac: {
+        label: "顶替者 reltitle 音频编码",
+        description: "解析值：reltitle 从顶替者原始文件名读出的音频编码。",
+      },
+      group: {
+        label: "顶替者 reltitle 字幕组",
+        description: "解析值：reltitle 从顶替者原始文件名读出的字幕组。",
+      },
+      lang: {
+        label: "顶替者 reltitle 字幕语言",
+        description: "解析值：reltitle 从顶替者原始文件名读出的字幕语言，多个用 + 连接。",
+      },
+      res: {
+        label: "顶替者 reltitle 分辨率",
+        description: "解析值：reltitle 从顶替者原始文件名读出的分辨率。",
+      },
+      rev: {
+        label: "顶替者 reltitle Rev",
+        description: "解析值：reltitle 从顶替者原始文件名读出的 Rev，例如 v2；文件名没有时为空。",
+      },
+      source: {
+        label: "顶替者 reltitle 片源",
+        description: "解析值：reltitle 从顶替者原始文件名读出的片源类型。",
+      },
+      subflag: {
+        label: "顶替者 reltitle 字幕方式标志",
+        description: "解析值：reltitle 从顶替者原始文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。",
+      },
+      title: {
+        label: "顶替者 reltitle 标题",
+        description: "解析值：reltitle 从顶替者原始文件名读出的作品标题。",
+      },
+      uncensored: {
+        label: "顶替者 reltitle 无修正",
+        description: "解析值：顶替者原始文件名标有无修正（UNCENSORED）时为是。",
+      },
+      vc: {
+        label: "顶替者 reltitle 视频编码",
+        description: "解析值：reltitle 从顶替者原始文件名读出的视频编码。",
+      },
     },
     group: {
       label: "顶替者字幕组",
@@ -671,7 +713,7 @@ export const factsCopy = {
     },
     tree: {
       label: "种子结构",
-      description: "派生值：种子内顶层目录与文件的大小一览，每行一项；顶层目录带递归大小与文件数，末尾一行合计。没有种子载荷时为空。",
+      description: "派生值：种子内顶层目录与文件的大小一览：名称占一行，下一行以「└」缩进给出大小，目录另附递归文件数；末尾空行后是一行完整合计。没有种子载荷时为空。",
     },
   },
 } as const;
@@ -1274,13 +1316,55 @@ export const enFactsCopy = {
     },
     tree: {
       label: "Torrent structure",
-      description: "Derived: One line per top-level folder or file in the torrent; a folder carries its recursive size and file count, and the last line is the total. Empty when there is no torrent payload.",
+      description: "Derived: The size of the torrent's top-level folders and files: each name on one line, its size on the next line after an indented └, with a folder's recursive file count; one blank line then the complete total. Empty when there is no torrent payload.",
     },
   },
   taker: {
     file: {
       label: "Taker file",
       description: "Collected: File name of the file that took the place, without a path.",
+    },
+    frt: {
+      ac: {
+        label: "Taker reltitle Audio codec",
+        description: "Parsed: Audio codec reltitle read from the taker's original file name.",
+      },
+      group: {
+        label: "Taker reltitle Group",
+        description: "Parsed: Group reltitle read from the taker's original file name.",
+      },
+      lang: {
+        label: "Taker reltitle Subtitle language",
+        description: "Parsed: Subtitle language reltitle read from the taker's original file name; several join with +.",
+      },
+      res: {
+        label: "Taker reltitle Resolution",
+        description: "Parsed: Resolution reltitle read from the taker's original file name.",
+      },
+      rev: {
+        label: "Taker reltitle Rev",
+        description: "Parsed: The Rev reltitle read from the taker's original file name, such as v2. Empty when the file name has none.",
+      },
+      source: {
+        label: "Taker reltitle Source",
+        description: "Parsed: Source type reltitle read from the taker's original file name.",
+      },
+      subflag: {
+        label: "Taker reltitle Subtitle flag",
+        description: "Parsed: Subtitle mode flag reltitle read from the taker's original file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly.",
+      },
+      title: {
+        label: "Taker reltitle Title",
+        description: "Parsed: Title reltitle read from the taker's original file name.",
+      },
+      uncensored: {
+        label: "Taker reltitle Uncensored",
+        description: "Parsed: Yes when the taker's original file name is marked uncensored (UNCENSORED).",
+      },
+      vc: {
+        label: "Taker reltitle Video codec",
+        description: "Parsed: Video codec reltitle read from the taker's original file name.",
+      },
     },
     group: {
       label: "Taker group",
@@ -1344,7 +1428,7 @@ export const enFactsCopy = {
     },
     tree: {
       label: "Torrent structure",
-      description: "Derived: One line per top-level folder or file in the torrent; a folder carries its recursive size and file count, and the last line is the total. Empty when there is no torrent payload.",
+      description: "Derived: The size of the torrent's top-level folders and files: each name on one line, its size on the next line after an indented └, with a folder's recursive file count; one blank line then the complete total. Empty when there is no torrent payload.",
     },
   },
 } as const satisfies CopyShape<typeof factsCopy>;

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/templatefacts"
 )
 
@@ -179,6 +180,77 @@ func ValueFacts(vars map[string]any, sourceFacts []byte, text func(string) any) 
 		if value, ok := namespaces.AniBTTags[field.Key]; ok {
 			facts[templatefacts.RootAnibt+"."+field.Name] = text(value)
 		}
+	}
+	return facts
+}
+
+// FileReltitleFactKeys are the frt.* payload keys under one prefix (frt for
+// the file an event is about, taker.frt for the displacing file). A side with
+// no frozen parse keeps every key null.
+func FileReltitleFactKeys(prefix string) []string {
+	keys := make([]string, 0, len(templatefacts.ReltitleFields))
+	for _, field := range templatefacts.ReltitleFields {
+		keys = append(keys, prefix+"."+field.Name)
+	}
+	return keys
+}
+
+// FileReltitleFacts projects FileReltitleFactKeys from the frozen
+// file_title_tags member of a file operation render snapshot. The block was
+// parsed once from the original download file name when the operation was
+// prepared; a missing block (an old snapshot, a side without a file
+// operation) or an undecodable one reads null everywhere and is never
+// rebuilt here, and the release namespace is never a fallback. The SQL twin is
+// notification_file_reltitle_facts (migration 135); a parity test keeps them
+// equal. A caller holding the block itself (a placement's frozen copy) calls
+// FileReltitleFactsFromTitleTags directly.
+func FileReltitleFacts(render []byte, prefix string, text func(string) any) map[string]any {
+	renderObject, ok := decodeObject(render)
+	if !ok {
+		return FileReltitleFactsFromTitleTags(nil, prefix, text)
+	}
+	raw, present := renderObject["file_title_tags"]
+	if !present || raw == nil {
+		return FileReltitleFactsFromTitleTags(nil, prefix, text)
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return FileReltitleFactsFromTitleTags(nil, prefix, text)
+	}
+	return FileReltitleFactsFromTitleTags(encoded, prefix, text)
+}
+
+// FileReltitleFactsFromTitleTags projects one already-frozen file_title_tags
+// block (the JSON object itself, as stored in a render snapshot or copied
+// onto a placement). It is the reader the displaced notification uses: the
+// placement keeps its own copy, so an operation compacted away after the fact
+// no longer takes the original file-name parse with it. An empty, null or
+// malformed block reads null everywhere and is never rebuilt from a library
+// name; the SQL twin is notification_file_reltitle_facts.
+func FileReltitleFactsFromTitleTags(block []byte, prefix string, text func(string) any) map[string]any {
+	facts := make(map[string]any, len(templatefacts.ReltitleFields))
+	for _, key := range FileReltitleFactKeys(prefix) {
+		facts[key] = nil
+	}
+	if len(block) == 0 || string(block) == "null" {
+		return facts
+	}
+	var stored acquisitiondomain.StoredTitleTags
+	if err := json.Unmarshal(block, &stored); err != nil {
+		return facts
+	}
+	values := templatefacts.ReltitleValues(acquisitiondomain.TitleTagSetFromStored(&stored))
+	for _, field := range templatefacts.ReltitleFields {
+		value, ok := values[field.Key]
+		if !ok {
+			continue
+		}
+		key := prefix + "." + field.Name
+		if field.Type == templatefacts.TypeBoolean {
+			facts[key] = value == "true"
+			continue
+		}
+		facts[key] = text(value)
 	}
 	return facts
 }

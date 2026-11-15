@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestRelativeStripsOnlyASharedRoot(t *testing.T) {
@@ -48,51 +49,91 @@ func TestRenderEmptyWhenThereIsNothingToShow(t *testing.T) {
 	}
 }
 
-func TestRenderAlignsNamesAndFoldsTheRemainder(t *testing.T) {
-	files := []File{
+// Each entry is a name line and an indented size line; the complete totals
+// follow one blank line, and no column alignment is needed.
+func TestRenderUsesTwoLineEntriesAndKeepsTotals(t *testing.T) {
+	got := Render([]File{
 		{Path: "Show/Season 1/01.mkv", SizeBytes: 2 << 30},
 		{Path: "Show/Season 1/01.ass", SizeBytes: 1 << 20},
 		{Path: "Show/readme.txt", SizeBytes: 40},
+	})
+	want := "Season 1/\n  └ 2.0 GiB · 2 files\nreadme.txt\n  └ 40 B\n\n合计: 2.0 GiB · 3 files"
+	if got != want {
+		t.Fatalf("render =\n%s\nwant\n%s", got, want)
 	}
-	got := Render(files)
-	wantSuffix := []string{"2.0 GiB · 2 files", "40 B"}
-	lines := strings.Split(got, "\n")
-	if len(lines) != 3 || !strings.HasSuffix(lines[2], "合计: 2.0 GiB · 3 files") {
-		t.Fatalf("render =\n%s", got)
-	}
-	first := strings.Index(lines[0], wantSuffix[0])
-	second := strings.Index(lines[1], wantSuffix[1])
-	if first < 0 || first != second {
-		t.Fatalf("sizes are not aligned:\n%s", got)
-	}
+}
 
+func TestRenderFoldsRemainderAndKeepsCompleteTotals(t *testing.T) {
 	var many []File
 	for index := 0; index < MaxEntries+12; index++ {
 		many = append(many, File{Path: fmt.Sprintf("Show/dir-%02d/01.mkv", index), SizeBytes: 1 << 20})
 	}
 	rendered := Render(many)
 	folded := strings.Split(rendered, "\n")
-	if len(folded) != MaxEntries+2 {
+	// Two lines per shown entry, the fold line, the blank line, the totals.
+	if len(folded) != MaxEntries*2+3 {
 		t.Fatalf("folded render has %d lines:\n%s", len(folded), rendered)
 	}
-	if folded[MaxEntries] != "… 折叠 12 项" {
-		t.Fatalf("fold line = %q", folded[MaxEntries])
+	if folded[MaxEntries*2] != "… 折叠 12 项" {
+		t.Fatalf("fold line = %q", folded[MaxEntries*2])
 	}
-	if !strings.HasSuffix(rendered, "合计: 42.0 MiB · 42 files") {
+	if folded[MaxEntries*2+1] != "" {
+		t.Fatalf("blank line before totals = %q", folded[MaxEntries*2+1])
+	}
+	if folded[MaxEntries*2+2] != "合计: 42.0 MiB · 42 files" {
 		t.Fatalf("totals do not cover the folded entries:\n%s", rendered)
 	}
 }
 
-func TestRenderAlignsWideRunes(t *testing.T) {
+func TestRenderSanitizesControlCharacters(t *testing.T) {
 	got := Render([]File{
-		{Path: "Show/字幕/01.ass", SizeBytes: 1 << 20},
-		{Path: "Show/subs/01.ass", SizeBytes: 1 << 20},
+		{Path: "Show/a\nb/01.mkv", SizeBytes: 1},
+		{Path: "Show/c\u2028d/02.mkv", SizeBytes: 2},
+		{Path: "Show/\x01\x02/03.mkv", SizeBytes: 3},
+	})
+	if strings.ContainsAny(got, "\x01\x02") || strings.ContainsRune(got, '\u2028') {
+		t.Fatalf("control characters survived:\n%q", got)
+	}
+	for _, want := range []string{"a b/\n  └ 1 B · 1 files", "c d/\n  └ 2 B · 1 files", "\uFFFD/\n  └ 3 B · 1 files"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("render does not contain %q:\n%s", want, got)
+		}
+	}
+	lines := strings.Split(got, "\n")
+	if len(lines) != 8 || lines[6] != "" || lines[7] != "合计: 6 B · 3 files" {
+		t.Fatalf("a control character changed the line structure:\n%q", got)
+	}
+}
+
+func TestRenderBoundsLongNamesAndKeepsTheStatsLine(t *testing.T) {
+	got := Render([]File{
+		{Path: "Show/" + strings.Repeat("字", 60) + "/01.mkv", SizeBytes: 1 << 20},
 	})
 	lines := strings.Split(got, "\n")
-	if len(lines) != 3 {
+	if len(lines) != 4 {
 		t.Fatalf("render =\n%s", got)
 	}
-	if displayCells(lines[0][:strings.Index(lines[0], "1.0 MiB")]) != displayCells(lines[1][:strings.Index(lines[1], "1.0 MiB")]) {
-		t.Fatalf("wide rune column is not aligned:\n%s", got)
+	if cells := displayCells(lines[0]); cells > maxNameCells || !strings.HasSuffix(lines[0], "…/") {
+		t.Fatalf("name line has %d cells and is %q", cells, lines[0])
+	}
+	if lines[1] != "  └ 1.0 MiB · 1 files" || lines[2] != "" || lines[3] != "合计: 1.0 MiB · 1 files" {
+		t.Fatalf("long name displaced the stats or totals:\n%q", got)
+	}
+}
+
+// A full listing is bounded well under a channel's text limit, so the two-line
+// format itself never pushes the complete totals out of a tree-only message.
+func TestRenderBoundedUnderChannelTextLimit(t *testing.T) {
+	files := make([]File, 0, MaxEntries)
+	for index := 0; index < MaxEntries; index++ {
+		name := fmt.Sprintf("%02d %s", index, strings.Repeat("字", 22))
+		files = append(files, File{Path: "Show/" + name + "/01.mkv", SizeBytes: 1 << 30})
+	}
+	rendered := Render(files)
+	if units := len(utf16.Encode([]rune(rendered))); units > 4096 {
+		t.Fatalf("full listing is %d UTF-16 units:\n%s", units, rendered)
+	}
+	if !strings.HasSuffix(rendered, "\n\n合计: 30.0 GiB · 30 files") {
+		t.Fatalf("totals are not complete:\n%s", rendered)
 	}
 }

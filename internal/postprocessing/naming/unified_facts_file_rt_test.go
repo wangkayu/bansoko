@@ -3,6 +3,7 @@ package naming
 import (
 	"testing"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/templatefacts"
 )
 
@@ -81,5 +82,40 @@ func TestFileReltitleParseFallsBackToTheOriginalName(t *testing.T) {
 	}
 	if values := FileReltitleValues(FileNamingFacts{}); values != nil {
 		t.Fatalf("a nameless file has no frt values, got %#v", values)
+	}
+}
+
+// TestUnifiedFactsPrefersThePreparedFileTitleTags: an operation preparation
+// parses the original download file name once and leaves the set on the
+// context. The render reads that set, not a fresh parse of whatever file name
+// the context happens to carry (the renamed output, a maintenance replay).
+func TestUnifiedFactsPrefersThePreparedFileTitleTags(t *testing.T) {
+	ctx := sampleTVContext()
+	ctx.File = FileNamingFacts{
+		OriginalName: "[库内改] 进击的巨人 - 07 [2160p].mkv",
+		Basename:     "[库内改] 进击的巨人 - 07 [2160p]",
+		Extension:    "mkv",
+		Kind:         "video",
+	}
+	prepared := ParseFileTitleTags(FileNamingFacts{
+		OriginalName: "[文件组] 进击的巨人 - 07 [1080p].mkv",
+		Basename:     "[文件组] 进击的巨人 - 07 [1080p]",
+		Extension:    "mkv",
+		Kind:         "video",
+	})
+	if prepared == nil || prepared.Schema != acquisitiondomain.TitleTagSchema || prepared.Implementation == "" {
+		t.Fatalf("prepared set = %#v, want a frozen parse with its provenance", prepared)
+	}
+	ctx.FileTitleTags = prepared
+	resolved := DefaultRegistry().ResolveAll(ResolverInput{Facts: ctx}).Context
+	facts := UnifiedFacts(resolved)
+	if got, _ := facts.FileRt.Get("Subgroup"); got != "文件组" {
+		t.Fatalf("frt.group = %q, want the prepared parse", got)
+	}
+	if got, _ := facts.FileRt.Get("Resolution"); got != "1080p" {
+		t.Fatalf("frt.res = %q, want the prepared parse, not the current file name", got)
+	}
+	if values := FileReltitleValuesFromTags(nil); values != nil {
+		t.Fatalf("a nil set has no values, got %#v", values)
 	}
 }
