@@ -73,24 +73,24 @@ func subtitleList(t *testing.T, admission fileNotificationAdmission) []string {
 	return paths
 }
 
-func assertNoPublishedRoot(t *testing.T, admission fileNotificationAdmission, root string) {
+// assertAbsoluteOutput checks the output facts report the final placement:
+// an absolute path and parent directory plus a basename; subtitle entries are
+// final file names without any directory.
+func assertAbsoluteOutput(t *testing.T, admission fileNotificationAdmission) {
 	t.Helper()
-	encoded, err := json.Marshal(admission.payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if root != "" && strings.Contains(string(encoded), root) {
-		t.Fatalf("%s admission leaks the published root %q: %s", admission.trigger, root, encoded)
-	}
 	for _, key := range []string{"out.path", "out.dir"} {
 		value, _ := admission.payload[key].(string)
-		if filepath.IsAbs(value) {
-			t.Fatalf("%s admission %s = %q must be relative", admission.trigger, key, value)
+		if !filepath.IsAbs(value) {
+			t.Fatalf("%s admission %s = %q must be absolute", admission.trigger, key, value)
 		}
 	}
-	for _, path := range subtitleList(t, admission) {
-		if filepath.IsAbs(path) {
-			t.Fatalf("%s admission subtitle %q must be relative", admission.trigger, path)
+	name, _ := admission.payload["out.name"].(string)
+	if name == "" || strings.Contains(name, "/") {
+		t.Fatalf("%s admission out.name = %q must be a final basename", admission.trigger, name)
+	}
+	for _, subtitle := range subtitleList(t, admission) {
+		if subtitle == "" || strings.Contains(subtitle, "/") {
+			t.Fatalf("%s admission subtitle %q must be a final file name", admission.trigger, subtitle)
 		}
 	}
 }
@@ -130,23 +130,29 @@ func TestSubtitleGroupCoalescesSuccessNotification(t *testing.T) {
 	if released.state != "pending_target_resolution" {
 		t.Fatalf("video admission was not released: %+v", released)
 	}
-	var notificationRoot, subtitleTarget string
-	if err := x.db.QueryRow(`SELECT frozen_render_snapshot->>'notification_root' FROM file_operations WHERE id=$1`, x.opID).Scan(&notificationRoot); err != nil {
+	var videoTarget, subtitleTarget string
+	if err := x.db.QueryRow(`SELECT target_path FROM file_operations WHERE id=$1`, x.opID).Scan(&videoTarget); err != nil {
 		t.Fatal(err)
 	}
 	if err := x.db.QueryRow(`SELECT target_path FROM file_operations WHERE id=$1`, x.subtile).Scan(&subtitleTarget); err != nil {
 		t.Fatal(err)
 	}
-	if notificationRoot == "" {
-		t.Fatal("the fixture's frozen render snapshot carries no notification root")
+	if released.payload["out.path"] != videoTarget || released.payload["out.dir"] != filepath.Dir(videoTarget) || released.payload["out.name"] != filepath.Base(videoTarget) {
+		t.Fatalf("released output facts = %v, want the final placement %q", released.payload, videoTarget)
 	}
-	wantRelative := filepath.ToSlash(strings.TrimPrefix(subtitleTarget, filepath.Clean(notificationRoot)+string(filepath.Separator)))
 	paths := subtitleList(t, released)
-	if len(paths) != 1 || paths[0] != wantRelative || !strings.HasSuffix(paths[0], ".ass") {
-		t.Fatalf("released subtitle paths = %v, want [%q]", paths, wantRelative)
+	if len(paths) != 1 || paths[0] != filepath.Base(subtitleTarget) || !strings.HasSuffix(paths[0], ".ass") {
+		t.Fatalf("released subtitle names = %v, want [%q]", paths, filepath.Base(subtitleTarget))
 	}
-	assertNoPublishedRoot(t, released, notificationRoot)
-	assertNoPublishedRoot(t, subtitle, notificationRoot)
+	assertAbsoluteOutput(t, released)
+	assertAbsoluteOutput(t, subtitle)
+	var root sql.NullString
+	if err := x.db.QueryRow(`SELECT frozen_render_snapshot->>'notification_root' FROM file_operations WHERE id=$1`, x.opID).Scan(&root); err != nil {
+		t.Fatal(err)
+	}
+	if root.Valid {
+		t.Fatalf("new render snapshot still freezes notification_root: %q", root.String)
+	}
 }
 
 // A failed subtitle still releases the video admission, with no subtitle path
@@ -173,9 +179,5 @@ func TestSubtitleGroupReleasesOnSubtitleFailure(t *testing.T) {
 	if paths := subtitleList(t, released); len(paths) != 0 {
 		t.Fatalf("failed subtitle listed in the video notification: %v", paths)
 	}
-	var notificationRoot string
-	if err := x.db.QueryRow(`SELECT frozen_render_snapshot->>'notification_root' FROM file_operations WHERE id=$1`, x.opID).Scan(&notificationRoot); err != nil {
-		t.Fatal(err)
-	}
-	assertNoPublishedRoot(t, released, notificationRoot)
+	assertAbsoluteOutput(t, released)
 }

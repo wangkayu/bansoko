@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,8 @@ import (
 )
 
 // A template that previews valid must render identically when it is sent:
-// preview, test delivery and business delivery share one rendering core.
+// preview, test delivery and business delivery share one rendering core, and
+// only the test delivery adds its title marker (the body stays identical).
 func TestPreviewTestAndBusinessDeliveryRenderIdentically(t *testing.T) {
 	catalog := templatecatalog.NewService()
 	custom := []struct{ title, body string }{
@@ -56,8 +58,15 @@ func TestPreviewTestAndBusinessDeliveryRenderIdentically(t *testing.T) {
 				t.Fatalf("%s: business render %+v differs from preview title=%q body=%q", trigger, sent, preview.Title, preview.Body)
 			}
 			testTitle, testBody, err := catalog.RenderNotification(tc.title, tc.body, trigger, notification.CatalogVersion)
-			if err != nil || testTitle != preview.Title || testBody != preview.Body {
+			wantTestTitle := "[TEST]"
+			if preview.Title != "" {
+				wantTestTitle = "[TEST] " + preview.Title
+			}
+			if err != nil || testTitle != wantTestTitle || testBody != preview.Body {
 				t.Fatalf("%s: test delivery render title=%q body=%q err=%v differs from preview", trigger, testTitle, testBody, err)
+			}
+			if strings.HasPrefix(preview.Title, "[TEST]") {
+				t.Fatalf("%s: preview must not carry the test marker: %q", trigger, preview.Title)
 			}
 		}
 	}

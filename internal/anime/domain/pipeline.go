@@ -231,12 +231,11 @@ func filterReason(title string, rules ReleaseFilterRules) string {
 // is the shared core of the single-file and per-manifest-file renderers so both
 // produce byte-identical targets from identical inputs.
 type previewFileOutcome struct {
-	Included         bool
-	ReasonCode       *string
-	RenderedTarget   *string
-	NotificationRoot string
-	RenderError      *string
-	Safety           PreviewFileResultSafety
+	Included       bool
+	ReasonCode     *string
+	RenderedTarget *string
+	RenderError    *string
+	Safety         PreviewFileResultSafety
 	// SubtitleSuffix is the subtitle suffix the naming rules rendered for this
 	// file, set only for a subtitle that reached the naming engine and only
 	// when the rules render one. A bound subtitle's own target is composed
@@ -259,7 +258,7 @@ type previewFileOutcome struct {
 // single-file view derived from the feed's own filename.
 func PreviewExactFile(item acquisitiondomain.FeedItem, release PreviewReleaseResult, file ManifestFileInput, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, rules attrrules.Rules) ManifestFileResult {
 	outcome := renderManifestFile(item, release, effective, animeTitle, source, rules, path.Base(file.SourcePath), file, "", false)
-	return ManifestFileResult{FileRef: file.FileRef, Ordinal: file.Ordinal, SourcePath: file.SourcePath, Filename: file.Filename, SizeBytes: file.SizeBytes, MediaKind: file.MediaKind, Included: outcome.Included, ReasonCode: outcome.ReasonCode, RenderedTarget: outcome.RenderedTarget, NotificationRoot: outcome.NotificationRoot, RenderError: outcome.RenderError, Safety: outcome.Safety, BoundVideo: file.BoundVideo, EmptyFacts: outcome.EmptyFacts, Subtitle: outcome.Subtitle}
+	return ManifestFileResult{FileRef: file.FileRef, Ordinal: file.Ordinal, SourcePath: file.SourcePath, Filename: file.Filename, SizeBytes: file.SizeBytes, MediaKind: file.MediaKind, Included: outcome.Included, ReasonCode: outcome.ReasonCode, RenderedTarget: outcome.RenderedTarget, RenderError: outcome.RenderError, Safety: outcome.Safety, BoundVideo: file.BoundVideo, EmptyFacts: outcome.EmptyFacts, Subtitle: outcome.Subtitle}
 }
 
 // companionSidecarTarget is the one landing rule for a subtitle that follows a
@@ -324,19 +323,18 @@ const (
 // A file stays in the result even when it is excluded or unrenderable, so the
 // read model can show what was filtered and why instead of silently dropping it.
 type ManifestFileResult struct {
-	FileRef          string
-	Ordinal          int
-	SourcePath       string
-	Filename         string
-	SizeBytes        int64
-	MediaKind        string
-	Language         string
-	Included         bool
-	ReasonCode       *string
-	RenderedTarget   *string
-	NotificationRoot string
-	RenderError      *string
-	Safety           PreviewFileResultSafety
+	FileRef        string
+	Ordinal        int
+	SourcePath     string
+	Filename       string
+	SizeBytes      int64
+	MediaKind      string
+	Language       string
+	Included       bool
+	ReasonCode     *string
+	RenderedTarget *string
+	RenderError    *string
+	Safety         PreviewFileResultSafety
 	// BoundVideo is the SourcePath of the video a bound subtitle follows by the
 	// product's strict-prefix binding ("" for a video or an unbound subtitle).
 	// It travels with the result so a reader lists the subtitle under that
@@ -717,15 +715,9 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 		return outcome
 	}
 	render := compiled.RenderVideoDetailed
-	directoryTemplate := compiled.TV.Directory
-	if release.FrozenMediaKind == string(TMDBMediaKindMovie) {
-		directoryTemplate = compiled.Movie.Directory
-	}
 	if unknown {
 		render = compiled.RenderUnknownDetailed
-		directoryTemplate = compiled.Unknown.Directory
 	}
-	outcome.NotificationRoot = directoryTemplate.NotificationRoot()
 	video, err := render(engine, resolved.Context)
 	directory, renderedFilename := video.Directory, video.Filename
 	outcome.EmptyFacts = video.EmptyFacts

@@ -10,8 +10,8 @@ func TestShortRootsRenderAndAnalyzeAsCanonicalFacts(t *testing.T) {
 	engine := NewEngine()
 	ctx := sampleTVContext()
 	for source, want := range map[string]string{
-		`${a.title}|${r.title}|${f.ext}|${m.resolution}|${t.size ?? 0}`: "进击的巨人|" + ctx.Release.OriginalTitle + "|mkv|1080p|0",
-		`${a["title"]}|${f["ext"]}`:                                     "进击的巨人|mkv",
+		`${a.title}|${r.title}|${f.ext}|${m.resolution}|${t.size ?? 0}`: "葬送的芙莉莲|" + ctx.Release.OriginalTitle + "|mkv|1080p|0",
+		`${a["title"]}|${f["ext"]}`:                                     "葬送的芙莉莲|mkv",
 		`${pad(a.season, 2)}:${f.name.includes("07")}`:                  "01:true",
 	} {
 		compiled, err := engine.Compile(KindVideoFilename, source)

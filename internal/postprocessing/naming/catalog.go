@@ -103,25 +103,25 @@ func intPtr(value int) *int { return &value }
 func sampleTVContext() NamingContext {
 	return NamingContext{
 		Anime: AnimeNamingFacts{
-			ID:     "ma_silent_witch_001",
-			Title:  "进击的巨人",
-			Year:   intPtr(2025),
+			ID:     "ma_frieren_001",
+			Title:  "葬送的芙莉莲",
+			Year:   intPtr(2023),
 			Season: intPtr(1),
-			BGM:    BGMNamingFacts{WorkID: "12345"},
-			TMDB:   TMDBNamingFacts{WorkID: "259972", MediaKind: "tv", Season: 1, Year: intPtr(2025)},
+			BGM:    BGMNamingFacts{WorkID: "400602"},
+			TMDB:   TMDBNamingFacts{WorkID: "209867", MediaKind: "tv", Season: 1, Year: intPtr(2023)},
 		},
 		Source: SourceNamingFacts{Kind: "provider_group", GroupName: "示例字幕组", Group: providerdomain.GroupRef{Provider: providerdomain.ProviderAniBT, ExternalID: "shilizimuazu"}},
 		Release: ReleaseNamingFacts{
-			ID: "rel_001", OriginalTitle: "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC][CHS]",
+			ID: "rel_001", OriginalTitle: "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC][CHS]",
 			Version: 1, FrozenEpisode: &FrozenEpisodeNamingFacts{Raw: "07", Number: "7", Display: "7"},
 		},
 		File: FileNamingFacts{
-			OriginalName: "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC].mkv",
-			Basename:     "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC]", Extension: "mkv",
+			OriginalName: "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC].mkv",
+			Basename:     "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC]", Extension: "mkv",
 			SizeBytes: 734003200, Kind: "video", Media: MediaNamingFacts{Resolution: "1080p", VideoCodec: "HEVC", Container: "mkv"},
 		},
 		// An AniBT release: both value namespaces are frozen.
-		Rt: templatefacts.Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Resolution": "1080p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC"},
+		Rt: templatefacts.Values{"Title": "葬送的芙莉莲", "Subgroup": "示例字幕组", "Resolution": "1080p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC"},
 		AniBTTags: templatefacts.Values{
 			"Resolution": "1080p", "Subtitle": "INTERNAL", "Language": "CHS", "Format": "MKV", "Tag": "10bit+AAC+HEVC+WEBRip",
 		},
@@ -135,8 +135,8 @@ func sampleTVContext() NamingContext {
 func sampleTVSubtitleContext() NamingContext {
 	ctx := sampleTVContext()
 	ctx.File = FileNamingFacts{
-		OriginalName: "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC].chs_forced.ass",
-		Basename:     "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC].chs_forced",
+		OriginalName: "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC].chs_forced.ass",
+		Basename:     "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC].chs_forced",
 		Extension:    "ass",
 		SizeBytes:    102400,
 		Kind:         "subtitle",
@@ -149,8 +149,8 @@ func sampleTVSubtitleContext() NamingContext {
 // (a catalog gate test proves it stays in sync).
 func sampleTVSubtitleLocked() *SampleLockedTarget {
 	return &SampleLockedTarget{
-		Directory: "/media/TV/进击的巨人 (2025)/Season 01",
-		Basename:  "进击的巨人 S01E07",
+		Directory: "/media/TV/葬送的芙莉莲 (2023)/Season 01",
+		Basename:  "葬送的芙莉莲 S01E07",
 		Extension: "mkv",
 	}
 }

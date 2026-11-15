@@ -37,7 +37,8 @@ func TestPGFileFinishRuntimeACLBidirectional(t *testing.T) {
 		"public.file_success_handoff(text,text)",
 		"public.file_cancelled_dependency_suppression(text,text)",
 		"public.file_success_notification(text,text,jsonb)",
-		"public.file_notification_relative_path(text,text)",
+		"public.notification_path_text(text)",
+		"public.notification_name_text(text)",
 		"public.file_subtitle_group_release(text)",
 		// B5 (184): the typed-failure atomic body and its effect classifier.
 		"public.file_failure_atomic_body(text,text,text,text)",

@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
@@ -155,16 +156,98 @@ func TestPreviewNotificationNormal(t *testing.T) {
 	if !preview.Valid {
 		t.Fatalf("expected valid preview, got errors: %+v", preview.Errors)
 	}
-	if preview.Title != "已加入下载：进击的巨人" {
+	if preview.Title != "已加入下载：葬送的芙莉莲" {
 		t.Errorf("title = %q, want the registry sample title", preview.Title)
 	}
-	wantBody := "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC][CHS]\n字幕组：示例字幕组"
+	wantBody := "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC][CHS]\n字幕组：示例字幕组"
 	if preview.Body != wantBody {
 		t.Errorf("body = %q, want %q", preview.Body, wantBody)
 	}
 	if len(preview.Warnings) != 0 {
 		t.Errorf("expected no warnings, got %+v", preview.Warnings)
 	}
+}
+
+func TestRenderNotificationTestMarkerKeepsTitleWithinRenderedBound(t *testing.T) {
+	service := NewService()
+	trigger := string(NotificationTriggerKindDownloadSubmitted)
+	catalog := notification.CatalogVersion
+	const marker = "[TEST] "
+	limit := notification.MaxRenderedTitleChars - utf8.RuneCountInString(marker)
+
+	t.Run("ASCII maximum", func(t *testing.T) {
+		raw := strings.Repeat("a", notification.MaxRenderedTitleChars)
+		title, body, err := service.RenderNotification(raw, "body", trigger, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != "body" {
+			t.Fatalf("body = %q", body)
+		}
+		if title != marker+strings.Repeat("a", limit) {
+			t.Fatalf("title = %q (runes %d), want marker plus %d a runes", title, utf8.RuneCountInString(title), limit)
+		}
+		if got := utf8.RuneCountInString(title); got != notification.MaxRenderedTitleChars {
+			t.Fatalf("title runes = %d, want %d", got, notification.MaxRenderedTitleChars)
+		}
+	})
+
+	t.Run("multibyte maximum truncates on a rune boundary", func(t *testing.T) {
+		sample := notification.Sample(trigger)
+		release, _ := sample["release.title"].(string)
+		releaseRunes := []rune(release)
+		if len(releaseRunes) == 0 {
+			t.Fatal("sample release title is empty")
+		}
+		// Leave at least the marker width of CJK filler after the repeats so the
+		// retained last rune is multibyte: a byte truncation would split it.
+		repeats := (notification.MaxRenderedTitleChars - len(marker)) / len(releaseRunes)
+		filler := notification.MaxRenderedTitleChars - repeats*len(releaseRunes)
+		template := strings.Repeat("{{release.title}}", repeats) + strings.Repeat("界", filler)
+		if len(template) > 4096 {
+			t.Fatalf("test template is %d bytes, above the source bound", len(template))
+		}
+		rendered, ok := notification.RenderMessage(trigger, template, "body", sample)
+		if !ok || !rendered.Valid() {
+			t.Fatalf("unmarked render = %+v %+v", rendered, rendered.Errors)
+		}
+		if got := utf8.RuneCountInString(rendered.Title); got != notification.MaxRenderedTitleChars {
+			t.Fatalf("unmarked title runes = %d, want %d", got, notification.MaxRenderedTitleChars)
+		}
+		title, body, err := service.RenderNotification(template, "body", trigger, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := marker + string([]rune(rendered.Title)[:limit])
+		if body != "body" || title != want {
+			t.Fatalf("title = %q (runes %d), want %q", title, utf8.RuneCountInString(title), want)
+		}
+		if !utf8.ValidString(title) || utf8.RuneCountInString(title) != notification.MaxRenderedTitleChars {
+			t.Fatalf("marked title is not a %d-rune valid string", notification.MaxRenderedTitleChars)
+		}
+		if last := []rune(title)[len([]rune(title))-1]; last < utf8.RuneSelf {
+			t.Fatalf("truncation did not retain the multibyte boundary rune: last = %q", last)
+		}
+	})
+
+	t.Run("empty title keeps the bare marker", func(t *testing.T) {
+		title, body, err := service.RenderNotification("", "body", trigger, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if title != "[TEST]" || body != "body" {
+			t.Fatalf("title = %q body = %q", title, body)
+		}
+	})
+
+	t.Run("oversized pre-marker title is still rejected", func(t *testing.T) {
+		sample := notification.Sample(trigger)
+		release, _ := sample["release.title"].(string)
+		repeats := notification.MaxRenderedTitleChars/utf8.RuneCountInString(release) + 2
+		if _, _, err := service.RenderNotification(strings.Repeat("{{release.title}}", repeats), "body", trigger, catalog); err == nil {
+			t.Fatal("oversized rendered title was accepted")
+		}
+	})
 }
 
 func TestPreviewNotificationReturnsStructuredAttachments(t *testing.T) {
@@ -296,11 +379,11 @@ func TestPreviewNamingVideoFilename(t *testing.T) {
 	if !preview.Valid {
 		t.Fatalf("expected valid preview, got errors: %+v", preview.Errors)
 	}
-	want := "进击的巨人 - E07.mkv"
+	want := "葬送的芙莉莲 - E07.mkv"
 	if preview.Rendered != want {
 		t.Errorf("rendered = %q, want %q", preview.Rendered, want)
 	}
-	if preview.ComposedTarget == nil || *preview.ComposedTarget != "/media/TV/进击的巨人 (2025)/Season 01/"+want {
+	if preview.ComposedTarget == nil || *preview.ComposedTarget != "/media/TV/葬送的芙莉莲 (2023)/Season 01/"+want {
 		t.Errorf("composed_target = %v", preview.ComposedTarget)
 	}
 	if preview.ResolvedValues == nil {
@@ -349,7 +432,7 @@ func TestPreviewNamingDirectory(t *testing.T) {
 	if !preview.Valid {
 		t.Fatalf("expected valid preview, got errors: %+v", preview.Errors)
 	}
-	if preview.Rendered != "/library/进击的巨人/Season 01" {
+	if preview.Rendered != "/library/葬送的芙莉莲/Season 01" {
 		t.Errorf("rendered = %q", preview.Rendered)
 	}
 	if preview.ComposedTarget != nil {
@@ -372,19 +455,19 @@ func TestPreviewNamingSubtitleSuffix(t *testing.T) {
 	if preview.Rendered != "sc" {
 		t.Errorf("rendered = %q, want sc", preview.Rendered)
 	}
-	if preview.LockedDirectory == nil || *preview.LockedDirectory != "/media/TV/进击的巨人 (2025)/Season 01" {
+	if preview.LockedDirectory == nil || *preview.LockedDirectory != "/media/TV/葬送的芙莉莲 (2023)/Season 01" {
 		t.Errorf("locked_directory = %v", preview.LockedDirectory)
 	}
 	// The default rules render the released name from the library layout only;
 	// the bound video's media facts play no part in it.
-	wantBasename := "进击的巨人 S01E07"
+	wantBasename := "葬送的芙莉莲 S01E07"
 	if preview.LockedBasename == nil || *preview.LockedBasename != wantBasename {
 		t.Errorf("locked_basename = %v", strOrEmpty(preview.LockedBasename))
 	}
 	if preview.LockedExtension == nil || *preview.LockedExtension != "mkv" {
 		t.Errorf("locked_extension = %v", preview.LockedExtension)
 	}
-	wantTarget := "/media/TV/进击的巨人 (2025)/Season 01/" + wantBasename + ".sc.mkv"
+	wantTarget := "/media/TV/葬送的芙莉莲 (2023)/Season 01/" + wantBasename + ".sc.mkv"
 	if preview.ComposedTarget == nil || *preview.ComposedTarget != wantTarget {
 		t.Errorf("composed_target = %v, want %q", strOrEmpty(preview.ComposedTarget), wantTarget)
 	}
@@ -398,8 +481,8 @@ func TestPreviewNamingSubtitleSuffixLockedSample(t *testing.T) {
 		input.SampleRef = &subtitleRef
 		return input
 	}
-	wantDirectory := "/media/TV/进击的巨人 (2025)/Season 01"
-	wantBasename := "进击的巨人 S01E07"
+	wantDirectory := "/media/TV/葬送的芙莉莲 (2023)/Season 01"
+	wantBasename := "葬送的芙莉莲 S01E07"
 
 	preview, err := service.PreviewNaming(context.Background(), newInput(
 		"${defaultValue('und', file.sub.lang_tag)}",
@@ -605,7 +688,7 @@ func TestPreviewNamingValueNamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !preview.Valid || preview.Rendered != "[示例字幕组] 进击的巨人 [SC][CHS].mkv" {
+	if !preview.Valid || preview.Rendered != "[示例字幕组] 葬送的芙莉莲 [SC][CHS].mkv" {
 		t.Fatalf("namespace preview = %q, %+v", preview.Rendered, preview.Errors)
 	}
 	movie := "sample-movie"

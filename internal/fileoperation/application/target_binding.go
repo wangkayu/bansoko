@@ -34,11 +34,7 @@ func (s *Service) applyFrozenTargetTx(ctx context.Context, tx *sql.Tx, artifact 
 	}
 	directory := filepath.Dir(record.targetPath)
 	filename := filepath.Base(record.targetPath)
-	var render struct {
-		NotificationRoot string `json:"notification_root"`
-	}
-	_ = json.Unmarshal(record.renderSnapshot, &render)
-	planned := &plannedVideoTarget{directory: directory, filename: filename, notificationRoot: render.NotificationRoot}
+	planned := &plannedVideoTarget{directory: directory, filename: filename}
 	if record.intent == "ensure_present" && record.observationState == "present_matched" {
 		observation, observeErr := observeTarget(ctx, s.observer, record.targetPath, true)
 		if observeErr == nil && observation.SizeBytes == record.expectedSize {

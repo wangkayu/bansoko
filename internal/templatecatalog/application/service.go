@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"bansoko/internal/apperrors"
 	"bansoko/internal/namingvars"
@@ -444,7 +445,11 @@ func strOrNil(value string) *string {
 // RenderNotification renders title and body templates against the fixed
 // redacted sample facts for the given trigger through the shared notification
 // core. The delivery handler uses it for test deliveries, which freeze the
-// template snapshot (and its catalog version) but no owner facts.
+// template snapshot (and its catalog version) but no owner facts. The [TEST]
+// marker is added only to this test-delivery result: previews, business
+// deliveries and the stored default templates never carry it. The marker is
+// outside RenderMessage's output check, so a title at the 4096-rune limit is
+// truncated by runes here to keep the marked title within the same bound.
 func (s *Service) RenderNotification(titleTemplate, bodyTemplate, triggerKind, catalogVersion string) (title, body string, err error) {
 	if !notification.SupportedCatalog(catalogVersion) {
 		return "", "", fmt.Errorf("unsupported notification catalog version %q", catalogVersion)
@@ -457,5 +462,16 @@ func (s *Service) RenderNotification(titleTemplate, bodyTemplate, triggerKind, c
 		first := message.Errors[0]
 		return "", "", fmt.Errorf("%s template render error: %s", first.Field, first.Message)
 	}
-	return message.Title, message.Body, nil
+	const (
+		testMarker       = "[TEST]"
+		testMarkerPrefix = testMarker + " "
+	)
+	if message.Title == "" {
+		return testMarker, message.Body, nil
+	}
+	titleRunes := []rune(message.Title)
+	if limit := notification.MaxRenderedTitleChars - utf8.RuneCountInString(testMarkerPrefix); len(titleRunes) > limit {
+		titleRunes = titleRunes[:limit]
+	}
+	return testMarkerPrefix + string(titleRunes), message.Body, nil
 }

@@ -413,18 +413,24 @@ func (f Fact) hidden() Fact { f.Hidden = true; return f }
 func (f Fact) hideIn(scenarios Scenario) Fact { f.HiddenIn |= scenarios; return f }
 
 const (
-	sampleTitle    = "进击的巨人"
-	sampleYear     = "2025"
-	sampleRelease  = "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC][CHS]"
-	sampleFile     = "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC].mkv"
-	sampleFileStem = "[示例字幕组] 进击的巨人 - 07 [WebRip 1080p HEVC-10bit AAC]"
+	sampleTitle    = "葬送的芙莉莲"
+	sampleYear     = "2023"
+	sampleRelease  = "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC][CHS]"
+	sampleFile     = "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC].mkv"
+	sampleFileStem = "[示例字幕组] 葬送的芙莉莲 - 07 [WebRip 1080p HEVC-10bit AAC]"
 	// The sample library tree under the mount: the default rules render
 	// `<kind>/<title> <year>/<season folder>` and `<title> <SxxEyy>.<ext>`.
-	sampleOutDir     = "tv/进击的巨人 2025/Season 01"
-	sampleOutName    = "进击的巨人 S01E07.mkv"
-	sampleFileSize   = int64(734003200)
-	sampleOccurredAt = "2026-07-01T12:30:00Z"
+	// out.dir/out.path are absolute placement results; out.files keeps the
+	// contract's path relative to the work's tree top.
+	sampleOutDir          = "/media/library/TV/葬送的芙莉莲 (2023)/Season 01"
+	sampleOutStem         = "葬送的芙莉莲 S01E07"
+	sampleOutName         = sampleOutStem + ".mkv"
+	sampleOutFileTreePath = "Season 01/" + sampleOutName
+	sampleFileSize        = int64(734003200)
+	sampleOccurredAt      = "2026-07-01T12:30:00Z"
 )
+
+var sampleOutSubtitles = []string{sampleOutStem + ".zh-Hans.ass", sampleOutStem + ".zh-Hant.ass"}
 
 var registry = markProvenance(append(systemFacts, namespaceFacts()...))
 
@@ -460,10 +466,10 @@ var systemFacts = []Fact{
 		TitleSourceOverride, func(f *FactSet) any { return f.Anime.TitleSource }).derived().hideIn(ScenarioNaming),
 	fact("anime.title_override", TypeString, PhaseRelease, ScenarioNaming|ScenarioDownloadSubmitted, ScenarioNaming|ScenarioDownloadSubmitted,
 		Text{"自定义标题", "Custom title"}, Text{"为作品设置的标题，覆盖整条标题链。", "Title set for the anime; it overrides the whole title chain."},
-		"巨人", func(f *FactSet) any { return f.Anime.TitleOverride }).hideIn(ScenarioNaming),
+		"芙莉莲", func(f *FactSet) any { return f.Anime.TitleOverride }).hideIn(ScenarioNaming),
 	fact("anime.provider_title", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"来源标题", "Provider title"}, Text{"订阅时来源（AniBT/Mikan）目录提供的作品标题；custom/oneshot 或目录无该条目时为空。", "The work title the subscription source (AniBT/Mikan) catalog provided at subscribe time; empty for custom/oneshot or an entry the catalog does not carry."},
-		"进击的巨人", func(f *FactSet) any { return f.Anime.ProviderTitle }).hideIn(ScenarioNaming),
+		"葬送的芙莉莲", func(f *FactSet) any { return f.Anime.ProviderTitle }).hideIn(ScenarioNaming),
 	fact("anime.title_base", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
 		Text{"基础标题", "Base title"}, Text{"作品记录上保存的标题，标题顺序的最后兜底。", "The title stored on the anime record, the last fallback of the title order."},
 		sampleTitle, func(f *FactSet) any { return f.Anime.TitleBase }).hidden(),
@@ -489,27 +495,27 @@ var systemFacts = []Fact{
 	// metadata bindings
 	fact("bgm.id", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"BGM ID", "BGM ID"}, Text{"绑定的 Bangumi 条目 ID。", "Bound Bangumi subject ID."},
-		"425998", func(f *FactSet) any { return f.Bgm.ID }),
+		"400602", func(f *FactSet) any { return f.Bgm.ID }),
 	fact("bgm.title", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"BGM 标题", "BGM title"}, Text{"绑定条目在 Bangumi 的原名，接受发布时冻结。", "Original name of the bound Bangumi subject, frozen at accept."},
-		"進撃の巨人", func(f *FactSet) any { return f.Bgm.Title }),
+		"葬送のフリーレン", func(f *FactSet) any { return f.Bgm.Title }),
 	fact("bgm.title_cn", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"BGM 中文标题", "BGM Chinese title"}, Text{"绑定条目在 Bangumi 的中文名，接受发布时冻结。", "Chinese name of the bound Bangumi subject, frozen at accept."},
-		"进击的巨人", func(f *FactSet) any { return f.Bgm.TitleCN }),
+		"葬送的芙莉莲", func(f *FactSet) any { return f.Bgm.TitleCN }),
 	fact("tmdb.id", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB ID", "TMDB ID"}, Text{"绑定的 TMDB 作品 ID。", "Bound TMDB work ID."},
-		"259972", func(f *FactSet) any { return f.Tmdb.ID }),
+		"209867", func(f *FactSet) any { return f.Tmdb.ID }),
 	fact("tmdb.title_cn", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 中文标题", "TMDB Chinese title"}, Text{"绑定作品在 TMDB 按请求语言（language=zh-CN）返回的标题，接受发布时冻结。", "The title TMDB returned for the request language (language=zh-CN) of the bound work, frozen at accept."},
-		"进击的巨人", func(f *FactSet) any { return f.Tmdb.TitleCN }),
+		"葬送的芙莉莲", func(f *FactSet) any { return f.Tmdb.TitleCN }),
 	fact("tmdb.title", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 原标题", "TMDB original title"}, Text{"绑定作品在 TMDB 的原始标题，接受发布时冻结。", "Original title of the bound TMDB work, frozen at accept."},
-		"進撃の巨人", func(f *FactSet) any { return f.Tmdb.OriginalTitle }),
+		"葬送のフリーレン", func(f *FactSet) any { return f.Tmdb.OriginalTitle }),
 	// tmdb.summary is notification-scope only: a multi-paragraph overview in a
 	// file path is structurally wrong, so the naming scenario lists no row.
 	fact("tmdb.summary", TypeString, PhaseRelease, scenarioMedia, scenarioMedia,
 		Text{"TMDB 简介", "TMDB summary"}, Text{"绑定作品在 TMDB 的作品简介，匹配时记录、接受发布时冻结；通知发送时读取冻结值。未绑定 TMDB 或从未观察到简介时为空；之后匹配刷新记录只影响后续接受。", "The TMDB overview of the bound work, recorded at match time and frozen at accept; notifications read the frozen value. Empty when TMDB is not bound or the overview was never observed; a later match refreshes the record and only subsequent acceptances freeze the new value."},
-		"高新技术被广泛应用的未来世界，人工智能与人性的边界逐渐模糊。", func(f *FactSet) any { return f.Tmdb.Summary }),
+		"魔王讨伐结束后，精灵魔法使芙莉莲与新的同伴重走冒险之路，逐渐了解人类。", func(f *FactSet) any { return f.Tmdb.Summary }),
 	fact("tmdb.kind", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"TMDB 类型", "TMDB kind"}, Text{"tv 或 movie。", "tv or movie."},
 		"tv", func(f *FactSet) any { return f.Tmdb.Kind }).hideIn(ScenarioNaming),
@@ -620,7 +626,7 @@ var systemFacts = []Fact{
 
 	// file
 	fact("file.name", TypeString, PhaseRelease, ScenarioNaming|scenarioFile|ScenarioDeletionFailed|ScenarioFileDisplaced, scenarioFile,
-		Text{"文件名", "File name"}, Text{"原始完整文件名。", "Original full file name."},
+		Text{"文件名", "File name"}, Text{"媒体事件中是下载的原始完整文件名；文件被替换（旧文件）和旧版本删除失败时是库内的文件名。", "The original full file name in media events; the library file name for a displaced old file and a failed old-version deletion."},
 		sampleFile, func(f *FactSet) any { return f.File.Name }),
 	fact("file.stem", TypeString, PhaseRelease, ScenarioNaming|scenarioFile, scenarioFile,
 		Text{"文件主名", "File stem"}, Text{"不含扩展名的文件名。", "File name without the extension."},
@@ -676,17 +682,17 @@ var systemFacts = []Fact{
 
 	// library target
 	fact("out.dir", TypeString, PhaseExecution, ScenarioFileCompleted, ScenarioFileCompleted,
-		Text{"目标目录", "Target folder"}, Text{"相对于命名模板字面量根的目录。", "Folder relative to the naming template's literal root."},
+		Text{"目标目录", "Target folder"}, Text{"入库文件最终所在的绝对父目录，按应用运行环境的实际落盘结果；容器内外部署可能不同。", "The absolute parent folder where the placed file ended up, from the app runtime's real placement; container and non-container deployments may differ."},
 		sampleOutDir, func(f *FactSet) any { return f.Out.Dir }).derived(),
 	fact("out.name", TypeString, PhaseExecution, ScenarioFileCompleted, ScenarioFileCompleted,
-		Text{"目标文件名", "Target name"}, Text{"入库后的文件名。", "File name in the library."},
+		Text{"目标文件名", "Target name"}, Text{"入库后的实际文件名，包含冲突加版本号后的最终名称。", "The actual file name in the library, including the final name after a collision version suffix."},
 		sampleOutName, func(f *FactSet) any { return f.Out.Name }).derived(),
 	fact("out.path", TypeString, PhaseExecution, ScenarioFileCompleted, ScenarioFileCompleted,
-		Text{"目标路径", "Target path"}, Text{"相对于命名模板字面量根的完整路径。", "Full path relative to the naming template's literal root."},
+		Text{"目标路径", "Target path"}, Text{"入库文件的最终绝对路径，按应用运行环境的实际落盘结果；容器内外部署可能不同。", "The final absolute path of the placed file, from the app runtime's real placement; container and non-container deployments may differ."},
 		sampleOutDir+"/"+sampleOutName, func(f *FactSet) any { return f.Out.Path }).derived(),
 	fact("out.subtitles", TypeList, PhaseExecution, ScenarioFileCompleted, ScenarioFileCompleted,
-		Text{"绑定字幕", "Bound subtitles"}, Text{"主视频绑定字幕的最终相对路径，按清单顺序逐行显示；没有绑定字幕时整行省略。", "Final relative paths of subtitles bound to the main video, one per line in manifest order; the line is omitted when there are none."},
-		[]string{sampleOutDir + "/" + sampleOutName + ".zh-Hans.ass"}, func(f *FactSet) any { return f.Out.Subtitles }).derived(),
+		Text{"绑定字幕", "Bound subtitles"}, Text{"主视频绑定且入库成功的字幕最终文件名，按清单顺序一行一个；不带目录，没有时整行省略。", "Final file names of subtitles successfully bound to the main video, one per line in manifest order; without directories, and the line is omitted when there are none."},
+		sampleOutSubtitles, func(f *FactSet) any { return f.Out.Subtitles }).derived(),
 	fact("op.kind", TypeString, PhaseExecution, scenarioFile, scenarioFile,
 		Text{"入库方式", "Operation"}, Text{"copy、move 或 hardlink。", "copy, move or hardlink."},
 		"move", func(f *FactSet) any { return f.Op.Kind }),
@@ -735,7 +741,7 @@ var systemFacts = []Fact{
 		int64(2), func(f *FactSet) any { return f.Out.Count }).derived(),
 	fact("out.files", TypeList, PhaseExecution, ScenarioUnknownImported, 0,
 		Text{"文件列表", "Files"}, Text{"写入媒体库的未识别文件：相对于该作品树顶的路径（path）和字节数（size）。", "Unrecognized files written to the library: path relative to the work's tree top (path) and size in bytes (size)."},
-		[]map[string]any{{"path": sampleOutDir + "/" + sampleFile, "size": sampleFileSize}}, func(f *FactSet) any { return f.Out.Files }).derived(),
+		[]map[string]any{{"path": sampleOutFileTreePath, "size": sampleFileSize}}, func(f *FactSet) any { return f.Out.Files }).derived(),
 	fact("download.client", TypeString, PhaseExecution, ScenarioDownloadSubmitted, ScenarioDownloadSubmitted,
 		Text{"下载客户端", "Download client"}, Text{"任务所在下载客户端的名称。", "Name of the download client holding the task."},
 		"家里的 qBittorrent", func(f *FactSet) any { return f.Download.Client }),

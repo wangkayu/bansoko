@@ -485,24 +485,22 @@ func (s *Service) prepareContext(ctx context.Context, tx *sql.Tx, artifact artif
 // plannedVideoTarget is the frozen target of one planned video operation,
 // consumed by bound subtitle planning in the same prepare run.
 type plannedVideoTarget struct {
-	operationID      string
-	directory        string
-	filename         string
-	notificationRoot string
+	operationID string
+	directory   string
+	filename    string
 }
 
 // plannedTargetFromSnapshot reads the frozen directory/filename of an
 // existing operation; nil means the operation has no usable frozen target.
 func plannedTargetFromSnapshot(operationID string, snapshot []byte) *plannedVideoTarget {
 	var parsed struct {
-		Directory        string `json:"directory"`
-		Filename         string `json:"filename"`
-		NotificationRoot string `json:"notification_root"`
+		Directory string `json:"directory"`
+		Filename  string `json:"filename"`
 	}
 	if json.Unmarshal(snapshot, &parsed) != nil || parsed.Filename == "" {
 		return nil
 	}
-	return &plannedVideoTarget{operationID: operationID, directory: parsed.Directory, filename: parsed.Filename, notificationRoot: parsed.NotificationRoot}
+	return &plannedVideoTarget{operationID: operationID, directory: parsed.Directory, filename: parsed.Filename}
 }
 
 func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifactContext, file artifactFileContext, prep prepareContext, frozenEpisode *naming.FrozenEpisodeNamingFacts, unknownFile bool) (*plannedVideoTarget, error) {
@@ -668,16 +666,15 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
 	renderSnapshot := map[string]any{
-		"renderer_version":  rendererVersion,
-		"naming_renderer":   naming.RendererVersion,
-		"notification_root": videoTitleTemplates(compiled, episodeUnrecognized, movie)[0].NotificationRoot(),
-		"directory":         directory,
-		"filename":          renderedFilename,
-		"target":            plan.targetPath,
-		"resolved":          frozenResolvedValues(resolved.Results),
-		"binding_facts":     renderBindingFacts(resolved.Context),
-		"render_facts":      naming.ReplayFactValues(resolved.Context),
-		"file_title_tags":   fileTitleTagsBlock(prep.fileTitleTags(file)),
+		"renderer_version": rendererVersion,
+		"naming_renderer":  naming.RendererVersion,
+		"directory":        directory,
+		"filename":         renderedFilename,
+		"target":           plan.targetPath,
+		"resolved":         frozenResolvedValues(resolved.Results),
+		"binding_facts":    renderBindingFacts(resolved.Context),
+		"render_facts":     naming.ReplayFactValues(resolved.Context),
+		"file_title_tags":  fileTitleTagsBlock(prep.fileTitleTags(file)),
 	}
 	// The block lands only when a template referenced an ep_title fact; note
 	// 025's render validator accepts snapshots without the key.
@@ -717,7 +714,7 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 		}
 		return nil, err
 	}
-	return &plannedVideoTarget{operationID: plan.id, directory: directory, filename: renderedFilename, notificationRoot: videoTitleTemplates(compiled, episodeUnrecognized, movie)[0].NotificationRoot()},
+	return &plannedVideoTarget{operationID: plan.id, directory: directory, filename: renderedFilename},
 		s.ensureWorkItemTxAfterMarkerAdmissionTx(ctx, tx, operationRecord{
 			id:              plan.id,
 			artifactID:      plan.artifactID,
@@ -966,17 +963,16 @@ func (s *Service) prepareSubtitleFileTx(ctx context.Context, tx *sql.Tx, artifac
 	}
 	plan.boundVideoOperationID = videoTarget.operationID
 	renderSnapshot := map[string]any{
-		"renderer_version":  rendererVersion,
-		"naming_renderer":   naming.RendererVersion,
-		"notification_root": videoTarget.notificationRoot,
-		"directory":         videoTarget.directory,
-		"filename":          renderedFilename,
-		"target":            plan.targetPath,
-		"resolved":          frozenResolvedValues(resolved.Results),
-		"binding_facts":     renderBindingFacts(resolved.Context),
-		"render_facts":      naming.ReplayFactValues(resolved.Context),
-		"file_title_tags":   fileTitleTagsBlock(prep.fileTitleTags(file)),
-		"suffix":            suffix,
+		"renderer_version": rendererVersion,
+		"naming_renderer":  naming.RendererVersion,
+		"directory":        videoTarget.directory,
+		"filename":         renderedFilename,
+		"target":           plan.targetPath,
+		"resolved":         frozenResolvedValues(resolved.Results),
+		"binding_facts":    renderBindingFacts(resolved.Context),
+		"render_facts":     naming.ReplayFactValues(resolved.Context),
+		"file_title_tags":  fileTitleTagsBlock(prep.fileTitleTags(file)),
+		"suffix":           suffix,
 		"binding": map[string]any{
 			"state":                    bindingStateBound,
 			"bound_video_file_ref":     boundRef,

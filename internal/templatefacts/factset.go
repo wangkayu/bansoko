@@ -202,7 +202,7 @@ type SubtitleFacts struct {
 
 type OutFacts struct {
 	Dir, Name, Path string
-	// Subtitles are the final relative paths of the subtitles bound to the main
+	// Subtitles are the final file names of the subtitles bound to the main
 	// video, in manifest order. It is empty for a video without companions.
 	Subtitles []string
 	// Count and Files describe the unknown files one acquisition wrote into its

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+
+	"bansoko/internal/templatecatalog/notification"
 )
 
 func TestNotificationTextSQLParity(t *testing.T) {
@@ -37,6 +39,52 @@ func TestNotificationTextSQLParity(t *testing.T) {
 			}
 		} else if !got.Valid || got.String != want.(string) {
 			t.Fatalf("%q sql=%v go=%q", value, got, want)
+		}
+	}
+	// out.path/out.dir use the path projection: an absolute placement result is
+	// kept verbatim, including a legitimate name containing "=" or "token",
+	// while relative values, URL schemes and control characters are refused.
+	pathValues := []string{
+		"", "relative/Show/ep.mkv", "/media/library/TV/Show (2023)/Season 01/Show (2) S01E07.mkv",
+		"/media/library/葬送的芙莉莲/字幕 01.zh-Hans.ass", "/file.mkv",
+		"/media/library/Show/token=final episode.mkv", "/media/library/Show/credential=abc.mkv",
+		"/media/bad\nname.mkv", "/media/bad\x7fname.mkv", "/media/https://example.invalid/ep.mkv",
+		"/media/" + strings.Repeat("a", 4090), "/media/" + strings.Repeat("a", 4088),
+	}
+	for _, value := range pathValues {
+		var got sql.NullString
+		if err := db.QueryRow(`SELECT public.notification_path_text($1)`, value).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		want := notification.Path(value)
+		if want == nil {
+			if got.Valid {
+				t.Fatalf("path %q sql=%q go=nil", value, got.String)
+			}
+		} else if !got.Valid || got.String != want.(string) {
+			t.Fatalf("path %q sql=%v go=%q", value, got, want)
+		}
+	}
+	// out.name and out.subtitles entries are single components: a legitimate
+	// name keeps "=" and credential-shaped words, while separators, URL schemes
+	// and control characters are refused.
+	nameValues := []string{
+		"", "Show token=final episode.mkv", "Show (2) S01E07.mkv", "字幕 01.zh-Hans.ass",
+		"Show/ep.mkv", "bad\nname.mkv", "bad\x7fname.mkv", "https://example.invalid/ep.mkv",
+		strings.Repeat("a", 4096), strings.Repeat("a", 4097),
+	}
+	for _, value := range nameValues {
+		var got sql.NullString
+		if err := db.QueryRow(`SELECT public.notification_name_text($1)`, value).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		want := notification.Name(value)
+		if want == nil {
+			if got.Valid {
+				t.Fatalf("name %q sql=%q go=nil", value, got.String)
+			}
+		} else if !got.Valid || got.String != want.(string) {
+			t.Fatalf("name %q sql=%v go=%q", value, got, want)
 		}
 	}
 }

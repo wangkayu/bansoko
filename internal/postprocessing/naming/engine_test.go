@@ -124,10 +124,10 @@ func TestDefaultRulesRenderSampleTV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if directory != "/media/TV/进击的巨人 (2025)/Season 01" {
+	if directory != "/media/TV/葬送的芙莉莲 (2023)/Season 01" {
 		t.Fatalf("unexpected directory: %q", directory)
 	}
-	wantFilename := "进击的巨人 S01E07.mkv"
+	wantFilename := "葬送的芙莉莲 S01E07.mkv"
 	if filename != wantFilename {
 		t.Fatalf("filename = %q, want %q", filename, wantFilename)
 	}

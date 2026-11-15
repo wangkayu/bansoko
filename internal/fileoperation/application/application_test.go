@@ -332,7 +332,7 @@ func TestCanonicalFileExecuteInputCarriesOnlyOverwriteMarkerWhenNeeded(t *testin
 	}
 }
 
-func TestBuildFileOperationNotificationPayloadBoundsFactsAndRelativeOutput(t *testing.T) {
+func TestBuildFileOperationNotificationPayloadProjectsAbsoluteOutput(t *testing.T) {
 	payload, err := buildFileOperationNotificationPayload(fileOperationNotificationFacts{
 		managedAnimeID: "anime-1",
 		animeTitle:     "Anime",
@@ -342,10 +342,9 @@ func TestBuildFileOperationNotificationPayloadBoundsFactsAndRelativeOutput(t *te
 		fileSize:       42,
 		fileMediaKind:  "video",
 		fileFacts:      []byte(`{"container":"mkv","resolution":"1080p","url":"https://private.example"}`),
-		locationRoot:   "/private/library",
-		targetPath:     "/private/library/Anime/source.mkv",
+		targetPath:     "/private/library/Anime/source (2).mkv",
 		operation:      "copy",
-		collision:      "block",
+		collision:      "version",
 	}, plugintargetport.TriggerFileOperationCompleted, "success", "file_observed", "completed")
 	if err != nil {
 		t.Fatal(err)
@@ -354,18 +353,18 @@ func TestBuildFileOperationNotificationPayloadBoundsFactsAndRelativeOutput(t *te
 	if err := json.Unmarshal(payload, &facts); err != nil {
 		t.Fatal(err)
 	}
-	if facts["out.path"] != "Anime/source.mkv" || facts["out.dir"] != "Anime" || facts["out.name"] != "source.mkv" {
-		t.Fatalf("unexpected relative output facts: %#v", facts)
+	if facts["out.path"] != "/private/library/Anime/source (2).mkv" || facts["out.dir"] != "/private/library/Anime" || facts["out.name"] != "source (2).mkv" {
+		t.Fatalf("unexpected absolute output facts: %#v", facts)
 	}
 	if facts["media.container"] != "mkv" || facts["file.kind"] != "video" {
 		t.Fatalf("unexpected file facts: %#v", facts)
 	}
-	if strings.Contains(string(payload), "private.example") || strings.Contains(string(payload), "/private/library") {
-		t.Fatalf("payload contains private data: %s", payload)
+	if strings.Contains(string(payload), "private.example") {
+		t.Fatalf("payload kept a media URL: %s", payload)
 	}
 }
 
-func TestBuildFileOperationNotificationPayloadFallsBackToFilenameOutsideRoot(t *testing.T) {
+func TestBuildFileOperationNotificationPayloadOmitsOutputWithoutFinalTarget(t *testing.T) {
 	payload, err := buildFileOperationNotificationPayload(fileOperationNotificationFacts{
 		managedAnimeID: "anime-1",
 		animeTitle:     "Anime",
@@ -373,8 +372,6 @@ func TestBuildFileOperationNotificationPayloadFallsBackToFilenameOutsideRoot(t *
 		releaseTitle:   "Release",
 		filePath:       "source.mkv",
 		fileSize:       42,
-		locationRoot:   "/private/library",
-		targetPath:     "/other/private/source.mkv",
 		operation:      "move",
 		collision:      "version",
 	}, plugintargetport.TriggerFileOperationFailed, "failure", "target_invalid", "target was invalid")
@@ -385,8 +382,8 @@ func TestBuildFileOperationNotificationPayloadFallsBackToFilenameOutsideRoot(t *
 	if err := json.Unmarshal(payload, &facts); err != nil {
 		t.Fatal(err)
 	}
-	if facts["out.path"] != nil || facts["out.dir"] != nil || facts["out.name"] != "source.mkv" {
-		t.Fatalf("unsafe output path was not reduced to filename: %#v", facts)
+	if facts["out.path"] != nil || facts["out.dir"] != nil || facts["out.name"] != nil {
+		t.Fatalf("output facts were invented without a final target: %#v", facts)
 	}
 }
 

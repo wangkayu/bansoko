@@ -63,11 +63,6 @@ func successfulFileNotificationPayload(input json.RawMessage, file artifactFileC
 		fields.frozen[key] = value
 	}
 	target := checkpoint.Object["publish_target"].Object["proof"].Object["target"].Object["location"]
-	var renderFields struct {
-		NotificationRoot string `json:"notification_root"`
-	}
-	_ = json.Unmarshal(render, &renderFields)
-	fields.locationRoot = renderFields.NotificationRoot
 	fields.targetPath = target.Object["canonical_path"].String
 	return buildFileOperationNotificationPayload(fields, plugintargetport.TriggerFileOperationCompleted, "success", "file_operation_completed", "")
 }

@@ -3,6 +3,7 @@ package application
 import (
 	"database/sql"
 	"encoding/json"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -25,12 +26,12 @@ type fileOperationNotificationFacts struct {
 	fileFacts          []byte
 	configSnapshot     []byte
 	renderSnapshot     []byte
-	// locationRoot is the frozen naming template's literal absolute root; it
-	// anchors notification-relative paths without disclosing that root.
-	locationRoot string
-	targetPath   string
-	operation    string
-	collision    string
+	// targetPath is the final placement path from the publication proof. The
+	// output facts are projected from it, never from the naming template or the
+	// original download name.
+	targetPath string
+	operation  string
+	collision  string
 	// frozen are catalog facts projected from frozen inputs (acquisition
 	// input snapshot, file fact); they override the row-derived values.
 	frozen map[string]any
@@ -46,7 +47,7 @@ func buildFileOperationNotificationPayload(facts fileOperationNotificationFacts,
 	fileName := notificationText(filepath.Base(filepath.FromSlash(facts.filePath)))
 	fileBase, fileExtension := notificationFileParts(facts.filePath)
 	fileFacts := notificationMediaFacts(facts.fileFacts)
-	relativePath, outputDirectory, outputFilename := notificationOutputPath(facts.locationRoot, facts.targetPath, fileName)
+	outputPath, outputDirectory, outputFilename := notificationOutputPath(facts.targetPath)
 	resultReason := safeString(reason)
 	if resultReason == "" {
 		resultReason = boundedCode(reasonCode, trigger)
@@ -73,7 +74,7 @@ func buildFileOperationNotificationPayload(facts fileOperationNotificationFacts,
 		"media.hdr":            fileFacts["hdr"],
 		"out.dir":              outputDirectory,
 		"out.name":             outputFilename,
-		"out.path":             relativePath,
+		"out.path":             outputPath,
 		"op.kind":              notificationText(facts.operation),
 		"op.conflict":          notificationText(facts.collision),
 	}
@@ -82,7 +83,7 @@ func buildFileOperationNotificationPayload(facts fileOperationNotificationFacts,
 	}
 	if trigger == plugintargetport.TriggerFileOperationCompleted {
 		// The SQL group-release function replaces this empty list with the
-		// final bound-subtitle paths after every bound operation settles.
+		// final bound-subtitle file names after every bound operation settles.
 		payload["out.subtitles"] = []string{}
 	}
 	return json.Marshal(payload)
@@ -118,25 +119,15 @@ func notificationFileParts(path string) (any, any) {
 	return notificationText(base), notificationText(extension)
 }
 
-func notificationOutputPath(root, target, fallbackName any) (any, any, any) {
-	rootString, _ := root.(string)
+// notificationOutputPath projects the final placement path onto the output
+// facts: out.path is the absolute path, out.dir its absolute parent and
+// out.name its basename. All three are absent when the publication proof has no
+// usable absolute target; the original download name is never substituted for
+// the final name. The SQL twin is file_success_notification (migration 136).
+func notificationOutputPath(target any) (any, any, any) {
 	targetString, _ := target.(string)
-	fallback, _ := fallbackName.(string)
-	if filepath.IsAbs(rootString) && filepath.IsAbs(targetString) {
-		relative, err := filepath.Rel(filepath.Clean(rootString), filepath.Clean(targetString))
-		if err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			relative = filepath.ToSlash(relative)
-			if notificationText(relative) != nil {
-				directory := filepath.ToSlash(filepath.Dir(relative))
-				if directory == "." {
-					directory = ""
-				}
-				return notificationText(relative), notificationText(directory), notificationText(filepath.Base(relative))
-			}
-		}
+	if targetString == "" || !path.IsAbs(targetString) {
+		return nil, nil, nil
 	}
-	if fallback != "" {
-		return nil, nil, notificationText(fallback)
-	}
-	return nil, nil, nil
+	return notification.Path(targetString), notification.Path(path.Dir(targetString)), notification.Name(path.Base(targetString))
 }

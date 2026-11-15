@@ -101,9 +101,9 @@ func TestExplicitProviderImageAndCustomAttachments(t *testing.T) {
 func TestStandaloneSubtitleListRepeatsLabelAndOmitsEmptyLine(t *testing.T) {
 	body := "文件：{{out.name}}\n字幕：{{out.subtitles}}\n目录：{{out.dir}}"
 	facts := Sample(TriggerFileOperationCompleted)
-	facts["out.subtitles"] = []any{"Show/E01.ja.ass", "Show/E01.zh-Hans.ass"}
+	facts["out.subtitles"] = []any{"Show S01E01.ja.ass", "Show S01E01.zh-Hans.ass"}
 	message, _ := RenderMessage(TriggerFileOperationCompleted, "title", body, facts)
-	if !message.Valid() || !strings.Contains(message.Body, "字幕：Show/E01.ja.ass\n字幕：Show/E01.zh-Hans.ass\n目录：") {
+	if !message.Valid() || !strings.Contains(message.Body, "字幕：Show S01E01.ja.ass\n字幕：Show S01E01.zh-Hans.ass\n目录：") {
 		t.Fatalf("subtitle list = %q / %+v", message.Body, message.Errors)
 	}
 	facts["out.subtitles"] = []any{}

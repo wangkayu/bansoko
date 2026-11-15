@@ -201,7 +201,7 @@ export const factsCopy = {
     },
     name: {
       label: "文件名",
-      description: "采集值：原始完整文件名。",
+      description: "采集值：媒体事件中是下载的原始完整文件名；文件被替换（旧文件）和旧版本删除失败时是库内的文件名。",
     },
     stem: {
       label: "文件主名",
@@ -249,7 +249,7 @@ export const factsCopy = {
     },
     name: {
       label: "文件名",
-      description: "采集值：原始完整文件名。",
+      description: "采集值：媒体事件中是下载的原始完整文件名；文件被替换（旧文件）和旧版本删除失败时是库内的文件名。",
     },
     size: {
       label: "文件大小",
@@ -407,7 +407,7 @@ export const factsCopy = {
     },
     dir: {
       label: "目标目录",
-      description: "派生值：相对于命名模板字面量根的目录。",
+      description: "派生值：入库文件最终所在的绝对父目录，按应用运行环境的实际落盘结果；容器内外部署可能不同。",
     },
     files: {
       label: "文件列表",
@@ -415,15 +415,15 @@ export const factsCopy = {
     },
     name: {
       label: "目标文件名",
-      description: "派生值：入库后的文件名。",
+      description: "派生值：入库后的实际文件名，包含冲突加版本号后的最终名称。",
     },
     path: {
       label: "目标路径",
-      description: "派生值：相对于命名模板字面量根的完整路径。",
+      description: "派生值：入库文件的最终绝对路径，按应用运行环境的实际落盘结果；容器内外部署可能不同。",
     },
     subtitles: {
       label: "绑定字幕",
-      description: "派生值：主视频绑定字幕的最终相对路径，按清单顺序逐行显示；没有绑定字幕时整行省略。",
+      description: "派生值：主视频绑定且入库成功的字幕最终文件名，按清单顺序一行一个；不带目录，没有时整行省略。",
     },
   },
   r: {
@@ -916,7 +916,7 @@ export const enFactsCopy = {
     },
     name: {
       label: "File name",
-      description: "Collected: Original full file name.",
+      description: "Collected: The original full file name in media events; the library file name for a displaced old file and a failed old-version deletion.",
     },
     stem: {
       label: "File stem",
@@ -964,7 +964,7 @@ export const enFactsCopy = {
     },
     name: {
       label: "File name",
-      description: "Collected: Original full file name.",
+      description: "Collected: The original full file name in media events; the library file name for a displaced old file and a failed old-version deletion.",
     },
     size: {
       label: "File size",
@@ -1122,7 +1122,7 @@ export const enFactsCopy = {
     },
     dir: {
       label: "Target folder",
-      description: "Derived: Folder relative to the naming template's literal root.",
+      description: "Derived: The absolute parent folder where the placed file ended up, from the app runtime's real placement; container and non-container deployments may differ.",
     },
     files: {
       label: "Files",
@@ -1130,15 +1130,15 @@ export const enFactsCopy = {
     },
     name: {
       label: "Target name",
-      description: "Derived: File name in the library.",
+      description: "Derived: The actual file name in the library, including the final name after a collision version suffix.",
     },
     path: {
       label: "Target path",
-      description: "Derived: Full path relative to the naming template's literal root.",
+      description: "Derived: The final absolute path of the placed file, from the app runtime's real placement; container and non-container deployments may differ.",
     },
     subtitles: {
       label: "Bound subtitles",
-      description: "Derived: Final relative paths of subtitles bound to the main video, one per line in manifest order; the line is omitted when there are none.",
+      description: "Derived: Final file names of subtitles successfully bound to the main video, one per line in manifest order; without directories, and the line is omitted when there are none.",
     },
   },
   r: {
