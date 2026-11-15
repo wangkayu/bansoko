@@ -259,10 +259,14 @@ async function mockSettingsReads(page: Page) {
         variables: [
           { name: "anime.title", label: "标题", type: "string", nullable: false, source: "anime", sample_value: "示例动画", phase: "release", label_key: "facts.anime.title.label" },
           { name: "image", label: "节目图片", type: "string", nullable: false, source: "system", phase: "release", label_key: "templateFacts.semantic.image.label", description_key: "templateFacts.semantic.image.description" },
-          { name: "link", label: "元数据链接", type: "string", nullable: true, source: "system", phase: "release", label_key: "templateFacts.semantic.link.label", description_key: "templateFacts.semantic.link.description" },
+          { name: "bgm.link", label: "Bangumi 链接", type: "string", nullable: true, source: "derived", phase: "release", label_key: "templateFacts.semantic.bgm.link.label", description_key: "templateFacts.semantic.bgm.link.description" },
+          { name: "tmdb.link", label: "TMDB 链接", type: "string", nullable: true, source: "derived", phase: "release", label_key: "templateFacts.semantic.tmdb.link.label", description_key: "templateFacts.semantic.tmdb.link.description" },
         ],
-        functions: [],
-        default_template: { mode: "custom", title_template: "默认标题", body_template: "{{image}}\n默认正文\n{{link}}" },
+        functions: [
+          { name: "link", description: "插入链接", arguments: ["target", "label"] },
+          { name: "image", description: "插入指定图片", arguments: ["target"] },
+        ],
+        default_template: { mode: "custom", title_template: "默认标题", body_template: "{{image}}\n默认正文\n{{link(bgm.link, 'Bangumi')}}\n{{link(tmdb.link, 'TMDB')}}" },
         sample: { values: {} },
       }),
     })),
@@ -280,6 +284,13 @@ async function mockSettingsReads(page: Page) {
         title: "预览标题",
         body: "默认正文",
         valid: true,
+        attachments: {
+          image: { source: "automatic" },
+          links: [
+            { provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" },
+            { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" },
+          ],
+        },
         errors: [],
         warnings: [],
         variables: [],
@@ -536,32 +547,100 @@ test.describe("settings functional closure", () => {
 test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
 
-  test("通知模板预览说明图片与链接的验证方式且不溢出", async ({ page }, testInfo) => {
+  test("通知模板页：按渠道实时渲染预览且不溢出", async ({ page }, testInfo) => {
     await openSettings(page, "/#/settings/notifications");
     const settings = page.getByRole("dialog");
     await settings.getByRole("button", { name: "新建渠道" }).click();
-    const editor = page.getByRole("dialog", { name: "新建通知渠道" });
-    await expect(editor).toBeVisible();
-    await editor.getByRole("combobox", { name: "下载已提交的模板模式" }).click();
-    await page.getByRole("option", { name: "自定义模板" }).click();
-    await expect(editor.getByLabel("正文模板")).toHaveValue("{{image}}\n默认正文\n{{link}}");
-    await editor.getByRole("button", { name: "预览", exact: true }).click();
+    const channelPage = page.getByRole("dialog", { name: "新建通知渠道" });
+    await expect(channelPage).toBeVisible();
+    await channelPage.getByRole("button", { name: "编辑模板" }).click();
 
-    const hint = editor.getByText("此处仅预览文本；图片与链接请保存后通过测试发送检查。");
-    await expect(hint).toBeVisible();
-    await expect(editor.getByText("正文：默认正文", { exact: true })).toBeVisible();
-    await hint.scrollIntoViewIfNeeded();
-    await expect(hint).toBeInViewport();
-    const hintBox = await hint.boundingBox();
+    const editor = page.getByRole("dialog", { name: "编辑模板" });
+    await expect(editor).toBeVisible();
+    // 手机形态下模板页先出事件列表，点进事件才是编辑器（钻取）。
+    if ((await editor.getByRole("radio", { name: "自定义模板" }).count()) === 0) {
+      await editor.locator(".settings-notifications-tpl-row", { hasText: "下载已提交" }).click();
+    }
+    await editor.getByRole("radio", { name: "自定义模板" }).click();
+    await expect(editor.getByLabel("正文模板")).toHaveValue("{{image}}\n默认正文\n{{link(bgm.link, 'Bangumi')}}\n{{link(tmdb.link, 'TMDB')}}");
+
+    // 实时预览（无按钮）：正文渲染进 Telegram 形态卡片，{{image}} 指令渲染图片占位块。
+    const preview = editor.locator(".settings-notifications-preview");
+    await expect(preview.getByText("默认正文", { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(preview.getByText("节目图片（封面或占位图）")).toBeVisible();
+    // 几何断言：预览卡片在弹窗内、页面无横向滚动。
+    const previewBox = await preview.boundingBox();
     const editorBox = await editor.boundingBox();
-    expect(hintBox).not.toBeNull();
+    expect(previewBox).not.toBeNull();
     expect(editorBox).not.toBeNull();
-    expect(hintBox!.x).toBeGreaterThanOrEqual(editorBox!.x - 1);
-    expect(hintBox!.x + hintBox!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width + 1);
+    expect(previewBox!.x).toBeGreaterThanOrEqual(editorBox!.x - 1);
+    expect(previewBox!.x + previewBox!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width + 1);
+    if (!isMobile(page)) {
+      // 桌面形态：事件列表在左、编辑器在右并排。
+      const listBox = await editor.locator(".settings-notifications-tpl-list").boundingBox();
+      expect(listBox).not.toBeNull();
+      expect(previewBox!.x).toBeGreaterThan(listBox!.x + listBox!.width - 1);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     const screenshot = testInfo.outputPath("notification-template-preview.png");
     await page.screenshot({ path: screenshot, fullPage: true });
     await testInfo.attach("notification-template-preview", { path: screenshot, contentType: "image/png" });
+  });
+
+  test("渠道列表：两行布局不被动作按钮隔断，⋯ 菜单收纳测试/发送记录/删除", async ({ page }, testInfo) => {
+    const targets = [
+      {
+        id: "target-tg-1", name: "运维群", plugin_kind: "notification", adapter_kind: "telegram",
+        enabled: true, trigger_kinds: ["download_submitted"],
+        config_schema_version: 1, config_status: "available",
+        config: { adapter_kind: "telegram", chat_id: "-1001234567890" },
+        template_set: { language_version: "bansoko-template-1", catalog_version: "notification-catalog-v1", events: {} },
+        has_secret: true, version: 3, updated_at: "2026-08-02T00:00:00Z",
+      },
+      {
+        id: "target-wh-1", name: "自动化", plugin_kind: "notification", adapter_kind: "webhook",
+        enabled: false, trigger_kinds: [],
+        config_schema_version: 1, config_status: "available",
+        config: { adapter_kind: "webhook", auth_kind: "none", auth_header_name: null },
+        template_set: { language_version: "bansoko-template-1", catalog_version: "notification-catalog-v1", events: {} },
+        has_secret: true, has_signing_secret: true, version: 1, updated_at: "2026-08-02T00:00:00Z",
+      },
+    ];
+    await openSettings(page, "/#/settings/notifications");
+    // 覆盖只读列表 mock：page.route 后注册优先，reload 后生效。
+    await page.route("**/api/v1/plugin-targets", (route) =>
+      getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ targets }) })),
+    );
+    await page.reload();
+
+    const settings = page.getByRole("dialog");
+    const firstRow = settings.locator(".settings-notifications-item").first();
+    await expect(firstRow.getByText("运维群")).toBeVisible({ timeout: 10000 });
+    // 已签名徽章只在带签名密钥的 webhook 上出现。
+    await expect(settings.locator(".settings-notifications-item", { hasText: "自动化" }).getByText("已签名")).toBeVisible();
+    await expect(firstRow.getByText("已签名")).toHaveCount(0);
+
+    // 几何断言：第二行（已开通事件）在第一行之下且通栏，不被动作按钮隔断。
+    const row1Box = await firstRow.locator(".settings-notifications-row").boundingBox();
+    const subBox = await firstRow.locator(".settings-notifications-events").boundingBox();
+    expect(row1Box).not.toBeNull();
+    expect(subBox).not.toBeNull();
+    expect(subBox!.y).toBeGreaterThanOrEqual(row1Box!.y + row1Box!.height - 1);
+    expect(subBox!.width).toBeGreaterThan(row1Box!.width * 0.8);
+    // 动作区只剩 编辑 + ⋯ 两个按钮。
+    await expect(firstRow.locator(".settings-notifications-row button")).toHaveCount(2);
+
+    // ⋯ 菜单：测试（子菜单）/发送记录/删除。
+    await firstRow.getByRole("button", { name: "更多操作" }).click();
+    await expect(page.getByRole("menuitem", { name: "测试" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "发送记录" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "删除" })).toBeVisible();
+    // 等浮层进场过渡结束再截图（opacity 过渡期间 toBeVisible 已判定可见）。
+    await page.waitForTimeout(300);
+    // 默认视口截图：fullPage 会先缩放视口，导致浮层菜单在截图前关闭。
+    const screenshot = testInfo.outputPath("notification-list-menu.png");
+    await page.screenshot({ path: screenshot });
+    await testInfo.attach("notification-list-menu", { path: screenshot, contentType: "image/png" });
   });
 
   test("provider 配置页可达：AniBT 与 Mikan", async ({ page }) => {

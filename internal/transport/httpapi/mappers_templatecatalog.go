@@ -22,7 +22,20 @@ func mapNotificationTemplateCatalog(catalog templatecatalogapplication.Notificat
 }
 
 func mapNotificationTemplatePreview(preview templatecatalogapplication.NotificationTemplatePreview) generated.NotificationTemplatePreview {
+	attachments := generated.NotificationTemplatePreviewAttachments{Links: []generated.NotificationTemplatePreviewLink{}}
+	if preview.Attachments.Image != nil {
+		attachments.Image = &generated.NotificationTemplatePreviewImage{
+			Source: generated.NotificationTemplatePreviewImageSource(preview.Attachments.Image.Source),
+			Url:    copyString(preview.Attachments.Image.URL),
+		}
+	}
+	for _, link := range preview.Attachments.Links {
+		attachments.Links = append(attachments.Links, generated.NotificationTemplatePreviewLink{
+			Provider: generated.NotificationTemplatePreviewLinkProvider(link.Provider), Label: link.Label, Url: link.URL,
+		})
+	}
 	return generated.NotificationTemplatePreview{
+		Attachments:     attachments,
 		Body:            preview.Body,
 		CatalogVersion:  generated.NotificationTemplatePreviewCatalogVersion(preview.CatalogVersion),
 		Errors:          mapTemplateSourceErrors(preview.Errors),

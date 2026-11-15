@@ -67,7 +67,7 @@ func richDeliveryRow(t *testing.T, facts map[string]any) deliveryRow {
 	return deliveryRow{
 		adapterKind: "telegram", adapterConfigJSON: []byte(`{"adapter_kind":"telegram","chat_id":"999"}`),
 		deliveryKind: "business", triggerKind: "download_submitted", payload: payload,
-		titleTemplate: "{{anime.title}}", bodyTemplate: "{{image}}\n{{release.title}}\n{{link}}",
+		titleTemplate: "{{anime.title}}", bodyTemplate: "{{image}}\n{{release.title}}\n{{link(bgm.link, 'Bangumi')}}\n{{link(tmdb.link, 'TMDB')}}",
 	}
 }
 
@@ -108,6 +108,39 @@ func TestTelegramRichMessageUsesEscapedHTMLPhotoAndMetadataLinks(t *testing.T) {
 	}
 	if resolver.request.ManagedAnimeID != "" || resolver.request.ReleaseSource != "mikan" || resolver.request.BGMID != "123" || resolver.request.TMDBID != "456" {
 		t.Fatalf("resolver request=%+v", resolver.request)
+	}
+}
+
+func TestTelegramEscapedHTMLLeavesSlashesUnchanged(t *testing.T) {
+	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
+	row := richDeliveryRow(t, map[string]any{"anime.title": "Show", "release.title": "Episode"})
+	req, _, err := handler.buildTelegramMessageRequest(context.Background(), row, outboundMessage{Title: "/start <&>", Body: "路径 /media/Show"}, `{"bot_token":"123:abc"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]string
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	text := payload["text"]
+	if !strings.Contains(text, "/start &lt;&amp;&gt;") || !strings.Contains(text, "路径 /media/Show") || strings.Contains(text, `\/`) {
+		t.Fatalf("Telegram escaped text = %q", text)
+	}
+}
+
+func TestCustomNotificationImageAndLinkUseValidatedTemplateValues(t *testing.T) {
+	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
+	row := richDeliveryRow(t, map[string]any{"anime.title": "Custom", "release.title": "One shot"})
+	row.bodyTemplate = "{{release.title}}\n{{image('https://example.com/cover.jpg')}}\n{{link('https://example.com/release', 'Release page')}}"
+	message, err := handler.resolveOutboundMessage(context.Background(), row, "Custom", "One shot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Image == nil || message.Image.Source != "custom" || message.Image.URL != "https://example.com/cover.jpg" {
+		t.Fatalf("custom image = %+v", message.Image)
+	}
+	if len(message.Links) != 1 || message.Links[0].Provider != "custom" || message.Links[0].Label != "Release page" {
+		t.Fatalf("custom links = %+v", message.Links)
 	}
 }
 

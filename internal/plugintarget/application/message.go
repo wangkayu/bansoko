@@ -54,13 +54,22 @@ func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row d
 	if !attachments.Image {
 		return message, nil
 	}
+	if attachments.ImageSource == "custom" {
+		if imageURL := notification.SafeExternalImageURL(attachments.ImageURL); imageURL != "" {
+			message.Image = &outboundImage{Source: "custom", URL: imageURL}
+		} else {
+			message.Image = placeholderNotificationImage()
+		}
+		return message, nil
+	}
 
 	request := plugintargetport.NotificationImageRequest{
-		ManagedAnimeID: row.managedAnimeID.String,
-		ReleaseSource:  notificationFactString(facts, "release.src"),
-		BGMID:          notificationFactString(facts, "bgm.id"),
-		TMDBID:         notificationFactString(facts, "tmdb.id"),
-		TMDBKind:       notificationFactString(facts, "tmdb.kind"),
+		ManagedAnimeID:  row.managedAnimeID.String,
+		ReleaseSource:   notificationFactString(facts, "release.src"),
+		BGMID:           notificationFactString(facts, "bgm.id"),
+		TMDBID:          notificationFactString(facts, "tmdb.id"),
+		TMDBKind:        notificationFactString(facts, "tmdb.kind"),
+		PreferredSource: attachments.ImageSource,
 	}
 	if h.imageResolver != nil {
 		resolved, resolveErr := h.imageResolver.ResolveNotificationImage(ctx, request)

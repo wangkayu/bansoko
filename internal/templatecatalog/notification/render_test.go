@@ -149,8 +149,15 @@ func TestEveryDefaultRendersWithItsSampleFacts(t *testing.T) {
 				t.Fatalf("%s/%s default does not render: %+v", trigger, locale, message.Errors)
 			}
 			refs := TemplateReferences(title, body)
-			if !refs[ImageVariable] || !refs[LinkVariable] {
-				t.Fatalf("%s/%s default has not migrated to semantic attachments: %v", trigger, locale, refs)
+			if !refs[ImageVariable] || refs["link"] {
+				t.Fatalf("%s/%s default has invalid semantic attachments: %v", trigger, locale, refs)
+			}
+			sample := Sample(trigger)
+			if _, exists := sample["bgm.id"]; exists && !refs[BGMLinkVariable] {
+				t.Fatalf("%s/%s default lost its Bangumi link: %v", trigger, locale, refs)
+			}
+			if _, exists := sample["tmdb.id"]; exists && !refs[TMDBLinkVariable] {
+				t.Fatalf("%s/%s default lost its TMDB link: %v", trigger, locale, refs)
 			}
 		}
 	}

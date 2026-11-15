@@ -79,22 +79,23 @@ var _ plugintargetport.NotificationImageResolver = (*NotificationImageResolver)(
 
 func (r *NotificationImageResolver) ResolveNotificationImage(ctx context.Context, request plugintargetport.NotificationImageRequest) (plugintargetport.NotificationImage, error) {
 	var lastErr error
-	if r != nil && r.coverStore != nil && r.covers != nil && request.ManagedAnimeID != "" {
+	if r != nil && r.coverStore != nil && r.covers != nil && request.ManagedAnimeID != "" &&
+		(request.PreferredSource == "" || request.PreferredSource == "anibt" || request.PreferredSource == "mikan") {
 		image, found, err := r.providerCover(ctx, request.ManagedAnimeID)
 		if err != nil {
 			lastErr = err
-		} else if found {
+		} else if found && (request.PreferredSource == "" || image.Source == request.PreferredSource) {
 			return image, nil
 		}
 	}
-	if r != nil && r.posters != nil && request.BGMID != "" {
+	if r != nil && r.posters != nil && request.BGMID != "" && (request.PreferredSource == "" || request.PreferredSource == "bgm") {
 		imageURL, err := r.posters.PosterSourceURL(ctx, request.BGMID)
 		if err == nil && imageURL != "" {
 			return plugintargetport.NotificationImage{Source: "bgm", URL: imageURL}, nil
 		}
 		lastErr = err
 	}
-	if r != nil && request.TMDBID != "" && (request.TMDBKind == "tv" || request.TMDBKind == "movie") {
+	if r != nil && request.TMDBID != "" && (request.TMDBKind == "tv" || request.TMDBKind == "movie") && (request.PreferredSource == "" || request.PreferredSource == "tmdb") {
 		imageURL, err := r.tmdb.TMDBPosterURL(ctx, request.TMDBKind, request.TMDBID)
 		if err == nil && imageURL != "" {
 			return plugintargetport.NotificationImage{Source: "tmdb", URL: imageURL}, nil

@@ -6,10 +6,9 @@ import { t } from "../../lib/i18n";
 import type { PluginTargetConfig } from "../../lib/api/client";
 import { SettingsNotifications } from "./SettingsNotifications";
 
-// The Telegram notification target form's regression (the E2 telegram channel): chat_id required,
-//   the bot_token secret's three states (create is set / edit is keep, replace, remove), and test
-//   delivery keyed by target id + expected_version, independent of adapter. The template catalog
-//   request is stubbed with the system default templates throughout.
+// The notification settings regression suite: channel rows (badges, the ⋯ menu's test / history /
+//   delete), the two-page edit dialog (channel page with the trigger grid, template page with the
+//   per-event editor and live preview), and the secret three-state / If-Match contract.
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -58,6 +57,18 @@ function telegramTarget(overrides: Partial<PluginTargetConfig> = {}): PluginTarg
     has_secret: true,
     version: 3,
     updated_at: "2026-08-02T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function webhookTarget(overrides: Partial<PluginTargetConfig> = {}): PluginTargetConfig {
+  return {
+    ...telegramTarget(),
+    id: "target-wh-1",
+    name: "自动化",
+    adapter_kind: "webhook",
+    config: { adapter_kind: "webhook", auth_kind: "none", auth_header_name: null },
+    has_signing_secret: false,
     ...overrides,
   };
 }
@@ -117,6 +128,9 @@ function stubFetch(
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (init?.method === "DELETE" && url.includes("/plugin-targets/")) {
+      return new Response(null, { status: 204 });
+    }
     if (init?.method === "POST" && url.includes("/template-previews/notification")) {
       return new Response(JSON.stringify({
         language_version: "bansoko-template-1",
@@ -124,6 +138,10 @@ function stubFetch(
         title: "预览标题",
         body: "预览正文",
         valid: true,
+        attachments: {
+          image: { source: "automatic" },
+          links: [{ provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" }],
+        },
         errors: [],
         warnings: [],
         variables: [],
@@ -187,6 +205,18 @@ function patchCalls() {
   );
 }
 
+function deleteCalls() {
+  return fetchMock.mock.calls.filter(
+    ([input, init]) => String(input).includes("/plugin-targets/") && init?.method === "DELETE",
+  );
+}
+
+function previewCalls() {
+  return fetchMock.mock.calls.filter(
+    ([input, init]) => String(input).includes("/template-previews/notification") && init?.method === "POST",
+  );
+}
+
 function postBody(call: unknown[]) {
   return JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>;
 }
@@ -199,7 +229,85 @@ async function openNewDialog() {
   await screen.findByRole("dialog");
 }
 
-describe("SettingsNotifications telegram 表单", () => {
+/** From an open channel-page dialog onto the template page. */
+async function openTemplatePage() {
+  fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.template.editEntry") }));
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(dialog).toHaveTextContent(t("settings.notifications.template.pageTitle")));
+  return dialog;
+}
+
+describe("SettingsNotifications 渠道列表", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("列表行：类型、启用、密钥徽章与第二行的已开通事件；仅已签名的 webhook 显示签名徽章", async () => {
+    stubFetch({
+      targets: [
+        telegramTarget(),
+        webhookTarget({ has_signing_secret: true }),
+        webhookTarget({ id: "target-wh-2", name: "未签名渠道", has_signing_secret: false }),
+      ],
+    });
+    renderNotifications();
+
+    const signedRow = (await screen.findByText("自动化")).closest("li")!;
+    expect(within(signedRow as HTMLElement).getByText(t("settings.notifications.signed"))).toBeInTheDocument();
+    const unsignedRow = screen.getByText("未签名渠道").closest("li")!;
+    expect(within(unsignedRow as HTMLElement).queryByText(t("settings.notifications.signed"))).not.toBeInTheDocument();
+
+    const tgRow = screen.getByText("运维群").closest("li")!;
+    expect(within(tgRow as HTMLElement).getByText(t("settings.notifications.enabledEvents"))).toBeInTheDocument();
+    expect(within(tgRow as HTMLElement).getByText(t("settings.notifications.trigger.download_submitted"))).toBeInTheDocument();
+    expect(within(tgRow as HTMLElement).queryByText(t("settings.notifications.trigger.download_failed"))).not.toBeInTheDocument();
+  });
+
+  it("⋯ 菜单的测试子菜单只列已开通事件；测试按目标 id 提交并轮询到 delivered", async () => {
+    const { toast } = await import("sonner");
+    stubFetch({ targets: [telegramTarget()] });
+    renderNotifications();
+    const user = userEvent.setup();
+
+    const row = (await screen.findByText("运维群")).closest("li")!;
+    await user.click(within(row as HTMLElement).getByRole("button", { name: t("settings.notifications.moreActions") }));
+    await user.click(await screen.findByRole("menuitem", { name: t("settings.notifications.test") }));
+    // Only the target's own trigger_kinds are offered.
+    const menu = await screen.findByRole("menuitem", { name: t("settings.notifications.trigger.download_submitted") });
+    expect(screen.queryByRole("menuitem", { name: t("settings.notifications.trigger.download_failed") })).not.toBeInTheDocument();
+    // The submenu popup keeps pointer-events: none while its opening transition runs; jsdom never
+    //   finishes transitions, so the item is clicked with fireEvent (as overlays.test.tsx does).
+    fireEvent.click(menu);
+
+    await waitFor(() => {
+      const testCall = fetchMock.mock.calls.find(
+        ([input, init]) => String(input).includes("/plugin-targets/target-tg-1/test") && init?.method === "POST",
+      );
+      expect(testCall).toBeDefined();
+      expect(postBody(testCall!)).toMatchObject({ expected_version: 3, trigger_kind: "download_submitted" });
+    });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("settings.notifications.testDelivered")));
+  });
+
+  it("⋯ 菜单删除：确认对话框确认后才发出 DELETE", async () => {
+    stubFetch({ targets: [telegramTarget()] });
+    renderNotifications();
+    const user = userEvent.setup();
+
+    const row = (await screen.findByText("运维群")).closest("li")!;
+    await user.click(within(row as HTMLElement).getByRole("button", { name: t("settings.notifications.moreActions") }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: t("settings.notifications.delete") }));
+
+    expect(deleteCalls()).toHaveLength(0);
+    const confirmDialog = await screen.findByRole("alertdialog");
+    expect(confirmDialog).toHaveTextContent(t("settings.notifications.deleteTitle", { name: "运维群" }));
+    await user.click(within(confirmDialog).getByRole("button", { name: t("settings.notifications.delete") }));
+    await waitFor(() => expect(deleteCalls()).toHaveLength(1));
+    expect(String(deleteCalls()[0]![0])).toContain("/plugin-targets/target-tg-1");
+  });
+});
+
+describe("SettingsNotifications 渠道页", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -210,6 +318,8 @@ describe("SettingsNotifications telegram 表单", () => {
     await openNewDialog();
 
     expect(screen.getByRole("dialog")).toHaveTextContent(t("settings.notifications.newTitle"));
+    // The enable switch lives in the footer now.
+    expect(screen.getByRole("checkbox", { name: t("settings.notifications.enableChannel") })).toBeChecked();
 
     const save = screen.getByRole("button", { name: t("settings.notifications.save") });
     // Name and bot_token present with chat_id empty -> cannot save.
@@ -261,38 +371,6 @@ describe("SettingsNotifications telegram 表单", () => {
     });
   });
 
-  it("保存时模板编译失败：列出事件、字段、位置和原因", async () => {
-    stubFetch({
-      targets: [telegramTarget()],
-      patchError: {
-        code: "TEMPLATE_INVALID",
-        message: "The request failed typed validation.",
-        details: [
-          {
-            field: "template_set.events.file_operation_completed.title_template",
-            code: "invalid_expression",
-            message: "未知变量 \"anime.nope\"",
-            start: 7,
-            end: 21,
-          },
-        ],
-      },
-    });
-    renderNotifications();
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.edit") }));
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.save") }));
-    const where = `${t("settings.notifications.trigger.file_operation_completed")} · ${t("settings.notifications.template.titleField")}`;
-    expect(
-      await screen.findByText(
-        t("settings.notifications.template.errorLine", {
-          where,
-          position: t("settings.notifications.template.errorAt", { n: 7 }),
-          message: "未知变量 \"anime.nope\"",
-        }),
-      ),
-    ).toBeInTheDocument();
-  });
-
   it("编辑 telegram：replace 态必须填新 token；提交 replace secret", async () => {
     stubFetch({ targets: [telegramTarget()] });
     renderNotifications();
@@ -314,44 +392,150 @@ describe("SettingsNotifications telegram 表单", () => {
     });
   });
 
-  it("telegram 目标测试投递：按目标 id 提交 trigger_kind 并轮询到 delivered", async () => {
-    const { toast } = await import("sonner");
-    stubFetch({ targets: [telegramTarget()] });
-    renderNotifications();
-
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.test") }));
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.trigger.download_submitted") }));
-
-    await waitFor(() => {
-      const testCall = fetchMock.mock.calls.find(
-        ([input, init]) => String(input).includes("/plugin-targets/target-tg-1/test") && init?.method === "POST",
-      );
-      expect(testCall).toBeDefined();
-      expect(postBody(testCall!)).toMatchObject({ expected_version: 3, trigger_kind: "download_submitted" });
+  it("保存时模板编译失败：列出事件、字段、位置和原因，点击跳到对应事件的模板编辑器", async () => {
+    stubFetch({
+      targets: [telegramTarget()],
+      patchError: {
+        code: "TEMPLATE_INVALID",
+        message: "The request failed typed validation.",
+        details: [
+          {
+            field: "template_set.events.file_operation_completed.title_template",
+            code: "invalid_expression",
+            message: "未知变量 \"anime.nope\"",
+            start: 7,
+            end: 21,
+          },
+        ],
+      },
     });
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("settings.notifications.testDelivered")));
+    renderNotifications();
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.edit") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.save") }));
+    const where = `${t("settings.notifications.trigger.file_operation_completed")} · ${t("settings.notifications.template.titleField")}`;
+    const errorButton = await screen.findByRole("button", {
+      name: t("settings.notifications.template.errorLine", {
+        where,
+        position: t("settings.notifications.template.errorAt", { n: 7 }),
+        message: "未知变量 \"anime.nope\"",
+      }),
+    });
+    fireEvent.click(errorButton);
+    // Lands on the template page with that event's editor selected.
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(dialog).toHaveTextContent(t("settings.notifications.template.pageTitle")));
+    expect(dialog).toHaveTextContent(t("settings.notifications.trigger.file_operation_completed"));
+    expect(screen.getByRole("radio", { name: t("settings.notifications.template.modeDefault") })).toBeInTheDocument();
+  });
+
+  it("新建 webhook：签名密钥只写入请求；过短不可保存；未填时提示", async () => {
+    stubFetch();
+    renderNotifications();
+    await openNewDialog();
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.field.type") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.adapter.webhook") }));
+
+    fireEvent.change(screen.getByLabelText(t("settings.notifications.field.name")), { target: { value: "自动化" } });
+    fireEvent.change(screen.getByLabelText(t("settings.notifications.field.endpointUrl")), { target: { value: "https://example.test/hook" } });
+    expect(screen.getByText(t("settings.notifications.unsignedHint"))).toBeInTheDocument();
+
+    const secretInput = screen.getByLabelText(t("settings.notifications.field.webhookSigningSecret"));
+    expect(secretInput).toHaveAttribute("type", "password");
+    const save = screen.getByRole("button", { name: t("settings.notifications.save") });
+    fireEvent.change(secretInput, { target: { value: "short" } });
+    expect(save).toBeDisabled();
+    expect(screen.getByText(t("settings.notifications.field.webhookSigningSecretTooShort"))).toBeInTheDocument();
+
+    fireEvent.change(secretInput, { target: { value: "whsec_0123456789abcdef" } });
+    expect(save).toBeEnabled();
+    expect(screen.queryByText(t("settings.notifications.unsignedHint"))).not.toBeInTheDocument();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(postCalls()).toHaveLength(1));
+    expect(postBody(postCalls()[0]!)).toMatchObject({
+      adapter_kind: "webhook",
+      secret: {
+        mode: "set",
+        value: { adapter_kind: "webhook", endpoint_url: "https://example.test/hook", signing_secret: "whsec_0123456789abcdef" },
+      },
+    });
+  });
+
+  it("编辑 webhook：签名密钥从不回显；保留时不提交密钥；未签名显示提示", async () => {
+    stubFetch({ targets: [webhookTarget()] });
+    renderNotifications();
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.edit") }));
+    await screen.findByRole("dialog");
+
+    expect(screen.getByLabelText(t("settings.notifications.field.webhookSigningSecret"))).toHaveValue("");
+    expect(screen.getByText(t("settings.notifications.unsignedHint"))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.save") }));
+    await waitFor(() => expect(patchCalls()).toHaveLength(1));
+    expect(postBody(patchCalls()[0]!).secret).toEqual({ mode: "keep" });
   });
 });
 
-describe("SettingsNotifications 模板变量", () => {
+describe("SettingsNotifications 模板页", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("点击变量插入到最后编辑的输入框", async () => {
+  it("事件列表按启用状态分组并列出注册表的全部事件，标注自定义/默认", async () => {
+    const custom = { mode: "custom", title_template: "发现 {{release.title}}", body_template: "{{anime.title}}" };
+    const base = templateSet();
+    stubFetch({
+      targets: [
+        telegramTarget({
+          template_set: { ...base, events: { ...base.events, release_discovered: custom } } as PluginTargetConfig["template_set"],
+        }),
+      ],
+    });
+    renderNotifications();
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.edit") }));
+    const dialog = await openTemplatePage();
+
+    const list = dialog.querySelector(".settings-notifications-tpl-list")!;
+    expect(within(list as HTMLElement).getByText(new RegExp(t("settings.notifications.template.enabledGroup")))).toBeInTheDocument();
+    expect(within(list as HTMLElement).getByText(new RegExp(t("settings.notifications.template.disabledGroup")))).toBeInTheDocument();
+    for (const kind of ALL_TRIGGER_KINDS) {
+      expect(within(list as HTMLElement).getByText(t(`settings.notifications.trigger.${kind}` as never))).toBeInTheDocument();
+    }
+    // The release_discovered event keeps its custom badge, the rest default.
+    expect(within(list as HTMLElement).getAllByText(t("settings.notifications.template.badgeCustom"))).toHaveLength(1);
+  });
+
+  it("渠道页触发事件区显示模板统计并带编辑模板入口；自定义事件在复选框上有圆点", async () => {
+    const custom = { mode: "custom", title_template: "x", body_template: "y" };
+    const base = templateSet();
+    stubFetch({
+      targets: [
+        telegramTarget({
+          template_set: { ...base, events: { ...base.events, download_submitted: custom } } as PluginTargetConfig["template_set"],
+        }),
+      ],
+    });
+    renderNotifications();
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.edit") }));
+    await screen.findByRole("dialog");
+
+    expect(screen.getByText(t("settings.notifications.customTemplateCount", { n: 1 }))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings.notifications.template.editEntry") })).toBeInTheDocument();
+  });
+
+  it("切换自定义模板从默认文案开始；点击变量插入到最后编辑的输入框", async () => {
     stubFetch();
     renderNotifications();
     await openNewDialog();
+    await openTemplatePage();
 
-    const event = t("settings.notifications.trigger.download_submitted");
-    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.template.modeLabel", { event }) }));
-    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.template.modeCustom") }));
+    // The pane opens on the registry's first event (download_submitted).
+    await userEvent.click(await screen.findByRole("radio", { name: t("settings.notifications.template.modeCustom") }));
 
-    const title = (await screen.findAllByLabelText(t("settings.notifications.template.titleField")))[0]!;
-    const body = screen.getAllByLabelText(t("settings.notifications.template.bodyField"))[0]!;
-    expect(title).toHaveValue("默认标题");
+    const title = await screen.findByLabelText(t("settings.notifications.template.titleField"));
+    const body = screen.getByLabelText(t("settings.notifications.template.bodyField"));
+    await waitFor(() => expect(title).toHaveValue("默认标题"));
 
-    const catalog = screen.getAllByText(t("settings.notifications.template.variables", { n: 2 }))[0]!.closest("details")!;
+    const catalog = screen.getByText(t("settings.notifications.template.variables", { n: 2 })).closest("details")!;
     expect(within(catalog as HTMLElement).getByText(t("templateFacts.roots.ep"))).toBeInTheDocument();
 
     fireEvent.focus(title);
@@ -360,32 +544,44 @@ describe("SettingsNotifications 模板变量", () => {
     expect(body).toHaveValue("默认正文");
   });
 
-  it("文本预览说明图片与链接需要测试发送检查", async () => {
+  it("编辑时实时按渠道渲染预览：请求携带当前模板文本，结果按 Telegram 形态绘制", async () => {
     stubFetch();
     renderNotifications();
     await openNewDialog();
+    await openTemplatePage();
 
-    const event = t("settings.notifications.trigger.download_submitted");
-    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.template.modeLabel", { event }) }));
-    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.template.modeCustom") }));
-    await userEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
+    await userEvent.click(await screen.findByRole("radio", { name: t("settings.notifications.template.modeCustom") }));
+    const title = await screen.findByLabelText(t("settings.notifications.template.titleField"));
+    await waitFor(() => expect(title).toHaveValue("默认标题"));
+    fireEvent.change(title, { target: { value: "标题 {{anime.title}}" } });
 
-    expect(await screen.findByText(t("settings.notifications.template.previewAttachments"))).toBeInTheDocument();
-    expect(screen.getByText("预览正文")).toBeInTheDocument();
+    await screen.findByText("预览正文");
+    await waitFor(() => {
+      const call = previewCalls().at(-1);
+      expect(call).toBeDefined();
+      expect(postBody(call!)).toMatchObject({
+        trigger_kind: "download_submitted",
+        title_template: "标题 {{anime.title}}",
+        body_template: "默认正文",
+      });
+    });
+    expect(screen.getByText(t("settings.notifications.template.previewAs", { adapter: t("settings.notifications.adapter.telegram") }))).toBeInTheDocument();
+  });
+
+  it("恢复默认把事件切回系统模板", async () => {
+    stubFetch();
+    renderNotifications();
+    await openNewDialog();
+    await openTemplatePage();
+
+    await userEvent.click(await screen.findByRole("radio", { name: t("settings.notifications.template.modeCustom") }));
+    await screen.findByLabelText(t("settings.notifications.template.titleField"));
+    await userEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.resetDefault") }));
+
+    expect(screen.queryByLabelText(t("settings.notifications.template.titleField"))).not.toBeInTheDocument();
+    await screen.findByText(t("settings.notifications.template.followDefault"));
   });
 });
-
-function webhookTarget(overrides: Partial<PluginTargetConfig> = {}): PluginTargetConfig {
-  return {
-    ...telegramTarget(),
-    id: "target-wh-1",
-    name: "自动化",
-    adapter_kind: "webhook",
-    config: { adapter_kind: "webhook", auth_kind: "none", auth_header_name: null },
-    has_signing_secret: false,
-    ...overrides,
-  };
-}
 
 describe("SettingsNotifications 工作流事件", () => {
   afterEach(() => {
@@ -428,20 +624,6 @@ describe("SettingsNotifications 工作流事件", () => {
     expect(Object.keys(set.events).sort()).toEqual([...ALL_TRIGGER_KINDS].sort());
   });
 
-  it("注册表里的每个触发事件都有模板编辑器", async () => {
-    stubFetch();
-    renderNotifications();
-    await openNewDialog();
-
-    for (const kind of ALL_TRIGGER_KINDS) {
-      const label = t(`settings.notifications.trigger.${kind}` as never);
-      expect(
-        screen.getByRole("combobox", { name: t("settings.notifications.template.modeLabel", { event: label }) }),
-      ).toBeInTheDocument();
-    }
-    expect(screen.getByText(t("settings.notifications.template.defaultHint"))).toBeInTheDocument();
-  });
-
   it("触发事件列表加载失败：显示错误并可重试，不静默渲染空列表", async () => {
     stubFetch({ triggerKindsError: true });
     renderNotifications();
@@ -465,59 +647,5 @@ describe("SettingsNotifications 工作流事件", () => {
     await waitFor(() => expect(patchCalls()).toHaveLength(1));
     const set = postBody(patchCalls()[0]!).template_set as { events: Record<string, unknown> };
     expect(set.events.release_discovered).toEqual(custom);
-  });
-
-  it("新建 webhook：签名密钥只写入请求；过短不可保存；未填时提示", async () => {
-    stubFetch();
-    renderNotifications();
-    await openNewDialog();
-    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.field.type") }));
-    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.adapter.webhook") }));
-
-    fireEvent.change(screen.getByLabelText(t("settings.notifications.field.name")), { target: { value: "自动化" } });
-    fireEvent.change(screen.getByLabelText(t("settings.notifications.field.endpointUrl")), { target: { value: "https://example.test/hook" } });
-    expect(screen.getByText(t("settings.notifications.unsignedHint"))).toBeInTheDocument();
-
-    const secretInput = screen.getByLabelText(t("settings.notifications.field.webhookSigningSecret"));
-    expect(secretInput).toHaveAttribute("type", "password");
-    const save = screen.getByRole("button", { name: t("settings.notifications.save") });
-    fireEvent.change(secretInput, { target: { value: "short" } });
-    expect(save).toBeDisabled();
-    expect(screen.getByText(t("settings.notifications.field.webhookSigningSecretTooShort"))).toBeInTheDocument();
-
-    fireEvent.change(secretInput, { target: { value: "whsec_0123456789abcdef" } });
-    expect(save).toBeEnabled();
-    expect(screen.queryByText(t("settings.notifications.unsignedHint"))).not.toBeInTheDocument();
-    fireEvent.click(save);
-
-    await waitFor(() => expect(postCalls()).toHaveLength(1));
-    expect(postBody(postCalls()[0]!)).toMatchObject({
-      adapter_kind: "webhook",
-      secret: {
-        mode: "set",
-        value: { adapter_kind: "webhook", endpoint_url: "https://example.test/hook", signing_secret: "whsec_0123456789abcdef" },
-      },
-    });
-  });
-
-  it("编辑 webhook：签名密钥从不回显；保留时不提交密钥；未签名显示提示", async () => {
-    stubFetch({ targets: [webhookTarget()] });
-    renderNotifications();
-    expect(await screen.findByText(t("settings.notifications.unsigned"))).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.edit") }));
-    await screen.findByRole("dialog");
-
-    expect(screen.getByLabelText(t("settings.notifications.field.webhookSigningSecret"))).toHaveValue("");
-    expect(screen.getByText(t("settings.notifications.unsignedHint"))).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.save") }));
-    await waitFor(() => expect(patchCalls()).toHaveLength(1));
-    expect(postBody(patchCalls()[0]!).secret).toEqual({ mode: "keep" });
-  });
-
-  it("已签名的 webhook 不显示未签名提示", async () => {
-    stubFetch({ targets: [webhookTarget({ has_signing_secret: true })] });
-    renderNotifications();
-    expect(await screen.findByText("自动化")).toBeInTheDocument();
-    expect(screen.queryByText(t("settings.notifications.unsigned"))).not.toBeInTheDocument();
   });
 });

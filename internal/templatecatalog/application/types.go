@@ -113,7 +113,24 @@ type NotificationTemplatePreviewLanguageVersion string
 
 const NotificationTemplatePreviewLanguageVersionBansokoTemplate1 NotificationTemplatePreviewLanguageVersion = "bansoko-template-1"
 
+type NotificationTemplatePreviewImage struct {
+	Source string
+	URL    *string
+}
+
+type NotificationTemplatePreviewLink struct {
+	Provider string
+	Label    string
+	URL      string
+}
+
+type NotificationTemplatePreviewAttachments struct {
+	Image *NotificationTemplatePreviewImage
+	Links []NotificationTemplatePreviewLink
+}
+
 type NotificationTemplatePreview struct {
+	Attachments     NotificationTemplatePreviewAttachments
 	Body            string
 	CatalogVersion  NotificationTemplatePreviewCatalogVersion
 	Errors          []TemplateSourceError

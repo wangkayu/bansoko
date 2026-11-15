@@ -626,10 +626,11 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			return fail(reasonCode, reasonDetail)
 		}
 		render := map[string]any{
-			"renderer":        "anime.preview_file.v2",
-			"naming_renderer": naming.RendererVersion,
-			"target":          targetPath,
-			"source":          sourcePath,
+			"renderer":          "anime.preview_file.v2",
+			"naming_renderer":   naming.RendererVersion,
+			"notification_root": rendered.NotificationRoot,
+			"target":            targetPath,
+			"source":            sourcePath,
 		}
 		if varsDigest != "" {
 			render["vars_digest"] = varsDigest

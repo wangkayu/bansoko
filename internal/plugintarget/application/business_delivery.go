@@ -108,6 +108,9 @@ func (s *Service) enqueueForTargetWithKey(ctx context.Context, tx *sql.Tx, targe
 	if err != nil {
 		return err
 	}
+	if err := enrichBusinessDeliveryLinkFacts(ctx, tx, facts); err != nil {
+		return err
+	}
 	frozenPayload, err := deliverypayload.Encode(request.TriggerKind, facts)
 	if err != nil {
 		return fmt.Errorf("encode business delivery payload: %w", err)

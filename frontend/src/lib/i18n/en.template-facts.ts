@@ -19,11 +19,26 @@ export const enTemplateFactsCopy = {
   semantic: {
     image: {
       label: "Show image",
-      description: "Insert an image attachment. Uses the provider cover, bound Bangumi/TMDB poster, or built-in placeholder. Template-provided image URLs are not accepted.",
+      description: "Insert an image attachment. Automatically uses a provider cover, bound Bangumi/TMDB poster, or built-in placeholder.",
     },
-    link: {
-      label: "Metadata links",
-      description: "Insert links to bound Bangumi/TMDB entries. No link is emitted without a valid binding.",
+    bgm: {
+      link: { label: "Bangumi link", description: "Safe page URL of the bound Bangumi entry." },
+      image: { label: "Bangumi image", description: "Use the bound Bangumi poster, falling back to the built-in placeholder." },
+    },
+    tmdb: {
+      link: { label: "TMDB link", description: "Safe page URL of the bound TMDB entry." },
+      image: { label: "TMDB image", description: "Use the bound TMDB poster, falling back to the built-in placeholder." },
+    },
+    anibt: {
+      link: { label: "AniBT release link", description: "Safe page URL of the current AniBT release; empty for other providers." },
+      image: { label: "AniBT image", description: "Use the current AniBT work cover, falling back to the built-in placeholder." },
+    },
+    mikan: {
+      link: { label: "Mikan release link", description: "Safe page URL of the current Mikan release; empty for other providers." },
+      image: { label: "Mikan image", description: "Use the current Mikan work cover, falling back to the built-in placeholder." },
+    },
+    download: {
+      link: { label: "Download link", description: "Download URL without a passkey, token, or other credential; empty when no URL is safe to share." },
     },
   },
   roots: {

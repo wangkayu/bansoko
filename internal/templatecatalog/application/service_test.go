@@ -167,6 +167,26 @@ func TestPreviewNotificationNormal(t *testing.T) {
 	}
 }
 
+func TestPreviewNotificationReturnsStructuredAttachments(t *testing.T) {
+	service := NewService()
+	preview, err := service.PreviewNotification(context.Background(), NotificationTemplatePreviewInput{
+		BodyTemplate:    "{{release.title}}\n{{image(bgm.image)}}\n{{link(download.link, '下载')}}",
+		CatalogVersion:  NotificationTemplatePreviewInputCatalogVersionNotificationCatalogV1,
+		LanguageVersion: NotificationTemplatePreviewInputLanguageVersionBansokoTemplate1,
+		TitleTemplate:   "{{anime.title}}",
+		TriggerKind:     NotificationTriggerKindDownloadSubmitted,
+	})
+	if err != nil || !preview.Valid {
+		t.Fatalf("preview err=%v errors=%+v", err, preview.Errors)
+	}
+	if preview.Attachments.Image == nil || preview.Attachments.Image.Source != "bgm" || preview.Attachments.Image.URL != nil {
+		t.Fatalf("image attachment = %+v", preview.Attachments.Image)
+	}
+	if len(preview.Attachments.Links) != 1 || preview.Attachments.Links[0].Provider != "download" || preview.Attachments.Links[0].Label != "下载" {
+		t.Fatalf("link attachments = %+v", preview.Attachments.Links)
+	}
+}
+
 func TestPreviewNotificationUnknownVariable(t *testing.T) {
 	service := NewService()
 	preview, err := service.PreviewNotification(context.Background(), NotificationTemplatePreviewInput{
@@ -198,7 +218,7 @@ func TestPreviewNotificationUnknownVariable(t *testing.T) {
 }
 
 // Every text fact has a real sample: a preview that uses all catalog entries
-// renders with no null warnings. Image/link are attachment directives and
+// renders with no null warnings. Image entries are attachment directives and
 // deliberately have no text sample.
 func TestPreviewNotificationSamplesEveryVariable(t *testing.T) {
 	service := NewService()
@@ -206,7 +226,7 @@ func TestPreviewNotificationSamplesEveryVariable(t *testing.T) {
 		variables, _ := notification.Variables(string(trigger))
 		body := ""
 		for _, variable := range variables {
-			if variable.SampleValue == "" && variable.Name != notification.ImageVariable && variable.Name != notification.LinkVariable {
+			if variable.SampleValue == "" && variable.Name != notification.ImageVariable && !strings.HasSuffix(variable.Name, ".image") {
 				t.Fatalf("%s: %s has no sample value", trigger, variable.Name)
 			}
 			body += variable.Name + "={{" + variable.Name + "}}\n"
@@ -531,7 +551,7 @@ func assertFunctions(t *testing.T, functions []TemplateFunction) {
 	t.Helper()
 	want := map[string]bool{
 		"coalesce": true, "defaultIfEmpty": true, "lower": true, "upper": true,
-		"replace": true, "if": true, "eq": true,
+		"replace": true, "if": true, "eq": true, "link": true, "image": true,
 	}
 	if len(functions) != len(want) {
 		t.Errorf("function count = %d, want %d", len(functions), len(want))

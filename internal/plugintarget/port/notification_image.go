@@ -10,6 +10,9 @@ type NotificationImageRequest struct {
 	BGMID          string
 	TMDBID         string
 	TMDBKind       string
+	// PreferredSource is empty for the automatic priority chain, or one of
+	// bgm/tmdb/anibt/mikan for an explicit image(...) variable.
+	PreferredSource string
 }
 
 // NotificationImage is a validated provider image URL. Source identifies the

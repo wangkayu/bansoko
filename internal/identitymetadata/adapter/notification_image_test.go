@@ -51,6 +51,23 @@ func TestNotificationImageResolverSelectsMikanAndAniBTProviderCovers(t *testing.
 	}
 }
 
+func TestNotificationImageResolverHonorsExplicitProvider(t *testing.T) {
+	cache := newMemoryPosterCache()
+	cache.entries["123"] = identitymetadataport.PosterCacheEntry{BGMSubjectID: "123", ImageURL: "https://lain.bgm.tv/pic/cover/l/123.jpg"}
+	resolver := &NotificationImageResolver{
+		coverStore: fakeNotificationCoverStore{cover: notificationCover{provider: "mikan", rawURL: "https://mikanani.me/images/1.jpg"}, found: true},
+		posters:    newPosterTestResolverWithCache("http://unused.invalid", cache),
+	}
+	image, err := resolver.ResolveNotificationImage(context.Background(), plugintargetport.NotificationImageRequest{ManagedAnimeID: "anime-1", BGMID: "123", PreferredSource: "bgm"})
+	if err != nil || image.Source != "bgm" {
+		t.Fatalf("explicit BGM image=%+v err=%v", image, err)
+	}
+	image, err = resolver.ResolveNotificationImage(context.Background(), plugintargetport.NotificationImageRequest{ManagedAnimeID: "anime-1", BGMID: "123", PreferredSource: "anibt"})
+	if err != nil || image.Source != "" || image.URL != "" {
+		t.Fatalf("mismatched explicit provider image=%+v err=%v", image, err)
+	}
+}
+
 func TestNotificationImageResolverUsesCachedBGMPoster(t *testing.T) {
 	cache := newMemoryPosterCache()
 	cache.entries["123"] = identitymetadataport.PosterCacheEntry{BGMSubjectID: "123", ImageURL: "https://lain.bgm.tv/pic/cover/l/123.jpg"}

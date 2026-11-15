@@ -1055,24 +1055,61 @@ h1, h2, h3, h4, h5, h6 {
 .settings-notifications-events-input { display: flex; flex-wrap: wrap; column-gap: 1rem; row-gap: 0.5rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--muted) / 0.3); padding: 0.625rem 0.75rem; }
 .settings-notifications-field-gap { margin-top: 0.75rem; }
 @media (min-width: 640px) { .settings-notifications-responsive { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.settings-notifications-template-card { display: grid; gap: 0.5rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); padding: 0.75rem; }
-.settings-notifications-template-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.settings-notifications-template-fields { display: grid; gap: 0.5rem; margin-top: 0.5rem; }
 .settings-notifications-template-catalog { cursor: pointer; border: 1px solid hsl(var(--border)); border-radius: 0.375rem; background: hsl(var(--muted) / 0.3); padding: 0.375rem 0.625rem; color: hsl(var(--muted-foreground)); }
 .settings-notifications-template-functions { margin-top: 0.375rem; }
-.settings-notifications-template-preview { border: 1px solid hsl(var(--border)); border-radius: 0.375rem; background: hsl(var(--muted) / 0.3); padding: 0.625rem; }
-.settings-notifications-template-preview-status { display: flex; align-items: center; gap: 0.5rem; color: hsl(var(--muted-foreground)); }
-.settings-notifications-template-preview-content { display: grid; gap: 0.25rem; }
 .settings-notifications-template-defaults { display: grid; gap: 0.25rem; margin-top: 0.375rem; color: hsl(var(--muted-foreground)); }
 .settings-notifications-template-copy { margin: 0; overflow-wrap: anywhere; }
 .settings-notifications-template-copy-pre { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
-.settings-notifications-template-label { color: hsl(var(--foreground)); font-weight: 500; }
-.settings-notifications-test-menu-action { justify-content: flex-start; }
 .settings-notifications-template-fallback { margin-top: 0.375rem; }
-.settings-notifications-test-menu { display: grid; width: 10rem; gap: 0.25rem; }
-.settings-notifications-test-menu-label { padding: 0.25rem 0.5rem; }
 .settings-notifications-muted-break { margin-left: 0.25rem; overflow-wrap: anywhere; }
 .settings-notifications-section-gap { margin-top: 1rem; }
+.settings-notifications-footer-grow { flex: 1 1 0%; }
+.settings-notifications-error-link { padding: 0; border: 0; background: none; color: inherit; text-align: left; text-decoration: underline; cursor: pointer; }
+.settings-notifications-sec-head { display: flex; align-items: center; gap: 0.5rem; color: hsl(var(--muted-foreground)); }
+.settings-notifications-custom-dot { display: inline-block; width: 0.375rem; height: 0.375rem; margin-left: 0.25rem; border-radius: 9999px; background: hsl(var(--primary)); vertical-align: middle; }
+/* The edit dialog's template page: the event list beside the editor on wide screens, drill-down
+   (list or editor) on phones — the phone side is driven by the PHONE_MEDIA_QUERY match in the
+   component, the CSS only stacks the columns. */
+.settings-notifications-template-page { display: grid; gap: 0.75rem; }
+.settings-notifications-back { display: inline-flex; align-items: center; gap: 0.125rem; justify-self: start; padding: 0; border: 0; background: none; color: hsl(var(--muted-foreground)); cursor: pointer; }
+.settings-notifications-back:hover { color: hsl(var(--foreground)); }
+.settings-notifications-split { display: grid; gap: 0.75rem; }
+@media (min-width: 601px) { .settings-notifications-split { grid-template-columns: 13rem minmax(0, 1fr); align-items: start; } }
+.settings-notifications-tpl-list { display: grid; gap: 0.25rem; align-content: start; }
+.settings-notifications-tpl-group { margin-top: 0.375rem; color: hsl(var(--muted-foreground)); }
+.settings-notifications-tpl-group:first-child { margin-top: 0; }
+.settings-notifications-tpl-row { display: flex; align-items: center; gap: 0.375rem; width: 100%; padding: 0.375rem 0.5rem; border: 1px solid transparent; border-radius: 0.375rem; background: none; color: hsl(var(--foreground)); text-align: left; cursor: pointer; }
+.settings-notifications-tpl-row:hover { background: hsl(var(--muted) / 0.5); }
+.settings-notifications-tpl-row-on { border-color: hsl(var(--border)); background: hsl(var(--muted) / 0.5); }
+.settings-notifications-tpl-row-off { color: hsl(var(--muted-foreground)); }
+.settings-notifications-tpl-tick { display: inline-flex; width: 0.875rem; flex-shrink: 0; justify-content: center; color: hsl(var(--primary)); }
+.settings-notifications-tpl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-notifications-tpl-badge { flex-shrink: 0; color: hsl(var(--muted-foreground)); }
+.settings-notifications-tpl-go { flex-shrink: 0; color: hsl(var(--muted-foreground)); }
+@media (width <= 600px) {
+  .settings-notifications-tpl-row { padding: 0.625rem 0.75rem; border-color: hsl(var(--border)); border-radius: 0.75rem; }
+  .settings-notifications-tpl-list { gap: 0.375rem; }
+}
+.settings-notifications-tpl-pane { display: grid; gap: 0.625rem; min-width: 0; }
+.settings-notifications-editor-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.settings-notifications-editor-title { margin: 0; font-size: 0.9375rem; font-weight: 600; color: hsl(var(--foreground)); }
+.settings-notifications-editor-cols { display: grid; gap: 0.75rem; }
+@media (min-width: 900px) { .settings-notifications-editor-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+.settings-notifications-editor-main { display: grid; gap: 0.5rem; min-width: 0; }
+/* The preview draws the rendered message in the adapter's own shape. */
+.settings-notifications-preview { display: grid; gap: 0.5rem; min-width: 0; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--muted) / 0.3); padding: 0.625rem; }
+.settings-notifications-preview-label { display: flex; align-items: center; gap: 0.375rem; color: hsl(var(--muted-foreground)); }
+.settings-notifications-preview-tg { display: grid; gap: 0.375rem; border: 1px solid hsl(var(--border)); border-radius: 0.75rem; background: hsl(var(--card)); padding: 0.625rem 0.75rem; }
+.settings-notifications-preview-image { display: grid; place-items: center; min-height: 4rem; border-radius: 0.5rem; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+.settings-notifications-preview-tg-title { font-weight: 600; color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.settings-notifications-preview-body { white-space: pre-line; overflow-wrap: anywhere; color: hsl(var(--foreground)); }
+.settings-notifications-preview-links { display: flex; gap: 0.25rem; }
+.settings-notifications-preview-anchor { color: hsl(var(--primary)); text-decoration: underline; }
+.settings-notifications-preview-fs { display: grid; border: 1px solid hsl(var(--border)); border-radius: 0.5rem; background: hsl(var(--card)); overflow: hidden; }
+.settings-notifications-preview-fs-head { border-bottom: 1px solid hsl(var(--border) / 0.6); padding: 0.5rem 0.75rem; font-weight: 600; color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.settings-notifications-preview-fs-body { padding: 0.625rem 0.75rem; }
+.settings-notifications-preview-fs-foot { border-top: 1px solid hsl(var(--border) / 0.6); padding: 0.375rem 0.75rem; color: hsl(var(--muted-foreground)); }
+.settings-notifications-preview-wh { margin: 0; border: 1px solid hsl(var(--border)); border-radius: 0.5rem; background: hsl(var(--card)); padding: 0.625rem 0.75rem; font-size: 0.75rem; overflow-x: auto; white-space: pre; }
 
 .settings-ai { display: flex; flex-direction: column; gap: 1.5rem; }
 .settings-ai-section { border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); padding: 1rem; }

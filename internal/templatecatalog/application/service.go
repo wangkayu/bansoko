@@ -157,7 +157,23 @@ func (s *Service) PreviewNotification(_ context.Context, input NotificationTempl
 		}
 	}
 	message, _ := notification.RenderMessage(trigger, input.TitleTemplate, input.BodyTemplate, sample)
+	semantic, _ := notification.SemanticAttachments(trigger, input.TitleTemplate, input.BodyTemplate, sample)
+	attachments := NotificationTemplatePreviewAttachments{Links: []NotificationTemplatePreviewLink{}}
+	if semantic.Image {
+		source := semantic.ImageSource
+		if source == "" {
+			source = "automatic"
+		}
+		attachments.Image = &NotificationTemplatePreviewImage{Source: source}
+		if source == "custom" && semantic.ImageURL != "" {
+			attachments.Image.URL = &semantic.ImageURL
+		}
+	}
+	for _, link := range semantic.Links {
+		attachments.Links = append(attachments.Links, NotificationTemplatePreviewLink{Provider: link.Provider, Label: link.Label, URL: link.URL})
+	}
 	return NotificationTemplatePreview{
+		Attachments:     attachments,
 		Body:            message.Body,
 		CatalogVersion:  NotificationTemplatePreviewCatalogVersion(catalog),
 		Errors:          mapSourceErrors(message.Errors),

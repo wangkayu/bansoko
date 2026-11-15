@@ -1355,6 +1355,16 @@ const (
 	NotificationTemplatePreviewLanguageVersionBansokoTemplate1 NotificationTemplatePreviewLanguageVersion = "bansoko-template-1"
 )
 
+// Defines values for NotificationTemplatePreviewImageSource.
+const (
+	NotificationTemplatePreviewImageSourceAnibt     NotificationTemplatePreviewImageSource = "anibt"
+	NotificationTemplatePreviewImageSourceAutomatic NotificationTemplatePreviewImageSource = "automatic"
+	NotificationTemplatePreviewImageSourceBgm       NotificationTemplatePreviewImageSource = "bgm"
+	NotificationTemplatePreviewImageSourceCustom    NotificationTemplatePreviewImageSource = "custom"
+	NotificationTemplatePreviewImageSourceMikan     NotificationTemplatePreviewImageSource = "mikan"
+	NotificationTemplatePreviewImageSourceTmdb      NotificationTemplatePreviewImageSource = "tmdb"
+)
+
 // Defines values for NotificationTemplatePreviewInputCatalogVersion.
 const (
 	NotificationTemplatePreviewInputCatalogVersionNotificationCatalogV1 NotificationTemplatePreviewInputCatalogVersion = "notification-catalog-v1"
@@ -1363,6 +1373,16 @@ const (
 // Defines values for NotificationTemplatePreviewInputLanguageVersion.
 const (
 	NotificationTemplatePreviewInputLanguageVersionBansokoTemplate1 NotificationTemplatePreviewInputLanguageVersion = "bansoko-template-1"
+)
+
+// Defines values for NotificationTemplatePreviewLinkProvider.
+const (
+	NotificationTemplatePreviewLinkProviderAnibt    NotificationTemplatePreviewLinkProvider = "anibt"
+	NotificationTemplatePreviewLinkProviderBgm      NotificationTemplatePreviewLinkProvider = "bgm"
+	NotificationTemplatePreviewLinkProviderCustom   NotificationTemplatePreviewLinkProvider = "custom"
+	NotificationTemplatePreviewLinkProviderDownload NotificationTemplatePreviewLinkProvider = "download"
+	NotificationTemplatePreviewLinkProviderMikan    NotificationTemplatePreviewLinkProvider = "mikan"
+	NotificationTemplatePreviewLinkProviderTmdb     NotificationTemplatePreviewLinkProvider = "tmdb"
 )
 
 // Defines values for NotificationTemplateSetCatalogVersion.
@@ -6610,6 +6630,7 @@ type NotificationTemplateCatalogLanguageVersion string
 
 // NotificationTemplatePreview defines model for NotificationTemplatePreview.
 type NotificationTemplatePreview struct {
+	Attachments     NotificationTemplatePreviewAttachments     `json:"attachments"`
 	Body            string                                     `json:"body"`
 	CatalogVersion  NotificationTemplatePreviewCatalogVersion  `json:"catalog_version"`
 	Errors          []TemplateSourceError                      `json:"errors"`
@@ -6625,6 +6646,23 @@ type NotificationTemplatePreviewCatalogVersion string
 
 // NotificationTemplatePreviewLanguageVersion defines model for NotificationTemplatePreview.LanguageVersion.
 type NotificationTemplatePreviewLanguageVersion string
+
+// NotificationTemplatePreviewAttachments defines model for NotificationTemplatePreviewAttachments.
+type NotificationTemplatePreviewAttachments struct {
+	Image *NotificationTemplatePreviewImage `json:"image"`
+	Links []NotificationTemplatePreviewLink `json:"links"`
+}
+
+// NotificationTemplatePreviewImage defines model for NotificationTemplatePreviewImage.
+type NotificationTemplatePreviewImage struct {
+	Source NotificationTemplatePreviewImageSource `json:"source"`
+
+	// Url Present only for a validated custom HTTPS image.
+	Url *string `json:"url,omitempty"`
+}
+
+// NotificationTemplatePreviewImageSource defines model for NotificationTemplatePreviewImage.Source.
+type NotificationTemplatePreviewImageSource string
 
 // NotificationTemplatePreviewInput defines model for NotificationTemplatePreviewInput.
 type NotificationTemplatePreviewInput struct {
@@ -6642,6 +6680,16 @@ type NotificationTemplatePreviewInputCatalogVersion string
 
 // NotificationTemplatePreviewInputLanguageVersion defines model for NotificationTemplatePreviewInput.LanguageVersion.
 type NotificationTemplatePreviewInputLanguageVersion string
+
+// NotificationTemplatePreviewLink defines model for NotificationTemplatePreviewLink.
+type NotificationTemplatePreviewLink struct {
+	Label    string                                  `json:"label"`
+	Provider NotificationTemplatePreviewLinkProvider `json:"provider"`
+	Url      string                                  `json:"url"`
+}
+
+// NotificationTemplatePreviewLinkProvider defines model for NotificationTemplatePreviewLink.Provider.
+type NotificationTemplatePreviewLinkProvider string
 
 // NotificationTemplateSet defines model for NotificationTemplateSet.
 type NotificationTemplateSet struct {

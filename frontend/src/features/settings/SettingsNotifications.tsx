@@ -1,11 +1,43 @@
-import { Alert, Button, Checkbox, Input, PasswordInput, Popconfirm, Popover, Select, SpinnerIcon, StatePill, Chip, Textarea, StateBlock } from "../../ui/base";
-import { useRef, useState } from "react";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Chip,
+  DropdownMenu,
+  Input,
+  PasswordInput,
+  Select,
+  SpinnerIcon,
+  StateBlock,
+  StatePill,
+  Textarea,
+  type MenuEntry,
+} from "../../ui/base";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { valuesEqual } from "../../lib/draft";
 import { notificationTriggerKindLabel } from "../../lib/labels";
 import { configKeys, templateCatalogKeys } from "../../lib/queryKeys";
+import { cn } from "../../lib/utils";
+import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { useBoundedRefresh } from "@/lib/events/useBoundedRefresh";
-import { Bell, FlaskConical, History, KeyRound, Pencil, Plus, Send, Trash2, Webhook } from "lucide-react";
+import {
+  Bell,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Ellipsis,
+  FlaskConical,
+  History,
+  KeyRound,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Webhook,
+} from "lucide-react";
 import { toast } from "../../ui/toast";
 import {
   ApiError,
@@ -23,6 +55,7 @@ import {
   updatePluginTarget,
   type ErrorDetail,
   type NotificationCatalogVersion,
+  type NotificationTemplateCatalog,
   type NotificationTemplatePreview,
   type NotificationTriggerKind,
   type PluginAdapterConfig,
@@ -32,7 +65,7 @@ import {
   type PluginTargetCreate,
   type PluginTargetUpdate,
 } from "../../lib/api/client";
-import { SecretField, type SecretMode } from "../../ui";
+import { ConfirmDialog, SecretField, SegmentedControl, type SecretMode } from "../../ui";
 import { DeliveryHistoryDialog } from "./DeliveryHistoryDialog";
 import { deliveryStateLabel } from "./DeliveryDetailDialog";
 import { SettingsEditDialog } from "./SettingsEditDialog";
@@ -97,12 +130,12 @@ const secretInputPlaceholder = (): Record<PluginTargetConfig["adapter_kind"], st
 
 type TemplateMode = "system_default" | "custom";
 
+// The per-event editing state. Preview output is deliberately NOT part of the draft: it is a
+//   read-only rendering of the current text and must never move the dirty comparison.
 type EventTemplateDraft = {
   mode: TemplateMode;
   title_template: string;
   body_template: string;
-  preview?: NotificationTemplatePreview;
-  previewing?: boolean;
 };
 
 type NotificationDraft = {
@@ -126,8 +159,8 @@ type NotificationDraft = {
   secret_mode: SecretMode;
   catalog_version: NotificationCatalogVersion;
   // One editing state per registry trigger event, built in the order /config/notifications/trigger-kinds
-//   returns; on save everything is written back explicitly (the backend accepts the full registry's
-//   events).
+  //   returns; on save everything is written back explicitly (the backend accepts the full registry's
+  //   events).
   events: Record<NotificationTriggerKind, EventTemplateDraft>;
 };
 
@@ -198,8 +231,8 @@ function draftFromTarget(target: PluginTargetConfig, kinds: NotificationTriggerK
     base.auth_header_name = config.auth_header_name ?? "";
   }
   // A stored target may have written only part of the events in an older version; unwritten events
-//   enter editing under the default template and are written back explicitly on save together with
-//   the rest.
+  //   enter editing under the default template and are written back explicitly on save together with
+  //   the rest.
   for (const kind of kinds) {
     const event = target.template_set.events[kind];
     base.events[kind] =
@@ -288,6 +321,10 @@ function templateSaveErrors(cause: unknown): ErrorDetail[] {
   return (cause.details ?? []).filter((item) => item.field?.startsWith("template_set.events."));
 }
 
+function templateSaveErrorKind(item: ErrorDetail): NotificationTriggerKind | undefined {
+  return (item.field ?? "").split(".")[2] as NotificationTriggerKind | undefined;
+}
+
 function templateSaveErrorText(item: ErrorDetail): string {
   const [, , trigger = "", part = ""] = (item.field ?? "").split(".");
   const fieldLabel =
@@ -312,21 +349,33 @@ function signingSecretMissing(draft: NotificationDraft, targets: PluginTargetCon
   return targets?.find((item) => item.id === draft.id)?.has_signing_secret === false;
 }
 
+/** How many events of this draft (or saved target) use a custom template. */
+function customTemplateCount(events: Record<string, { mode: string } | undefined>): number {
+  return Object.values(events).filter((event) => event?.mode === "custom").length;
+}
+
 export function SettingsNotifications() {
   useBoundedRefresh([configKeys.pluginTargets]);
   const queryClient = useQueryClient();
   const targets = useQuery({ queryKey: configKeys.pluginTargets, queryFn: listPluginTargets });
   // The trigger-event registry is basically stable and long-cached once fetched; on failure the UI
-//   enters an explicit loading/error state and never silently renders the editor over an empty
-//   list.
+  //   enters an explicit loading/error state and never silently renders the editor over an empty
+  //   list.
   const triggerVocabulary = useQuery({
     queryKey: configKeys.notificationTriggerKinds,
     queryFn: listNotificationTriggerKinds,
     staleTime: Infinity,
   });
   const triggerKinds = triggerVocabulary.data?.trigger_kinds ?? NO_TRIGGER_KINDS;
+  const isPhone = useMediaQuery(PHONE_MEDIA_QUERY);
   const [draft, setDraft] = useState<NotificationDraft>();
   const [savedDraft, setSavedDraft] = useState<NotificationDraft>();
+  // The edit dialog has two pages: the channel page (connection, credentials, trigger events) and
+  //   the template page (per-event copy). On phones the template page drills in: the event list
+  //   shows first and tapping an event opens its editor (mobileEditing).
+  const [view, setView] = useState<"channel" | "template">("channel");
+  const [tplKind, setTplKind] = useState<NotificationTriggerKind>();
+  const [mobileEditing, setMobileEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [templateErrors, setTemplateErrors] = useState<ErrorDetail[]>([]);
@@ -338,6 +387,30 @@ export function SettingsNotifications() {
   const [testResults, setTestResults] = useState<
     Record<string, { state: "delivered" | "failed" | "accepted"; text?: string }>
   >({});
+
+  function openDialog(next: NotificationDraft) {
+    setError(undefined);
+    setConflict(undefined);
+    setTemplateErrors([]);
+    setDraft(next);
+    setSavedDraft(next);
+    setView("channel");
+    setMobileEditing(false);
+    setTplKind(triggerKinds[0]);
+  }
+
+  function closeDialog() {
+    setDraft(undefined);
+    setSavedDraft(undefined);
+  }
+
+  // A template save error names its event; clicking it jumps straight to that event's editor.
+  function jumpToTemplateError(item: ErrorDetail) {
+    const kind = templateSaveErrorKind(item);
+    setView("template");
+    if (kind && triggerKinds.includes(kind)) setTplKind(kind);
+    setMobileEditing(true);
+  }
 
   async function save() {
     if (!draft) return;
@@ -398,8 +471,7 @@ export function SettingsNotifications() {
         await createPluginTarget(input, newUUID());
       }
       toast.success(draft.id ? t("settings.notifications.saved") : t("settings.notifications.created"));
-      setDraft(undefined);
-      setSavedDraft(undefined);
+      closeDialog();
       await queryClient.invalidateQueries({ queryKey: configKeys.pluginTargets });
     } catch (cause) {
       if (isVersionConflict(cause)) {
@@ -479,17 +551,20 @@ export function SettingsNotifications() {
     }
   }
 
+  const saveDisabled =
+    busy ||
+    !draft ||
+    draft.name.trim() === "" ||
+    adapterConfigIsMissing(draft) ||
+    webhookSigningSecretTooShort(draft) ||
+    (!draft.id && secretIsMissing(draft)) ||
+    (draft?.id !== undefined && draft.secret_mode === "replace" && secretIsMissing(draft));
+
   return (
     <section className="settings-notifications">
       <div className="settings-notifications-header">
         <h2 className="settings-notifications-title text-title">{t("settings.notifications.title")}</h2>
-        <Button variant="primary" size="sm" disabled={!triggerVocabulary.data} onClick={() => {
-            setError(undefined);
-            setConflict(undefined);
-            const next = emptyDraft(triggerKinds);
-            setDraft(next);
-            setSavedDraft(next);
-          }}>
+        <Button variant="primary" size="sm" disabled={!triggerVocabulary.data} onClick={() => openDialog(emptyDraft(triggerKinds))}>
           <Plus size={14} />
           {t("settings.notifications.new")}
         </Button>
@@ -511,110 +586,57 @@ export function SettingsNotifications() {
       )}
 
       <ul className="settings-notifications-list">
-        {(targets.data?.targets ?? []).map((item) => {
-          const AdapterIcon = adapterIcon[item.adapter_kind];
-          const result = testResults[item.id];
-          return (
-            <li key={item.id} className="settings-notifications-item">
-              <div className="settings-notifications-row">
-                <AdapterIcon className="settings-notifications-icon" />
-                <span className="settings-notifications-title-text text-body">{item.name}</span>
-                <Chip>{adapterLabel()[item.adapter_kind]}</Chip>
-                <StatePill tone={item.enabled ? "online" : "muted"}>{item.enabled ? t("common.enabled") : t("common.disabled")}</StatePill>
-                <StatePill tone={item.has_secret ? "online" : "warning"} icon={KeyRound}>
-                  {item.has_secret ? t("common.credentialSet") : t("common.credentialUnset")}
-                </StatePill>
-                {item.adapter_kind === "webhook" && item.has_secret && item.has_signing_secret === false && (
-                  <StatePill tone="warning" title={t("settings.notifications.unsignedHint")}>
-                    {t("settings.notifications.unsigned")}
-                  </StatePill>
-                )}
-                {result && (
-                  <StatePill tone={result.state === "delivered" ? "online" : result.state === "failed" ? "offline" : "warning"}>
-                    {t("settings.notifications.testResult", { state: deliveryStateLabel(result.state === "accepted" ? "pending" : result.state) })}
-                  </StatePill>
-                )}
-                <span className="settings-notifications-spacer" />
-                <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-1">
-                  <TestButton
-                    triggerKinds={triggerKinds}
-                    disabled={testing === item.id || !triggerVocabulary.data}
-                    label={testing === item.id ? t("settings.notifications.testing") : t("settings.notifications.test")}
-                    onTest={(kind) => void test(item, kind)}
-                  />
-                  <Button variant="ghost" size="sm" onClick={() => setShowHistory(true)}>
-                    <History size={14} />
-                    {t("settings.delivery.history")}
-                  </Button>
-                  <Button variant="ghost" size="sm" disabled={!triggerVocabulary.data} onClick={() => {
-                      setError(undefined);
-                      setConflict(undefined);
-                      const next = draftFromTarget(item, triggerKinds);
-                      setDraft(next);
-                      setSavedDraft(next);
-                    }}>
-                    <Pencil size={14} />
-                    {t("settings.notifications.edit")}
-                  </Button>
-                  <Popconfirm
-                    title={t("settings.notifications.deleteTitle", { name: item.name })}
-                    description={t("settings.notifications.deleteHint")}
-                    confirmLabel={t("settings.notifications.delete")}
-                    danger
-                    confirmLoading={deleting === item.id}
-                    open={pendingDelete?.id === item.id}
-                    onOpenChange={(open) => setPendingDelete(open ? item : undefined)}
-                    onConfirm={() => void confirmDelete()}
-                    trigger={
-                      <Button variant="dangerGhost" size="sm" disabled={deleting === item.id}>
-                        <Trash2 size={14} />
-                        {deleting === item.id ? t("settings.notifications.deleting") : t("settings.notifications.delete")}
-                      </Button>
-                    }
-                  />
-                </div>
-              </div>
-              <div className="settings-notifications-events">
-                {item.trigger_kinds.length === 0 && (
-                  <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.noTrigger")}</span>
-                )}
-                {item.trigger_kinds.map((kind) => (
-                  <Chip key={kind}>{notificationTriggerKindLabel(kind)}</Chip>
-                ))}
-                {result?.text && (
-                  <span className="settings-notifications-muted-break text-caption tw:text-muted-foreground">· {result.text}</span>
-                )}
-              </div>
-            </li>
-          );
-        })}
+        {(targets.data?.targets ?? []).map((item) => (
+          <TargetRow
+            key={item.id}
+            item={item}
+            result={testResults[item.id]}
+            testing={testing === item.id}
+            deleting={deleting === item.id}
+            editDisabled={!triggerVocabulary.data}
+            onEdit={() => openDialog(draftFromTarget(item, triggerKinds))}
+            onTest={(kind) => void test(item, kind)}
+            onHistory={() => setShowHistory(true)}
+            onDelete={() => setPendingDelete(item)}
+          />
+        ))}
       </ul>
 
       {draft && (
         <SettingsEditDialog
           open
+          tier={view === "template" ? "L" : "M"}
           onOpenChange={(o) => {
-            if (!o) {
-              setDraft(undefined);
-              setSavedDraft(undefined);
-            }
+            if (!o) closeDialog();
           }}
-          title={draft.id ? t("settings.notifications.editTitle") : t("settings.notifications.newTitle")}
-          description={t("settings.notifications.editDescription")}
+          title={view === "channel"
+            ? (draft.id ? t("settings.notifications.editTitle") : t("settings.notifications.newTitle"))
+            : t("settings.notifications.template.pageTitle")}
+          description={view === "channel"
+            ? t("settings.notifications.editDescription")
+            : t("settings.notifications.template.pageDescription")}
           dirty={() => !!draft && !valuesEqual(draft, savedDraft)}
-          footer={(requestClose) => (
+          footer={(requestClose) => view === "channel" ? (
             <>
+              <Checkbox checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
+                {t("settings.notifications.enableChannel")}
+              </Checkbox>
+              <span className="settings-notifications-footer-grow" />
               <Button variant="ghost" onClick={requestClose}>
                 {t("settings.notifications.cancel")}
               </Button>
-              <Button variant="primary" aria-label={t("settings.notifications.save")} disabled={
-                  busy ||
-                  draft.name.trim() === "" ||
-                  adapterConfigIsMissing(draft) ||
-                  webhookSigningSecretTooShort(draft) ||
-                  (!draft.id && secretIsMissing(draft)) ||
-                  (draft.id !== undefined && draft.secret_mode === "replace" && secretIsMissing(draft))
-                } onClick={() => void save()}>
+              <Button variant="primary" aria-label={t("settings.notifications.save")} disabled={saveDisabled} onClick={() => void save()}>
+                {busy ? t("settings.notifications.saving") : t("settings.notifications.save")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.disabledKeepHint")}</span>
+              <span className="settings-notifications-footer-grow" />
+              <Button variant="ghost" onClick={() => setView("channel")}>
+                {t("settings.notifications.template.done")}
+              </Button>
+              <Button variant="primary" aria-label={t("settings.notifications.save")} disabled={saveDisabled} onClick={() => void save()}>
                 {busy ? t("settings.notifications.saving") : t("settings.notifications.save")}
               </Button>
             </>
@@ -634,149 +656,672 @@ export function SettingsNotifications() {
                 templateErrors.length > 0 ? (
                   <ul className="tw:grid tw:gap-1">
                     {templateErrors.map((item, index) => (
-                      <li key={index} className="text-caption">{templateSaveErrorText(item)}</li>
+                      <li key={index} className="text-caption">
+                        <button type="button" className="settings-notifications-error-link" onClick={() => jumpToTemplateError(item)}>
+                          {templateSaveErrorText(item)}
+                        </button>
+                      </li>
                     ))}
                   </ul>
                 ) : undefined
               } />
             )
           )}
-          <div className="settings-notifications-responsive">
-            <Field label={t("settings.notifications.field.type")}>
-              <Select label={t("settings.notifications.field.type")} value={draft.adapter_kind} disabled={!!draft.id} options={[
-                  { value: "telegram", label: adapterLabel().telegram },
-                  { value: "feishu", label: adapterLabel().feishu },
-                  { value: "webhook", label: adapterLabel().webhook },
-                ]} onChange={(value) => setDraft({ ...draft, adapter_kind: value as PluginTargetConfig["adapter_kind"] })} />
-            </Field>
-            <Field label={t("settings.notifications.field.name")}>
-              <Input aria-label={t("settings.notifications.field.name")} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            </Field>
-          </div>
 
-          {draft.adapter_kind === "telegram" && (
-            <div className="settings-notifications-field-gap settings-notifications-responsive">
-              <Field label={t("settings.notifications.field.chatId")}>
-                <Input aria-label={t("settings.notifications.field.chatId")} value={draft.chat_id} placeholder={t("settings.notifications.field.chatIdPlaceholder")} onChange={(e) => setDraft({ ...draft, chat_id: e.target.value })} />
-              </Field>
-              <Field label={t("settings.notifications.field.botToken")}>
-                <PasswordInput aria-label={t("settings.notifications.field.botToken")} value={draft.bot_token} placeholder={draft.id ? secretInputPlaceholder().telegram : t("settings.notifications.field.botTokenPlaceholder")} onChange={(e) => setDraft({ ...draft, bot_token: e.target.value })} />
-              </Field>
-            </div>
-          )}
-
-          {draft.adapter_kind === "feishu" && (
-            <div className="settings-notifications-field-gap settings-notifications-responsive">
-              <Field label={t("settings.notifications.field.webhookUrl")} className="settings-notifications-field-wide">
-                <PasswordInput aria-label={t("settings.notifications.field.webhookUrl")} value={draft.webhook_url} placeholder={draft.id ? secretInputPlaceholder().feishu : t("settings.notifications.field.webhookUrlPlaceholder")} onChange={(e) => setDraft({ ...draft, webhook_url: e.target.value })} />
-              </Field>
-              <Field label={t("settings.notifications.field.signingSecret")}>
-                <PasswordInput aria-label={t("settings.notifications.field.signingSecret")} value={draft.signing_secret} onChange={(e) => setDraft({ ...draft, signing_secret: e.target.value })} />
-              </Field>
-            </div>
-          )}
-
-          {draft.adapter_kind === "webhook" && (
-            <div className="settings-notifications-field-gap settings-notifications-responsive">
-              <Field label={t("settings.notifications.field.endpointUrl")} className="settings-notifications-field-wide">
-                <PasswordInput aria-label={t("settings.notifications.field.endpointUrl")} value={draft.endpoint_url} placeholder={draft.id ? secretInputPlaceholder().webhook : t("settings.notifications.field.endpointUrlPlaceholder")} onChange={(e) => setDraft({ ...draft, endpoint_url: e.target.value })} />
-              </Field>
-              <Field label={t("settings.notifications.field.authKind")}>
-                <Select label={t("settings.notifications.field.authKind")} value={draft.auth_kind} options={[
-                    { value: "none", label: t("settings.notifications.field.authNone") },
-                    { value: "bearer", label: t("settings.notifications.field.authBearer") },
-                    { value: "header", label: t("settings.notifications.field.authHeader") },
-                  ]} onChange={(value) => setDraft({ ...draft, auth_kind: value as "none" | "bearer" | "header" })} />
-              </Field>
-              {draft.auth_kind === "header" && (
-                <Field label={t("settings.notifications.field.headerName")}>
-                  <Input aria-label={t("settings.notifications.field.headerName")} value={draft.auth_header_name} placeholder="X-Api-Key" onChange={(e) => setDraft({ ...draft, auth_header_name: e.target.value })} />
-                </Field>
-              )}
-              {draft.auth_kind !== "none" && (
-                <Field label={draft.auth_kind === "bearer" ? t("settings.notifications.field.bearerValue") : t("settings.notifications.field.headerValue")}>
-                  <PasswordInput aria-label={draft.auth_kind === "bearer" ? t("settings.notifications.field.bearerValue") : t("settings.notifications.field.headerValue")} value={draft.auth_value} onChange={(e) => setDraft({ ...draft, auth_value: e.target.value })} />
-                </Field>
-              )}
-              <Field label={t("settings.notifications.field.webhookSigningSecret")}>
-                <PasswordInput aria-label={t("settings.notifications.field.webhookSigningSecret")} value={draft.signing_secret} placeholder={t("settings.notifications.field.webhookSigningSecretPlaceholder")} onChange={(e) => setDraft({ ...draft, signing_secret: e.target.value })} />
-              </Field>
-              {webhookSigningSecretTooShort(draft) && (
-                <span role="alert" className="settings-notifications-field-wide text-caption tw:text-destructive">
-                  {t("settings.notifications.field.webhookSigningSecretTooShort")}
-                </span>
-              )}
-              {signingSecretMissing(draft, targets.data?.targets) && (
-                <Alert className="settings-notifications-field-wide" tone="warning" title={t("settings.notifications.unsignedHint")} />
-              )}
-            </div>
-          )}
-
-          {triggerVocabulary.isPending && (
-            <StateBlock kind="busy" title={t("settings.notifications.triggerKindsLoading")} />
-          )}
-          {triggerVocabulary.isError && (
-            <Alert
-              className="settings-notifications-section-gap"
-              tone="error"
-              title={t("settings.notifications.triggerKindsFailed")}
-              description={<Button size="sm" onClick={() => void triggerVocabulary.refetch()}>{t("ui.errorBoundary.retry")}</Button>}
+          {view === "channel" ? (
+            <ChannelPage
+              draft={draft}
+              isNew={!draft.id}
+              triggerKinds={triggerKinds}
+              triggerVocabulary={triggerVocabulary}
+              onChange={setDraft}
+              onOpenTemplates={() => {
+                setView("template");
+                setMobileEditing(false);
+              }}
+              unsignedWarning={signingSecretMissing(draft, targets.data?.targets)}
             />
-          )}
-          {triggerVocabulary.data && (
-            <div className="settings-notifications-field-gap settings-notifications-responsive">
-              <Field label={t("settings.notifications.field.triggers")} className="settings-notifications-field-wide">
-                <div className="settings-notifications-events-input">
-                  {triggerKinds.map((kind) => (
-                    <Checkbox key={kind} checked={draft.trigger_kinds.includes(kind)} onCheckedChange={(checked) => {
-                        const next = checked
-                          ? [...draft.trigger_kinds.filter((k) => k !== kind), kind]
-                          : draft.trigger_kinds.filter((k) => k !== kind);
-                        next.sort((a, b) => triggerKinds.indexOf(a) - triggerKinds.indexOf(b));
-                        setDraft({ ...draft, trigger_kinds: next });
-                      }}>
-                      {notificationTriggerKindLabel(kind)}
-                    </Checkbox>
-                  ))}
-                </div>
-              </Field>
-              <Checkbox checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
-                {t("settings.notifications.enable")}
-              </Checkbox>
-            </div>
-          )}
-
-          {draft.id && (
-            <SecretField
-              editing
-              className="settings-notifications-section-gap"
-              mode={draft.secret_mode}
-              onModeChange={(secret_mode) => setDraft({ ...draft, secret_mode })}
-              subject={secretFieldsLabel()[draft.adapter_kind]}
-              removeHint={t("settings.notifications.removeSecretHint")}
-            />
-          )}
-
-          {triggerVocabulary.data && (
-            <div className="settings-notifications-section-gap settings-notifications-form">
-              <span className="settings-notifications-template-label text-caption">{t("settings.notifications.template.title")}</span>
-              {triggerKinds.map((kind) => (
-                <EventTemplateEditor
-                  key={kind}
-                  kind={kind}
-                  catalogVersion={draft.catalog_version}
-                  draft={draft.events[kind]}
-                  onChange={(event) => setDraft({ ...draft, events: { ...draft.events, [kind]: event } })}
-                />
-              ))}
-              <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.defaultHint")}</span>
+          ) : (
+            <div className="settings-notifications-template-page">
+              <button type="button" className="settings-notifications-back" onClick={() => setView("channel")}>
+                <ChevronLeft size={14} aria-hidden />
+                {t("settings.notifications.template.backToChannel")}
+              </button>
+              <div className="settings-notifications-split">
+                {(!isPhone || !mobileEditing) && (
+                  <TemplateEventList
+                    kinds={triggerKinds}
+                    draft={draft}
+                    current={tplKind}
+                    isPhone={isPhone}
+                    onPick={(kind) => {
+                      setTplKind(kind);
+                      setMobileEditing(true);
+                    }}
+                  />
+                )}
+                {(!isPhone || mobileEditing) && tplKind && (
+                  <TemplatePane
+                    key={tplKind}
+                    kind={tplKind}
+                    adapter={draft.adapter_kind}
+                    catalogVersion={draft.catalog_version}
+                    event={draft.events[tplKind] ?? defaultEventTemplate()}
+                    isPhone={isPhone}
+                    onBack={() => setMobileEditing(false)}
+                    onChange={(event) => setDraft({ ...draft, events: { ...draft.events, [tplKind]: event } })}
+                  />
+                )}
+              </div>
             </div>
           )}
         </SettingsEditDialog>
       )}
 
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(undefined);
+        }}
+        title={pendingDelete ? t("settings.notifications.deleteTitle", { name: pendingDelete.name }) : ""}
+        description={t("settings.notifications.deleteHint")}
+        confirmLabel={deleting ? t("settings.notifications.deleting") : t("settings.notifications.delete")}
+        danger
+        onConfirm={() => void confirmDelete()}
+      />
+
       {showHistory && <DeliveryHistoryDialog onClose={() => setShowHistory(false)} />}
     </section>
+  );
+}
+
+/** The channel list row: badges first, the enabled events on the second line, actions at the right. */
+function TargetRow({
+  item,
+  result,
+  testing,
+  deleting,
+  editDisabled,
+  onEdit,
+  onTest,
+  onHistory,
+  onDelete,
+}: {
+  item: PluginTargetConfig;
+  result?: { state: "delivered" | "failed" | "accepted"; text?: string };
+  testing: boolean;
+  deleting: boolean;
+  editDisabled: boolean;
+  onEdit: () => void;
+  onTest: (kind: NotificationTriggerKind) => void;
+  onHistory: () => void;
+  onDelete: () => void;
+}) {
+  const AdapterIcon = adapterIcon[item.adapter_kind];
+  const menuItems: MenuEntry[] = [];
+  // The test submenu lists only the events this channel actually enabled.
+  if (item.trigger_kinds.length > 0) {
+    menuItems.push({
+      type: "submenu",
+      key: "test",
+      label: testing ? t("settings.notifications.testing") : t("settings.notifications.test"),
+      icon: <FlaskConical size={14} />,
+      items: item.trigger_kinds.map((kind) => ({
+        key: kind,
+        label: notificationTriggerKindLabel(kind),
+        onSelect: () => onTest(kind),
+      })),
+    });
+  }
+  menuItems.push(
+    { key: "history", label: t("settings.delivery.history"), icon: <History size={14} />, onSelect: onHistory },
+    { type: "divider", key: "divider" },
+    { key: "delete", label: t("settings.notifications.delete"), icon: <Trash2 size={14} />, danger: true, onSelect: onDelete },
+  );
+  return (
+    <li className="settings-notifications-item">
+      <div className="settings-notifications-row">
+        <AdapterIcon className="settings-notifications-icon" />
+        <span className="settings-notifications-title-text text-body">{item.name}</span>
+        <Chip>{adapterLabel()[item.adapter_kind]}</Chip>
+        <StatePill tone={item.enabled ? "online" : "muted"}>{item.enabled ? t("common.enabled") : t("common.disabled")}</StatePill>
+        <StatePill tone={item.has_secret ? "online" : "warning"} icon={KeyRound}>
+          {item.has_secret ? t("common.credentialSet") : t("common.credentialUnset")}
+        </StatePill>
+        {item.adapter_kind === "webhook" && item.has_signing_secret === true && (
+          <StatePill tone="online" icon={ShieldCheck}>
+            {t("settings.notifications.signed")}
+          </StatePill>
+        )}
+        {result && (
+          <StatePill tone={result.state === "delivered" ? "online" : result.state === "failed" ? "offline" : "warning"}>
+            {t("settings.notifications.testResult", { state: deliveryStateLabel(result.state === "accepted" ? "pending" : result.state) })}
+          </StatePill>
+        )}
+        <span className="settings-notifications-spacer" />
+        <div className="tw:flex tw:flex-none tw:items-center tw:gap-1">
+          <Button variant="ghost" size="sm" disabled={editDisabled} onClick={onEdit}>
+            <Pencil size={14} />
+            {t("settings.notifications.edit")}
+          </Button>
+          <DropdownMenu
+            trigger={
+              <Button variant="ghost" size="sm" disabled={deleting} aria-label={t("settings.notifications.moreActions")}>
+                <Ellipsis size={14} />
+              </Button>
+            }
+            items={menuItems}
+          />
+        </div>
+      </div>
+      <div className="settings-notifications-events">
+        {item.trigger_kinds.length === 0 ? (
+          <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.noTrigger")}</span>
+        ) : (
+          <>
+            <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.enabledEvents")}</span>
+            {item.trigger_kinds.map((kind) => (
+              <Chip key={kind}>{notificationTriggerKindLabel(kind)}</Chip>
+            ))}
+          </>
+        )}
+        {result?.text && (
+          <span className="settings-notifications-muted-break text-caption tw:text-muted-foreground">· {result.text}</span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** The dialog's first page: connection, credentials and the trigger-event grid. */
+function ChannelPage({
+  draft,
+  isNew,
+  triggerKinds,
+  triggerVocabulary,
+  onChange,
+  onOpenTemplates,
+  unsignedWarning,
+}: {
+  draft: NotificationDraft;
+  isNew: boolean;
+  triggerKinds: NotificationTriggerKind[];
+  triggerVocabulary: { isPending: boolean; isError: boolean; data: unknown; refetch: () => Promise<unknown> };
+  onChange: (draft: NotificationDraft) => void;
+  onOpenTemplates: () => void;
+  unsignedWarning: boolean;
+}) {
+  const customCount = customTemplateCount(draft.events);
+  return (
+    <>
+      <div className="settings-notifications-responsive">
+        <Field label={t("settings.notifications.field.type")}>
+          <Select label={t("settings.notifications.field.type")} value={draft.adapter_kind} disabled={!isNew} options={[
+              { value: "telegram", label: adapterLabel().telegram },
+              { value: "feishu", label: adapterLabel().feishu },
+              { value: "webhook", label: adapterLabel().webhook },
+            ]} onChange={(value) => onChange({ ...draft, adapter_kind: value as PluginTargetConfig["adapter_kind"] })} />
+        </Field>
+        <Field label={t("settings.notifications.field.name")}>
+          <Input aria-label={t("settings.notifications.field.name")} value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} />
+        </Field>
+      </div>
+
+      {draft.adapter_kind === "telegram" && (
+        <div className="settings-notifications-field-gap settings-notifications-responsive">
+          <Field label={t("settings.notifications.field.chatId")}>
+            <Input aria-label={t("settings.notifications.field.chatId")} value={draft.chat_id} placeholder={t("settings.notifications.field.chatIdPlaceholder")} onChange={(e) => onChange({ ...draft, chat_id: e.target.value })} />
+          </Field>
+          <Field label={t("settings.notifications.field.botToken")}>
+            <PasswordInput aria-label={t("settings.notifications.field.botToken")} value={draft.bot_token} placeholder={isNew ? t("settings.notifications.field.botTokenPlaceholder") : secretInputPlaceholder().telegram} onChange={(e) => onChange({ ...draft, bot_token: e.target.value })} />
+          </Field>
+        </div>
+      )}
+
+      {draft.adapter_kind === "feishu" && (
+        <div className="settings-notifications-field-gap settings-notifications-responsive">
+          <Field label={t("settings.notifications.field.webhookUrl")} className="settings-notifications-field-wide">
+            <PasswordInput aria-label={t("settings.notifications.field.webhookUrl")} value={draft.webhook_url} placeholder={isNew ? t("settings.notifications.field.webhookUrlPlaceholder") : secretInputPlaceholder().feishu} onChange={(e) => onChange({ ...draft, webhook_url: e.target.value })} />
+          </Field>
+          <Field label={t("settings.notifications.field.signingSecret")}>
+            <PasswordInput aria-label={t("settings.notifications.field.signingSecret")} value={draft.signing_secret} onChange={(e) => onChange({ ...draft, signing_secret: e.target.value })} />
+          </Field>
+        </div>
+      )}
+
+      {draft.adapter_kind === "webhook" && (
+        <div className="settings-notifications-field-gap settings-notifications-responsive">
+          <Field label={t("settings.notifications.field.endpointUrl")} className="settings-notifications-field-wide">
+            <PasswordInput aria-label={t("settings.notifications.field.endpointUrl")} value={draft.endpoint_url} placeholder={isNew ? t("settings.notifications.field.endpointUrlPlaceholder") : secretInputPlaceholder().webhook} onChange={(e) => onChange({ ...draft, endpoint_url: e.target.value })} />
+          </Field>
+          <Field label={t("settings.notifications.field.authKind")}>
+            <Select label={t("settings.notifications.field.authKind")} value={draft.auth_kind} options={[
+                { value: "none", label: t("settings.notifications.field.authNone") },
+                { value: "bearer", label: t("settings.notifications.field.authBearer") },
+                { value: "header", label: t("settings.notifications.field.authHeader") },
+              ]} onChange={(value) => onChange({ ...draft, auth_kind: value as "none" | "bearer" | "header" })} />
+          </Field>
+          {draft.auth_kind === "header" && (
+            <Field label={t("settings.notifications.field.headerName")}>
+              <Input aria-label={t("settings.notifications.field.headerName")} value={draft.auth_header_name} placeholder="X-Api-Key" onChange={(e) => onChange({ ...draft, auth_header_name: e.target.value })} />
+            </Field>
+          )}
+          {draft.auth_kind !== "none" && (
+            <Field label={draft.auth_kind === "bearer" ? t("settings.notifications.field.bearerValue") : t("settings.notifications.field.headerValue")}>
+              <PasswordInput aria-label={draft.auth_kind === "bearer" ? t("settings.notifications.field.bearerValue") : t("settings.notifications.field.headerValue")} value={draft.auth_value} onChange={(e) => onChange({ ...draft, auth_value: e.target.value })} />
+            </Field>
+          )}
+          <Field label={t("settings.notifications.field.webhookSigningSecret")}>
+            <PasswordInput aria-label={t("settings.notifications.field.webhookSigningSecret")} value={draft.signing_secret} placeholder={t("settings.notifications.field.webhookSigningSecretPlaceholder")} onChange={(e) => onChange({ ...draft, signing_secret: e.target.value })} />
+          </Field>
+          {webhookSigningSecretTooShort(draft) && (
+            <span role="alert" className="settings-notifications-field-wide text-caption tw:text-destructive">
+              {t("settings.notifications.field.webhookSigningSecretTooShort")}
+            </span>
+          )}
+          {unsignedWarning && (
+            <Alert className="settings-notifications-field-wide" tone="warning" title={t("settings.notifications.unsignedHint")} />
+          )}
+        </div>
+      )}
+
+      {triggerVocabulary.isPending && (
+        <StateBlock kind="busy" title={t("settings.notifications.triggerKindsLoading")} />
+      )}
+      {triggerVocabulary.isError && (
+        <Alert
+          className="settings-notifications-section-gap"
+          tone="error"
+          title={t("settings.notifications.triggerKindsFailed")}
+          description={<Button size="sm" onClick={() => void triggerVocabulary.refetch()}>{t("ui.errorBoundary.retry")}</Button>}
+        />
+      )}
+      {triggerVocabulary.data && (
+        <div className="settings-notifications-field-gap">
+          <div className="settings-notifications-sec-head">
+            <span className="text-caption">{t("settings.notifications.field.triggers")}</span>
+            <span className="settings-notifications-footer-grow" />
+            <span className="text-caption tw:text-muted-foreground">
+              {customCount > 0
+                ? t("settings.notifications.customTemplateCount", { n: customCount })
+                : t("settings.notifications.allDefaultTemplates")}
+            </span>
+            <Button size="sm" onClick={onOpenTemplates}>
+              {t("settings.notifications.template.editEntry")}
+              <ChevronRight size={14} aria-hidden />
+            </Button>
+          </div>
+          <div className="settings-notifications-events-input">
+            {triggerKinds.map((kind) => {
+              const custom = draft.events[kind]?.mode === "custom";
+              return (
+                <Checkbox key={kind} checked={draft.trigger_kinds.includes(kind)} onCheckedChange={(checked) => {
+                    const next = checked
+                      ? [...draft.trigger_kinds.filter((k) => k !== kind), kind]
+                      : draft.trigger_kinds.filter((k) => k !== kind);
+                    next.sort((a, b) => triggerKinds.indexOf(a) - triggerKinds.indexOf(b));
+                    onChange({ ...draft, trigger_kinds: next });
+                  }}>
+                  {notificationTriggerKindLabel(kind)}
+                  {custom && <span className="settings-notifications-custom-dot" title={t("settings.notifications.template.badgeCustom")} />}
+                </Checkbox>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {draft.id && (
+        <SecretField
+          editing
+          className="settings-notifications-section-gap"
+          mode={draft.secret_mode}
+          onModeChange={(secret_mode) => onChange({ ...draft, secret_mode })}
+          subject={secretFieldsLabel()[draft.adapter_kind]}
+          removeHint={t("settings.notifications.removeSecretHint")}
+        />
+      )}
+    </>
+  );
+}
+
+/** The template page's event list: enabled events first, then the rest, each with its mode badge. */
+function TemplateEventList({
+  kinds,
+  draft,
+  current,
+  isPhone,
+  onPick,
+}: {
+  kinds: NotificationTriggerKind[];
+  draft: NotificationDraft;
+  current: NotificationTriggerKind | undefined;
+  isPhone: boolean;
+  onPick: (kind: NotificationTriggerKind) => void;
+}) {
+  const row = (kind: NotificationTriggerKind, enabled: boolean) => {
+    const custom = draft.events[kind]?.mode === "custom";
+    return (
+      <button
+        key={kind}
+        type="button"
+        className={cn("settings-notifications-tpl-row", kind === current && "settings-notifications-tpl-row-on", !enabled && "settings-notifications-tpl-row-off")}
+        onClick={() => onPick(kind)}
+      >
+        <span className="settings-notifications-tpl-tick">{enabled && <Check size={10} aria-hidden />}</span>
+        <span className="settings-notifications-tpl-name">{notificationTriggerKindLabel(kind)}</span>
+        <span className="settings-notifications-tpl-badge text-caption">
+          {custom ? t("settings.notifications.template.badgeCustom") : t("settings.notifications.template.badgeDefault")}
+        </span>
+        {isPhone && <ChevronRight size={14} aria-hidden className="settings-notifications-tpl-go" />}
+      </button>
+    );
+  };
+  const enabled = kinds.filter((kind) => draft.trigger_kinds.includes(kind));
+  const rest = kinds.filter((kind) => !draft.trigger_kinds.includes(kind));
+  return (
+    <div className="settings-notifications-tpl-list">
+      <div className="settings-notifications-tpl-group text-caption">{t("settings.notifications.template.enabledGroup")} {enabled.length}</div>
+      {enabled.map((kind) => row(kind, true))}
+      <div className="settings-notifications-tpl-group text-caption">{t("settings.notifications.template.disabledGroup")} {rest.length}</div>
+      {rest.map((kind) => row(kind, false))}
+    </div>
+  );
+}
+
+/** One event's editor plus the live per-adapter preview. */
+function TemplatePane({
+  kind,
+  adapter,
+  catalogVersion,
+  event,
+  isPhone,
+  onBack,
+  onChange,
+}: {
+  kind: NotificationTriggerKind;
+  adapter: PluginTargetConfig["adapter_kind"];
+  catalogVersion: NotificationCatalogVersion;
+  event: EventTemplateDraft;
+  isPhone: boolean;
+  onBack: () => void;
+  onChange: (event: EventTemplateDraft) => void;
+}) {
+  const label = notificationTriggerKindLabel(kind);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // The insertion point follows the last focused input, defaulting to the body.
+  const lastFocused = useRef<"title" | "body">("body");
+  const catalog = useQuery({
+    queryKey: templateCatalogKeys.notification(kind, catalogVersion),
+    queryFn: () => getNotificationTemplateCatalog(kind, catalogVersion),
+    staleTime: Infinity,
+  });
+  const defaults = catalog.data?.default_template;
+  const mode = event.mode;
+
+  function switchMode(next: TemplateMode) {
+    // Switching to custom starts from the default template rather than a blank page.
+    if (next === "custom" && defaults && event.title_template === "" && event.body_template === "") {
+      onChange({ mode: next, title_template: defaults.title_template, body_template: defaults.body_template });
+    } else {
+      onChange({ ...event, mode: next });
+    }
+  }
+
+  function insertToken(token: string) {
+    const field = lastFocused.current;
+    const element = field === "title" ? titleRef.current : bodyRef.current;
+    const current = field === "title" ? event.title_template : event.body_template;
+    const start = element?.selectionStart ?? current.length;
+    const end = element?.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    onChange(field === "title" ? { ...event, title_template: next } : { ...event, body_template: next });
+    if (!element) return;
+    requestAnimationFrame(() => {
+      element.focus();
+      const caret = start + token.length;
+      element.setSelectionRange(caret, caret);
+    });
+  }
+
+  const previewTitle = mode === "custom" ? event.title_template : (defaults?.title_template ?? "");
+  const previewBody = mode === "custom" ? event.body_template : (defaults?.body_template ?? "");
+  const previewReady = mode === "custom" || defaults !== undefined;
+
+  return (
+    <div className="settings-notifications-tpl-pane">
+      <div className="settings-notifications-editor-head">
+        {isPhone && (
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ChevronLeft size={14} aria-hidden />
+            {t("settings.notifications.template.backToEvents")}
+          </Button>
+        )}
+        <h4 className="settings-notifications-editor-title">{label}</h4>
+        <span className="settings-notifications-footer-grow" />
+        <SegmentedControl
+          compact
+          ariaLabel={t("settings.notifications.template.modeLabel", { event: label })}
+          value={mode}
+          options={[
+            { value: "system_default", label: t("settings.notifications.template.modeDefault") },
+            { value: "custom", label: t("settings.notifications.template.modeCustom") },
+          ]}
+          onChange={(next) => switchMode(next)}
+        />
+      </div>
+      <div className="settings-notifications-editor-cols">
+        <div className="settings-notifications-editor-main">
+          {mode === "custom" ? (
+            <>
+              <Field label={t("settings.notifications.template.titleField")}>
+                <Input ref={titleRef} aria-label={t("settings.notifications.template.titleField")} value={event.title_template} onFocus={() => { lastFocused.current = "title"; }} onChange={(e) => onChange({ ...event, title_template: e.target.value })} />
+              </Field>
+              <Field label={t("settings.notifications.template.bodyField")}>
+                <Textarea ref={bodyRef} aria-label={t("settings.notifications.template.bodyField")} rows={6} value={event.body_template} onFocus={() => { lastFocused.current = "body"; }} onChange={(e) => onChange({ ...event, body_template: e.target.value })} />
+              </Field>
+              {catalog.data ? (
+                <details className="settings-notifications-template-catalog">
+                  <summary className="text-caption">
+                    {t("settings.notifications.template.variables", { n: catalog.data.variables.length })}
+                  </summary>
+                  <FactCatalog
+                    facts={catalog.data.variables.map((variable) => ({ ...variable, path: variable.name }))}
+                    token={(path) => `{{${path}}}`}
+                    onInsert={insertToken}
+                  />
+                  <div className="settings-notifications-template-functions">
+                    <span className="text-caption tw:text-muted-foreground">
+                      {t("settings.notifications.template.functions", { names: catalog.data.functions.map((fn) => fn.name).join(" / ") })}
+                    </span>
+                  </div>
+                </details>
+              ) : (
+                <span className="tw:text-muted-foreground">
+                  {catalog.isError ? t("settings.notifications.template.catalogFailed") : t("settings.notifications.template.catalogLoading")}
+                </span>
+              )}
+              <div>
+                <Button variant="ghost" size="sm" onClick={() => onChange({ mode: "system_default", title_template: "", body_template: "" })}>
+                  <RotateCcw size={14} aria-hidden />
+                  {t("settings.notifications.template.resetDefault")}
+                </Button>
+              </div>
+            </>
+          ) : defaults ? (
+            <>
+              <div className="settings-notifications-template-defaults">
+                <p className="settings-notifications-template-copy">
+                  {t("settings.notifications.template.defaultTitle")}<span>{defaults.title_template}</span>
+                </p>
+                <p className="settings-notifications-template-copy-pre">
+                  {t("settings.notifications.template.defaultBody")}<span>{defaults.body_template}</span>
+                </p>
+              </div>
+              <p className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.followDefault")}</p>
+            </>
+          ) : (
+            <div className="settings-notifications-template-fallback">
+              <span className="tw:text-muted-foreground">
+                {catalog.isError ? t("settings.notifications.template.defaultFailed") : t("settings.notifications.template.defaultLoading")}
+              </span>
+            </div>
+          )}
+        </div>
+        {previewReady ? (
+          <TemplatePreview
+            kind={kind}
+            adapter={adapter}
+            catalogVersion={catalogVersion}
+            title={previewTitle}
+            body={previewBody}
+          />
+        ) : (
+          <div className="settings-notifications-preview">
+            <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.defaultLoading")}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The live preview: edits are debounced, then the backend renders the template with its fixed
+ * sample facts and the result is drawn in the adapter's own shape (Telegram photo caption, Feishu
+ * post card, webhook message envelope).
+ */
+function TemplatePreview({
+  kind,
+  adapter,
+  catalogVersion,
+  title,
+  body,
+}: {
+  kind: NotificationTriggerKind;
+  adapter: PluginTargetConfig["adapter_kind"];
+  catalogVersion: NotificationCatalogVersion;
+  title: string;
+  body: string;
+}) {
+  const [result, setResult] = useState<NotificationTemplatePreview>();
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const seq = useRef(0);
+
+  useEffect(() => {
+    const id = ++seq.current;
+    setLoading(true);
+    const timer = setTimeout(() => {
+      previewNotificationTemplate({
+        trigger_kind: kind,
+        language_version: TEMPLATE_LANGUAGE_VERSION,
+        catalog_version: catalogVersion,
+        title_template: title,
+        body_template: body,
+      })
+        .then((next) => {
+          if (seq.current !== id) return;
+          setResult(next);
+          setError(undefined);
+          setLoading(false);
+        })
+        .catch((cause: unknown) => {
+          if (seq.current !== id) return;
+          setError(toUserMessage(cause, t("settings.notifications.template.previewFailed")));
+          setLoading(false);
+        });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [kind, catalogVersion, title, body]);
+
+  return (
+    <div className="settings-notifications-preview">
+      <div className="settings-notifications-preview-label text-caption">
+        {t("settings.notifications.template.previewAs", { adapter: adapterLabel()[adapter] })}
+        {loading && <SpinnerIcon />}
+      </div>
+      {error && <Alert tone="error" title={error} />}
+      {result && !result.valid && (
+        <StatePill tone="offline">{t("settings.notifications.template.invalid")}</StatePill>
+      )}
+      {result && result.valid && (
+        <AdapterMessage adapter={adapter} kind={kind} title={result.title} body={result.body} attachments={result.attachments} />
+      )}
+      {result?.errors.map((item, index) => (
+        <div key={`e${index}`}>
+          <span className="text-caption tw:text-destructive">
+            {item.field ? `${item.field}: ` : ""}{item.message}
+          </span>
+        </div>
+      ))}
+      {result?.warnings.map((item, index) => (
+        <div key={`w${index}`}>
+          <span className="text-caption tw:text-warning">
+            {item.variable ? `${item.variable}: ` : ""}{item.message}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The rendered message drawn in the adapter's own shape. */
+function AdapterMessage({
+  adapter,
+  kind,
+  title,
+  body,
+  attachments,
+}: {
+  adapter: PluginTargetConfig["adapter_kind"];
+  kind: NotificationTriggerKind;
+  title: string;
+  body: string;
+  attachments: NotificationTemplatePreview["attachments"];
+}) {
+  const linkLine = attachments.links.length > 0 ? (
+    <div className="settings-notifications-preview-links text-caption">
+      {attachments.links.map((link, index) => (
+        <span key={`${link.provider}:${link.label}:${index}`}>
+          {index > 0 && " · "}
+          <span className="settings-notifications-preview-anchor">{link.label}</span>
+        </span>
+      ))}
+    </div>
+  ) : null;
+  if (adapter === "telegram") {
+    // With an image the adapter sends a photo whose caption is the whole text.
+    return (
+      <div className="settings-notifications-preview-tg">
+        {attachments.image && (
+          <div className="settings-notifications-preview-image text-caption">{t("settings.notifications.template.imageNote")}</div>
+        )}
+        <div className="settings-notifications-preview-tg-title">{title}</div>
+        <div className="settings-notifications-preview-body">{body}</div>
+        {linkLine}
+      </div>
+    );
+  }
+  if (adapter === "feishu") {
+    // Feishu custom bots cannot upload images: the image can only appear as a link.
+    return (
+      <div className="settings-notifications-preview-fs">
+        <div className="settings-notifications-preview-fs-head">{title}</div>
+        <div className="settings-notifications-preview-body settings-notifications-preview-fs-body">{body}</div>
+        {attachments.image && (
+          <div className="settings-notifications-preview-fs-foot text-caption">{t("settings.notifications.template.feishuImageNote")}</div>
+        )}
+        {linkLine && <div className="settings-notifications-preview-fs-foot">{linkLine}</div>}
+      </div>
+    );
+  }
+  const message: Record<string, unknown> = { title, body };
+  if (attachments.image) message.image = attachments.image;
+  if (attachments.links.length > 0) message.links = attachments.links;
+  return (
+    <pre className="settings-notifications-preview-wh">{JSON.stringify({ event: kind, message }, null, 2)}</pre>
   );
 }
 
@@ -794,221 +1339,6 @@ function Field({
       <span>{label}</span>
       {children}
     </label>
-  );
-}
-
-function TestButton({
-  triggerKinds,
-  disabled,
-  label,
-  onTest,
-}: {
-  triggerKinds: NotificationTriggerKind[];
-  disabled: boolean;
-  label: string;
-  onTest: (kind: NotificationTriggerKind) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const content = (
-    <div className="settings-notifications-test-menu">
-      <span className="settings-notifications-test-menu-label text-caption tw:text-muted-foreground">{t("settings.notifications.testPickEvent")}</span>
-      {triggerKinds.map((kind) => (
-        <Button variant="ghost" key={kind} className="settings-notifications-test-menu-action" onClick={() => {
-            setOpen(false);
-            onTest(kind);
-          }}>
-          {notificationTriggerKindLabel(kind)}
-        </Button>
-      ))}
-    </div>
-  );
-  return (
-    <Popover
-      open={open}
-      onOpenChange={setOpen}
-      side="bottom"
-      align="end"
-      trigger={
-        <Button size="sm" disabled={disabled}>
-          <FlaskConical size={14} />
-          {label}
-        </Button>
-      }
-    >
-      {content}
-    </Popover>
-  );
-}
-
-function EventTemplateEditor({
-  kind,
-  catalogVersion,
-  draft,
-  onChange,
-}: {
-  kind: NotificationTriggerKind;
-  catalogVersion: NotificationCatalogVersion;
-  draft: EventTemplateDraft;
-  onChange: (draft: EventTemplateDraft) => void;
-}) {
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [error, setError] = useState<string>();
-  const titleRef = useRef<HTMLInputElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
-  // The insertion point follows the last focused input, defaulting to the body.
-  const lastFocused = useRef<"title" | "body">("body");
-  const catalog = useQuery({
-    queryKey: templateCatalogKeys.notification(kind, catalogVersion),
-    queryFn: () => getNotificationTemplateCatalog(kind, catalogVersion),
-    staleTime: Infinity,
-  });
-  const defaults = catalog.data?.default_template;
-
-  function insertToken(token: string) {
-    const field = lastFocused.current;
-    const element = field === "title" ? titleRef.current : bodyRef.current;
-    const current = field === "title" ? draft.title_template : draft.body_template;
-    const start = element?.selectionStart ?? current.length;
-    const end = element?.selectionEnd ?? current.length;
-    const next = current.slice(0, start) + token + current.slice(end);
-    onChange(field === "title" ? { ...draft, title_template: next } : { ...draft, body_template: next });
-    if (!element) return;
-    requestAnimationFrame(() => {
-      element.focus();
-      const caret = start + token.length;
-      element.setSelectionRange(caret, caret);
-    });
-  }
-
-  async function preview() {
-    setPreviewOpen(true);
-    setError(undefined);
-    onChange({ ...draft, previewing: true, preview: undefined });
-    try {
-      const result = await previewNotificationTemplate({
-        trigger_kind: kind,
-        language_version: TEMPLATE_LANGUAGE_VERSION,
-        catalog_version: catalogVersion,
-        title_template: draft.title_template,
-        body_template: draft.body_template,
-      });
-      onChange({ ...draft, previewing: false, preview: result });
-    } catch (cause) {
-      onChange({ ...draft, previewing: false, preview: undefined });
-      setError(toUserMessage(cause, t("settings.notifications.template.previewFailed")));
-    }
-  }
-
-  return (
-    <div className="settings-notifications-template-card">
-      <div className="settings-notifications-template-header">
-        <span className="settings-notifications-title-text text-body">{notificationTriggerKindLabel(kind)}</span>
-        <div className="tw:flex tw:items-center tw:gap-1">
-          <Select label={t("settings.notifications.template.modeLabel", { event: notificationTriggerKindLabel(kind) })} value={draft.mode} options={[
-              { value: "system_default", label: t("settings.notifications.template.modeDefault") },
-              { value: "custom", label: t("settings.notifications.template.modeCustom") },
-            ]} onChange={(mode) => {
-              // Switching to custom starts from the default template rather than a blank page.
-              if (mode === "custom" && defaults && draft.title_template === "" && draft.body_template === "") {
-                onChange({ ...draft, mode, title_template: defaults.title_template, body_template: defaults.body_template });
-              } else {
-                onChange({ ...draft, mode: mode as TemplateMode });
-              }
-            }} />
-          {draft.mode === "custom" && (
-            <Button variant="ghost" size="sm" loading={draft.previewing} disabled={draft.previewing} onClick={() => void preview()}>
-              {draft.previewing ? t("settings.notifications.template.previewing") : t("settings.notifications.template.preview")}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {draft.mode === "custom" ? (
-        <div className="settings-notifications-template-fields">
-          <Field label={t("settings.notifications.template.titleField")}>
-            <Input ref={titleRef} aria-label={t("settings.notifications.template.titleField")} value={draft.title_template} onFocus={() => { lastFocused.current = "title"; }} onChange={(e) => onChange({ ...draft, title_template: e.target.value })} />
-          </Field>
-          <Field label={t("settings.notifications.template.bodyField")}>
-            <Textarea ref={bodyRef} aria-label={t("settings.notifications.template.bodyField")} rows={2} value={draft.body_template} onFocus={() => { lastFocused.current = "body"; }} onChange={(e) => onChange({ ...draft, body_template: e.target.value })} />
-          </Field>
-          {catalog.data ? (
-            <details className="settings-notifications-template-catalog">
-              <summary className="text-caption">
-                {t("settings.notifications.template.variables", { n: catalog.data.variables.length })}
-              </summary>
-              <FactCatalog
-                facts={catalog.data.variables.map((variable) => ({ ...variable, path: variable.name }))}
-                token={(path) => `{{${path}}}`}
-                onInsert={insertToken}
-              />
-              {/* Block-level layout is the plain div's job; the Typography.Text root carries no structural class. */}
-              <div className="settings-notifications-template-functions">
-                <span className="text-caption tw:text-muted-foreground">
-                  {t("settings.notifications.template.functions", { names: catalog.data.functions.map((fn) => fn.name).join(" / ") })}
-                </span>
-              </div>
-            </details>
-          ) : (
-            <span className="tw:text-muted-foreground">
-              {catalog.isError ? t("settings.notifications.template.catalogFailed") : t("settings.notifications.template.catalogLoading")}
-            </span>
-          )}
-
-          {previewOpen && (
-            <div className="settings-notifications-template-preview">
-              {error && <Alert tone="error" title={error} />}
-              {draft.previewing && (
-                <div role="status" className="settings-notifications-template-preview-status text-caption">
-                  <SpinnerIcon />
-                  {t("settings.notifications.template.previewing")}
-                </div>
-              )}
-              {draft.preview && (
-                <div className="settings-notifications-template-preview-content">
-                  <StatePill tone={draft.preview.valid ? "online" : "offline"}>{draft.preview.valid ? t("settings.notifications.template.valid") : t("settings.notifications.template.invalid")}</StatePill>
-                  <p className="settings-notifications-template-copy text-caption">
-                    <span className="tw:text-muted-foreground">{t("settings.notifications.template.previewTitle")}</span>{draft.preview.title}
-                  </p>
-                  <p className="settings-notifications-template-copy text-caption">
-                    <span className="tw:text-muted-foreground">{t("settings.notifications.template.previewBody")}</span>{draft.preview.body}
-                  </p>
-                  <p className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.previewAttachments")}</p>
-                  {draft.preview.errors.map((item, index) => (
-                    <div key={index}>
-                      <span className="text-caption tw:text-destructive">
-                        {item.field ? `${item.field}: ` : ""}{item.message}
-                      </span>
-                    </div>
-                  ))}
-                  {draft.preview.warnings.map((item, index) => (
-                    <div key={index}>
-                      <span className="text-caption tw:text-warning">
-                        {item.variable ? `${item.variable}: ` : ""}{item.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : defaults ? (
-        <div className="settings-notifications-template-defaults">
-          <p className="settings-notifications-template-copy">
-            {t("settings.notifications.template.defaultTitle")}<span>{defaults.title_template}</span>
-          </p>
-          <p className="settings-notifications-template-copy-pre">
-            {t("settings.notifications.template.defaultBody")}<span>{defaults.body_template}</span>
-          </p>
-        </div>
-      ) : (
-        <div className="settings-notifications-template-fallback">
-          <span className="tw:text-muted-foreground">
-            {catalog.isError ? t("settings.notifications.template.defaultFailed") : t("settings.notifications.template.defaultLoading")}
-          </span>
-        </div>
-      )}
-    </div>
   );
 }
 

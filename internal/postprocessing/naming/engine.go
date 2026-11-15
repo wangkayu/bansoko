@@ -199,6 +199,21 @@ type CompiledTemplate struct {
 	program      *goja.Program
 }
 
+// NotificationRoot is the literal absolute directory root written in a naming
+// template. Notifications expose paths relative to this owner-configured root,
+// never the private absolute path itself. A dynamic or filesystem-wide root has
+// no safe public anchor and returns an empty string.
+func (t CompiledTemplate) NotificationRoot() string {
+	if t.Kind != KindDirectory || t.verbatimRoot == "" {
+		return ""
+	}
+	root := filepath.Clean(strings.TrimSuffix(t.verbatimRoot, "/"))
+	if root == "/" || !filepath.IsAbs(root) {
+		return ""
+	}
+	return root
+}
+
 type CompiledVariant struct{ Directory, VideoFilename CompiledTemplate }
 
 // RequiredFacts is the union of the facts the variant's directory and filename

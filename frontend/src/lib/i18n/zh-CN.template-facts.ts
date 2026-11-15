@@ -15,11 +15,26 @@ export const templateFactsCopy = {
   semantic: {
     image: {
       label: "节目图片",
-      description: "插入图片附件。依次选择来源封面、已绑定的 Bangumi／TMDB 海报和内置占位图，不接受模板传入图片地址。",
+      description: "插入图片附件。自动选择来源封面、已绑定的 Bangumi／TMDB 海报或内置占位图。",
     },
-    link: {
-      label: "元数据链接",
-      description: "插入已绑定 Bangumi／TMDB 条目的链接；没有有效绑定时不输出链接。",
+    bgm: {
+      link: { label: "Bangumi 链接", description: "已绑定 Bangumi 条目的安全页面地址。" },
+      image: { label: "Bangumi 图片", description: "指定使用已绑定 Bangumi 条目的海报；不可用时使用内置占位图。" },
+    },
+    tmdb: {
+      link: { label: "TMDB 链接", description: "已绑定 TMDB 条目的安全页面地址。" },
+      image: { label: "TMDB 图片", description: "指定使用已绑定 TMDB 条目的海报；不可用时使用内置占位图。" },
+    },
+    anibt: {
+      link: { label: "AniBT 发布链接", description: "当前 AniBT 发布的安全页面地址；非 AniBT 发布为空。" },
+      image: { label: "AniBT 图片", description: "指定使用当前 AniBT 作品的封面；不可用时使用内置占位图。" },
+    },
+    mikan: {
+      link: { label: "Mikan 发布链接", description: "当前 Mikan 发布的安全页面地址；非 Mikan 发布为空。" },
+      image: { label: "Mikan 图片", description: "指定使用当前 Mikan 作品的封面；不可用时使用内置占位图。" },
+    },
+    download: {
+      link: { label: "下载链接", description: "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。" },
     },
   },
   roots: {

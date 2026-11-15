@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/templatecatalog/notification"
 )
 
@@ -24,8 +25,8 @@ type fileOperationNotificationFacts struct {
 	fileFacts          []byte
 	configSnapshot     []byte
 	renderSnapshot     []byte
-	// locationRoot is the publication location's own root: the directory a
-	// target path is expressed relative to in the notification text.
+	// locationRoot is the frozen naming template's literal absolute root; it
+	// anchors notification-relative paths without disclosing that root.
 	locationRoot string
 	targetPath   string
 	operation    string
@@ -78,6 +79,11 @@ func buildFileOperationNotificationPayload(facts fileOperationNotificationFacts,
 	}
 	for key, value := range facts.frozen {
 		payload[key] = value
+	}
+	if trigger == plugintargetport.TriggerFileOperationCompleted {
+		// The SQL group-release function replaces this empty list with the
+		// final bound-subtitle paths after every bound operation settles.
+		payload["out.subtitles"] = []string{}
 	}
 	return json.Marshal(payload)
 }

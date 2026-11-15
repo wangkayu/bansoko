@@ -407,7 +407,7 @@ export const factsCopy = {
     },
     dir: {
       label: "目标目录",
-      description: "派生值：相对于入库位置根的目录。",
+      description: "派生值：相对于命名模板字面量根的目录。",
     },
     files: {
       label: "文件列表",
@@ -419,7 +419,11 @@ export const factsCopy = {
     },
     path: {
       label: "目标路径",
-      description: "派生值：相对于入库位置根的完整路径。",
+      description: "派生值：相对于命名模板字面量根的完整路径。",
+    },
+    subtitles: {
+      label: "绑定字幕",
+      description: "派生值：主视频绑定字幕的最终相对路径，按清单顺序逐行显示；没有绑定字幕时整行省略。",
     },
   },
   r: {
@@ -1076,7 +1080,7 @@ export const enFactsCopy = {
     },
     dir: {
       label: "Target folder",
-      description: "Derived: Folder relative to the location's root.",
+      description: "Derived: Folder relative to the naming template's literal root.",
     },
     files: {
       label: "Files",
@@ -1088,7 +1092,11 @@ export const enFactsCopy = {
     },
     path: {
       label: "Target path",
-      description: "Derived: Full path relative to the location's root.",
+      description: "Derived: Full path relative to the naming template's literal root.",
+    },
+    subtitles: {
+      label: "Bound subtitles",
+      description: "Derived: Final relative paths of subtitles bound to the main video, one per line in manifest order; the line is omitted when there are none.",
     },
   },
   r: {

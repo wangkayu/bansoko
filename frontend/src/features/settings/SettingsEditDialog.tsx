@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useDirtyConfirm } from "../../ui";
-import { Button, Dialog } from "../../ui/base";
+import { Button, Dialog, type DialogTier } from "../../ui/base";
 import { t } from "../../lib/i18n";
 
 // The settings edit's shared Dialog: the M size (title / scrolling form / fixed action bar provided
@@ -17,6 +17,7 @@ export function SettingsEditDialog({
   dirty = false,
   onDiscard,
   busy = false,
+  tier = "M",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -28,6 +29,8 @@ export function SettingsEditDialog({
   onDiscard?: () => void;
   /** A save is in flight: Esc, backdrop and the close button are ignored so the outcome stays visible. */
   busy?: boolean;
+  /** Dialog size tier; the notification editor widens to L on its template page. */
+  tier?: DialogTier;
 }) {
   const { requestClose, confirmDialog } = useDirtyConfirm({
     dirty,
@@ -44,7 +47,7 @@ export function SettingsEditDialog({
     <>
       <Dialog
         open={open}
-        tier="M"
+        tier={tier}
         closeDisabled={busy}
         onRequestClose={() => { if (!busy) requestClose(); }}
         title={title}

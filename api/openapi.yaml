@@ -18619,6 +18619,45 @@ components:
           minLength: 1
         variable:
           type: string
+    NotificationTemplatePreviewImage:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source:
+          type: string
+          enum: [automatic, bgm, tmdb, anibt, mikan, custom]
+        url:
+          type: string
+          format: uri
+          description: Present only for a validated custom HTTPS image.
+    NotificationTemplatePreviewLink:
+      type: object
+      additionalProperties: false
+      required: [provider, label, url]
+      properties:
+        provider:
+          type: string
+          enum: [bgm, tmdb, anibt, mikan, download, custom]
+        label:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          format: uri
+    NotificationTemplatePreviewAttachments:
+      type: object
+      additionalProperties: false
+      required: [image, links]
+      properties:
+        image:
+          allOf:
+            - $ref: '#/components/schemas/NotificationTemplatePreviewImage'
+          nullable: true
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTemplatePreviewLink'
     NotificationTemplatePreviewInput:
       type: object
       additionalProperties: false
@@ -18643,8 +18682,10 @@ components:
     NotificationTemplatePreview:
       type: object
       additionalProperties: false
-      required: [language_version, catalog_version, valid, title, body, warnings, errors, variables]
+      required: [language_version, catalog_version, valid, title, body, attachments, warnings, errors, variables]
       properties:
+        attachments:
+          $ref: '#/components/schemas/NotificationTemplatePreviewAttachments'
         language_version:
           type: string
           enum: [bansoko-template-1]

@@ -7503,6 +7503,26 @@ export interface components {
             message: string;
             variable?: string;
         };
+        NotificationTemplatePreviewImage: {
+            /** @enum {string} */
+            source: "automatic" | "bgm" | "tmdb" | "anibt" | "mikan" | "custom";
+            /**
+             * Format: uri
+             * @description Present only for a validated custom HTTPS image.
+             */
+            url?: string;
+        };
+        NotificationTemplatePreviewLink: {
+            /** @enum {string} */
+            provider: "bgm" | "tmdb" | "anibt" | "mikan" | "download" | "custom";
+            label: string;
+            /** Format: uri */
+            url: string;
+        };
+        NotificationTemplatePreviewAttachments: {
+            image: components["schemas"]["NotificationTemplatePreviewImage"] | null;
+            links: components["schemas"]["NotificationTemplatePreviewLink"][];
+        };
         NotificationTemplatePreviewInput: {
             trigger_kind: components["schemas"]["NotificationTriggerKind"];
             /** @enum {string} */
@@ -7513,6 +7533,7 @@ export interface components {
             body_template: string;
         };
         NotificationTemplatePreview: {
+            attachments: components["schemas"]["NotificationTemplatePreviewAttachments"];
             /** @enum {string} */
             language_version: "bansoko-template-1";
             /** @enum {string} */

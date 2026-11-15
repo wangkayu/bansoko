@@ -11,8 +11,6 @@
 package notification
 
 import (
-	"strings"
-
 	"bansoko/internal/templatefacts"
 )
 
@@ -99,6 +97,8 @@ var functions = []Function{
 	{Name: "replace", Description: "替换字符串中所有出现的字面量子串。", minArgs: 3, maxArgs: 3, Arguments: []string{"value", "search", "replacement"}},
 	{Name: "if", Description: "根据简单真值条件在两个值之间选择。", minArgs: 3, maxArgs: 3, Arguments: []string{"condition", "then", "else"}},
 	{Name: "eq", Description: "比较两个值是否相等，不访问外部资源。", minArgs: 2, maxArgs: 2, Arguments: []string{"left", "right"}},
+	{Name: "link", Description: "插入一个可点击链接。目标必须是链接变量或安全 URL，标签必须是文字字面量。", minArgs: 2, maxArgs: 2, Arguments: []string{"target", "label"}},
+	{Name: "image", Description: "插入指定来源的图片附件，也接受不带凭据的自定义 HTTPS 图片地址。", minArgs: 1, maxArgs: 1, Arguments: []string{"target"}},
 }
 
 // Functions returns the closed function allowlist.
@@ -172,6 +172,7 @@ var payloadKeyDefs = []payloadKeyDef{
 	{"out.dir", onCompleted},
 	{"out.name", onCompleted},
 	{"out.path", onCompleted},
+	{"out.subtitles", onCompleted},
 	{"op.kind", onFile},
 	{"op.conflict", onFile},
 }
@@ -229,18 +230,67 @@ func Variables(trigger string) ([]Variable, bool) {
 	variables = append(variables,
 		Variable{
 			Name: ImageVariable, Type: TypeString, Label: "节目图片",
-			Description: "插入一张图片附件。服务端依次选择供应商封面、已绑定的 Bangumi／TMDB 海报和内置占位图；不接受模板传入图片地址。",
+			Description: "插入一张图片附件。服务端依次选择供应商封面、已绑定的 Bangumi／TMDB 海报和内置占位图。",
 			Source:      "system", Nullable: false,
 			LabelKey: "templateFacts.semantic.image.label", DescriptionKey: "templateFacts.semantic.image.description",
 		},
-		Variable{
-			Name: LinkVariable, Type: TypeString, Label: "元数据链接",
-			Description: "插入已绑定 Bangumi／TMDB 条目的可点击链接；没有有效绑定时不输出链接。",
-			Source:      "system", Nullable: true,
-			LabelKey: "templateFacts.semantic.link.label", DescriptionKey: "templateFacts.semantic.link.description",
-		},
 	)
+	available := make(map[string]bool, len(variables))
+	for _, variable := range variables {
+		available[variable.Name] = true
+	}
+	for _, variable := range derivedLinkVariables(available) {
+		variables = append(variables, variable)
+	}
+	for _, variable := range derivedImageVariables(available) {
+		variables = append(variables, variable)
+	}
 	return variables, true
+}
+
+func derivedLinkVariables(available map[string]bool) []Variable {
+	defs := []struct {
+		name, requires, label, description string
+	}{
+		{BGMLinkVariable, "bgm.id", "Bangumi 链接", "已绑定 Bangumi 条目的安全页面地址。"},
+		{TMDBLinkVariable, "tmdb.id", "TMDB 链接", "已绑定 TMDB 条目的安全页面地址。"},
+		{AniBTLinkVariable, "release.src", "AniBT 发布链接", "当前 AniBT 发布的安全页面地址；非 AniBT 发布为空。"},
+		{MikanLinkVariable, "release.src", "Mikan 发布链接", "当前 Mikan 发布的安全页面地址；非 Mikan 发布为空。"},
+		{DownloadLinkVariable, "release.id", "下载链接", "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。"},
+	}
+	variables := make([]Variable, 0, len(defs))
+	for _, def := range defs {
+		if !available[def.requires] {
+			continue
+		}
+		variables = append(variables, Variable{Name: def.name, Type: TypeString, Label: def.label, Description: def.description,
+			Source: "derived", Nullable: true, SampleValue: "https://example.com/",
+			LabelKey:       "templateFacts.semantic." + def.name + ".label",
+			DescriptionKey: "templateFacts.semantic." + def.name + ".description"})
+	}
+	return variables
+}
+
+func derivedImageVariables(available map[string]bool) []Variable {
+	defs := []struct {
+		name, requires, label, description string
+	}{
+		{BGMImageVariable, "bgm.id", "Bangumi 图片", "指定使用已绑定 Bangumi 条目的海报；不可用时使用内置占位图。"},
+		{TMDBImageVariable, "tmdb.id", "TMDB 图片", "指定使用已绑定 TMDB 条目的海报；不可用时使用内置占位图。"},
+		{AniBTImageVariable, "release.src", "AniBT 图片", "指定使用当前 AniBT 作品的封面；不可用时使用内置占位图。"},
+		{MikanImageVariable, "release.src", "Mikan 图片", "指定使用当前 Mikan 作品的封面；不可用时使用内置占位图。"},
+	}
+	variables := make([]Variable, 0, len(defs))
+	for _, def := range defs {
+		if !available[def.requires] {
+			continue
+		}
+		variables = append(variables, Variable{Name: def.name, Type: TypeString, Label: def.label, Description: def.description,
+			Source: "derived", Nullable: true,
+			LabelKey:       "templateFacts.semantic." + def.name + ".label",
+			DescriptionKey: "templateFacts.semantic." + def.name + ".description"})
+	}
+	return variables
 }
 
 // Defaults returns the Chinese system default title/body for a trigger.
@@ -259,14 +309,26 @@ func DefaultsFor(trigger, locale string) (title, body string) {
 	if !ok {
 		return "", ""
 	}
-	return pair[0], "{{image}}\n" + pair[1] + "\n{{link}}"
+	variables, _ := Variables(trigger)
+	available := make(map[string]bool, len(variables))
+	for _, variable := range variables {
+		available[variable.Name] = true
+	}
+	body = "{{image}}\n" + pair[1]
+	if available[BGMLinkVariable] {
+		body += "\n{{link(bgm.link, 'Bangumi')}}"
+	}
+	if available[TMDBLinkVariable] {
+		body += "\n{{link(tmdb.link, 'TMDB')}}"
+	}
+	return pair[0], body
 }
 
 var defaultsZH = map[string][2]string{
 	TriggerDownloadSubmitted: {"已加入下载：{{anime.title}}",
 		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{defaultIfEmpty(ep.display, '未识别')}}"},
 	TriggerFileOperationCompleted: {"入库完成：{{anime.title}}",
-		"{{release.title}}\n文件：{{out.name}}\n位置：{{out.path}}"},
+		"{{release.title}}\n文件：{{out.name}}\n字幕：{{out.subtitles}}\n目录：{{out.dir}}"},
 	TriggerFileOperationFailed: {"入库失败：{{anime.title}}",
 		"{{release.title}}\n原因：{{defaultIfEmpty(result.reason, '未知错误')}}"},
 	TriggerReleaseDiscovered: {"发现新发布：{{anime.title}}",
@@ -289,7 +351,7 @@ var defaultsEN = map[string][2]string{
 	TriggerDownloadSubmitted: {"Download started: {{anime.title}}",
 		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisode: {{defaultIfEmpty(ep.display, 'not recognized')}}"},
 	TriggerFileOperationCompleted: {"Added to library: {{anime.title}}",
-		"{{release.title}}\nFile: {{out.name}}\nLocation: {{out.path}}"},
+		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\nDirectory: {{out.dir}}"},
 	TriggerFileOperationFailed: {"Library import failed: {{anime.title}}",
 		"{{release.title}}\nReason: {{defaultIfEmpty(result.reason, 'unknown error')}}"},
 	TriggerReleaseDiscovered: {"New release: {{anime.title}}",
@@ -320,6 +382,13 @@ func Sample(trigger string) map[string]any {
 		if !fact.Hidden {
 			facts[fact.Path] = sampleFact(fact.SampleFor(scenario))
 		}
+	}
+	if _, ok := facts["release.src"]; ok {
+		facts[AniBTLinkVariable] = "https://anibt.net/release/10001"
+		facts[MikanLinkVariable] = "https://mikanani.me/Home/Episode/0123456789abcdef0123456789abcdef01234567"
+	}
+	if _, ok := facts["release.id"]; ok {
+		facts[DownloadLinkVariable] = "https://example.com/download/sample.torrent"
 	}
 	return facts
 }
@@ -352,12 +421,16 @@ func ScenarioOf(trigger string) (templatefacts.Scenario, bool) {
 	}
 }
 
-// sampleFact turns a registry sample into the value a render reads: a string
-// list renders comma-separated, a file list keeps its entries.
+// sampleFact turns a registry sample into the value a render reads. String
+// lists remain lists so standalone-list lines can repeat or omit their label.
 func sampleFact(value any) any {
 	switch typed := value.(type) {
 	case []string:
-		return strings.Join(typed, ", ")
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = item
+		}
+		return out
 	case []map[string]any:
 		out := make([]any, len(typed))
 		for i, item := range typed {

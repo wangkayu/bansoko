@@ -226,8 +226,15 @@ func (e literalExpression) evaluate(map[string]any) (string, bool, []Warning) {
 type variableExpression struct{ name string }
 
 func (e variableExpression) evaluate(facts map[string]any) (string, bool, []Warning) {
-	if e.name == ImageVariable || e.name == LinkVariable {
+	if e.name == ImageVariable || isImageVariable(e.name) {
 		return "", true, nil
+	}
+	if isLinkVariable(e.name) {
+		text := LinkValue(facts, e.name)
+		if text == "" {
+			return "", true, []Warning{{Code: "null_variable", Message: "变量没有值，已渲染为空：" + e.name, Variable: e.name}}
+		}
+		return text, true, nil
 	}
 	value, present := LookupFact(facts, e.name)
 	text := FormatFact(value)
@@ -243,6 +250,15 @@ type callExpression struct {
 }
 
 func (e callExpression) evaluate(facts map[string]any) (string, bool, []Warning) {
+	if e.name == ImageVariable || e.name == "link" {
+		var warnings []Warning
+		if len(e.args) > 0 {
+			if target, ok := e.args[0].(variableExpression); ok {
+				_, _, warnings = target.evaluate(facts)
+			}
+		}
+		return "", true, warnings
+	}
 	var warnings []Warning
 	values := make([]string, 0, len(e.args))
 	present := make([]bool, 0, len(e.args))
@@ -322,51 +338,219 @@ func renderText(source string, facts map[string]any, known map[string]bool, fiel
 		})
 		return renderResult{errors: errors}
 	}
+	semanticErrors, semanticWarnings := validateStandaloneSemanticDirectives(source, facts, known, field)
+	errors = append(errors, semanticErrors...)
+	warnings = append(warnings, semanticWarnings...)
 	for _, segment := range semanticSourceSegments(source) {
-		remaining := segment.text
-		cursor := segment.originalStart
-		for len(remaining) > 0 {
-			start := strings.Index(remaining, "{{")
-			if start < 0 {
-				builder.WriteString(remaining)
-				break
-			}
-			if start > 0 {
-				builder.WriteString(remaining[:start])
-			}
-			expressionStart := cursor + start
-			afterOpen := remaining[start+2:]
-			end := strings.Index(afterOpen, "}}")
-			if end < 0 {
-				errors = append(errors, SourceError{
-					Code:    "unterminated_expression",
-					End:     len(source),
-					Field:   field,
-					Message: "表达式未正确闭合。",
-					Start:   expressionStart,
-				})
-				break
-			}
-			inner := afterOpen[:end]
-			expressionEnd := expressionStart + 2 + end + 2
-			text, exprWarnings, exprError := evaluateExpression(inner, facts, known)
-			if exprError != nil {
-				errors = append(errors, SourceError{
-					Code:    exprError.code,
-					End:     expressionEnd,
-					Field:   field,
-					Message: exprError.message,
-					Start:   expressionStart,
-				})
-			} else {
-				builder.WriteString(text)
-				warnings = append(warnings, exprWarnings...)
-			}
-			cursor = expressionEnd
-			remaining = afterOpen[end+2:]
-		}
+		result := renderTextSegment(source, segment, facts, known, field)
+		builder.WriteString(result.text)
+		errors = append(errors, result.errors...)
+		warnings = append(warnings, result.warnings...)
 	}
 	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+}
+
+func validateStandaloneSemanticDirectives(source string, facts map[string]any, known map[string]bool, field Field) ([]SourceError, []Warning) {
+	var errors []SourceError
+	var warnings []Warning
+	for lineStart := 0; lineStart < len(source); {
+		lineEnd := strings.IndexByte(source[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(source)
+		} else {
+			lineEnd += lineStart + 1
+		}
+		line := source[lineStart:lineEnd]
+		if isSemanticDirectiveLine(line) {
+			start := strings.Index(line, "{{")
+			afterOpen := line[start+2:]
+			end := strings.Index(afterOpen, "}}")
+			_, exprWarnings, exprError := evaluateExpression(afterOpen[:end], facts, known)
+			if exprError != nil {
+				errors = append(errors, SourceError{Code: exprError.code, Message: exprError.message, Field: field, Start: lineStart + start, End: lineStart + start + 2 + end + 2})
+			} else {
+				warnings = append(warnings, exprWarnings...)
+			}
+		}
+		lineStart = lineEnd
+	}
+	return errors, warnings
+}
+
+func renderTextSegment(source string, segment templateSourceSegment, facts map[string]any, known map[string]bool, field Field) renderResult {
+	var builder strings.Builder
+	var errors []SourceError
+	var warnings []Warning
+	remaining := segment.text
+	cursor := segment.originalStart
+	for len(remaining) > 0 {
+		consumed := strings.IndexByte(remaining, '\n')
+		if consumed < 0 {
+			consumed = len(remaining)
+		} else {
+			consumed++
+		}
+		line := remaining[:consumed]
+		// A string literal may contain a newline. Keep a multiline expression
+		// in one scanner chunk; standalone-list detection still requires its
+		// expression to begin and end on the same physical line.
+		for search := 0; search < consumed; {
+			start := strings.Index(remaining[search:], "{{")
+			if start < 0 {
+				break
+			}
+			start += search
+			if start >= consumed {
+				break
+			}
+			end := strings.Index(remaining[start+2:], "}}")
+			if end < 0 {
+				break
+			}
+			expressionEnd := start + 2 + end + 2
+			if expressionEnd > consumed {
+				consumed = expressionEnd
+				if next := strings.IndexByte(remaining[consumed:], '\n'); next >= 0 {
+					consumed += next + 1
+				} else {
+					consumed = len(remaining)
+				}
+				line = remaining[:consumed]
+				break
+			}
+			search = expressionEnd
+		}
+		if text, _, handled, exprWarnings := renderStandaloneListLine(line, facts, known); handled {
+			if text == "" && !strings.HasSuffix(line, "\n") {
+				plain := builder.String()
+				plain = strings.TrimSuffix(plain, "\n")
+				plain = strings.TrimSuffix(plain, "\r")
+				builder.Reset()
+				builder.WriteString(plain)
+			}
+			builder.WriteString(text)
+			warnings = append(warnings, exprWarnings...)
+		} else {
+			result := renderPlainLine(source, line, cursor, facts, known, field)
+			builder.WriteString(result.text)
+			errors = append(errors, result.errors...)
+			warnings = append(warnings, result.warnings...)
+		}
+		remaining = remaining[consumed:]
+		cursor += consumed
+	}
+	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+}
+
+func renderPlainLine(source, remaining string, cursor int, facts map[string]any, known map[string]bool, field Field) renderResult {
+	var builder strings.Builder
+	var errors []SourceError
+	var warnings []Warning
+	for len(remaining) > 0 {
+		start := strings.Index(remaining, "{{")
+		if start < 0 {
+			builder.WriteString(remaining)
+			break
+		}
+		if start > 0 {
+			builder.WriteString(remaining[:start])
+		}
+		expressionStart := cursor + start
+		afterOpen := remaining[start+2:]
+		end := strings.Index(afterOpen, "}}")
+		if end < 0 {
+			errors = append(errors, SourceError{
+				Code:    "unterminated_expression",
+				End:     len(source),
+				Field:   field,
+				Message: "表达式未正确闭合。",
+				Start:   expressionStart,
+			})
+			break
+		}
+		inner := afterOpen[:end]
+		expressionEnd := expressionStart + 2 + end + 2
+		text, exprWarnings, exprError := evaluateExpression(inner, facts, known)
+		if exprError != nil {
+			errors = append(errors, SourceError{
+				Code:    exprError.code,
+				End:     expressionEnd,
+				Field:   field,
+				Message: exprError.message,
+				Start:   expressionStart,
+			})
+		} else {
+			builder.WriteString(text)
+			warnings = append(warnings, exprWarnings...)
+		}
+		cursor = expressionEnd
+		remaining = afterOpen[end+2:]
+	}
+	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+}
+
+// renderStandaloneListLine repeats a line's literal prefix for every list item
+// and omits the whole line for an empty list. Only a direct list variable is
+// special; functions and scalar variables retain the normal rendering rules.
+func renderStandaloneListLine(line string, facts map[string]any, known map[string]bool) (string, int, bool, []Warning) {
+	if facts == nil {
+		return "", 0, false, nil
+	}
+	consumed := strings.IndexByte(line, '\n')
+	if consumed < 0 {
+		consumed = len(line)
+	} else {
+		consumed++
+	}
+	content := line[:consumed]
+	start := strings.Index(content, "{{")
+	if start < 0 {
+		return "", 0, false, nil
+	}
+	afterOpen := content[start+2:]
+	end := strings.Index(afterOpen, "}}")
+	if end < 0 || strings.Contains(afterOpen[end+2:], "{{") {
+		return "", 0, false, nil
+	}
+	expression, err := parseExpression(strings.TrimSpace(afterOpen[:end]))
+	if err != nil {
+		return "", 0, false, nil
+	}
+	variable, ok := expression.(variableExpression)
+	if !ok || (!known[variable.name] && !(known[varsWildcard] && IsVarsPath(variable.name))) {
+		return "", 0, false, nil
+	}
+	value, present := LookupFact(facts, variable.name)
+	var items []string
+	switch typed := value.(type) {
+	case []string:
+		items = append(items, typed...)
+	case []any:
+		for _, item := range typed {
+			if text := FormatFact([]any{item}); text != "" {
+				items = append(items, text)
+			}
+		}
+	default:
+		if variable.name != "out.subtitles" || (present && value != nil) {
+			return "", 0, false, nil
+		}
+	}
+	newline := ""
+	if strings.HasSuffix(content, "\n") {
+		newline = "\n"
+	}
+	if len(items) == 0 {
+		return "", consumed, true, nil
+	}
+	prefix := content[:start]
+	suffix := strings.TrimSuffix(afterOpen[end+2:], "\n")
+	suffix = strings.TrimSuffix(suffix, "\r")
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		lines = append(lines, prefix+item+suffix)
+	}
+	return strings.Join(lines, "\n") + newline, consumed, true, nil
 }
 
 type expressionError struct {
@@ -404,10 +588,46 @@ func validateExpression(expr templateExpression, known map[string]bool) error {
 		if len(node.args) < def.minArgs || (def.maxArgs >= 0 && len(node.args) > def.maxArgs) {
 			return fmt.Errorf("函数 %s 的参数数量无效", node.name)
 		}
+		if node.name == "link" || node.name == ImageVariable {
+			return validateAttachmentCall(node, known)
+		}
 		for _, arg := range node.args {
 			if err := validateExpression(arg, known); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func validateAttachmentCall(node callExpression, known map[string]bool) error {
+	target := node.args[0]
+	switch value := target.(type) {
+	case variableExpression:
+		if node.name == "link" && !isLinkVariable(value.name) {
+			return fmt.Errorf("link 的第一个参数必须是链接变量或安全 URL 字面量")
+		}
+		if node.name == ImageVariable && !isImageVariable(value.name) {
+			return fmt.Errorf("image 的参数必须是图片变量或安全 HTTPS URL 字面量")
+		}
+		if !known[value.name] {
+			return fmt.Errorf("当前事件不支持变量 %q", value.name)
+		}
+	case literalExpression:
+		safe := SafeExternalURL(value.value, node.name == ImageVariable)
+		if node.name == ImageVariable {
+			safe = SafeExternalImageURL(value.value)
+		}
+		if safe == "" {
+			return fmt.Errorf("附件地址必须是安全的%s URL，且不能包含凭据", map[string]string{"link": "", ImageVariable: " HTTPS"}[node.name])
+		}
+	default:
+		return fmt.Errorf("附件目标必须是变量或 URL 字面量")
+	}
+	if node.name == "link" {
+		label, ok := node.args[1].(literalExpression)
+		if !ok || !validLinkLabel(label.value) {
+			return fmt.Errorf("link 的第二个参数必须是非空文字标签")
 		}
 	}
 	return nil
