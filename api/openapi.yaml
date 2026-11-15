@@ -18427,7 +18427,7 @@ components:
       properties:
         name:
           type: string
-          enum: [coalesce, defaultIfEmpty, lower, upper, replace, if, eq]
+          enum: [coalesce, defaultIfEmpty, lower, upper, replace, if, eq, showIf, link, image]
         description:
           type: string
           minLength: 1

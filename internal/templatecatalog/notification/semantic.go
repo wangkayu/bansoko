@@ -303,6 +303,12 @@ func isSemanticDirectiveLine(line string) bool {
 	if err != nil {
 		return false
 	}
+	return isAttachmentExpression(expression)
+}
+
+// isAttachmentExpression reports whether an expression produces an attachment
+// rather than text.
+func isAttachmentExpression(expression templateExpression) bool {
 	switch node := expression.(type) {
 	case variableExpression:
 		return node.name == ImageVariable

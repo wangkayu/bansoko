@@ -2563,8 +2563,11 @@ const (
 	TemplateFunctionNameDefaultIfEmpty TemplateFunctionName = "defaultIfEmpty"
 	TemplateFunctionNameEq             TemplateFunctionName = "eq"
 	TemplateFunctionNameIf             TemplateFunctionName = "if"
+	TemplateFunctionNameImage          TemplateFunctionName = "image"
+	TemplateFunctionNameLink           TemplateFunctionName = "link"
 	TemplateFunctionNameLower          TemplateFunctionName = "lower"
 	TemplateFunctionNameReplace        TemplateFunctionName = "replace"
+	TemplateFunctionNameShowIf         TemplateFunctionName = "showIf"
 	TemplateFunctionNameUpper          TemplateFunctionName = "upper"
 )
 

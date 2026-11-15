@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -114,6 +115,13 @@ func outputErrors(title, body string, titleSourceLen, bodySourceLen int) []Sourc
 
 // varsWildcard marks a known set that admits every vars.<group>.<name>.
 const varsWildcard = "vars.*"
+
+// showIfFunction is the closed line-visibility directive. Written at the start
+// of a line, it shows the rest of that line when at least one argument has a
+// value and drops the whole line when every argument is empty. It renders no
+// text itself. The directive is per line by construction: there is no block,
+// no closing tag and no nesting.
+const showIfFunction = "showIf"
 
 func knownVariables(trigger string) (map[string]bool, bool) {
 	variables, ok := Variables(trigger)
@@ -310,6 +318,8 @@ func applyFunction(name string, values []string, present []bool, warnings []Warn
 			return "true", true, warnings
 		}
 		return "false", true, warnings
+	case showIfFunction:
+		return "", true, warnings
 	default:
 		return "", false, warnings
 	}
@@ -341,12 +351,14 @@ func renderText(source string, facts map[string]any, known map[string]bool, fiel
 	semanticErrors, semanticWarnings := validateStandaloneSemanticDirectives(source, facts, known, field)
 	errors = append(errors, semanticErrors...)
 	warnings = append(warnings, semanticWarnings...)
+	errors = append(errors, validateLineDirectives(source, known, field)...)
 	for _, segment := range semanticSourceSegments(source) {
 		result := renderTextSegment(source, segment, facts, known, field)
 		builder.WriteString(result.text)
 		errors = append(errors, result.errors...)
 		warnings = append(warnings, result.warnings...)
 	}
+	sort.SliceStable(errors, func(i, j int) bool { return errors[i].Start < errors[j].Start })
 	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
 }
 
@@ -375,6 +387,98 @@ func validateStandaloneSemanticDirectives(source string, facts map[string]any, k
 		lineStart = lineEnd
 	}
 	return errors, warnings
+}
+
+// expressionSpan locates one {{...}} expression in a template source.
+type expressionSpan struct {
+	start  int
+	end    int
+	source string
+}
+
+// expressionSpans lists every expression of a field with its byte offsets,
+// using the same scan the renderer performs.
+func expressionSpans(source string) []expressionSpan {
+	spans := make([]expressionSpan, 0, 8)
+	for offset := 0; offset < len(source); {
+		start := strings.Index(source[offset:], "{{")
+		if start < 0 {
+			break
+		}
+		start += offset
+		afterOpen := source[start+2:]
+		end := strings.Index(afterOpen, "}}")
+		if end < 0 {
+			break
+		}
+		spans = append(spans, expressionSpan{start: start, end: start + 2 + end + 2, source: afterOpen[:end]})
+		offset = start + 2 + end + 2
+	}
+	return spans
+}
+
+// validateLineDirectives enforces the showIf placement contract and validates
+// its arguments. The line renderer removes the directive before rendering, so
+// these checks cannot ride on the ordinary expression pass.
+func validateLineDirectives(source string, known map[string]bool, field Field) []SourceError {
+	var errors []SourceError
+	gatedLines := map[int]bool{}
+	for _, span := range expressionSpans(source) {
+		expression, err := parseExpression(strings.TrimSpace(span.source))
+		if err != nil || !mentionsShowIf(expression) {
+			continue
+		}
+		report := func(message string) {
+			errors = append(errors, SourceError{Code: "invalid_expression", Message: message, Field: field, Start: span.start, End: span.end})
+		}
+		call, ok := expression.(callExpression)
+		if !ok || call.name != showIfFunction {
+			report("showIf 只能单独写在行首。")
+			continue
+		}
+		lineStart := strings.LastIndexByte(source[:span.start], '\n') + 1
+		if gatedLines[lineStart] {
+			report("每行只能有一个 showIf。")
+			continue
+		}
+		if strings.TrimSpace(source[lineStart:span.start]) != "" {
+			report("showIf 只能写在行首。")
+			continue
+		}
+		if strings.Contains(span.source, "\n") {
+			report("showIf 必须写在一行内。")
+			continue
+		}
+		nested := false
+		for _, arg := range call.args {
+			nested = nested || mentionsShowIf(arg)
+		}
+		if nested {
+			report("showIf 不能作为参数使用。")
+			continue
+		}
+		gatedLines[lineStart] = true
+		if err := validateExpression(call, known); err != nil {
+			report(err.Error())
+		}
+	}
+	return errors
+}
+
+func mentionsShowIf(expression templateExpression) bool {
+	call, ok := expression.(callExpression)
+	if !ok {
+		return false
+	}
+	if call.name == showIfFunction {
+		return true
+	}
+	for _, arg := range call.args {
+		if mentionsShowIf(arg) {
+			return true
+		}
+	}
+	return false
 }
 
 func renderTextSegment(source string, segment templateSourceSegment, facts map[string]any, known map[string]bool, field Field) renderResult {
@@ -420,21 +524,22 @@ func renderTextSegment(source string, segment templateSourceSegment, facts map[s
 			}
 			search = expressionEnd
 		}
-		if text, _, handled, exprWarnings := renderStandaloneListLine(line, facts, known); handled {
-			if text == "" && !strings.HasSuffix(line, "\n") {
-				plain := builder.String()
-				plain = strings.TrimSuffix(plain, "\n")
-				plain = strings.TrimSuffix(plain, "\r")
-				builder.Reset()
-				builder.WriteString(plain)
+		final := consumed == len(remaining)
+		if gate, restOffset, gated := lineGate(line); gated {
+			// A showIf line's directive renders no text: either the gate passes
+			// and the rest of the line renders as its own line, or the whole
+			// line disappears.
+			rest := line[restOffset:]
+			switch {
+			case facts != nil && !gateHasValue(gate, facts):
+				dropLine(&builder, final)
+			case isAttachmentOnlyLine(rest):
+				dropLine(&builder, final)
+			default:
+				renderLine(&builder, source, rest, cursor+restOffset, final, facts, known, field, &errors, &warnings)
 			}
-			builder.WriteString(text)
-			warnings = append(warnings, exprWarnings...)
 		} else {
-			result := renderPlainLine(source, line, cursor, facts, known, field)
-			builder.WriteString(result.text)
-			errors = append(errors, result.errors...)
-			warnings = append(warnings, result.warnings...)
+			renderLine(&builder, source, line, cursor, final, facts, known, field, &errors, &warnings)
 		}
 		remaining = remaining[consumed:]
 		cursor += consumed
@@ -487,6 +592,104 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 		remaining = afterOpen[end+2:]
 	}
 	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+}
+
+// renderLine renders one line chunk: a standalone list variable repeats its
+// prefix per item, everything else renders as plain text. A line that renders
+// nothing is dropped; a dropped final line must not leave its line break behind.
+func renderLine(builder *strings.Builder, source, line string, cursor int, final bool, facts map[string]any, known map[string]bool, field Field, errors *[]SourceError, warnings *[]Warning) {
+	if text, _, handled, exprWarnings := renderStandaloneListLine(line, facts, known); handled {
+		if text == "" {
+			dropLine(builder, final)
+		}
+		builder.WriteString(text)
+		*warnings = append(*warnings, exprWarnings...)
+		return
+	}
+	result := renderPlainLine(source, line, cursor, facts, known, field)
+	builder.WriteString(result.text)
+	*errors = append(*errors, result.errors...)
+	*warnings = append(*warnings, result.warnings...)
+}
+
+// lineGate returns the showIf directive a line begins with, ignoring leading
+// spaces and tabs, and the offset where the rest of the line starts. The
+// directive must stay on the line's first physical line; any other placement
+// is left to the ordinary renderer, which reports it.
+func lineGate(line string) (callExpression, int, bool) {
+	offset := 0
+	for offset < len(line) && (line[offset] == ' ' || line[offset] == '\t') {
+		offset++
+	}
+	if !strings.HasPrefix(line[offset:], "{{") {
+		return callExpression{}, 0, false
+	}
+	afterOpen := line[offset+2:]
+	end := strings.Index(afterOpen, "}}")
+	if end < 0 {
+		return callExpression{}, 0, false
+	}
+	directive := afterOpen[:end]
+	if strings.Contains(directive, "\n") {
+		return callExpression{}, 0, false
+	}
+	expression, err := parseExpression(strings.TrimSpace(directive))
+	if err != nil {
+		return callExpression{}, 0, false
+	}
+	call, ok := expression.(callExpression)
+	if !ok || call.name != showIfFunction {
+		return callExpression{}, 0, false
+	}
+	return call, offset + 2 + end + 2, true
+}
+
+// gateHasValue reports whether any gated expression has a value. Arguments are
+// evaluated silently: an empty gated variable is the case this directive
+// exists for, not a warning.
+func gateHasValue(gate callExpression, facts map[string]any) bool {
+	for _, arg := range gate.args {
+		if text, _, _ := arg.evaluate(facts); strings.TrimSpace(text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// dropLine removes a line that rendered nothing. A line break between two
+// shown lines stays out of the output; a dropped final line must not leave the
+// previous line's break behind.
+func dropLine(builder *strings.Builder, final bool) {
+	if !final {
+		return
+	}
+	plain := strings.TrimSuffix(builder.String(), "\n")
+	plain = strings.TrimSuffix(plain, "\r")
+	builder.Reset()
+	builder.WriteString(plain)
+}
+
+// isAttachmentOnlyLine reports whether a line carries nothing but attachment
+// directives and whitespace, so it renders no text line.
+func isAttachmentOnlyLine(line string) bool {
+	rest := line
+	for {
+		start := strings.Index(rest, "{{")
+		if start < 0 {
+			break
+		}
+		afterOpen := rest[start+2:]
+		end := strings.Index(afterOpen, "}}")
+		if end < 0 {
+			return false
+		}
+		expression, err := parseExpression(strings.TrimSpace(afterOpen[:end]))
+		if err != nil || !isAttachmentExpression(expression) {
+			return false
+		}
+		rest = rest[:start] + afterOpen[end+2:]
+	}
+	return strings.TrimSpace(rest) == ""
 }
 
 // renderStandaloneListLine repeats a line's literal prefix for every list item

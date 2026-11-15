@@ -7427,7 +7427,7 @@ export interface components {
         TemplateFactPhase: "release" | "execution";
         TemplateFunction: {
             /** @enum {string} */
-            name: "coalesce" | "defaultIfEmpty" | "lower" | "upper" | "replace" | "if" | "eq";
+            name: "coalesce" | "defaultIfEmpty" | "lower" | "upper" | "replace" | "if" | "eq" | "showIf" | "link" | "image";
             description: string;
             arguments: string[];
         };

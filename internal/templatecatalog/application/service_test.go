@@ -551,7 +551,7 @@ func assertFunctions(t *testing.T, functions []TemplateFunction) {
 	t.Helper()
 	want := map[string]bool{
 		"coalesce": true, "defaultIfEmpty": true, "lower": true, "upper": true,
-		"replace": true, "if": true, "eq": true, "link": true, "image": true,
+		"replace": true, "if": true, "eq": true, "showIf": true, "link": true, "image": true,
 	}
 	if len(functions) != len(want) {
 		t.Errorf("function count = %d, want %d", len(functions), len(want))

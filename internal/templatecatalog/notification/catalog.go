@@ -97,6 +97,7 @@ var functions = []Function{
 	{Name: "replace", Description: "替换字符串中所有出现的字面量子串。", minArgs: 3, maxArgs: 3, Arguments: []string{"value", "search", "replacement"}},
 	{Name: "if", Description: "根据简单真值条件在两个值之间选择。", minArgs: 3, maxArgs: 3, Arguments: []string{"condition", "then", "else"}},
 	{Name: "eq", Description: "比较两个值是否相等，不访问外部资源。", minArgs: 2, maxArgs: 2, Arguments: []string{"left", "right"}},
+	{Name: "showIf", Description: "仅当任一参数有值时输出本行，否则整行不渲染。只能写在行首，每行最多一个，不能嵌套。", minArgs: 1, maxArgs: -1, Arguments: []string{"value..."}},
 	{Name: "link", Description: "插入一个可点击链接。目标必须是链接变量或安全 URL，标签必须是文字字面量。", minArgs: 2, maxArgs: 2, Arguments: []string{"target", "label"}},
 	{Name: "image", Description: "插入指定来源的图片附件，也接受不带凭据的自定义 HTTPS 图片地址。", minArgs: 1, maxArgs: 1, Arguments: []string{"target"}},
 }
