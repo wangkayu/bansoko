@@ -683,10 +683,12 @@ export function SettingsNotifications() {
             />
           ) : (
             <div className="settings-notifications-template-page">
-              <button type="button" className="settings-notifications-back" onClick={() => setView("channel")}>
-                <ChevronLeft size={14} aria-hidden />
-                {t("settings.notifications.template.backToChannel")}
-              </button>
+              <div>
+                <Button variant="ghost" size="compact" onClick={() => setView("channel")}>
+                  <ChevronLeft size={14} aria-hidden />
+                  {t("settings.notifications.template.backToChannel")}
+                </Button>
+              </div>
               <div className="settings-notifications-split">
                 {(!isPhone || !mobileEditing) && (
                   <TemplateEventList
@@ -1010,9 +1012,13 @@ function TemplateEventList({
       >
         <span className="settings-notifications-tpl-tick">{enabled && <Check size={10} aria-hidden />}</span>
         <span className="settings-notifications-tpl-name">{notificationTriggerKindLabel(kind)}</span>
-        <span className="settings-notifications-tpl-badge text-caption">
-          {custom ? t("settings.notifications.template.badgeCustom") : t("settings.notifications.template.badgeDefault")}
-        </span>
+        {custom ? (
+          <Chip tone="accent" className="settings-notifications-tpl-badge-custom">
+            {t("settings.notifications.template.badgeCustom")}
+          </Chip>
+        ) : (
+          <span className="settings-notifications-tpl-badge text-caption">{t("settings.notifications.template.badgeDefault")}</span>
+        )}
         {isPhone && <ChevronRight size={14} aria-hidden className="settings-notifications-tpl-go" />}
       </button>
     );
@@ -1152,12 +1158,14 @@ function TemplatePane({
           ) : defaults ? (
             <>
               <div className="settings-notifications-template-defaults">
-                <p className="settings-notifications-template-copy">
-                  {t("settings.notifications.template.defaultTitle")}<span>{defaults.title_template}</span>
-                </p>
-                <p className="settings-notifications-template-copy-pre">
-                  {t("settings.notifications.template.defaultBody")}<span>{defaults.body_template}</span>
-                </p>
+                <div className="settings-notifications-template-ro">
+                  <span className="settings-notifications-template-ro-label text-caption">{t("settings.notifications.template.defaultTitle")}</span>
+                  <p className="settings-notifications-template-ro-box">{defaults.title_template}</p>
+                </div>
+                <div className="settings-notifications-template-ro">
+                  <span className="settings-notifications-template-ro-label text-caption">{t("settings.notifications.template.defaultBody")}</span>
+                  <p className="settings-notifications-template-ro-box settings-notifications-template-ro-pre">{defaults.body_template}</p>
+                </div>
               </div>
               <p className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.followDefault")}</p>
             </>

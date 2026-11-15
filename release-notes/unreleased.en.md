@@ -9,9 +9,11 @@
 - System-default import notifications include the original file group. File displacement notifications show each file's group and specifications separately. Missing-value lines are hidden in both English and Chinese templates.
 - Test deliveries mark the title with [TEST]; bodies and business notifications are unaffected.
 - In library import completion notifications, out.name is now the actual placed file name, and out.dir and out.path are the absolute parent directory and absolute path in the application runtime. The system default no longer shows the directory line, while custom templates can still reference these variables. out.subtitles is now the list of final file names of bound subtitles that were placed successfully, without directories, shown one per line in processing order and hidden entirely when empty.
+- The notification template editor now uses a card layout: the event list and the editor each sit in their own card, system default templates show as labeled read-only panels, and events with custom templates use an accent badge.
 
 ## Fixed
 
+- Secret inputs in forms such as notification channels (Bot Token, webhook URL, signing secret) had lost their standard height and text size; they now match the other inputs.
 - Original file-name attributes remain with managed files after operation details are cleared, so later replacement notifications can still compare the two versions.
 
 ## Important

@@ -134,7 +134,7 @@ export const PasswordInput = React.forwardRef<HTMLInputElement, Omit<React.Input
         <input
           ref={ref}
           type={revealed ? "text" : "password"}
-          className={cn(controlSurface, controlBox, "tw:min-w-0 tw:pr-9", className)}
+          className={cn(controlSurface, controlText.md, controlBox.md, "tw:min-w-0 tw:pr-9", className)}
           {...props}
         />
         <button

@@ -587,6 +587,65 @@ test.describe("settings fixture coverage", () => {
     await testInfo.attach("notification-template-preview", { path: screenshot, contentType: "image/png" });
   });
 
+  test("渠道弹窗密钥输入框与普通输入框同高；模板页默认模板为只读面板", async ({ page }, testInfo) => {
+    await openSettings(page, "/#/settings/notifications");
+    const settings = page.getByRole("dialog");
+    await settings.getByRole("button", { name: "新建渠道" }).click();
+    const channelPage = page.getByRole("dialog", { name: "新建通知渠道" });
+    await expect(channelPage).toBeVisible();
+
+    // PasswordInput 几何回归：Bot Token 与 Chat ID 同高同宽（统一 36px 控件面）。
+    const chatId = channelPage.getByLabel("Chat ID");
+    const botToken = channelPage.getByLabel("Bot Token");
+    await expect(botToken).toBeVisible();
+    const chatBox = await chatId.boundingBox();
+    const tokenBox = await botToken.boundingBox();
+    expect(chatBox).not.toBeNull();
+    expect(tokenBox).not.toBeNull();
+    expect(tokenBox!.height).toBeGreaterThanOrEqual(35);
+    expect(Math.abs(tokenBox!.height - chatBox!.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(tokenBox!.width - chatBox!.width)).toBeLessThanOrEqual(1);
+    const channelShot = testInfo.outputPath("notification-channel-secret-input.png");
+    await page.screenshot({ path: channelShot, fullPage: true });
+    await testInfo.attach("notification-channel-secret-input", { path: channelShot, contentType: "image/png" });
+
+    // 模板页默认态：默认模板以带标签的只读面板呈现，事件列表与编辑区各自成卡。
+    await channelPage.getByRole("button", { name: "编辑模板" }).click();
+    const editor = page.getByRole("dialog", { name: "编辑模板" });
+    await expect(editor).toBeVisible();
+    // 手机形态先出事件列表，点进事件才是编辑器（钻取）。
+    if ((await editor.getByRole("radio", { name: "默认模板" }).count()) === 0) {
+      await editor.locator(".settings-notifications-tpl-row", { hasText: "下载已提交" }).click();
+    }
+    const roBoxes = editor.locator(".settings-notifications-template-ro-box");
+    await expect(roBoxes.first()).toHaveText("默认标题", { timeout: 10000 });
+    await expect(roBoxes.nth(1)).toContainText("默认正文");
+    // 默认态没有可编辑的正文输入框。
+    await expect(editor.getByLabel("正文模板")).toHaveCount(0);
+
+    const paneBox = await editor.locator(".settings-notifications-tpl-pane").boundingBox();
+    const roBox = await roBoxes.first().boundingBox();
+    expect(paneBox).not.toBeNull();
+    expect(roBox).not.toBeNull();
+    // 只读面板收在编辑区卡片内，不溢出。
+    expect(roBox!.x).toBeGreaterThanOrEqual(paneBox!.x - 1);
+    expect(roBox!.x + roBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 1);
+    if (!isMobile(page)) {
+      // 桌面形态：事件列表卡片在左、编辑区卡片在右，行不超出列表卡片。
+      const listBox = await editor.locator(".settings-notifications-tpl-list").boundingBox();
+      expect(listBox).not.toBeNull();
+      expect(paneBox!.x).toBeGreaterThan(listBox!.x + listBox!.width - 1);
+      const rowBox = await editor.locator(".settings-notifications-tpl-row").first().boundingBox();
+      expect(rowBox).not.toBeNull();
+      expect(rowBox!.x).toBeGreaterThanOrEqual(listBox!.x - 1);
+      expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(listBox!.x + listBox!.width + 1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    const editorShot = testInfo.outputPath("notification-template-default-readonly.png");
+    await page.screenshot({ path: editorShot, fullPage: true });
+    await testInfo.attach("notification-template-default-readonly", { path: editorShot, contentType: "image/png" });
+  });
+
   test("渠道列表：两行布局不被动作按钮隔断，⋯ 菜单收纳测试/发送记录/删除", async ({ page }, testInfo) => {
     const targets = [
       {
