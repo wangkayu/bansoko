@@ -3263,6 +3263,11 @@ export interface components {
             /** @enum {string} */
             type: "public" | "private" | "semi-private";
         };
+        /** @description One tracker category of a Jackett search result: the torznab category id resolved to its name through the indexer caps. Display evidence only; never a filter or identity input. */
+        SeedCategory: {
+            id: string;
+            name: string;
+        };
         RSSListSeedFacts: {
             title: string;
             /** Format: date-time */
@@ -3275,6 +3280,28 @@ export interface components {
             /** @description Redacted display form of the source location. The raw locator stays server-side so an ordinary read cannot leak credentials. Withheld from MCP tool results (x-mcp-omit): it is the item's torrent URL with the query removed, and a path can still embed a key. */
             locator_display: string;
             source_site?: components["schemas"]["SeedSourceSite"];
+            /**
+             * Format: int64
+             * @description Tracker-reported seeder count of a Jackett search result. Absent when the tracker did not report it.
+             */
+            seeders?: number | null;
+            /**
+             * Format: int64
+             * @description Derived leecher count max(peers-seeders, 0), present only when the tracker published both counts.
+             */
+            leechers?: number | null;
+            /**
+             * Format: double
+             * @description Tracker-reported download volume factor (0 is free). Absent means unreported; it is never normalized to 1.
+             */
+            download_factor?: number | null;
+            /**
+             * Format: double
+             * @description Tracker-reported upload volume factor. Absent means unreported; it is never normalized to 1.
+             */
+            upload_factor?: number | null;
+            /** @description Caps-resolved tracker categories of a Jackett search result. Absent or empty when the tracker published none or its caps could not be read. */
+            categories?: components["schemas"]["SeedCategory"][];
             /** @description The frozen AniBT structured tags ("dimension:value"; customTag values use the TagFilterRules sub-dimensions). Present only for releases observed through an AniBT source; may be empty. */
             anibt_tags?: string[];
             /** @description The title-parse tags ("type:value") the title row of tag_filters evaluates: the frozen set of a persisted release, otherwise the pinned reltitle parser's reading of the seed title. May be empty. */
@@ -5536,6 +5563,28 @@ export interface components {
             /** @enum {string} */
             torrent_state: "available" | "unavailable" | "not_applicable";
             source_site?: components["schemas"]["SeedSourceSite"];
+            /**
+             * Format: int64
+             * @description Tracker-reported seeder count of a Jackett search result. Absent when the tracker did not report it.
+             */
+            seeders?: number | null;
+            /**
+             * Format: int64
+             * @description Derived leecher count max(peers-seeders, 0), present only when the tracker published both counts.
+             */
+            leechers?: number | null;
+            /**
+             * Format: double
+             * @description Tracker-reported download volume factor (0 is free). Absent means unreported; it is never normalized to 1.
+             */
+            download_factor?: number | null;
+            /**
+             * Format: double
+             * @description Tracker-reported upload volume factor. Absent means unreported; it is never normalized to 1.
+             */
+            upload_factor?: number | null;
+            /** @description Caps-resolved tracker categories of a Jackett search result. Absent or empty when the tracker published none or its caps could not be read. */
+            categories?: components["schemas"]["SeedCategory"][];
             /** @description Subtitle group name parsed from the release title for display only. It is never a provider group identity and never a subscription or download input. */
             group_name?: string | null;
             /** @description Resolution parsed from the release title for display only. */

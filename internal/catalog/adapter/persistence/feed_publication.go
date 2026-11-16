@@ -41,6 +41,14 @@ type feedSeedDeclaration struct {
 	SourceSite *acquisitiondomain.SeedSourceSite  `json:"source_site"`
 	SourceGUID string                             `json:"source_guid"`
 	DetailsURL string                             `json:"details_url"`
+	// The tracker-reported display facts are always present as keys (null when
+	// absent) so the owner function's closed key set holds; none of them is
+	// read by the canonical content hash.
+	Seeders        *int64                           `json:"seeders"`
+	Leechers       *int64                           `json:"leechers"`
+	DownloadFactor *float64                         `json:"download_factor"`
+	UploadFactor   *float64                         `json:"upload_factor"`
+	Categories     []acquisitiondomain.SeedCategory `json:"categories"`
 }
 
 type feedManifestDeclaration struct {
@@ -91,7 +99,9 @@ func feedPublication(input catalogdomain.ProviderFeedSnapshotWrite, version int6
 			Title: seed.Title, PublishedAt: seed.PublishedAt, SizeBytes: seed.SizeBytes, InfoHash: seed.InfoHash, PayloadDigest: seed.PayloadDigest,
 			TorrentFilename: seed.TorrentFilename, TorrentState: seed.NormalizedTorrentState(), TorrentErrorCode: seed.TorrentErrorCode, TorrentErrorReason: seed.TorrentErrorReason,
 			Files: make([]feedFileDeclaration, 0, fileCount), AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite,
-			SourceGUID: seed.SourceGUID, DetailsURL: seed.DetailsURL}
+			SourceGUID: seed.SourceGUID, DetailsURL: seed.DetailsURL,
+			Seeders: seed.Seeders, Leechers: seed.Leechers, DownloadFactor: seed.DownloadFactor, UploadFactor: seed.UploadFactor,
+			Categories: seed.Categories}
 		if len(seed.Payload) > 0 {
 			params.Payloads = append(params.Payloads, seed.Payload)
 			index := len(params.Payloads)

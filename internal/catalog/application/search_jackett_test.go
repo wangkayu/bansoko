@@ -177,3 +177,130 @@ func TestJackettSearchErrorDoesNotEchoAPIKey(t *testing.T) {
 		t.Fatalf("error exposes API key: %v", err)
 	}
 }
+
+func jackettPTTestBody() string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><title>Jackett</title>
+<item><title>[示例字幕组] 示例作品 - 03 [1080p]</title><guid>rel_pt</guid>
+<link>https://tracker.example.test/download/rel_pt.torrent?passkey=tracker-secret</link>
+<pubDate>Thu, 22 Oct 2026 02:00:47 +0800</pubDate>
+<enclosure url="https://tracker.example.test/download/rel_pt.torrent?passkey=tracker-secret" length="2048" type="application/x-bittorrent" />
+<torznab:attr name="size" value="2048" /><torznab:attr name="infohash" value="fab1cfcf83daaffeb8a3cb7bb1e0329125d93b3e" />
+<torznab:attr name="seeders" value="12" /><torznab:attr name="peers" value="15" />
+<torznab:attr name="downloadvolumefactor" value="0" /><torznab:attr name="uploadvolumefactor" value="2" />
+<torznab:attr name="category" value="5071" /><torznab:attr name="category" value="5071" /><torznab:attr name="category" value="5072" />
+<jackettindexer id="example-indexer">Example Tracker</jackettindexer><type>private</type>
+</item>
+<item><title>[示例字幕组] 示例作品 - 04 [1080p]</title><guid>rel_pt_floor</guid>
+<link>https://tracker.example.test/download/rel_pt_floor.torrent?passkey=tracker-secret</link>
+<pubDate>Thu, 22 Oct 2026 03:00:47 +0800</pubDate>
+<torznab:attr name="seeders" value="9" /><torznab:attr name="peers" value="4" />
+<torznab:attr name="downloadvolumefactor" value="not-a-number" /><torznab:attr name="category" value="9999" />
+<jackettindexer id="example-indexer">Example Tracker</jackettindexer><type>private</type>
+</item></channel></rss>`
+}
+
+func jackettCapsTestBody() string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<caps><categories>
+<category id="5000" name="TV"><subcat id="5071" name="TV/Anime" /><subcat id="5072" name="TV/Anime RAW" /></category>
+</categories></caps>`
+}
+
+func TestParseJackettSearchReadsPTFacts(t *testing.T) {
+	result, err := parseJackettSearch([]byte(jackettPTTestBody()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("items = %d", len(result.Items))
+	}
+	first := result.Items[0]
+	if first.Seeders == nil || *first.Seeders != 12 || first.Leechers == nil || *first.Leechers != 3 {
+		t.Fatalf("swarm facts = %+v", first)
+	}
+	if first.DownloadFactor == nil || *first.DownloadFactor != 0 || first.UploadFactor == nil || *first.UploadFactor != 2 {
+		t.Fatalf("billing factors = %+v", first)
+	}
+	if len(first.SeedCategoryIDs) != 3 {
+		t.Fatalf("raw category ids = %v", first.SeedCategoryIDs)
+	}
+	// peers below seeders floors the derived leechers at 0; an unreadable
+	// factor is absent, never a zero or a 1.
+	second := result.Items[1]
+	if second.Leechers == nil || *second.Leechers != 0 {
+		t.Fatalf("leechers floor = %+v", second.Leechers)
+	}
+	if second.DownloadFactor != nil || second.UploadFactor != nil {
+		t.Fatalf("unreadable factors were normalized: %+v", second)
+	}
+}
+
+func TestJackettSearchResolvesCategoriesThroughCaps(t *testing.T) {
+	capsRequests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case jackett.AggregateTorznabPath:
+			_, _ = io.WriteString(w, jackettPTTestBody())
+		case "/api/v2.0/indexers/example-indexer/results/torznab/api":
+			capsRequests++
+			if r.URL.Query().Get("t") != "caps" || r.URL.Query().Get("apikey") != jackettTestAPIKey {
+				t.Errorf("unexpected caps query: %s", r.URL.RawQuery)
+			}
+			_, _ = io.WriteString(w, jackettCapsTestBody())
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	searcher := HTTPJackettSearcher{Endpoint: upstream.URL, APIKey: jackettTestAPIKey, Client: upstream.Client()}
+	result, err := searcher.SearchJackettSeeds(context.Background(), "示例作品")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if result.ParserVersion != "jackett-torznab-search-v2" {
+		t.Fatalf("parser contract = %q", result.ParserVersion)
+	}
+	first := result.Items[0]
+	if len(first.SeedCategories) != 2 || first.SeedCategories[0].ID != "5071" || first.SeedCategories[0].Name != "TV/Anime" || first.SeedCategories[1].Name != "TV/Anime RAW" {
+		t.Fatalf("resolved categories = %+v", first.SeedCategories)
+	}
+	// The second item's category id is not in caps, so it resolves to nothing.
+	if len(result.Items[1].SeedCategories) != 0 {
+		t.Fatalf("unresolved category leaked: %+v", result.Items[1].SeedCategories)
+	}
+	if capsRequests != 1 {
+		t.Fatalf("caps requests = %d, want one per indexer", capsRequests)
+	}
+	// A second search over the same endpoint reuses the cached caps.
+	if _, err := searcher.SearchJackettSeeds(context.Background(), "示例作品"); err != nil {
+		t.Fatalf("second search: %v", err)
+	}
+	if capsRequests != 1 {
+		t.Fatalf("caps cache was not used: %d requests", capsRequests)
+	}
+}
+
+func TestJackettSearchCapsFailureLeavesCategoriesEmpty(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == jackett.AggregateTorznabPath {
+			_, _ = io.WriteString(w, jackettPTTestBody())
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer upstream.Close()
+	searcher := HTTPJackettSearcher{Endpoint: upstream.URL, APIKey: jackettTestAPIKey, Client: upstream.Client()}
+	result, err := searcher.SearchJackettSeeds(context.Background(), "示例作品")
+	if err != nil {
+		t.Fatalf("caps failure failed the search: %v", err)
+	}
+	if len(result.Items) != 2 || len(result.Items[0].SeedCategories) != 0 {
+		t.Fatalf("categories after caps failure = %+v", result.Items)
+	}
+	// A failed caps read is not cached: the next search retries it.
+	if _, err := searcher.SearchJackettSeeds(context.Background(), "示例作品"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+}

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, RotateCw } from "lucide-react";
-import type { RSSListFile } from "../../lib/api/client";
+import type { RSSListFile, RSSListSeedFacts } from "../../lib/api/client";
 import { formatBytes, formatDateTime } from "../../lib/labels";
 import { reasonLabel } from "../../lib/i18n/reasons";
 import { getLocale, t } from "../../lib/i18n";
@@ -22,6 +22,23 @@ import { needsExpand, selectableRow, type OneShotSeedGroup, type OneShotSeedRow 
 /** Side-by-side meta facts (size, time, count) join with " · " (copy guide §1). */
 function metaLine(parts: readonly (string | undefined)[]): string {
   return parts.filter((part): part is string => Boolean(part)).join(" · ");
+}
+
+/** One billing label per the owner ruling: (1,1) or fully absent renders nothing (MonikaDesign's
+ *   hardcoded 1/1 is thereby "no billing info"); a zero download factor is "free", a fraction a
+ *   percent, above one a multiplier; a non-1 upload factor appends its own multiplier. */
+function seedBillingLabel(seed: RSSListSeedFacts): string | undefined {
+  const download = seed.download_factor ?? undefined;
+  const upload = seed.upload_factor ?? undefined;
+  if ((download === undefined || download === 1) && (upload === undefined || upload === 1)) return undefined;
+  const parts: string[] = [];
+  if (download !== undefined && download !== 1) {
+    if (download === 0) parts.push(t("oneshot.seedBillingFree"));
+    else if (download < 1) parts.push(`${Math.round(download * 100)}%`);
+    else parts.push(`${download}×`);
+  }
+  if (upload !== undefined && upload !== 1) parts.push(`${upload}×`);
+  return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
 /** A group row's "newest 10/19": month/day only for this year, with the year for earlier ones. */
@@ -163,9 +180,17 @@ function SeedRow({
   const blocked = seedBlockedHint(row);
   // Step one is browse only: raw title, tracker attribution, size and time, with no parse results shown.
   const sourceSite = row.item.seed.source_site;
+  const seed = row.item.seed;
+  // Caps-resolved category names deduplicated (a parent and its subcategory can share a name).
+  const categoryNames = seed.categories ? [...new Set(seed.categories.map((category) => category.name))] : [];
   const meta = metaLine([
     sourceSite?.name,
     sourceSite ? t(sourceSite.type === "private" ? "oneshot.sourceSitePrivate" : sourceSite.type === "semi-private" ? "oneshot.sourceSiteSemiPrivate" : "oneshot.sourceSitePublic") : undefined,
+    ...categoryNames,
+    seed.seeders != null ? t("oneshot.seedFactSeeders", { n: seed.seeders }) : undefined,
+    // A zero leecher count is the common case and says nothing; only a real count renders.
+    seed.leechers != null && seed.leechers > 0 ? t("oneshot.seedFactLeechers", { n: seed.leechers }) : undefined,
+    seedBillingLabel(seed),
     row.sizeBytes != null ? formatBytes(row.sizeBytes) : undefined,
     row.publishedAt ? formatDateTime(row.publishedAt) : undefined,
   ]);

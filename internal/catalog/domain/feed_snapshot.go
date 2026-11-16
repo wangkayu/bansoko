@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -161,6 +162,19 @@ type ProviderFeedSnapshotSeed struct {
 	SourceSite *acquisitiondomain.SeedSourceSite
 	SourceGUID string
 	DetailsURL string
+	// The swarm/billing/category facts below are tracker-reported display
+	// evidence of a Jackett search result, persisted with the snapshot so a
+	// list read never reparses upstream. Like the AniBT tag block they stay
+	// OUTSIDE the canonical content hash: folding them in would fail closed
+	// every snapshot published before they existed. Absent stays absent — an
+	// unreported billing factor is never normalized to 1.
+	Seeders        *int64
+	Leechers       *int64
+	DownloadFactor *float64
+	UploadFactor   *float64
+	// Categories are the caps-resolved tracker categories (id + name). An
+	// empty list means the tracker published none or its caps were unreadable.
+	Categories []acquisitiondomain.SeedCategory
 }
 
 type ProviderFeedSnapshotWrite struct {
@@ -402,7 +416,45 @@ func (s ProviderFeedSnapshotSeed) Validate() error {
 			return fmt.Errorf("seed source site: %w", err)
 		}
 	}
+	if err := s.validatePTFacts(); err != nil {
+		return err
+	}
 	return s.validateTorrentAcquisition()
+}
+
+// validatePTFacts holds the tracker-reported display facts to the shape the
+// Jackett reader produces: non-negative bounded counts and factors, and a
+// bounded deduplicated category list. The column CHECKs enforce the same
+// shape at the storage boundary.
+func (s ProviderFeedSnapshotSeed) validatePTFacts() error {
+	if s.Seeders != nil && (*s.Seeders < 0 || *s.Seeders > 1<<40) {
+		return errors.New("seed seeder count is outside the allowed bound")
+	}
+	if s.Leechers != nil && (*s.Leechers < 0 || *s.Leechers > 1<<40) {
+		return errors.New("seed leecher count is outside the allowed bound")
+	}
+	for _, factor := range []struct {
+		name  string
+		value *float64
+	}{{"download", s.DownloadFactor}, {"upload", s.UploadFactor}} {
+		if factor.value != nil && (*factor.value < 0 || *factor.value > 1e6 || math.IsNaN(*factor.value) || math.IsInf(*factor.value, 0)) {
+			return fmt.Errorf("seed %s factor is outside the allowed bound", factor.name)
+		}
+	}
+	if len(s.Categories) > 32 {
+		return fmt.Errorf("seed category set exceeds %d entries", 32)
+	}
+	seen := make(map[string]struct{}, len(s.Categories))
+	for _, category := range s.Categories {
+		if err := category.Validate(); err != nil {
+			return fmt.Errorf("seed category: %w", err)
+		}
+		if _, exists := seen[category.ID]; exists {
+			return fmt.Errorf("seed category id is duplicated: %q", category.ID)
+		}
+		seen[category.ID] = struct{}{}
+	}
+	return nil
 }
 
 // validateAniBTTags holds the frozen block to the extractor's own bounds: a

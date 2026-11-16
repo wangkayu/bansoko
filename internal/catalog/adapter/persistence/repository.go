@@ -179,6 +179,27 @@ func (r *Repository) readProviderFeedSnapshot(ctx context.Context, queries *gene
 		fact.SourceSite = sourceSite
 		fact.SourceGUID = seed.SourceGuid
 		fact.DetailsURL = seed.DetailsUrl
+		if seed.Seeders.Valid {
+			value := seed.Seeders.Int64
+			fact.Seeders = &value
+		}
+		if seed.Leechers.Valid {
+			value := seed.Leechers.Int64
+			fact.Leechers = &value
+		}
+		if seed.DownloadFactor.Valid {
+			value := seed.DownloadFactor.Float64
+			fact.DownloadFactor = &value
+		}
+		if seed.UploadFactor.Valid {
+			value := seed.UploadFactor.Float64
+			fact.UploadFactor = &value
+		}
+		categories, err := decodeFeedSeedCategories(seed.Categories.Valid, seed.Categories.RawMessage)
+		if err != nil {
+			return catalogdomain.ProviderFeedSnapshot{}, err
+		}
+		fact.Categories = categories
 		if seed.ManifestTorrentParserVersion.Valid {
 			manifest := &catalogdomain.TorrentManifest{
 				PayloadDigest:    seed.PayloadDigest.String,
@@ -292,6 +313,26 @@ func decodeFeedSeedSourceSite(valid bool, raw []byte) (*acquisitiondomain.SeedSo
 		return nil, fmt.Errorf("decode provider feed snapshot source site: %w", err)
 	}
 	return &stored, nil
+}
+
+// decodeFeedSeedCategories reads one seed's caps-resolved tracker categories.
+// SQL NULL is a seed observed without resolvable categories and stays an empty
+// list; every stored entry is re-validated so a row outside the writer's shape
+// fails closed instead of reaching the read model.
+func decodeFeedSeedCategories(valid bool, raw []byte) ([]acquisitiondomain.SeedCategory, error) {
+	if !valid || len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var stored []acquisitiondomain.SeedCategory
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil, fmt.Errorf("decode provider feed snapshot categories: %w", err)
+	}
+	for _, category := range stored {
+		if err := category.Validate(); err != nil {
+			return nil, fmt.Errorf("decode provider feed snapshot categories: %w", err)
+		}
+	}
+	return stored, nil
 }
 
 // verifyProviderFeedSnapshotProjections fails closed when a current-schema

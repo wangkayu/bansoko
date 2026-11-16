@@ -8538,6 +8538,23 @@ components:
         type:
           type: string
           enum: [public, private, semi-private]
+    SeedCategory:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: >-
+        One tracker category of a Jackett search result: the torznab category
+        id resolved to its name through the indexer caps. Display evidence
+        only; never a filter or identity input.
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
     RSSListSeedFacts:
       type: object
       additionalProperties: false
@@ -8579,6 +8596,46 @@ components:
             the query removed, and a path can still embed a key.
         source_site:
           $ref: '#/components/schemas/SeedSourceSite'
+        seeders:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: >-
+            Tracker-reported seeder count of a Jackett search result. Absent
+            when the tracker did not report it.
+        leechers:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: >-
+            Derived leecher count max(peers-seeders, 0), present only when the
+            tracker published both counts.
+        download_factor:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: >-
+            Tracker-reported download volume factor (0 is free). Absent means
+            unreported; it is never normalized to 1.
+        upload_factor:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: >-
+            Tracker-reported upload volume factor. Absent means unreported; it
+            is never normalized to 1.
+        categories:
+          type: array
+          description: >-
+            Caps-resolved tracker categories of a Jackett search result.
+            Absent or empty when the tracker published none or its caps could
+            not be read.
+          items:
+            $ref: '#/components/schemas/SeedCategory'
         anibt_tags:
           type: array
           description: >-
@@ -14074,6 +14131,46 @@ components:
           enum: [available, unavailable, not_applicable]
         source_site:
           $ref: '#/components/schemas/SeedSourceSite'
+        seeders:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: >-
+            Tracker-reported seeder count of a Jackett search result. Absent
+            when the tracker did not report it.
+        leechers:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: >-
+            Derived leecher count max(peers-seeders, 0), present only when the
+            tracker published both counts.
+        download_factor:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: >-
+            Tracker-reported download volume factor (0 is free). Absent means
+            unreported; it is never normalized to 1.
+        upload_factor:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: >-
+            Tracker-reported upload volume factor. Absent means unreported; it
+            is never normalized to 1.
+        categories:
+          type: array
+          description: >-
+            Caps-resolved tracker categories of a Jackett search result.
+            Absent or empty when the tracker published none or its caps could
+            not be read.
+          items:
+            $ref: '#/components/schemas/SeedCategory'
         group_name:
           type: string
           maxLength: 256

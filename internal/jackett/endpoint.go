@@ -37,6 +37,47 @@ func AggregateURL(rawEndpoint, apiKey string, parameters url.Values) (*url.URL, 
 	return base, nil
 }
 
+// IndexerURL builds a credential-bearing request URL for one indexer's own
+// torznab endpoint (the per-site `t=caps` read). The indexer id comes from a
+// Jackett search response and is constrained to path-safe characters before it
+// is escaped into the path. Like AggregateURL, the result is request-only.
+func IndexerURL(rawEndpoint, indexerID, apiKey string, parameters url.Values) (*url.URL, error) {
+	base, err := parseEndpoint(rawEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return nil, errors.New("Jackett API key is not configured")
+	}
+	if !validIndexerID(indexerID) {
+		return nil, errors.New("Jackett indexer id is not usable in a request path")
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/api/v2.0/indexers/" + url.PathEscape(indexerID) + "/results/torznab/api"
+	values := make(url.Values, len(parameters)+1)
+	for key, entries := range parameters {
+		values[key] = append([]string(nil), entries...)
+	}
+	values.Set("apikey", apiKey)
+	base.RawQuery = values.Encode()
+	return base, nil
+}
+
+// validIndexerID constrains an upstream-supplied indexer id before it enters a
+// request path: Jackett ids are lowercase slugs, and anything wider is a
+// response anomaly, not a name to escape and retry.
+func validIndexerID(value string) bool {
+	if len(value) == 0 || len(value) > 128 {
+		return false
+	}
+	for _, c := range value {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	return true
+}
+
 func parseEndpoint(rawEndpoint string) (*url.URL, error) {
 	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(rawEndpoint), "/"))
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" || base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "" {

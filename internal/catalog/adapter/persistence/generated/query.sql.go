@@ -493,7 +493,12 @@ SELECT
     seed.anibt_tags,
     seed.source_site,
     seed.source_guid,
-    seed.details_url
+    seed.details_url,
+    seed.seeders,
+    seed.leechers,
+    seed.download_factor,
+    seed.upload_factor,
+    seed.categories
 FROM provider_feed_snapshot_seeds AS seed
 WHERE seed.snapshot_id = $1
 ORDER BY seed.published_at DESC NULLS LAST, seed.stable_seed_key, seed.id
@@ -528,6 +533,11 @@ type ReadProviderFeedSnapshotSeedsRow struct {
 	SourceSite                   pqtype.NullRawMessage
 	SourceGuid                   string
 	DetailsUrl                   string
+	Seeders                      sql.NullInt64
+	Leechers                     sql.NullInt64
+	DownloadFactor               sql.NullFloat64
+	UploadFactor                 sql.NullFloat64
+	Categories                   pqtype.NullRawMessage
 }
 
 // ReadProviderFeedSnapshotSeeds
@@ -560,7 +570,12 @@ type ReadProviderFeedSnapshotSeedsRow struct {
 //	    seed.anibt_tags,
 //	    seed.source_site,
 //	    seed.source_guid,
-//	    seed.details_url
+//	    seed.details_url,
+//	    seed.seeders,
+//	    seed.leechers,
+//	    seed.download_factor,
+//	    seed.upload_factor,
+//	    seed.categories
 //	FROM provider_feed_snapshot_seeds AS seed
 //	WHERE seed.snapshot_id = $1
 //	ORDER BY seed.published_at DESC NULLS LAST, seed.stable_seed_key, seed.id
@@ -602,6 +617,11 @@ func (q *Queries) ReadProviderFeedSnapshotSeeds(ctx context.Context, snapshotID 
 			&i.SourceSite,
 			&i.SourceGuid,
 			&i.DetailsUrl,
+			&i.Seeders,
+			&i.Leechers,
+			&i.DownloadFactor,
+			&i.UploadFactor,
+			&i.Categories,
 		); err != nil {
 			return nil, err
 		}

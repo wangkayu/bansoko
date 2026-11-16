@@ -1,5 +1,7 @@
 ## 新增
 
+- 种子检索（Jackett）结果第二行显示站点分类、做种与下载计数以及计费标签（免费、折扣百分比、上传倍率）；分类名称取自单站 caps，读取失败时省略且不影响检索，下载数为 0 与标准计费（1/1）不显示。
+
 - 下载、入库及未识别文件通知支持 task.origin，区分订阅（subscription）与一次性任务（one_shot）。来源相关事件新增 release.site 与 release.link，分别表示发布站点和明确的发布详情页；下载地址仍使用 download.link。
 - 容器内可通过 bansoko-server update check|apply|status 检查、受理和查询内嵌更新，支持人读及 JSON 输出；仅限 root 或服务 PUID，不需要 Web 会话或 API token。
 - 入库完成和执行失败通知支持原始文件名解析属性 frt.*；文件被替换通知可分别使用 frt.* 和 taker.frt.* 展示新旧文件属性。

@@ -54,6 +54,13 @@ type SearchSeedPreviewSeed struct {
 	TitleHint  string
 	Resolution string
 	SourceSite *acquisitiondomain.SeedSourceSite
+	// Tracker-reported display facts of a Jackett result, read back from the
+	// persisted snapshot (absent stays absent, never zeroed or normalized).
+	Seeders        *int64
+	Leechers       *int64
+	DownloadFactor *float64
+	UploadFactor   *float64
+	Categories     []acquisitiondomain.SeedCategory
 }
 
 // SearchSeedPreview is the fetch result of one search snapshot: the snapshot
@@ -282,6 +289,9 @@ func (a SeedSearchApplication) ReadSearchSeedPayload(ctx context.Context, provid
 		Payload:      entry.Payload, PayloadDigest: &digest, Manifest: fact.Manifest,
 		AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite,
 		SourceGUID: seed.SourceGUID, DetailsURL: seed.DetailsURL,
+		Seeders: seed.Seeders, Leechers: seed.Leechers,
+		DownloadFactor: seed.DownloadFactor, UploadFactor: seed.UploadFactor,
+		Categories: seed.Categories,
 	}, nil
 }
 
@@ -416,6 +426,11 @@ func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string
 		}
 		row.SizeBytes, row.InfoHash = seed.SizeBytes, seed.InfoHash
 		row.SourceSite = seed.SourceSite
+		row.Seeders = seed.Seeders
+		row.Leechers = seed.Leechers
+		row.DownloadFactor = seed.DownloadFactor
+		row.UploadFactor = seed.UploadFactor
+		row.Categories = seed.Categories
 		// Display-only title facts. They are read from the release title, never
 		// used as identity and never persisted as a provider group.
 		tags := reltitletags.Extract(seed.Title)

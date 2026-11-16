@@ -108,5 +108,8 @@ export const enOneshotCopy = {
   sourceSitePublic: "Public",
   sourceSitePrivate: "Private",
   sourceSiteSemiPrivate: "Semi-private",
+  seedFactSeeders: "Seeders {n}",
+  seedFactLeechers: "Leechers {n}",
+  seedBillingFree: "Free",
   titleEmptyPreview: "Match a title or enter one to see target paths",
 } as const satisfies CopyShape<typeof oneshotCopy>;

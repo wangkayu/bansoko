@@ -60,6 +60,17 @@ func mapSeedSearchPreview(preview catalogapplication.SearchSeedPreview) generate
 		}
 		row.SizeBytes = seed.SizeBytes
 		row.InfoHash = seed.InfoHash
+		row.Seeders = seed.Seeders
+		row.Leechers = seed.Leechers
+		row.DownloadFactor = seed.DownloadFactor
+		row.UploadFactor = seed.UploadFactor
+		if len(seed.Categories) > 0 {
+			categories := make([]generated.SeedCategory, 0, len(seed.Categories))
+			for _, category := range seed.Categories {
+				categories = append(categories, generated.SeedCategory{Id: category.ID, Name: category.Name})
+			}
+			row.Categories = &categories
+		}
 		if seed.SourceSite != nil {
 			row.SourceSite = &generated.SeedSourceSite{Id: seed.SourceSite.ID, Name: seed.SourceSite.Name, Type: generated.SeedSourceSiteType(seed.SourceSite.Type)}
 		}

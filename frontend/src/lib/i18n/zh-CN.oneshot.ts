@@ -111,5 +111,8 @@ export const oneshotCopy = {
   sourceSitePublic: "公开",
   sourceSitePrivate: "私有",
   sourceSiteSemiPrivate: "半私有",
+  seedFactSeeders: "做种 {n}",
+  seedFactLeechers: "下载 {n}",
+  seedBillingFree: "免费",
   titleEmptyPreview: "匹配作品或填写标题后显示目标路径",
 } as const;

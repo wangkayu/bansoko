@@ -478,6 +478,15 @@ func mapFeedItemsToSnapshotSeeds(items []acquisitiondomain.FeedItem) ([]catalogd
 		seed.SourceSite = item.SourceSite
 		seed.SourceGUID = item.GUID
 		seed.DetailsURL = item.DetailsURL
+		// The tracker-reported display facts freeze with the snapshot, exactly
+		// as parsed (absent stays absent); they never enter the content hash.
+		seed.Seeders = item.Seeders
+		seed.Leechers = item.Leechers
+		seed.DownloadFactor = item.DownloadFactor
+		seed.UploadFactor = item.UploadFactor
+		if len(item.SeedCategories) > 0 {
+			seed.Categories = append([]acquisitiondomain.SeedCategory(nil), item.SeedCategories...)
+		}
 		if len(item.TorrentPayload) > 0 {
 			payloadDigest := catalogdomain.DigestBytes(item.TorrentPayload)
 			seed.Payload = append([]byte(nil), item.TorrentPayload...)
@@ -611,6 +620,11 @@ func mapProviderFeedSnapshot(snapshot catalogdomain.ProviderFeedSnapshot) catalo
 		mapped.SourceSite = seed.SourceSite
 		mapped.SourceGUID = seed.SourceGUID
 		mapped.DetailsURL = seed.DetailsURL
+		mapped.Seeders = seed.Seeders
+		mapped.Leechers = seed.Leechers
+		mapped.DownloadFactor = seed.DownloadFactor
+		mapped.UploadFactor = seed.UploadFactor
+		mapped.Categories = seed.Categories
 		seeds = append(seeds, mapped)
 	}
 	return catalogdomain.ProviderRSSPreviewResult{

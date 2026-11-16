@@ -308,6 +308,13 @@ type ProviderRSSPreviewSeed struct {
 	SourceSite *acquisitiondomain.SeedSourceSite
 	SourceGUID string
 	DetailsURL string
+	// Tracker-reported display evidence of a Jackett search seed; nil/empty for
+	// seeds whose source reported nothing.
+	Seeders        *int64
+	Leechers       *int64
+	DownloadFactor *float64
+	UploadFactor   *float64
+	Categories     []acquisitiondomain.SeedCategory
 }
 
 type ProviderRSSPreviewResult struct {

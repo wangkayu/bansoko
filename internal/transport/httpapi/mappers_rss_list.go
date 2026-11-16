@@ -404,6 +404,17 @@ func mapRSSListSeedFacts(seed readmodelapplication.RSSListSeedFacts) generated.R
 	if seed.SourceSite != nil {
 		mapped.SourceSite = &generated.SeedSourceSite{Id: seed.SourceSite.ID, Name: seed.SourceSite.Name, Type: generated.SeedSourceSiteType(seed.SourceSite.Type)}
 	}
+	mapped.Seeders = seed.Seeders
+	mapped.Leechers = seed.Leechers
+	mapped.DownloadFactor = seed.DownloadFactor
+	mapped.UploadFactor = seed.UploadFactor
+	if len(seed.Categories) > 0 {
+		categories := make([]generated.SeedCategory, 0, len(seed.Categories))
+		for _, category := range seed.Categories {
+			categories = append(categories, generated.SeedCategory{Id: category.ID, Name: category.Name})
+		}
+		mapped.Categories = &categories
+	}
 	if seed.AniBTTags != nil {
 		tags := append([]string{}, (*seed.AniBTTags)...)
 		mapped.AnibtTags = &tags

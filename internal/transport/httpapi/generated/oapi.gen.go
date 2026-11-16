@@ -8076,14 +8076,26 @@ type RSSListSeedFacts struct {
 	// AnibtTags The frozen AniBT structured tags ("dimension:value"; customTag values use the TagFilterRules sub-dimensions). Present only for releases observed through an AniBT source; may be empty.
 	AnibtTags *[]string `json:"anibt_tags,omitempty"`
 
+	// Categories Caps-resolved tracker categories of a Jackett search result. Absent or empty when the tracker published none or its caps could not be read.
+	Categories *[]SeedCategory `json:"categories,omitempty"`
+
+	// DownloadFactor Tracker-reported download volume factor (0 is free). Absent means unreported; it is never normalized to 1.
+	DownloadFactor *float64 `json:"download_factor"`
+
 	// ExpectedPayloadDigest SHA-256 digest of the complete persisted torrent bytes. Not part of the MCP seed view (x-mcp-omit): a seed reference is resolved server-side and needs no digest.
 	ExpectedPayloadDigest *string `json:"expected_payload_digest,omitempty"`
 	InfoHash              *string `json:"info_hash,omitempty"`
 
+	// Leechers Derived leecher count max(peers-seeders, 0), present only when the tracker published both counts.
+	Leechers *int64 `json:"leechers"`
+
 	// LocatorDisplay Redacted display form of the source location. The raw locator stays server-side so an ordinary read cannot leak credentials. Withheld from MCP tool results (x-mcp-omit): it is the item's torrent URL with the query removed, and a path can still embed a key.
 	LocatorDisplay string     `json:"locator_display"`
 	PublishedAt    *time.Time `json:"published_at"`
-	SizeBytes      *int64     `json:"size_bytes,omitempty"`
+
+	// Seeders Tracker-reported seeder count of a Jackett search result. Absent when the tracker did not report it.
+	Seeders   *int64 `json:"seeders"`
+	SizeBytes *int64 `json:"size_bytes,omitempty"`
 
 	// SourceSite Tracker attribution returned by a Jackett aggregate result. This is source-site evidence, never the subtitle group parsed from the title.
 	SourceSite *SeedSourceSite `json:"source_site,omitempty"`
@@ -8091,6 +8103,9 @@ type RSSListSeedFacts struct {
 
 	// TitleTags The title-parse tags ("type:value") the title row of tag_filters evaluates: the frozen set of a persisted release, otherwise the pinned reltitle parser's reading of the seed title. May be empty.
 	TitleTags *[]string `json:"title_tags,omitempty"`
+
+	// UploadFactor Tracker-reported upload volume factor. Absent means unreported; it is never normalized to 1.
+	UploadFactor *float64 `json:"upload_factor"`
 }
 
 // RSSListTorrentState Torrent acquisition state of one seed. An unusable torrent keeps its place in the group with a bounded reason instead of disappearing, and it never fabricates a manifest. pending is the view's own state for a seed the server has not expanded yet: the persisted snapshot still records not_applicable and the row is rendered from RSS facts alone.
@@ -8869,6 +8884,12 @@ type SaveAnimeConfigCandidateInput struct {
 	Draft AnimeDraft `json:"draft"`
 }
 
+// SeedCategory One tracker category of a Jackett search result: the torznab category id resolved to its name through the indexer caps. Display evidence only; never a filter or identity input.
+type SeedCategory struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // SeedSearchSnapshotInput One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: AniBT and Mikan answer at most 100 keyword results and Nyaa at most 75, so that window is also the complete result set.
 type SeedSearchSnapshotInput struct {
 	// Query A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); every site matches the text itself and the first release adds no filter.
@@ -8877,6 +8898,12 @@ type SeedSearchSnapshotInput struct {
 
 // SeedSearchSnapshotSeed defines model for SeedSearchSnapshotSeed.
 type SeedSearchSnapshotSeed struct {
+	// Categories Caps-resolved tracker categories of a Jackett search result. Absent or empty when the tracker published none or its caps could not be read.
+	Categories *[]SeedCategory `json:"categories,omitempty"`
+
+	// DownloadFactor Tracker-reported download volume factor (0 is free). Absent means unreported; it is never normalized to 1.
+	DownloadFactor *float64 `json:"download_factor"`
+
 	// DownloadUrl Torrent download URL. It can embed a credential, so it stays a display fact for the caller that fetched the snapshot; an expand or download names the snapshot identity plus stable_seed_key instead and the server resolves the locator itself.
 	DownloadUrl           string  `json:"download_url"`
 	ExpectedPayloadDigest *string `json:"expected_payload_digest"`
@@ -8885,12 +8912,18 @@ type SeedSearchSnapshotSeed struct {
 	GroupName *string `json:"group_name"`
 
 	// InfoHash Content identity the provider published for this seed, when it published one. A search row without it is expanded and cached like a feed row, and the expanded torrent's own hash becomes the identity.
-	InfoHash    *string    `json:"info_hash"`
+	InfoHash *string `json:"info_hash"`
+
+	// Leechers Derived leecher count max(peers-seeders, 0), present only when the tracker published both counts.
+	Leechers    *int64     `json:"leechers"`
 	PublishedAt *time.Time `json:"published_at"`
 
 	// Resolution Resolution parsed from the release title for display only.
 	Resolution *string `json:"resolution"`
-	SizeBytes  *int64  `json:"size_bytes"`
+
+	// Seeders Tracker-reported seeder count of a Jackett search result. Absent when the tracker did not report it.
+	Seeders   *int64 `json:"seeders"`
+	SizeBytes *int64 `json:"size_bytes"`
 
 	// SourceSite Tracker attribution returned by a Jackett aggregate result. This is source-site evidence, never the subtitle group parsed from the title.
 	SourceSite *SeedSourceSite `json:"source_site,omitempty"`
@@ -8902,6 +8935,9 @@ type SeedSearchSnapshotSeed struct {
 	// TitleHint Work-title candidate parsed from the release title for display only. It is never a work identity and never a subscription or download input; a caller may use it as the editable title default.
 	TitleHint    *string                            `json:"title_hint"`
 	TorrentState SeedSearchSnapshotSeedTorrentState `json:"torrent_state"`
+
+	// UploadFactor Tracker-reported upload volume factor. Absent means unreported; it is never normalized to 1.
+	UploadFactor *float64 `json:"upload_factor"`
 }
 
 // SeedSearchSnapshotSeedTorrentState defines model for SeedSearchSnapshotSeed.TorrentState.

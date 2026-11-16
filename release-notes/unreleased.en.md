@@ -1,5 +1,7 @@
 ## New
 
+- Keyword search (Jackett) results show tracker categories, seeder/leecher counts and a billing label (free, percent discount, upload multiplier) on the second line. Category names come from each indexer's caps and are omitted when unreadable without affecting the search; a zero leecher count and standard (1/1) billing are not shown.
+
 - Download, import and unrecognized-file notifications support task.origin to distinguish subscription tasks (subscription) from one-shot tasks (one_shot). Source-aware events add release.site for the publishing site and release.link for an explicit release details page; download.link remains the download address.
 - Containers now support bansoko-server update check|apply|status for embedded update checks, admission and status, with human-readable and JSON output. Access is limited to root or the serving PUID and requires no web session or API token.
 - Library import completion and execution failure notifications support original file-name attributes through frt.*. File displacement notifications can show both files using frt.* and taker.frt.*.

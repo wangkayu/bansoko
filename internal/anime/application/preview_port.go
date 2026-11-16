@@ -289,6 +289,11 @@ func (f seedPreviewByIDFunc) seedPreviewFacts(result animecatalogdomain.Provider
 		fact.SourceSite = seed.SourceSite
 		fact.SourceGUID = seed.SourceGUID
 		fact.DetailsURL = seed.DetailsURL
+		fact.Seeders = seed.Seeders
+		fact.Leechers = seed.Leechers
+		fact.DownloadFactor = seed.DownloadFactor
+		fact.UploadFactor = seed.UploadFactor
+		fact.Categories = seed.Categories
 		facts = append(facts, fact)
 	}
 	return SeedPreviewSnapshot{

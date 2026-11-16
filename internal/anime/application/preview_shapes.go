@@ -41,6 +41,13 @@ type SeedPreviewFact struct {
 	SourceSite *acquisitiondomain.SeedSourceSite
 	SourceGUID string
 	DetailsURL string
+	// Tracker-reported display facts of a Jackett search seed, persisted with
+	// the snapshot (absent stays absent).
+	Seeders        *int64
+	Leechers       *int64
+	DownloadFactor *float64
+	UploadFactor   *float64
+	Categories     []acquisitiondomain.SeedCategory
 	// LocatorDisplay is the redacted display form of the seed's source
 	// location. The raw locator is deliberately not part of this fact set.
 	LocatorDisplay string

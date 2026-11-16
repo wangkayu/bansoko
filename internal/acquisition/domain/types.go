@@ -32,6 +32,22 @@ func (s SeedSourceSite) Validate() error {
 	return nil
 }
 
+// SeedCategory is one tracker category of a Jackett search result: the
+// torznab `category` attribute id resolved to its name through the indexer
+// caps. It is display evidence on the seed's second line, never a filter, a
+// grouping key or an identity input.
+type SeedCategory struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c SeedCategory) Validate() error {
+	if strings.TrimSpace(c.ID) == "" || len(c.ID) > 64 || strings.TrimSpace(c.Name) == "" || len(c.Name) > 256 {
+		return errors.New("seed category id and name are required and bounded")
+	}
+	return nil
+}
+
 type FeedItem struct {
 	GUID string
 	// SourceSite attributes one result to the tracker that Jackett aggregated.
@@ -77,6 +93,25 @@ type FeedItem struct {
 	// from Title by the pinned parser) and for a release persisted before the
 	// title row existed.
 	TitleTags *TitleTagSet `json:"-"`
+	// The four swarm/billing facts below are tracker-reported attributes of a
+	// Jackett search result. Every one stays absent when the tracker did not
+	// report it: an absent billing factor is never normalized to 1, and
+	// Leechers is derived at parse time as max(peers-seeders, 0), only when the
+	// tracker published both counts. They are display evidence, not filter or
+	// identity inputs.
+	Seeders        *int64   `json:"-"`
+	Leechers       *int64   `json:"-"`
+	DownloadFactor *float64 `json:"-"`
+	UploadFactor   *float64 `json:"-"`
+	// SeedCategoryIDs are the raw torznab category attribute values of a
+	// Jackett item. They are transient parse input (like Extensions): the
+	// indexer caps resolve them into SeedCategories before the item is mapped,
+	// and the raw ids are never persisted on their own.
+	SeedCategoryIDs []string `json:"-"`
+	// SeedCategories are the caps-resolved categories of a Jackett item. A nil
+	// or empty list means no resolvable category (the tracker published none,
+	// or its caps could not be read); it never fails the item.
+	SeedCategories []SeedCategory `json:"-"`
 }
 
 // DownloadURL returns the item's download source: the normalized .torrent URL

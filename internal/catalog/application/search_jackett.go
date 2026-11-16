@@ -18,7 +18,7 @@ import (
 	"bansoko/internal/runtime/buildinfo"
 )
 
-const jackettSearchContractVersion = "jackett-torznab-search-v1"
+const jackettSearchContractVersion = "jackett-torznab-search-v2"
 
 // HTTPJackettSearcher queries only Jackett's configured `all` aggregate. Site
 // credentials, indexer selection and per-site failures stay inside Jackett; the
@@ -82,6 +82,11 @@ func (s HTTPJackettSearcher) SearchJackettSeeds(ctx context.Context, query strin
 		}
 		return SeedSearchResult{}, err
 	}
+	// Category names live in each indexer's caps, not in the search response.
+	// This enrichment never fails the search: an unreadable caps document
+	// leaves the rows without categories. Items shares its backing array with
+	// Parse.Items, so both views carry the resolved categories.
+	s.resolveSeedCategories(ctx, &clientCopy, result.Items)
 	result.Query = query
 	return result, nil
 }
@@ -140,6 +145,9 @@ func parseJackettSearch(payload []byte) (SeedSearchResult, error) {
 				item.SourceSite = &source
 			}
 		}
+		if reason == "" {
+			attachJackettSeedFacts(&item, raw)
+		}
 		if reason != "" {
 			result.Parse.Skipped = append(result.Parse.Skipped, acquisitiondomain.FeedItemSkip{Index: index, Title: raw.Title, Reason: reason})
 			continue
@@ -151,4 +159,59 @@ func parseJackettSearch(payload []byte) (SeedSearchResult, error) {
 		return SeedSearchResult{}, err
 	}
 	return result, nil
+}
+
+// attachJackettSeedFacts reads the Jackett-only torznab attributes of one
+// already-accepted item: the swarm counts, the billing factors and the raw
+// category ids. The shared torznab normalizer deliberately stays blind to
+// them so the AniBT path cannot grow PT facts by accident. An unreadable
+// value is an absent fact, never a skip reason and never a zero or a 1.
+func attachJackettSeedFacts(item *acquisitiondomain.FeedItem, raw torznabItem) {
+	var seeders, peers *int64
+	for _, attr := range raw.Attrs {
+		value := strings.TrimSpace(attr.Value)
+		switch strings.ToLower(strings.TrimSpace(attr.Name)) {
+		case "seeders":
+			seeders = parseTorznabCount(value)
+		case "peers":
+			peers = parseTorznabCount(value)
+		case "downloadvolumefactor":
+			item.DownloadFactor = parseTorznabFactor(value)
+		case "uploadvolumefactor":
+			item.UploadFactor = parseTorznabFactor(value)
+		case "category":
+			if value != "" && len(value) <= 64 {
+				item.SeedCategoryIDs = append(item.SeedCategoryIDs, value)
+			}
+		}
+	}
+	item.Seeders = seeders
+	if seeders != nil && peers != nil {
+		leechers := *peers - *seeders
+		if leechers < 0 {
+			leechers = 0
+		}
+		item.Leechers = &leechers
+	}
+}
+
+// parseTorznabCount reads a tracker-reported count. A missing, negative or
+// overflowing value is absent, and a count is bounded far beyond any real
+// swarm so a garbage value cannot poison a persisted row.
+func parseTorznabCount(value string) *int64 {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 || parsed > 1<<40 {
+		return nil
+	}
+	return &parsed
+}
+
+// parseTorznabFactor reads a billing factor such as 0, 0.5 or 2. An
+// unreadable or negative value is absent; absent is never rewritten to 1.
+func parseTorznabFactor(value string) *float64 {
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed < 0 || parsed > 1e6 {
+		return nil
+	}
+	return &parsed
 }

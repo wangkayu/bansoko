@@ -251,6 +251,13 @@ type RSSListSeedFacts struct {
 	// TitleTags is the title-parse tag set the title row evaluates (frozen
 	// for a persisted release, otherwise read from the seed title).
 	TitleTags *[]string
+	// Tracker-reported display facts of a Jackett search seed; nil/empty when
+	// the tracker reported nothing. Absent factors stay absent, never 1.
+	Seeders        *int64
+	Leechers       *int64
+	DownloadFactor *float64
+	UploadFactor   *float64
+	Categories     []acquisitiondomain.SeedCategory
 }
 
 // RSSListTorrentState is the torrent acquisition state of one seed.
@@ -1641,6 +1648,11 @@ func rssListSeedItem(snapshotID string, seed SeedPreviewFact, manifest *animecat
 			AniBTTags:             seedAniBTTags(seed.AniBTTags),
 			SourceSite:            seed.SourceSite,
 			TitleTags:             seedTitleTags(seed.Title),
+			Seeders:               seed.Seeders,
+			Leechers:              seed.Leechers,
+			DownloadFactor:        seed.DownloadFactor,
+			UploadFactor:          seed.UploadFactor,
+			Categories:            seed.Categories,
 		},
 		Torrent:        rssListTorrentState(seed, manifest),
 		Files:          []RSSListFile{},

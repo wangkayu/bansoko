@@ -1332,6 +1332,48 @@ describe("OneShotDialog 搜索快照来源", () => {
     });
   });
 
+  it("第二行渲染 PT 种子事实：分类名去重、做种/下载计数与计费标签；(1,1) 与 0 下载不显示", async () => {
+    const ptSeed = seedItem("seed-pt", SEED_A, {
+      snapshot_id: SEARCH_SNAPSHOT_ID,
+      seed: {
+        title: SEED_A,
+        locator_display: "https://tracker.invalid/seed-pt.torrent",
+        size_bytes: 1024,
+        seeders: 12,
+        leechers: 3,
+        download_factor: 0,
+        upload_factor: 2,
+        // Two ids resolving to one name render once (name-deduplicated).
+        categories: [
+          { id: "5071", name: "TV/Anime" },
+          { id: "5072", name: "TV/Anime" },
+        ],
+      },
+    });
+    const plainSeed = seedItem("seed-plain", SEED_B, {
+      snapshot_id: SEARCH_SNAPSHOT_ID,
+      seed: {
+        title: SEED_B,
+        locator_display: "https://tracker.invalid/seed-plain.torrent",
+        seeders: 5,
+        leechers: 0,
+        download_factor: 1,
+        upload_factor: 1,
+      },
+    });
+    stubFetch({ view: searchGroupView([ptSeed, plainSeed]) });
+    renderSearchDialog();
+
+    await findSeed(SEED_A);
+    const meta = screen.getByText(/TV\/Anime · 做种 12 · 下载 3 · 免费 2×/);
+    expect(meta.textContent!.match(/TV\/Anime/g)).toHaveLength(1);
+    // (1,1) billing and a zero leecher count render nothing; a present seeder count always renders.
+    const plainRow = screen.getByRole("checkbox", { name: SEED_B }).closest("li")!;
+    expect(plainRow.textContent).toContain("做种 5");
+    expect(plainRow.textContent).not.toContain("免费");
+    expect(plainRow.textContent).not.toMatch(/下载 \d/);
+  });
+
   it("第二步：标题初始为空且不发预览请求；填写标题后才带真实标题请求，并同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
     stubFetch({ view: searchGroupView() });
     renderSearchDialog();
