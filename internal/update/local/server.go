@@ -341,11 +341,11 @@ func (s *Server) handle(connection *net.UnixConn) {
 
 	uid, err := s.peerIdentity(connection)
 	if err != nil {
-		s.write(connection, response{Error: &responseError{Status: 403, Code: "UPDATE_LOCAL_PERMISSION", Message: "The local peer identity could not be verified."}})
+		s.rejectBeforeRequest(connection, response{Error: &responseError{Status: 403, Code: "UPDATE_LOCAL_PERMISSION", Message: "The local peer identity could not be verified."}})
 		return
 	}
 	if !authorizedUID(uid, uint32(os.Geteuid())) {
-		s.write(connection, response{Error: &responseError{Status: 403, Code: "UPDATE_LOCAL_PERMISSION", Message: "Local update control requires root or the serving PUID."}})
+		s.rejectBeforeRequest(connection, response{Error: &responseError{Status: 403, Code: "UPDATE_LOCAL_PERMISSION", Message: "Local update control requires root or the serving PUID."}})
 		return
 	}
 	if err := connection.SetReadDeadline(time.Now().Add(s.readTimeout)); err != nil {
@@ -473,6 +473,17 @@ func mapError(err error) *responseError {
 func (s *Server) write(connection net.Conn, value response) {
 	_ = connection.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 	_ = json.NewEncoder(connection).Encode(value)
+}
+
+// rejectBeforeRequest preserves peer-first authentication without closing the
+// socket underneath a client that has connected but not finished its first
+// write. Half-close the response direction, then bound the request drain; the
+// client can always write its request and read the authorization response.
+func (s *Server) rejectBeforeRequest(connection *net.UnixConn, value response) {
+	s.write(connection, value)
+	_ = connection.CloseWrite()
+	_ = connection.SetReadDeadline(time.Now().Add(s.readTimeout))
+	_, _ = io.Copy(io.Discard, io.LimitReader(connection, maxRequestBytes+1))
 }
 
 // Close first stops accepts and gives in-flight requests a bounded grace
