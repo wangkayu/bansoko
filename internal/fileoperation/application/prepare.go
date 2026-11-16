@@ -137,10 +137,6 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 	// A missing snapshot (or file row) blocks each video with
 	// media_facts_missing; it never turns the videos into unknown files.
 	prep.videoFacts = frozen.videoRows
-	// The release-level resolution frozen with the same snapshot is the
-	// accepted-plan fallback for files whose inspection carries none; it is
-	// the value the pre-download TargetSet rendered with.
-	artifact.frozenReleaseResolution = frozen.releaseResolution
 	frozenEpisodes := frozen.episodes
 	prep.parserProvenance = frozen.parserProvenance
 	// The batch plan frozen at acceptance decides what is placed, and its
@@ -1474,10 +1470,6 @@ type frozenReleaseFacts struct {
 	season           int
 	seasonBound      bool
 	hasFrozenBinding bool
-	// releaseResolution is the release-title resolution frozen on the same
-	// snapshot at evaluation (ParseReleaseFacts under the then-current
-	// attribute rules) — the exact value the TargetSet render used.
-	releaseResolution string
 	// fileKindsVersion is the file kind list version frozen on the snapshot;
 	// empty (a snapshot written before it was frozen) reads the current list.
 	fileKindsVersion string
@@ -1520,12 +1512,10 @@ LIMIT 1`, releaseID).Scan(&snapshotID, &parserKind, &parserFingerprint, &release
 		return result, fmt.Errorf("read release media fact snapshot: %w", err)
 	}
 	var releaseFacts struct {
-		Resolution       string          `json:"resolution"`
 		FileKindsVersion string          `json:"file_kinds_version"`
 		BatchPlan        *batchplan.Plan `json:"batch_plan"`
 	}
 	if json.Unmarshal(releaseFactsRaw, &releaseFacts) == nil {
-		result.releaseResolution = strings.TrimSpace(releaseFacts.Resolution)
 		result.fileKindsVersion = strings.TrimSpace(releaseFacts.FileKindsVersion)
 		result.plan = releaseFacts.BatchPlan
 	}

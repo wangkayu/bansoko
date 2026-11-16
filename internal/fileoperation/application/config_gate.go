@@ -127,7 +127,6 @@ func (s *Service) currentConfigHold(ctx context.Context, plan *postProcessingPla
 // Subtitles, unknown files and the subtitle suffix are not checked.
 func configGateFiles(b *artifactPreparedBatch) []naming.NamingContext {
 	artifact, prep, frozen := b.artifact, b.prep, b.frozen
-	artifact.frozenReleaseResolution = frozen.releaseResolution
 	applyFrozenBinding(&artifact, frozen)
 	selection := newFileSelection(artifact.frozenInput, frozen.fileKindsVersion, frozen.plan.Selection())
 	videos := make([]artifactFileContext, 0, len(artifact.files))

@@ -33,7 +33,9 @@ func queuedBusiness(t *testing.T) anime.BusinessSnapshot {
 		b.SectionSchemas[name] = anime.SectionSchemaVersions[name]
 	}
 	b.Replacement = anime.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
-	rules := attrrules.Rules{Version: 1, Resolution: []string{"1080p"}, Quality: []string{"web"}, Language: []string{"jpn"}, SpecialMarkers: []string{"special"}, GroupBrackets: []string{"[", "]"}}
+	// The qualification's program identity must equal the programs
+	// frozenpolicy.SeedBusiness persists for the same fixture business.
+	rules := frozenpolicy.FixtureAttrRules()
 	attr, err := attrrules.Fingerprint(rules)
 	if err != nil {
 		t.Fatal(err)

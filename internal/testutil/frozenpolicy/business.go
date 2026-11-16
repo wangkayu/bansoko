@@ -17,6 +17,17 @@ type ProgramWriter interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
+// FixtureAttrRules is the one attribute-rule set every seeded business
+// fixture freezes. It carries both revision resolutions a wash scenario
+// distinguishes (720p/1080p): acceptance parses the release title with this
+// frozen set, so a resolution the set omits never reaches media.quality and
+// cannot appear in any rendered name. Fixtures that hand the same programs to
+// another layer (a submitted qualification, a persisted business config) must
+// use this exact value — a second literal drifts silently.
+func FixtureAttrRules() attrrules.Rules {
+	return attrrules.Rules{Version: 1, Resolution: []string{"1080p", "720p"}, Quality: []string{"web"}, Language: []string{"jpn"}, SpecialMarkers: []string{"special"}, GroupBrackets: []string{"[", "]"}}
+}
+
 func SeedBusiness(ctx context.Context, db ProgramWriter, source string) (domain.BusinessSnapshot, error) {
 	b := domain.BusinessSnapshot{SchemaVersion: domain.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: domain.ParserPolicyEnvelope{SchemaVersion: domain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", Provenance: "global", PolicyVersion: 1, ProfileVersion: 1, RulesOwnerVersion: 1}, ReplacementVersion: 1, FileEffectVersion: 1, UnclassifiedRoute: "skip"}
 	for _, name := range domain.EffectiveSectionOrder {
@@ -40,7 +51,7 @@ func SeedBusiness(ctx context.Context, db ProgramWriter, source string) (domain.
 	if _, err = db.ExecContext(ctx, `INSERT INTO naming_vars_versions(fingerprint,content,active) VALUES($1,$2,FALSE) ON CONFLICT(fingerprint) DO NOTHING`, varsDigest, raw); err != nil {
 		return b, err
 	}
-	rules := attrrules.Rules{Version: 1, Resolution: []string{"1080p"}, Quality: []string{"web"}, Language: []string{"jpn"}, SpecialMarkers: []string{"special"}, GroupBrackets: []string{"[", "]"}}
+	rules := FixtureAttrRules()
 	attrDigest, err := attrrules.Fingerprint(rules)
 	if err != nil {
 		return b, err

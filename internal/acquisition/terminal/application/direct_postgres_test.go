@@ -73,9 +73,8 @@ func checkDirectReleasePostgres(t *testing.T, ctx context.Context, owner, runtim
 		t.Fatal(err)
 	}
 	// anime.group is the release's source group display name, the same fact every
-	// naming render reads back from rss_sources. The column is NOT NULL with a
-	// non-blank CHECK, so "a source with no display name" is not a state this
-	// schema admits and the projection has no absent case to fall back to.
+	// naming render reads back from rss_sources. A row that records a name freezes
+	// it known; only a search-window one-shot records no name and freezes absent.
 	if got := e.input.Object["source"].Object["group"]; got.Kind != protocol.KindObject || got.Object["state"].String != string(protocol.FVKnown) || got.Object["value"].String != "G" {
 		t.Fatalf("frozen source.group = %+v, want the source row's display name G", got)
 	}
@@ -104,9 +103,10 @@ func checkDirectReleasePostgres(t *testing.T, ctx context.Context, owner, runtim
 	if _, err := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT direct_accept_success`); err != nil {
 		t.Fatal(err)
 	}
-	// The stored name is the only thing that decides the fact: rss_sources.group_name
-	// is NOT NULL with a non-blank CHECK, so a source that records no display name is
-	// not a row this schema admits and there is no absent arm to reach through it.
+	// The stored name is the only thing that decides the fact: a source row with
+	// a recorded display name freezes it known, and a search-window placeholder
+	// row that records none freezes absent — the value never comes from anywhere
+	// but the row.
 	// Initial capture validates bytes; acceptance must also reject a writer that
 	// updates torrent-input identity without advancing Release.version.
 	if _, err := tx.ExecContext(ctx, `UPDATE release_torrent_inputs SET payload_digest=$1 WHERE id='direct-input'`, catalog.DigestBytes([]byte("changed"))); err != nil {

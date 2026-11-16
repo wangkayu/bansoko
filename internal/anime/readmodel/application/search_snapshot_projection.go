@@ -29,6 +29,10 @@ import (
 // The group's display name is the query_ref: the query text itself is only
 // stored as a digest, and the caller that ran the search renders its own query
 // label; the name is a stable placeholder the contract can carry, not prose.
+// It is display-only: a search window is not a source group, so the preview's
+// naming group fact is empty — the placeholder identity must never reach a
+// path name, and the release title's own marker is a parse fact (rt.group),
+// not a group this projection may record.
 func (s *Service) resolveSearchSnapshotProjection(
 	ctx context.Context,
 	draft animedomain.AnimeDraft,
@@ -73,7 +77,7 @@ func (s *Service) resolveSearchSnapshotProjection(
 		selectionMode: string(animedomain.SelectionModeAuto),
 		offset:        oneShotOffset(previewOffset),
 	}
-	return []providerGroupPreview{{Ref: ref, GroupName: entry.displayName, Snapshot: snapshot, Items: items, Manifests: manifests, ItemProvider: string(ref.Provider)}}, []rssListGroupEntry{entry}, nil
+	return []providerGroupPreview{{Ref: ref, GroupName: "", Snapshot: snapshot, Items: items, Manifests: manifests, ItemProvider: string(ref.Provider)}}, []rssListGroupEntry{entry}, nil
 }
 
 // searchSeedManifests mirrors expandedSeedManifests over a search snapshot: the

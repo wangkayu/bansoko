@@ -14,11 +14,14 @@
 
 ## Fixed
 
+- One-shot tasks from keyword search no longer render the internal search identity (search-query:…) into preview paths as the naming group fact; preview and actual import now agree, with anime.group empty in both.
 - Secret inputs in forms such as notification channels (Bot Token, webhook URL, signing secret) had lost their standard height and text size; they now match the other inputs.
 - Original file-name attributes remain with managed files after operation details are cleared, so later replacement notifications can still compare the two versions.
 
 ## Important
 
+- Keyword-search one-shot tasks no longer parse a group name from the release title, and the unknown placeholder is gone: ${group} (anime.group) renders empty in both preview and import for search one-shots. To use the group named in the title, reference ${rt.group} (release title parse) or ${frt.group} (file name parse). Subscription and custom source group names are unchanged.
+- media.resolution in file naming now comes only from file inspection or the media.quality frozen at acceptance; the release-title parse fallback for historical inputs is removed, so early tasks without a frozen value render it empty on re-render.
 - New notifications use release.src consistently for the acquisition channel: anibt, mikan, nyaa, jackett or custom, instead of provider_group/custom_rss. Custom templates that compare the old values need manual adjustment. This source change does not append source lines to default or custom templates.
 - Source evidence is captured when a task is accepted or an event is created; delayed delivery and retries do not query the current source again. Missing site or details-page evidence stays empty. Credential-bearing or malformed links are withheld, and a download address never substitutes for a details page.
 - This change does not support replay of old task inputs, search snapshot digests or request protocols, and does not backfill historical sources. Finish in-flight tasks before upgrading, then search again and issue new requests. Frozen notification content is not rewritten; replay of historical pending notifications is not guaranteed.

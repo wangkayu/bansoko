@@ -8,9 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
 	"bansoko/internal/postprocessing/naming"
@@ -259,27 +257,12 @@ func namingContextFacts(artifact artifactContext, file artifactFileContext, froz
 
 	// Release-level quality is the shared fallback for missing file facts
 	// (the downloaded filename usually carries no [1080p]/language markers):
-	// parsing the release title keeps the naming render equal to the
-	// reconciliation planner, which consumes the same release facts.
-	// Accepted (typed) plans must not re-parse with today's attribute rules:
-	// they take the release resolution frozen in the accepted media.quality
-	// (else on the release media fact snapshot) — the same value the
-	// pre-download TargetSet rendered with.
+	// the typed input's frozen media.quality resolution fills in — the same
+	// value the pre-download TargetSet rendered with. Nothing re-parses the
+	// release title: a parse fact is never a display naming fact, and a file
+	// whose frozen facts carry no resolution renders media.resolution empty.
 	if artifact.acceptedFacts && ctx.File.Media.Resolution == "" {
 		ctx.File.Media.Resolution = artifact.acceptedResolution
-		if ctx.File.Media.Resolution == "" {
-			// Inputs accepted before media.quality was frozen.
-			ctx.File.Media.Resolution = artifact.frozenReleaseResolution
-		}
-	}
-	if !artifact.acceptedFacts && ctx.File.Media.Resolution == "" && strings.TrimSpace(ctx.Release.OriginalTitle) != "" {
-		rules, _, err := attrrules.Current()
-		if err != nil {
-			return naming.NamingContext{}, err
-		}
-		if parsed := acquisitiondomain.ParseReleaseFacts(ctx.Release.OriginalTitle, rules); parsed.Resolution != "" {
-			ctx.File.Media.Resolution = parsed.Resolution
-		}
 	}
 
 	// The value namespaces are the Release's frozen source facts, the same

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,7 +56,10 @@ func (f *searchTestSource) FetchSearchSnapshotByID(_ context.Context, provider, 
 // A one-shot browse of a search snapshot renders the snapshot's whole result
 // window as one group through the shared machinery: the seed is evaluated, the
 // scope echoes the search refs, and the group previews with the request's
-// offset like every other one-shot group.
+// offset like every other one-shot group. A search window records no source
+// group, so a template naming anime.group renders it empty — the snapshot's
+// search-query identity is a display-only placeholder and never reaches a
+// rendered path.
 func TestOneShotSearchBrowseRendersSnapshotThroughSharedMachinery(t *testing.T) {
 	ref := searchPreviewRef()
 	snapshot := manifestPreviewSnapshot(t, "12")
@@ -65,10 +69,19 @@ func TestOneShotSearchBrowseRendersSnapshotThroughSharedMachinery(t *testing.T) 
 	source := &searchTestSource{searchSnapshot: snapshot}
 	service := &Service{seedPreviews: source}
 	draft := searchOneshotDraft()
+	// The default directory names the owner year and season folder, so the
+	// draft binds a TV work and states its year, exactly like the owner form.
+	draft.Metadata = animedomain.AnimeMetadataDraft{
+		Tmdb: &animedomain.TMDBBinding{WorkId: "tmdb-preview", MediaKind: animedomain.TMDBMediaKindTv, Season: 1},
+	}
+	setDraftOwnerYear(&draft)
 	seedPreviewBusiness(t, service, &draft)
 
+	effective := previewEffectiveWithDefaultNaming(t, animedomain.ProviderKindMikan)
+	// A filename that names the source group: empty for a search window.
+	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${n} ${s00e00} ${group}.${ext}"
 	view, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft,
-		previewEffectiveWithDefaultNaming(t, animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{ref}, nil, nil, 3, true, nil)
+		effective, previewTestSelection(), []PreviewFeedSnapshotRef{ref}, nil, nil, 3, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +109,24 @@ func TestOneShotSearchBrowseRendersSnapshotThroughSharedMachinery(t *testing.T) 
 	}
 	if group.Items[0].Evaluation.State != RSSListEvaluationEvaluated {
 		t.Fatalf("search seed evaluation = %+v, want the shared evaluation", group.Items[0].Evaluation)
+	}
+	// The search-query identity is display-only: anime.group is empty for the
+	// whole window, so the group-referencing template names the empty fact and
+	// no rendered target carries the placeholder identity.
+	var file *RSSListFile
+	for i := range group.Items[0].Files {
+		if strings.HasSuffix(group.Items[0].Files[i].Filename, ".mkv") {
+			file = &group.Items[0].Files[i]
+		}
+	}
+	if file == nil || file.RenderedTarget == "" {
+		t.Fatalf("search seed video projection = %+v, want a rendered target", group.Items[0].Files)
+	}
+	if strings.Contains(file.RenderedTarget, "search-query:") {
+		t.Fatalf("search seed rendered target = %q, the snapshot identity leaked into the path", file.RenderedTarget)
+	}
+	if !slices.Contains(file.EmptyFacts, "anime.group") {
+		t.Fatalf("search seed empty facts = %v, want anime.group named", file.EmptyFacts)
 	}
 }
 

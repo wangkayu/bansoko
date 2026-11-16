@@ -234,13 +234,9 @@ type artifactContext struct {
 	correlationID sql.NullString
 	files         []artifactFileContext
 	acceptedFacts bool
-	// frozenReleaseResolution is the release-level resolution frozen on the
-	// release media fact snapshot; accepted (typed) plans fall back to it when
-	// file inspection carries no resolution.
-	frozenReleaseResolution string
 	// acceptedResolution is media.quality.resolution frozen in the accepted
 	// input (same title and attribute rules as the pre-download TargetSet);
-	// it is the first fallback for accepted plans.
+	// it fills in when file inspection carries no resolution.
 	acceptedResolution string
 }
 

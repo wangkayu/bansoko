@@ -57,6 +57,24 @@ FROM rss_sources WHERE id = 'src-2'`).Scan(&provider, &entryRef, &groupRef, &sna
 		`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, provenance) VALUES ('src-4', 'sub-1', 'custom_rss', 'custom://with-provenance', 'custom://with-provenance', 'Group', 'Title', '{"provider":"mikan","provider_entry_ref":"entry-1","provider_group_ref":"group-1","discovery_snapshot_version":"snapshot-1"}'::jsonb)`)
 }
 
+// A one-shot mounted from a keyword search window records no source group
+// name: the window is not a source group, so its placeholder row carries an
+// empty group_name. Overlong names stay refused.
+func TestRSSSourceEmptyGroupName(t *testing.T) {
+	p := newConstraintProbe(t)
+	seedRSSSubscription(p)
+	p.accept("search one-shot placeholder without a group name", `
+INSERT INTO rss_sources(
+    id, subscription_id, source_kind, locator, locator_display, group_name, title
+) VALUES ('src-empty-group', 'sub-1', 'custom_rss', 'custom://search-one-shot', 'custom://search-one-shot', '', 'Title')`)
+	var name string
+	if err := p.db.QueryRowContext(p.ctx, `SELECT group_name FROM rss_sources WHERE id = 'src-empty-group'`).Scan(&name); err != nil || name != "" {
+		t.Fatalf("search one-shot group name = %q (%v), want the recorded empty name", name, err)
+	}
+	p.reject("overlong group name",
+		`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title) VALUES ('src-long-group', 'sub-1', 'custom_rss', 'custom://long', 'custom://long', repeat('g', 257), 'Title')`)
+}
+
 // An RSS source is identified by its locator, not by legacy URL, offset
 // override or enabled columns.
 func TestRSSSourceHasNoLegacyColumns(t *testing.T) {

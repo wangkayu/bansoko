@@ -933,19 +933,16 @@ FOR UPDATE`, input.CandidateID).Scan(&candidateCurrentRevision, &candidateCurren
 	// provider group identity names nothing a person sees. One resolved value
 	// feeds the placeholder source, the release evaluation and the target plan,
 	// so the frozen source facts and the rendered names agree. It resolves
-	// before the first write: a seed whose group has no recorded name refuses
-	// the command without creating any owner row.
+	// before the first write: a feed seed whose group has no recorded name
+	// refuses the command without creating any owner row.
 	var groupName string
 	if seed.SnapshotKind == string(animecatalogdomain.FeedSnapshotKindSearch) {
-		// A keyword search seed has no catalog entry and no provider group, so
-		// there is no recorded group observation to read a display name from. The
-		// name comes from the one source that can state it for such a seed: the
-		// selected release title's own group marker, read by the pinned title
-		// parser. It is a display fact, never a group identity. When the title has
-		// no marker the placeholder records the same stable "unknown" label every
-		// other group-less source uses, instead of inventing a name or reusing the
-		// search-scope digest.
-		groupName = searchSeedGroupDisplayName(seed)
+		// A keyword search seed has no source group at all: its group ref is a
+		// display-blind search-query identity, and the release title's own
+		// marker is a parse fact (rt.group/frt.group), not a group the source
+		// recorded. The mount records no name and anime.group renders empty,
+		// exactly as the search browse preview projects it.
+		groupName = ""
 	} else {
 		var err error
 		groupName, err = sourceGroupDisplayName(ctx, tx, draft, seed)
