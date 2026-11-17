@@ -34,7 +34,7 @@ SET business_snapshot = pg_temp.business_snapshot_v2(business_snapshot),
     business_version = business_version + 1,
     updated_at = CURRENT_TIMESTAMP
 WHERE business_snapshot IS NOT NULL
-  AND business_snapshot->>'schema_version' IS DISTINCT FROM 'business-snapshot-v2';
+  AND business_snapshot->>'schema_version' = 'business-snapshot-v1';
 
 WITH fixed AS (
  SELECT c.id,
@@ -101,14 +101,17 @@ BEGIN
  END IF;
  IF EXISTS (SELECT 1 FROM public.anime_config_candidates
             WHERE activated_managed_anime_id IS NULL
+              AND draft ? 'business'
               AND draft->'business'->>'schema_version' IS DISTINCT FROM 'business-snapshot-v2') THEN
   RAISE EXCEPTION 'BUSINESS_SNAPSHOT_V2_INCOMPLETE: a working candidate draft is not v2';
  END IF;
  IF EXISTS (SELECT 1 FROM public.anime_config_candidate_revisions r
             JOIN public.anime_config_candidates c ON c.id = r.candidate_id
             WHERE c.activated_managed_anime_id IS NULL
-              AND r.business_snapshot IS NOT NULL
-              AND r.business_snapshot->>'schema_version' IS DISTINCT FROM 'business-snapshot-v2') THEN
+              AND ((r.business_snapshot IS NOT NULL
+                    AND r.business_snapshot->>'schema_version' IS DISTINCT FROM 'business-snapshot-v2')
+                   OR (r.draft ? 'business'
+                       AND r.draft->'business'->>'schema_version' IS DISTINCT FROM 'business-snapshot-v2'))) THEN
   RAISE EXCEPTION 'BUSINESS_SNAPSHOT_V2_INCOMPLETE: a working candidate revision is not v2';
  END IF;
 END $$;
