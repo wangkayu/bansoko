@@ -32,7 +32,7 @@ type qualificationFixture struct {
 	groupVersion                     int64
 	feed                             catalogdomain.ProviderFeedSnapshot
 	payloadDigest, projectionDigest  string
-	attrDigest, varsDigest           string
+	varsDigest                       string
 }
 
 func seedQualification(t *testing.T, db *sql.DB, tag string) qualificationFixture {
@@ -71,7 +71,7 @@ func seedQualification(t *testing.T, db *sql.DB, tag string) qualificationFixtur
 		t.Fatal(err)
 	}
 	f.candidateID, f.revision = candidate.Id, *candidate.CurrentRevision
-	f.attrDigest, f.varsDigest = b.Programs.AttrRules.Digest, b.Programs.Vars.Digest
+	f.varsDigest = b.Programs.Vars.Digest
 	if err := db.QueryRowContext(ctx, `SELECT version,current_revision_digest FROM anime_config_candidates WHERE id=$1`, f.candidateID).Scan(&f.candidateVersion, &f.revisionDigest); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ ON CONFLICT (managed_anime_id) DO UPDATE SET candidate_id=EXCLUDED.candidate_id,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO anime_business_configs(managed_anime_id, parser_kind, parser_source_default_version, parser_version, admission_mode, quality_profile, replacement_source_default_version, replacement_version, unclassified_route, file_effect_source_default_version, file_effect_version) VALUES($1,'regex',1,1,'all','{"version":"profile-v1","items":[]}',1,1,'skip',0,1) ON CONFLICT (managed_anime_id) DO UPDATE SET parser_kind=EXCLUDED.parser_kind, parser_source_default_version=EXCLUDED.parser_source_default_version, parser_version=EXCLUDED.parser_version, admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, replacement_source_default_version=EXCLUDED.replacement_source_default_version, replacement_version=EXCLUDED.replacement_version, unclassified_route=EXCLUDED.unclassified_route, file_effect_source_default_version=EXCLUDED.file_effect_source_default_version, file_effect_version=EXCLUDED.file_effect_version`, f.animeID); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO anime_business_configs(managed_anime_id, parser_kind, parser_source_default_version, parser_version, admission_mode, quality_profile, replacement_source_default_version, replacement_version, unclassified_route, file_effect_source_default_version, file_effect_version) VALUES($1,'regex',1,1,'all',$2::jsonb,1,1,'skip',0,1) ON CONFLICT (managed_anime_id) DO UPDATE SET parser_kind=EXCLUDED.parser_kind, parser_source_default_version=EXCLUDED.parser_source_default_version, parser_version=EXCLUDED.parser_version, admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, replacement_source_default_version=EXCLUDED.replacement_source_default_version, replacement_version=EXCLUDED.replacement_version, unclassified_route=EXCLUDED.unclassified_route, file_effect_source_default_version=EXCLUDED.file_effect_source_default_version, file_effect_version=EXCLUDED.file_effect_version`, f.animeID, b.Replacement.QualityProfile); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,7 +134,7 @@ func (f qualificationFixture) qualification(mutate func(map[string]any)) string 
 		"feed": map[string]any{"snapshot_ref": f.feed.ID, "snapshot_version": f.feed.Version, "scope": scope(), "group_ref": "10",
 			"content_hash": f.feed.ContentHash, "hash_schema": "provider-feed-snapshot-v2", "projection_schema": "torrent-manifest-v1",
 			"stable_seed_key": "seed", "payload_digest": f.payloadDigest, "manifest_digest": f.projectionDigest},
-		"programs":  map[string]any{"attr_fingerprint": f.attrDigest, "vars_digest": f.varsDigest, "translation": nil},
+		"programs":  map[string]any{"vars_digest": f.varsDigest, "translation": nil},
 		"placement": map[string]any{"kind": "none"},
 	}
 	if mutate != nil {
@@ -265,7 +265,6 @@ func TestAcquisitionQualificationRecheckClaimsAndFailClosedProofs(t *testing.T) 
 			q["config"] = map[string]any{"kind": "saved_revision", "candidate_ref": f.candidateID, "candidate_version": f.candidateVersion + 1, "revision": f.revision, "revision_digest": f.revisionDigest}
 			member(q, "management")["expected_metadata_version"] = nil
 		}, f.revisionBusiness, ""},
-		{"attr program", "ACQ_QUALIFICATION_PROGRAM_CHANGED", func(q map[string]any) { member(q, "programs")["attr_fingerprint"] = acqDigest("d") }, "", ""},
 		{"vars program", "ACQ_QUALIFICATION_PROGRAM_CHANGED", func(q map[string]any) { member(q, "programs")["vars_digest"] = acqDigest("d") }, "", ""},
 		{"source version", "ACQ_QUALIFICATION_SOURCE_CHANGED", func(q map[string]any) { member(member(q, "source"), "source_ref")["version"] = 2 }, "", ""},
 		{"release version", "ACQ_QUALIFICATION_SOURCE_CHANGED", func(q map[string]any) { member(q, "source")["expected_version"] = 2 }, "", ""},
@@ -402,7 +401,6 @@ func TestAcquisitionRecheckLocksBlockGCAndPublication(t *testing.T) {
 	}{
 		{"feed GC", `DELETE FROM provider_feed_snapshots WHERE id=$1`, func(f qualificationFixture) any { return f.feed.ID }},
 		{"group GC", `DELETE FROM provider_group_snapshots WHERE id=$1`, func(f qualificationFixture) any { return f.groupID }},
-		{"attr publication", `UPDATE attr_rule_versions SET active=active WHERE fingerprint=$1`, func(f qualificationFixture) any { return f.attrDigest }},
 		{"vars publication", `UPDATE naming_vars_versions SET active=active WHERE fingerprint=$1`, func(f qualificationFixture) any { return f.varsDigest }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

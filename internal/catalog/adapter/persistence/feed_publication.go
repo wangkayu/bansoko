@@ -8,6 +8,7 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	generated "bansoko/internal/catalog/adapter/persistence/generated"
 	catalogdomain "bansoko/internal/catalog/domain"
+
 	"github.com/google/uuid"
 )
 

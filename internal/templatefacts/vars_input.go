@@ -6,7 +6,7 @@ import "strings"
 // under input.<root>: the release-level evidence every Vars call
 // site can supply from the same frozen sources. Naming-resolver outputs that
 // depend on the render configuration (anime.kind / season_folder,
-// release.lang*, release.subtitle_mode, ep.source, ep.kind) are not evidence
+// release.lang*, release.subtitle_mode and ep.source) are not evidence
 // and stay out; so do the facts acceptance does not freeze
 // (anime.title_source, release.published_at, torrent.name) — and the group
 // leaves (retired release.group / group_source, never listed) are not Vars

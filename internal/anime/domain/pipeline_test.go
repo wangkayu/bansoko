@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/namingvars"
@@ -14,11 +13,7 @@ import (
 	"bansoko/internal/transport/httpapi/generated"
 )
 
-func testRules() attrrules.Rules {
-	return attrrules.Rules{Version: 1, Resolution: []string{"2160p", "1440p", "1080p", "720p", "480p"}, Quality: []string{"remux", "web-dl", "webrip", "bluray", "bdrip", "hdtv"}, Language: []string{"chs", "cht", "sc", "tc", "jpn", "eng"}, SpecialMarkers: []string{"special", "ncop", "nced"}, GroupBrackets: []string{"[", "]"}}
-}
-
-func TestRenderPreviewFileForNameUsesReleaseResolutionWhenFilenameOmitsIt(t *testing.T) {
+func TestRenderPreviewFileForNameKeepsMediaToTheFile(t *testing.T) {
 	vars := namingvars.Vars{"test": {"marker": "ok"}}
 	fp, err := namingvars.Fingerprint(vars)
 	if err != nil {
@@ -40,26 +35,28 @@ func TestRenderPreviewFileForNameUsesReleaseResolutionWhenFilenameOmitsIt(t *tes
 		GUID:            "preview-resolution",
 		Title:           "[RealGroup] Preview Show - 01 [1080p]",
 		TorrentFilename: "Preview Show - 01.mkv",
+		TitleTags:       &acquisitiondomain.TitleTagSet{Tags: []string{"resolution:1080p"}},
 	}
-	release := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{GroupName: "RealGroup"}, effective, domainValue[MetadataHold](domainValue[MetadataHold](generated.MetadataHold{})), testRules(), tvEpisodeIdentity(t, "1"))
+	release := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{GroupName: "RealGroup"}, effective, domainValue[MetadataHold](domainValue[MetadataHold](generated.MetadataHold{})), tvEpisodeIdentity(t, "1"))
 	release.FrozenVars = explicitTestFrozenVars()
-	// One render core serves every manifest file: a filename that omits the
-	// resolution takes it from the release. The default layout no longer names
-	// the resolution, so the template under test is one that does.
-	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${anime.title} [${media.resolution}] ${s00e00}.${file.ext}"
-	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), "Preview Show - 01.mkv", "video", 0, release.FrozenEpisode, false, false)
+	// media.* is the inspected file's own measurement; the release title's
+	// [1080p] is the release's fact and stays under rt.res. The filename omits
+	// the resolution and no probe has run, so media.resolution is empty: it is
+	// never filled from the release title.
+	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${anime.title} [${rt.res}] ${s00e00}.${file.ext}"
+	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, "Preview Show - 01.mkv", "video", 0, release.FrozenEpisode, false, false)
 	if !outcome.Included || outcome.RenderedTarget == nil {
 		t.Fatalf("preview did not render: %+v", outcome)
 	}
 	if !strings.Contains(*outcome.RenderedTarget, "[1080p]") {
-		t.Fatalf("release resolution was not carried into target preview: %q", *outcome.RenderedTarget)
+		t.Fatalf("the release resolution was not available as rt.res: %q", *outcome.RenderedTarget)
 	}
 
-	// The read-model preview keeps the release-derived resolution and uses a
-	// minimal placeholder only for the codec that still requires file inspection.
+	// The read-model preview shows media.resolution as its minimal placeholder
+	// (no probe facts yet), never as the release's 1080p.
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${anime.title} [${media.resolution} ${media.video_codec}] ${s00e00}.${file.ext}"
-	preview := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), "Preview Show - 01.mkv", "video", 0, release.FrozenEpisode, false, true)
-	if !preview.Included || preview.RenderedTarget == nil || !strings.HasSuffix(*preview.RenderedTarget, "/Preview Show [1080p ⟨vc⟩] S01E01.mkv") {
+	preview := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, "Preview Show - 01.mkv", "video", 0, release.FrozenEpisode, false, true)
+	if !preview.Included || preview.RenderedTarget == nil || !strings.HasSuffix(*preview.RenderedTarget, "/Preview Show [⟨res⟩ ⟨vc⟩] S01E01.mkv") {
 		t.Fatalf("preview placeholders = %+v %v", preview, preview.RenderedTarget)
 	}
 	for _, fact := range preview.EmptyFacts {
@@ -115,7 +112,7 @@ func manifestPreviewFixture(t *testing.T) (EffectiveConfig, PreviewReleaseResult
 		TitleTags: &acquisitiondomain.TitleTagSet{Tags: []string{"resolution:1080p", "sub_lang:SC"}},
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
-	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), testRules(), tvEpisodeIdentity(t, "1"))
+	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "1"))
 	release.FrozenVars = explicitTestFrozenVars()
 	return effective, release, item
 }
@@ -144,7 +141,7 @@ func manifestFilesFixture() []ManifestFileInput {
 
 func TestPreviewFilesForManifestProjectsEligibleFilesWithTheirOwnTarget(t *testing.T) {
 	effective, release, item := manifestPreviewFixture(t)
-	results := PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 
 	if len(results) != 4 {
 		t.Fatalf("projected %d files, want 4", len(results))
@@ -190,14 +187,14 @@ func TestPreviewFilesForManifestProjectsEligibleFilesWithTheirOwnTarget(t *testi
 func TestManifestSubtitleFactsReachNamingContext(t *testing.T) {
 	effective, release, item := manifestPreviewFixture(t)
 	files := manifestFilesFixture()
-	results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if results[1].RenderError != nil {
 		t.Fatalf("subtitle manifest entry failed rendering: %s", *results[1].RenderError)
 	}
 	if results[1].MediaKind != "subtitle" || results[1].SizeBytes != 20 {
 		t.Fatalf("manifest facts lost: %+v", results[1])
 	}
-	ctx := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), files[1].Filename, files[1].MediaKind, files[1].SizeBytes, release.FrozenEpisode, false, false)
+	ctx := renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, files[1].Filename, files[1].MediaKind, files[1].SizeBytes, release.FrozenEpisode, false, false)
 	if ctx.RenderedTarget == nil {
 		t.Fatalf("subtitle naming context did not render: %+v", ctx)
 	}
@@ -205,7 +202,7 @@ func TestManifestSubtitleFactsReachNamingContext(t *testing.T) {
 	// file kind and size, and the resolver normalizes the manifest language
 	// with the reltitle vocabulary (zh-Hans stays zh-Hans, not und).
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${file.kind}|${file.size}|${file.sub.format}|${file.sub.lang_tag}|${file.ext}"
-	ctx = renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), files[1].Filename, files[1].MediaKind, files[1].SizeBytes, release.FrozenEpisode, false, false)
+	ctx = renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, files[1].Filename, files[1].MediaKind, files[1].SizeBytes, release.FrozenEpisode, false, false)
 	if ctx.RenderedTarget == nil || *ctx.RenderedTarget != "/media/TV/Preview Show (2025)/Season 01/subtitle|20|ass|zh-Hans|ass" {
 		t.Fatalf("manifest subtitle facts did not reach naming render: target=%v result=%+v", ctx.RenderedTarget, ctx)
 	}
@@ -217,7 +214,7 @@ func TestPreviewFilesForManifestFileRulesMatchVideoFilenameOnly(t *testing.T) {
 	effective, release, item := manifestPreviewFixture(t)
 	effective.Rules.FileFilter = FileFilterRules{MustContain: `(?i)ep9`}
 
-	results := PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if results[0].Included || results[0].ReasonCode == nil || *results[0].ReasonCode != "file_must_contain_not_matched" {
 		t.Fatalf("the video must be excluded by must_contain with its reason: %+v", results[0])
 	}
@@ -231,7 +228,7 @@ func TestPreviewFilesForManifestFileRulesMatchVideoFilenameOnly(t *testing.T) {
 func TestPreviewFilesForManifestNotInOnTorrentNameDoesNotExcludeTheTorrent(t *testing.T) {
 	effective, release, item := manifestPreviewFixture(t)
 	effective.Rules.FileFilter = FileFilterRules{NotIn: `(?i)PREVIEW`}
-	results := PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if !results[0].Included || results[0].RenderedTarget == nil {
 		t.Fatalf("not_in matching only the torrent name excluded the video: %+v", results[0])
 	}
@@ -239,7 +236,7 @@ func TestPreviewFilesForManifestNotInOnTorrentNameDoesNotExcludeTheTorrent(t *te
 	// Upper case in the rule proves the match is case-insensitive; it does
 	// exclude a video whose own filename matches.
 	effective.Rules.FileFilter = FileFilterRules{NotIn: `(?i)EP1`}
-	results = PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results = PreviewFilesForManifest(item, release, manifestFilesFixture(), effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if results[0].Included || results[0].ReasonCode == nil || *results[0].ReasonCode != "file_not_in_matched" || results[0].RenderError != nil {
 		t.Fatalf("the filename-matched video must be excluded with its reason: %+v", results[0])
 	}
@@ -257,7 +254,7 @@ func TestPreviewFilesForManifestOrdersByOrdinal(t *testing.T) {
 	shuffled := manifestFilesFixture()
 	shuffled[0], shuffled[2] = shuffled[2], shuffled[0]
 
-	results := PreviewFilesForManifest(item, release, shuffled, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, shuffled, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	for index, result := range results {
 		if result.Ordinal != index {
 			t.Fatalf("result %d has ordinal %d; output must follow the manifest order", index, result.Ordinal)
@@ -285,7 +282,7 @@ func TestPreviewFilesForManifestUnknownVideoFollowsTheRoute(t *testing.T) {
 	files := []ManifestFileInput{video, subtitle}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 
-	routed := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, testRules(), UnknownRouteRoute)
+	routed := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, UnknownRouteRoute)
 	if !routed[0].Included || routed[0].RenderedTarget == nil || *routed[0].RenderedTarget != "/media/TV/Preview Show (2025)/Extras/special.mkv" {
 		t.Fatalf("a routed unknown video renders the unknown template: %+v", routed[0])
 	}
@@ -297,7 +294,7 @@ func TestPreviewFilesForManifestUnknownVideoFollowsTheRoute(t *testing.T) {
 		t.Fatalf("its subtitle follows it as an unknown file: %+v", routed[1])
 	}
 
-	skipped := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, testRules(), UnknownRouteSkip)
+	skipped := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, UnknownRouteSkip)
 	if skipped[0].Included || skipped[0].RenderedTarget != nil || skipped[0].ReasonCode == nil || *skipped[0].ReasonCode != "unknown_skipped" {
 		t.Fatalf("a skipped unknown video is excluded as unknown_skipped: %+v", skipped[0])
 	}
@@ -306,13 +303,13 @@ func TestPreviewFilesForManifestUnknownVideoFollowsTheRoute(t *testing.T) {
 	}
 
 	// The pre-download plan (no route) never gives an unknown file a target.
-	plan := PreviewExactFile(item, release, video, effective, "Preview Show", source, testRules())
+	plan := PreviewExactFile(item, release, video, effective, "Preview Show", source)
 	if plan.Included || plan.RenderedTarget != nil || plan.ReasonCode == nil || *plan.ReasonCode != "unknown" {
 		t.Fatalf("the pre-download plan keeps an unknown file without a target: %+v", plan)
 	}
 
 	video.FrozenEpisode = &naming.FrozenEpisodeNamingFacts{Raw: "5", Number: "5", Display: "5"}
-	results := PreviewFilesForManifest(item, release, []ManifestFileInput{video}, effective, "Preview Show", source, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, []ManifestFileInput{video}, effective, "Preview Show", source, UnknownRouteSkip)
 	if results[0].RenderedTarget == nil || *results[0].RenderedTarget != "/media/TV/Preview Show (2025)/Season 01/Preview Show S01E05.mkv" {
 		t.Fatalf("the file's own episode must render: %+v", results[0])
 	}
@@ -334,7 +331,7 @@ func TestPreviewFilesForManifestMovieNonMainVideosAreUnknown(t *testing.T) {
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 
-	routed := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, testRules(), UnknownRouteRoute)
+	routed := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, UnknownRouteRoute)
 	if !routed[0].Included || routed[0].RenderedTarget == nil || *routed[0].RenderedTarget != "/media/Movie/Preview Show (2025)/Extras/trailer.mkv" {
 		t.Fatalf("a non-main movie video is an unknown file: %+v", routed[0])
 	}
@@ -351,7 +348,7 @@ func TestPreviewFilesForManifestMovieNonMainVideosAreUnknown(t *testing.T) {
 		t.Fatalf("a movie subtitle binds only by prefix: %+v", routed[4])
 	}
 
-	skipped := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, testRules(), UnknownRouteSkip)
+	skipped := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, UnknownRouteSkip)
 	if skipped[0].Included || skipped[0].ReasonCode == nil || *skipped[0].ReasonCode != "unknown_skipped" {
 		t.Fatalf("a skipped non-main video is unknown_skipped: %+v", skipped[0])
 	}
@@ -364,7 +361,7 @@ func TestPreviewFilesForManifestMovieNonMainVideosAreUnknown(t *testing.T) {
 
 	// A file rule that drops the larger video makes the next one the main video.
 	effective.Rules.FileFilter = FileFilterRules{NotIn: `(?i)feature`}
-	filtered := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, testRules(), UnknownRouteSkip)
+	filtered := PreviewFilesForManifest(item, release, files, effective, "Preview Show", source, UnknownRouteSkip)
 	if !filtered[0].Included || filtered[0].RenderedTarget == nil || *filtered[0].RenderedTarget != "/media/Movie/Preview Show (2025)/trailer.mkv" {
 		t.Fatalf("the largest video the rules keep is the main video: %+v", filtered[0])
 	}
@@ -399,16 +396,16 @@ func TestRenderPreviewFileForNameConsumesFrozenReleaseEpisode(t *testing.T) {
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 
-	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), testRules(), tvEpisodeIdentity(t, "1"))
+	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "1"))
 	release.FrozenVars = explicitTestFrozenVars()
 	release.FrozenEpisode = nil
-	unresolved := renderPreviewFileForName(item, release, effective, "Preview Show", source, testRules(), "Preview Show [E07].mkv", "video", 0, release.FrozenEpisode, false, false)
+	unresolved := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show [E07].mkv", "video", 0, release.FrozenEpisode, false, false)
 	if unresolved.RenderedTarget != nil {
 		t.Fatalf("without a frozen identity the render must not re-parse the title: %+v", unresolved)
 	}
 
 	release.FrozenEpisode = &naming.FrozenEpisodeNamingFacts{Raw: "42", Number: "42", Display: "42"}
-	frozen := renderPreviewFileForName(item, release, effective, "Preview Show", source, testRules(), "Preview Show [E07].mkv", "video", 0, release.FrozenEpisode, false, false)
+	frozen := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show [E07].mkv", "video", 0, release.FrozenEpisode, false, false)
 	if frozen.RenderedTarget == nil {
 		t.Fatalf("frozen target did not render: %+v", frozen)
 	}
@@ -430,7 +427,7 @@ func TestPreviewManifestBindsSubtitleBesideItsVideo(t *testing.T) {
 		{FileRef: "sha256:" + strings.Repeat("1", 64), Ordinal: 0, SourcePath: "Preview Show S1/ep1.mkv", Filename: "ep1.mkv", SizeBytes: 1234, MediaKind: "video"},
 		{FileRef: "sha256:" + strings.Repeat("2", 64), Ordinal: 1, SourcePath: "Preview Show S1/ep1.zh-Hans.ass", Filename: "ep1.zh-Hans.ass", SizeBytes: 20, MediaKind: "subtitle", Language: "zh-Hans", PerFileEpisode: true, FrozenEpisode: release.FrozenEpisode, BoundVideo: "Preview Show S1/ep1.mkv"},
 	}
-	results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if !results[0].Included || results[0].RenderedTarget == nil {
 		t.Fatalf("the video did not render a target: %+v", results[0])
 	}
@@ -457,7 +454,7 @@ func TestPreviewManifestBindsSubtitleBesideItsVideo(t *testing.T) {
 	unbound := PreviewFilesForManifest(item, release, []ManifestFileInput{
 		files[0],
 		{FileRef: "sha256:" + strings.Repeat("3", 64), Ordinal: 1, SourcePath: "Preview Show S1/notes.ass", Filename: "notes.ass", SizeBytes: 20, MediaKind: "subtitle", PerFileEpisode: true},
-	}, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	}, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if unbound[1].Included || unbound[1].ReasonCode == nil || *unbound[1].ReasonCode != "subtitle_binding_missing" {
 		t.Fatalf("an unbound subtitle is not placed: %+v", unbound[1])
 	}
@@ -476,7 +473,7 @@ func TestPreviewFilesForManifestSubtitleFollowsItsBoundVideo(t *testing.T) {
 	orphan := ManifestFileInput{FileRef: "sha256:" + strings.Repeat("5", 64), Ordinal: 2, SourcePath: "Preview Show S1/notes.ass", Filename: "notes.ass", SizeBytes: 3, MediaKind: "subtitle", PerFileEpisode: true}
 	files = append(files, orphan)
 
-	results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if !results[1].Included || results[1].RenderedTarget == nil {
 		t.Fatalf("a subtitle of a rendered video renders: %+v", results[1])
 	}
@@ -485,7 +482,7 @@ func TestPreviewFilesForManifestSubtitleFollowsItsBoundVideo(t *testing.T) {
 	}
 
 	effective.Rules.FileFilter = FileFilterRules{MustContain: `(?i)ep9`}
-	results = PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+	results = PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 	if results[1].Included || results[1].RenderedTarget != nil || results[1].ReasonCode == nil || *results[1].ReasonCode != "subtitle_video_excluded" {
 		t.Fatalf("a subtitle follows a rule-excluded video out: %+v", results[1])
 	}

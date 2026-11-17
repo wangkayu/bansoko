@@ -194,18 +194,16 @@ func applyResolverResult(ctx *NamingContext, result ResolverResult) {
 	switch value := result.Value.(type) {
 	case episodeValue:
 		ctx.Parsed.Episode = EpisodeNamingVariables{
-			Raw:         value.Raw,
-			Display:     value.Display,
-			Number:      value.Number,
-			Offset:      value.Offset,
-			SpecialKind: value.SpecialKind,
+			Raw:     value.Raw,
+			Display: value.Display,
+			Number:  value.Number,
+			Offset:  value.Offset,
 		}
 	case languageValue:
 		ctx.Parsed.Language = LanguageNamingVariables{
-			Code:        value.Code,
-			Description: value.Description,
-			BCP47:       append([]string(nil), value.BCP47...),
-			Languages:   append([]string(nil), value.Languages...),
+			Code:      value.Code,
+			BCP47:     append([]string(nil), value.BCP47...),
+			Languages: append([]string(nil), value.Languages...),
 		}
 	case subtitleValue:
 		ctx.Parsed.Subtitle = SubtitleNamingVariables{

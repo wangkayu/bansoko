@@ -61,6 +61,21 @@ func init() {
 		F("source_site", Nullable(Obj(F("id", Text(1, 256)), F("name", Text(1, 256)), F("type", Enum("public", "private", "semi-private"))))),
 	))
 
+	// Native tag evidence is frozen once at acceptance. Optional members keep
+	// the stored parser metadata intact; readers never reparse the title.
+	register("SourceTitleTagsV1", Obj(
+		F("schema", Text(0, 256)), F("implementation", Text(0, 256)),
+		F("config_digest", Text(0, 256)), F("tags", Nullable(Array(Text(0, 8192), 0, 256))),
+		F("value_tags", Nullable(Array(Text(0, 8192), 0, 256))), F("diagnostic", Text(0, 8192)),
+	).Optional("config_digest", "value_tags", "diagnostic"))
+	register("SourceAniBTTagsV1", Obj(
+		F("schema", Text(0, 256)), F("tags", Nullable(Array(Text(0, 8192), 0, 256))), F("diagnostic", Text(0, 8192)),
+	).Optional("schema", "diagnostic"))
+	register("SourceTagsV1", Obj(
+		F("title_tags", Nullable(Ref("SourceTitleTagsV1"))),
+		F("anibt", Nullable(Ref("SourceAniBTTagsV1"))),
+	))
+
 	// --- SourceV1 ---------------------------------------------------------------
 	register("SourceV1", Obj(
 		F("kind", Enum("subscription_source", "subscription_direct", "one_shot_snapshot", "one_shot_seed", "automatic_source")),
@@ -70,6 +85,7 @@ func init() {
 		F("published_at", FVOf(Time)),
 		F("provider", FVOf(Text(1, 256))),
 		F("provenance", Nullable(Ref("ReleaseSourceEvidenceV1"))),
+		F("tag_evidence", Ref("SourceTagsV1")),
 		F("group", FVOf(Display)),
 		F("payload_digest", DigestOf),
 		F("manifest_digest", DigestOf),
@@ -82,7 +98,7 @@ func init() {
 		// as torrent.size and torrent.file_count. The accept function re-derives both
 		// from the manifest rows and refuses a mismatch.
 		F("torrent_size", FVOf(Size)), F("torrent_file_count", FVOf(Int(1, maxI64))),
-	).Check(func(r reader, m map[string]Value) error {
+	).Optional("tag_evidence").Check(func(r reader, m map[string]Value) error {
 		if fvState(m["infohash_v1"]) != string(FVKnown) && fvState(m["infohash_v2"]) != string(FVKnown) {
 			return constraint(r, "infohash_v1")
 		}
@@ -499,7 +515,9 @@ func registerMedia() {
 		// the TMDB work summary (null when never observed). The field is
 		// absent when the work is unbound or was never observed.
 		F("bgm_titles", FVOf(Ref("BGMTitlesV1"))), F("tmdb_titles", FVOf(Ref("TMDBTitlesV1"))),
-	))
+	// quality is decode-only historical evidence. New acceptance no longer
+	// manufactures a second set of release attributes beside the source tags.
+	).Optional("quality"))
 }
 
 // --- DeliveryV1 -------------------------------------------------------------------
@@ -534,8 +552,9 @@ func registerDelivery() {
 	register("ComparisonV1", Obj(
 		F("policy", Ref("RefVersion")), F("candidate_quality", Ref("QualityV1")), F("existing_quality", Ref("QualityV1")),
 		F("compared_dimensions", Array(Enum("group", "languages", "resolution", "revision", "size", "source"), 0, 6).Ordered(SortedUnique)),
+		F("native", Ref("NativeComparisonV1")),
 		F("verdict", Enum("replace")), F("evaluated_at", Time),
-	))
+	).Optional("native"))
 	register("ReplacementV1", Obj(
 		F("placement", Ref("RefVersion")), F("expected_object", Ref("PathObjectV1")), F("comparison", Ref("ComparisonV1")),
 	))

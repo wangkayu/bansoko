@@ -3,7 +3,6 @@ package httpapi
 import (
 	"bansoko/internal/anime/animeconfig"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"encoding/json"
 	"strings"
@@ -11,9 +10,9 @@ import (
 )
 
 func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
-	value := animeconfig.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 12}, Replacement: animeconfig.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`)}, ReplacementVersion: 17, FileEffectVersion: 19, UnclassifiedRoute: "route"}
+	value := animeconfig.BusinessSnapshot{SchemaVersion: animedomain.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 12}, Replacement: animeconfig.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p"],["720p"]]}]}`)}, ReplacementVersion: 17, FileEffectVersion: 19, UnclassifiedRoute: "route"}
 	digest := "sha256:" + strings.Repeat("a", 64)
-	value.Programs = animeconfig.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}}
+	value.Programs = animeconfig.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}}
 	for _, name := range animedomain.EffectiveSectionOrder {
 		v, err := animedomain.DefaultSectionValue(name)
 		if err != nil {
@@ -47,7 +46,7 @@ func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
 	if view.Digest == "" {
 		t.Fatal("missing digest")
 	}
-	value.Replacement.QualityProfile = json.RawMessage(`{"version":"profile-v1","items":[],"hidden":true}`)
+	value.Replacement.QualityProfile = json.RawMessage(`{"version":"profile-v2","items":[],"hidden":true}`)
 	if _, err := businessPresetView(value, tagFilters, subscriptionDefaults); err == nil {
 		t.Fatal("hidden retention field crossed public boundary")
 	}

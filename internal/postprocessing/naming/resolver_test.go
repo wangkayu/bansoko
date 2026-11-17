@@ -108,7 +108,7 @@ func TestDefaultRegistryCatalog(t *testing.T) {
 	expectations := map[string][]string{
 		"parsed.episode":               nil,
 		"parsed.language":              nil,
-		"parsed.subtitle":              {"parsed.language"},
+		"parsed.subtitle":              nil,
 		"release.subtitle_mode":        nil,
 		"derived.effective_title":      nil,
 		"derived.season_folder":        nil,
@@ -186,100 +186,88 @@ func TestEpisodeResolverNeverParsesTheTitle(t *testing.T) {
 	}
 }
 
-func TestEpisodeResolverSpecialKind(t *testing.T) {
-	frozen := &FrozenEpisodeNamingFacts{Raw: "1", Number: "1", Display: "1"}
-	for _, tc := range []struct {
-		title string
-		want  string
-	}{
-		{"Title NCOP 1", "ncop"},
-		{"Title nced 2", "nced"},
-		{"Title Special 3", "special"},
-		{"Title 04", ""},
-	} {
-		result := resolveSingle(t, episodeResolver{}, episodeInput(tc.title, frozen))
-		if got := result.Value.(episodeValue).SpecialKind; got != tc.want {
-			t.Errorf("%q: special kind = %q, want %q", tc.title, got, tc.want)
-		}
-	}
+// languageInput builds the release evidence release.lang reads: the frozen
+// rt.sub_lang vocabulary of the release title. Nothing else feeds it.
+func languageInput(subLang string) ResolverInput {
+	return ResolverInput{Facts: NamingContext{Rt: templatefacts.Values{"SubLang": subLang}}}
 }
 
-func languageInput(title string) ResolverInput {
-	return ResolverInput{Facts: NamingContext{Release: ReleaseNamingFacts{OriginalTitle: title}}}
-}
-
-func TestLanguageResolverPriority(t *testing.T) {
+func TestLanguageResolverProjection(t *testing.T) {
 	cases := []struct {
-		title     string
+		subLang   string
 		code      string
 		bcp47     string // the tags of languages, joined with ","
 		languages []string
 	}{
-		{"[SampleGroup] Title - 01 [WebRip 1080p][简繁日内封]", "jpsc", "zh-Hans,zh-Hant", []string{"jpsc", "jptc"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][CHS&CHT]", "sc", "zh-Hans,zh-Hant", []string{"sc", "tc"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][CHS]", "sc", "zh-Hans", []string{"sc"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][CHT]", "tc", "zh-Hant", []string{"tc"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][JPN]", "jpn", "ja", []string{"jpn"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][ENG]", "eng", "en", []string{"eng"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][chs]", "sc", "zh-Hans", []string{"sc"}},
-		{"[SampleGroup] Title - 01 [WebRip 1080p][cHs]", "sc", "zh-Hans", []string{"sc"}},
+		{"JPSC+JPTC", "jpsc", "zh-Hans,zh-Hant", []string{"jpsc", "jptc"}},
+		{"SC+TC", "sc", "zh-Hans,zh-Hant", []string{"sc", "tc"}},
+		{"SC", "sc", "zh-Hans", []string{"sc"}},
+		{"TC", "tc", "zh-Hant", []string{"tc"}},
+		{"JPN", "jpn", "ja", []string{"jpn"}},
+		{"ENG", "eng", "en", []string{"eng"}},
+		{"SC+JPN", "jpsc", "zh-Hans,ja", []string{"sc", "jpn"}},
+		{"TC+JPN", "jptc", "zh-Hant,ja", []string{"tc", "jpn"}},
+		{"KOR", "kor", "ko", []string{"kor"}},
+		{"SC+MULTI+SC", "sc", "zh-Hans", []string{"sc"}},
 	}
 	for _, tc := range cases {
-		result := resolveSingle(t, languageResolver{}, languageInput(tc.title))
+		result := resolveSingle(t, languageResolver{}, languageInput(tc.subLang))
 		if result.State != ResolverStateValue {
-			t.Fatalf("%q: state = %q, diagnostics = %+v", tc.title, result.State, result.Diagnostics)
+			t.Fatalf("%q: state = %q, diagnostics = %+v", tc.subLang, result.State, result.Diagnostics)
 		}
 		value := result.Value.(languageValue)
 		if value.Code != tc.code {
-			t.Errorf("%q: code = %q, want %q", tc.title, value.Code, tc.code)
+			t.Errorf("%q: code = %q, want %q", tc.subLang, value.Code, tc.code)
 		}
 		if strings.Join(value.BCP47, ",") != tc.bcp47 {
-			t.Errorf("%q: bcp47 = %v, want [%s]", tc.title, value.BCP47, tc.bcp47)
+			t.Errorf("%q: bcp47 = %v, want [%s]", tc.subLang, value.BCP47, tc.bcp47)
 		}
 		if strings.Join(value.Languages, ",") != strings.Join(tc.languages, ",") {
-			t.Errorf("%q: languages = %v, want %v", tc.title, value.Languages, tc.languages)
+			t.Errorf("%q: languages = %v, want %v", tc.subLang, value.Languages, tc.languages)
 		}
-		if len(result.Evidence) != 1 || result.Evidence[0].MatchedSpan == nil {
-			t.Errorf("%q: missing span evidence: %+v", tc.title, result.Evidence)
+		if len(result.Evidence) != 1 || result.Evidence[0].InputPath != "Rt.SubLang" {
+			t.Errorf("%q: missing rt evidence: %+v", tc.subLang, result.Evidence)
 		}
 	}
 }
 
 func TestLanguageResolverUnmatchedNeverDefaultsChinese(t *testing.T) {
-	result := resolveSingle(t, languageResolver{}, languageInput("[SampleGroup] Title - 07 [WebRip 1080p HEVC-10bit AAC]"))
-	if result.State != ResolverStateNull {
-		t.Fatalf("state = %q, want null", result.State)
-	}
-	if len(result.Diagnostics) != 1 || result.Diagnostics[0].Code != "language_unmatched" {
-		t.Fatalf("diagnostics = %+v", result.Diagnostics)
+	for _, subLang := range []string{"", "MULTI", "RAW+MULTI"} {
+		result := resolveSingle(t, languageResolver{}, languageInput(subLang))
+		if result.State != ResolverStateNull {
+			t.Fatalf("%q: state = %q, want null", subLang, result.State)
+		}
+		if len(result.Diagnostics) != 1 || result.Diagnostics[0].Code != "language_unmatched" {
+			t.Fatalf("%q: diagnostics = %+v", subLang, result.Diagnostics)
+		}
 	}
 }
 
-// TestLanguageResolverReadsOnlyTheReleaseTitle pins the release namespace
-// boundary: release.lang is the release's own language and never the file
-// name. A subtitle file whose suffix names a language keeps that in sub.*
-// (file first, sub.lang_source=file); release.lang still reads the release
-// title alone, and a release with no title stays null with its diagnostic.
-func TestLanguageResolverReadsOnlyTheReleaseTitle(t *testing.T) {
-	// A subtitle file whose own name says TC, inside a release titled in SC:
-	// the two namespaces answer separately instead of the file name deciding
-	// the release's language.
+// TestLanguageResolverReadsOnlyTheReleaseVocabulary pins the release
+// namespace boundary: release.lang is the release's own rt.sub_lang and never
+// the file name. A subtitle file whose suffix names a language keeps that in
+// sub.* (file first, sub.lang_source=file); release.lang still reads the
+// release alone, and a release with no language token stays null.
+func TestLanguageResolverReadsOnlyTheReleaseVocabulary(t *testing.T) {
+	// A subtitle file whose own name says TC, inside a release whose rt says
+	// SC: the two namespaces answer separately instead of the file name
+	// deciding the release's language.
 	input := subtitleInput("Show - 01.TC.ass", "Show - 01.TC", "ass", "subtitle")
-	input.Facts.Release.OriginalTitle = "[SampleGroup] Show - 01 [WebRip 1080p][CHS]"
+	input.Facts.Rt = templatefacts.Values{"SubLang": "SC"}
 	result := resolveSingle(t, languageResolver{}, input)
 	if result.State != ResolverStateValue {
 		t.Fatalf("state = %q, diagnostics = %+v", result.State, result.Diagnostics)
 	}
 	value := result.Value.(languageValue)
 	if value.Code != "sc" {
-		t.Fatalf("release.lang = %q, want sc from the release title (never the file name)", value.Code)
+		t.Fatalf("release.lang = %q, want sc from the release vocabulary (never the file name)", value.Code)
 	}
-	if len(result.Evidence) != 1 || result.Evidence[0].InputPath != "Release.OriginalTitle" {
-		t.Fatalf("evidence = %+v, want the release title", result.Evidence)
+	if len(result.Evidence) != 1 || result.Evidence[0].InputPath != "Rt.SubLang" {
+		t.Fatalf("evidence = %+v, want the release vocabulary", result.Evidence)
 	}
 
-	// The same file with no release title has no release language: the file's
-	// own TC never stands in for it.
+	// The same file with no release language has no release language: the
+	// file's own TC never stands in for it.
 	bare := subtitleInput("Show - 01.TC.ass", "Show - 01.TC", "ass", "subtitle")
 	if got := resolveSingle(t, languageResolver{}, bare); got.State != ResolverStateNull {
 		t.Fatalf("state = %q, want null (the file name is not release evidence)", got.State)
@@ -510,6 +498,7 @@ func TestResolveAllFillsContextAndVersions(t *testing.T) {
 			Release: ReleaseNamingFacts{OriginalTitle: "[SampleGroup] Silent Witch - 07 [WebRip 1080p][CHS]", FrozenEpisode: &FrozenEpisodeNamingFacts{Raw: "07", Number: "7", Display: "7"}},
 			File:    FileNamingFacts{OriginalName: "show.mkv", Basename: "show", Extension: "mkv", Kind: "video"},
 			Source:  SourceNamingFacts{GroupName: "SampleGroup"},
+			Rt:      templatefacts.Values{"SubLang": "SC"},
 		},
 	}
 	resolved := DefaultRegistry().ResolveAll(input)
@@ -534,19 +523,6 @@ func TestResolveAllFillsContextAndVersions(t *testing.T) {
 	}
 	if len(resolved.Results) != 7 {
 		t.Fatalf("results = %d, want 7", len(resolved.Results))
-	}
-	// parsed.subtitle must run after parsed.language in topological order.
-	subtitleIndex, languageIndex := -1, -1
-	for index, result := range resolved.Results {
-		switch result.Key {
-		case "parsed.subtitle":
-			subtitleIndex = index
-		case "parsed.language":
-			languageIndex = index
-		}
-	}
-	if subtitleIndex < 0 || languageIndex < 0 || subtitleIndex <= languageIndex {
-		t.Errorf("subtitle must resolve after language: subtitle=%d language=%d", subtitleIndex, languageIndex)
 	}
 }
 

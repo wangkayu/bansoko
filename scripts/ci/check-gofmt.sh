@@ -46,6 +46,7 @@ echo "== gofmt ($("$go_bin" version), $gofmt_bin) =="
 # bash 3.2 (macOS) has no mapfile; keep the collection loop portable.
 files=()
 while IFS= read -r file; do
+  [[ -f "$file" ]] || continue
   files+=("$file")
 done < <(git ls-files -- '*.go' | grep -vE '(/generated/|\.gen\.go$|(^|/)wire_gen\.go$)' || true)
 if [[ "${#files[@]}" -eq 0 ]]; then

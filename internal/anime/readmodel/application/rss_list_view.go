@@ -17,7 +17,6 @@ import (
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/attrrules"
 	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/filekinds"
@@ -767,10 +766,6 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 	domainHold := animedomain.AdmittedMetadataHold(animedomain.MetadataHoldFromBindings(bgm, tmdb), allowMissingLinkage)
 	view := RSSListView{Mode: mode, ConfigIdentity: identity, MetadataHold: domainHold, GeneratedAt: time.Now().UTC(), Groups: []RSSListGroup{}, UnusedFeedIdentities: []PreviewFeedSnapshotRef{}, LimitPerGroup: limit,
 		Versions: rssListVersions()}
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		return RSSListView{}, err
-	}
 	// The instance Vars program is the same one RSS admission freezes for a
 	// subscribed anime (target_acquisition). Without it every owner-mode file
 	// rendered "exact frozen Vars evaluation is required" (B8 live). A missing
@@ -899,7 +894,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		if err != nil {
 			return RSSListView{}, fmt.Errorf("resolve release parser evidence %s: %w", release.ID, err)
 		}
-		evaluated := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, domainHold, rules, evidence.Identity)
+		evaluated := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, domainHold, evidence.Identity)
 		// The owner row's file projection is rebuilt from the release's frozen
 		// file facts, bound to the payload those facts were parsed from. It is
 		// not published as a TorrentManifestView (an owner release is already
@@ -949,7 +944,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 				evaluated.FrozenVars = &frozen
 			}
 		}
-		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, rules, evidence, unknownRoute, nil, nil)
+		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, evidence, unknownRoute, nil, nil)
 		if err != nil {
 			return RSSListView{}, fmt.Errorf("resolve release file episodes %s: %w", release.ID, err)
 		}

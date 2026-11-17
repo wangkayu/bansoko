@@ -3,22 +3,20 @@ package naming
 import (
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 const episodeResolverKey = "parsed.episode"
 
 // episodeValue is the atomic parsed.episode output.
 type episodeValue struct {
-	Raw         string
-	Offset      int
-	Number      int
-	Display     string
-	SpecialKind string
+	Raw     string
+	Offset  int
+	Number  int
+	Display string
 }
 
 func (v episodeValue) String() string {
-	return fmt.Sprintf("number=%d display=%q raw=%q offset=%d special=%q", v.Number, v.Display, v.Raw, v.Offset, v.SpecialKind)
+	return fmt.Sprintf("number=%d display=%q raw=%q offset=%d", v.Number, v.Display, v.Raw, v.Offset)
 }
 
 // episodeResolver projects the frozen EpisodeIdentity of the file into
@@ -46,11 +44,10 @@ func (episodeResolver) Resolve(input ResolverInput) ResolverResult {
 	number, _ := strconv.Atoi(frozen.Number)
 	result.State = ResolverStateValue
 	result.Value = episodeValue{
-		Raw:         frozen.Raw,
-		Offset:      frozen.Offset,
-		Number:      number,
-		Display:     frozen.Display,
-		SpecialKind: episodeSpecialKind(titleOf(input)),
+		Raw:     frozen.Raw,
+		Offset:  frozen.Offset,
+		Number:  number,
+		Display: frozen.Display,
 	}
 	result.Evidence = append(result.Evidence, ResolverEvidence{
 		ResolverKey: episodeResolverKey,
@@ -58,19 +55,4 @@ func (episodeResolver) Resolve(input ResolverInput) ResolverResult {
 		InputPath:   "Release.FrozenEpisode",
 	})
 	return result
-}
-
-func titleOf(input ResolverInput) string {
-	return strings.TrimSpace(input.Facts.Release.OriginalTitle)
-}
-
-// episodeSpecialKind classifies ncop/nced/special releases (case-insensitive).
-func episodeSpecialKind(title string) string {
-	lower := strings.ToLower(title)
-	for _, kind := range []string{"ncop", "nced", "special"} {
-		if strings.Contains(lower, kind) {
-			return kind
-		}
-	}
-	return ""
 }

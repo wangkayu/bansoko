@@ -172,10 +172,8 @@ func TestBuildNamingContextAndRenderTarget(t *testing.T) {
 		"Parsed.Episode.Display",
 		"Parsed.Episode.Number",
 		"Parsed.Episode.Offset",
-		"Parsed.Episode.SpecialKind",
 		"Parsed.Language.Code",
 		"Parsed.Language.Languages",
-		"Parsed.Language.Description",
 		"Parsed.Language.BCP47",
 		"Parsed.Subtitle.Format",
 		"Parsed.Subtitle.OriginalSuffix",
@@ -215,7 +213,7 @@ func TestBuildNamingContextAndRenderTarget(t *testing.T) {
 			t.Errorf("context field %q is absent from acquisition context", path)
 			continue
 		}
-		if value.Kind() == reflect.String && value.String() == "" && path != "Parsed.Subtitle.Format" && path != "Parsed.Subtitle.OriginalSuffix" && path != "Parsed.Subtitle.Languages" && path != "Parsed.Subtitle.PrimaryLanguage" && path != "Parsed.Episode.SpecialKind" {
+		if value.Kind() == reflect.String && value.String() == "" && path != "Parsed.Subtitle.Format" && path != "Parsed.Subtitle.OriginalSuffix" && path != "Parsed.Subtitle.Languages" && path != "Parsed.Subtitle.PrimaryLanguage" {
 			t.Errorf("context field %q has no acquisition fixture value", path)
 		}
 	}
@@ -1186,14 +1184,26 @@ INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_displ
 VALUES ('source-file-test', 'subscription-file-test', 'custom_rss', 'https://feed.example.test/rss', 'https://feed.example.test/rss', 'Test Group', 'Fixture Anime')`); err != nil {
 		t.Fatal(err)
 	}
+	var policyFixture struct {
+		Manifest    json.RawMessage `json:"fixture_manifest"`
+		SourceFacts json.RawMessage `json:"fixture_source_facts"`
+	}
+	if err := json.Unmarshal([]byte(policyJSON), &policyFixture); err != nil {
+		t.Fatal(err)
+	}
 	// The release's frozen source facts carry the reltitle tag set a real
 	// admission freezes: the default subtitle suffix template renders
 	// rt.lang, so a fixture that plans a bound subtitle must supply the
-	// language the release was parsed with. Tests that need the absent-value
-	// case overwrite source_facts themselves.
+	// language the release was parsed with. Tests that need different native
+	// values supply them before acceptance; the accepted input never follows
+	// a later UPDATE of the Release row.
+	sourceFacts := `{"group_name":"Test Group","title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@ca671af","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Fixture Anime","group:Test Group"]}}`
+	if len(policyFixture.SourceFacts) > 0 {
+		sourceFacts = string(policyFixture.SourceFacts)
+	}
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, parsed_facts, verdict, reason_code)
-VALUES ('release-file-test', 'source-file-test', 'guid:file-test', '{"title":"[Test Group] Fixture Anime - 01"}', '{"group_name":"Test Group","title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@ca671af","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Fixture Anime","group:Test Group"]}}', '{"episode":1,"group_name":"Test Group"}', 'accepted_pending_download', 'accepted')`); err != nil {
+VALUES ('release-file-test', 'source-file-test', 'guid:file-test', '{"title":"[Test Group] Fixture Anime - 01"}', $1::jsonb, '{"episode":1,"group_name":"Test Group"}', 'accepted_pending_download', 'accepted')`, sourceFacts); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1203,12 +1213,6 @@ VALUES ('release-file-test', 'source-file-test', 'guid:file-test', '{"title":"[T
 	}
 	defer tx.Rollback()
 	manifest, _ := json.Marshal([]map[string]any{{"file_ref": "primary", "ordinal": 0, "relative_path": "source.mkv", "exact_size": fixture.size, "media_kind": "video", "identity_evidence": map[string]any{}}})
-	var policyFixture struct {
-		Manifest json.RawMessage `json:"fixture_manifest"`
-	}
-	if err := json.Unmarshal([]byte(policyJSON), &policyFixture); err != nil {
-		t.Fatal(err)
-	}
 	if len(policyFixture.Manifest) > 0 {
 		manifest = policyFixture.Manifest
 	}

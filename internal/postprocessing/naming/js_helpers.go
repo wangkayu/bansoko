@@ -5,29 +5,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/dop251/goja"
 )
 
 const helperOutputLimit = MaxOutputBytes
-
-// chainValuable reports whether a chain part carries any of its value beyond
-// the separator prefix it was written with: a part that trims to empty, or
-// that holds no letters or digits at all, is its prefix left alone by an
-// empty value (' " ", "." from '.' + (x ?? ”)) and the chain drops it with
-// the prefix. A real value — latin, CJK, a number — keeps the part verbatim.
-func chainValuable(part string) bool {
-	values := false
-	for _, r := range part {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			values = true
-			break
-		}
-	}
-	return values
-}
 
 func jsString(v goja.Value) (string, error) {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
@@ -51,6 +34,13 @@ func jsString(v goja.Value) (string, error) {
 		return "", fmt.Errorf("naming template string exceeds the %d byte limit", helperOutputLimit)
 	}
 	return text, nil
+}
+
+func jsScalar(v goja.Value) (string, error) {
+	if _, ok := v.(*goja.Object); ok {
+		return "", fmt.Errorf("naming template value must be a primitive string, number, or boolean")
+	}
+	return jsString(v)
 }
 
 func boundedStringResult(value string) (string, error) {
@@ -148,43 +138,9 @@ var helperDefinitions = []helperDefinition{
 	// stored templates and frozen snapshots still render.
 	{CatalogFunction: CatalogFunction{Name: "defaultValue", Arguments: []string{"fallback", "value"}, Signature: "defaultValue(fallback, value) string", Description: "Deprecated: defaultIfEmpty(value, fallback).", Example: "${defaultValue('Season 01', anime.season_folder)}"}, deprecated: true},
 	{CatalogFunction: CatalogFunction{Name: "coalesce", Arguments: []string{"value..."}, Signature: "coalesce(...values) string|null", Description: "Returns the first present, non-empty argument, or null when none exists.", Example: "${coalesce(var1, var2, var3)}"}},
+	{CatalogFunction: CatalogFunction{Name: "segment", Arguments: []string{"value", "prefix?", "suffix?"}, Signature: "segment(value[, prefix, suffix]) string", Description: "Wraps a present scalar with the prefix and suffix; null, undefined, and the empty string omit the whole segment.", Example: "${segment(var1, ' [', ']')}"}},
+	{CatalogFunction: CatalogFunction{Name: "joinNonEmpty", Arguments: []string{"list", "separator"}, Signature: "joinNonEmpty(list, separator) string", Description: "Joins present scalar list items in order, skipping null, undefined, and empty strings without adding stray separators.", Example: "${joinNonEmpty([var1, var2, var3], ' ／ ')}"}},
 	{CatalogFunction: CatalogFunction{Name: "join", Arguments: []string{"list", "sep"}, Signature: "join(list, sep) string", Description: "Joins a list with the separator.", Example: "${join(var1, var2)}"}},
-	// chain is the variadic tech-chain composer: every part is an ordinary
-	// expression that carries its own separator prefix (' ' + (ep.s00e00 ?? ''),
-	// '.' + (media.resolution ?? '')), a part whose result is only its
-	// separator prefix — no letters or digits — is dropped whole, prefix
-	// included, and the kept parts concatenate verbatim; all parts dropped
-	// render "" and the caller owns the surrounding literals (the extension
-	// dot belongs in the chain as '.' + file.ext). Guard each fact read
-	// inside a part with ?? '': a fact that carries no value for this render
-	// reads null, and the language's undefined-variable check does not reach
-	// chain arguments. The catalog example is a var1/var2 placeholder frame —
-	// examples teach the shape and the user substitutes their own facts; the
-	// catalog never presets a fact pick.
-	{CatalogFunction: CatalogFunction{Name: "chain", Arguments: []string{"part..."}, Signature: "chain(...parts) string", Description: "Concatenates the parts, dropping a part that carries no letters or digits (its separator prefix left alone) whole with its prefix; all parts dropped is an empty string. Guard fact reads with ?? '' inside a part: a fact with no value reads null.", Example: `${chain(' ' + (var1 ?? ''), '.' + (var2 ?? ''))}`}, register: func() interface{} {
-		return func(values ...goja.Value) (string, error) {
-			var chain strings.Builder
-			bytes := 0
-			for _, v := range values {
-				if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
-					continue
-				}
-				part, err := jsString(v)
-				if err != nil {
-					return "", err
-				}
-				if !chainValuable(part) {
-					continue
-				}
-				if bytes+len(part) > helperOutputLimit {
-					return "", fmt.Errorf("naming template output exceeds the %d byte limit", helperOutputLimit)
-				}
-				chain.WriteString(part)
-				bytes += len(part)
-			}
-			return boundedStringResult(chain.String())
-		}
-	}},
 	{CatalogFunction: CatalogFunction{Name: "toInt", Arguments: []string{"value"}, Signature: "toInt(value) number", Description: "Parses the value as an integer; returns 0 on failure.", Example: "${toInt(var1)}"}},
 	// seasonEpisode is the runtime of the ${s00e00} shorthand expansion: the
 	// ep.s00e00 composite semantics (SeasonEpisode, season.go) called with the
@@ -389,6 +345,71 @@ func registeredHelpers(defaultFn interface{}) map[string]interface{} {
 				}
 			}
 			return nil, nil
+		},
+		"segment": func(v goja.Value, decorations ...goja.Value) (string, error) {
+			if len(decorations) > 2 {
+				return "", fmt.Errorf("naming segment accepts only value, prefix, and suffix")
+			}
+			parts := [2]string{}
+			for index, decoration := range decorations {
+				text, err := jsScalar(decoration)
+				if err != nil {
+					return "", err
+				}
+				parts[index] = text
+			}
+			if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+				return "", nil
+			}
+			value, err := jsScalar(v)
+			if err != nil || value == "" {
+				return "", err
+			}
+			return boundedStringResult(parts[0] + value + parts[1])
+		},
+		"joinNonEmpty": func(list goja.Value, sep goja.Value) (string, error) {
+			separator, err := jsScalar(sep)
+			if err != nil {
+				return "", err
+			}
+			if list == nil || goja.IsUndefined(list) || goja.IsNull(list) {
+				return "", nil
+			}
+			object, ok := list.(*goja.Object)
+			if !ok || object.ClassName() != "Array" {
+				return "", fmt.Errorf("naming joinNonEmpty list must be an array")
+			}
+			length := object.Get("length").ToInteger()
+			if length < 0 || length > MaxCollectionLen {
+				return "", fmt.Errorf("naming template collection exceeds the %d item limit", MaxCollectionLen)
+			}
+			var result strings.Builder
+			bytes := 0
+			kept := 0
+			for index := int64(0); index < length; index++ {
+				item := object.Get(fmt.Sprint(index))
+				if item == nil || goja.IsUndefined(item) || goja.IsNull(item) {
+					continue
+				}
+				part, err := jsScalar(item)
+				if err != nil {
+					return "", err
+				}
+				if part == "" {
+					continue
+				}
+				if kept > 0 {
+					result.WriteString(separator)
+					bytes += len(separator)
+				}
+				result.WriteString(part)
+				bytes += len(part)
+				if bytes > helperOutputLimit {
+					return "", fmt.Errorf("naming template output exceeds the %d byte limit", helperOutputLimit)
+				}
+				kept++
+			}
+			return boundedStringResult(result.String())
 		},
 		"join": func(list goja.Value, sep goja.Value) (string, error) {
 			if list == nil || goja.IsUndefined(list) || goja.IsNull(list) {

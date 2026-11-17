@@ -102,7 +102,6 @@ type RecognitionRenderInput struct {
 	EpisodeRaw     string
 	EpisodeDisplay string
 	EpisodeOffset  int
-	EpisodeSpecial string
 	// EpisodeSource overrides ep.source; empty reads "file_parser" (the
 	// caller's parser produced the episode). A user-chosen episode passes
 	// "manual".
@@ -153,7 +152,7 @@ func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in Recogni
 	if err != nil {
 		return RecognitionRendered{}, err
 	}
-	resolved := r.resolveRecognition(in, namingContext)
+	resolved := r.resolveRecognition(namingContext)
 	render := compiled.RenderVideoDetailed
 	variant := compiled.TV
 	if naming.MediaKind(resolved.Derived.EffectiveMediaKind) == naming.MediaKindMovie {
@@ -188,7 +187,7 @@ func (r *NamingTargetRenderer) RenderRecognitionSuffix(ctx context.Context, in R
 	if err != nil {
 		return "", err
 	}
-	resolved := r.resolveRecognition(in, namingContext)
+	resolved := r.resolveRecognition(namingContext)
 	if in.LoadRuntimeFacts {
 		var templates []naming.CompiledTemplate
 		if compiled.SubtitleSuffix != nil {
@@ -238,14 +237,8 @@ func (r *NamingTargetRenderer) compileRecognition(ctx context.Context, in Recogn
 }
 
 // resolveRecognition fills the resolved facts one render reads.
-func (r *NamingTargetRenderer) resolveRecognition(in RecognitionRenderInput, namingContext naming.NamingContext) naming.NamingContext {
-	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: namingContext})
-	// The special classification is the resolver's reading of the file's own
-	// name; a caller with its own parser evidence may state it instead.
-	if in.EpisodeSpecial != "" {
-		resolved.Context.Parsed.Episode.SpecialKind = in.EpisodeSpecial
-	}
-	return resolved.Context
+func (r *NamingTargetRenderer) resolveRecognition(namingContext naming.NamingContext) naming.NamingContext {
+	return naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: namingContext}).Context
 }
 
 // recognitionContext assembles the naming context of one file. Only the
@@ -262,13 +255,15 @@ func (r *NamingTargetRenderer) recognitionContext(ctx context.Context, in Recogn
 			Media:        in.Media,
 		},
 		Release: naming.ReleaseNamingFacts{
-			// The file's own name is the only release-level evidence this
-			// render has; it is what the parser read the episode and the
-			// rt.* values from.
+			// This display title is not release evidence. rt.* stays empty;
+			// the explicit file parse belongs only to frt.*.
 			OriginalTitle: strings.TrimSuffix(fileName, filepath.Ext(fileName)),
 		},
 		AnimeAbsent: in.ManagedAnimeID == "" && in.AnimeDraft == nil,
 	}
+	// Recognition has the original file name here. Prepare frt explicitly;
+	// the naming projection must never parse a title on the caller's behalf.
+	namingContext.FileTitleTags = naming.ParseFileTitleTags(namingContext.File)
 	if episode := strings.TrimSpace(in.Episode); episode != "" {
 		display := strings.TrimSpace(in.EpisodeDisplay)
 		if display == "" {

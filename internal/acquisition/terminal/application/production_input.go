@@ -1,7 +1,6 @@
 package application
 
 import (
-	acquisitiondomain "bansoko/internal/acquisition/domain"
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"
 	catalog "bansoko/internal/catalog/domain"
@@ -58,7 +57,7 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 		return acquisitionIntent{}, err
 	}
 	media := map[string]any{}
-	for _, key := range []string{"title", "title_override", "provider_title", "bgm", "tmdb", "group", "identity", "quality"} {
+	for _, key := range []string{"title", "title_override", "provider_title", "bgm", "tmdb", "group", "identity"} {
 		media[key] = frozenValue("absent", nil)
 	}
 	media["title"] = frozenValue("known", title)
@@ -70,19 +69,6 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 	}
 	if provider := strings.TrimSpace(providerTitle.String); provider != "" {
 		media["provider_title"] = frozenValue("known", provider)
-	}
-	// Release-level quality is frozen with the acceptance: the same title and
-	// the attribute rules captured by this qualification are what the
-	// pre-download TargetSet rendered with, so typed planning reuses this
-	// value instead of re-parsing under later rules (or losing it when the
-	// downloaded file name carries no resolution marker).
-	if seed, err := admissionSeed(c); err == nil && seed != nil {
-		parsed := acquisitiondomain.ParseReleaseFacts(seed.Title, c.material.programs.attr)
-		if parsed.Resolution != "" || parsed.Quality != "" || parsed.GroupName != "" || parsed.Language != "" {
-			media["quality"] = frozenValue("known", replacementQuality(replacementFactsSnapshot{
-				Group: parsed.GroupName, Resolution: parsed.Resolution, Source: parsed.Quality, Language: parsed.Language,
-			}))
-		}
 	}
 	if c.material.bgm != nil && strings.TrimSpace(c.material.bgm.WorkId) != "" {
 		media["bgm"] = frozenValue("known", map[string]any{"ref": c.material.bgm.WorkId, "version": c.material.metadataVersion})

@@ -21,7 +21,6 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	animeport "bansoko/internal/anime/port"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/attrrules"
 	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/events"
@@ -1020,17 +1019,6 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	item := rssapplication.FreezeTitleTags(buildOneShotFeedItem(payload, seed))
 	hold := animedomain.MetadataHoldFromBindings(draft.Metadata.Bgm, draft.Metadata.Tmdb)
 	evalInput := animedomain.SourceEvaluationInput{Index: 0, Kind: string(animedomain.SourceKindCustomRss), GroupName: groupName, Offset: episodeOffset}
-	// The input's business snapshot pins the exact attr rules its preview used;
-	// admission evaluates with those, never the process's current rule set.
-	ref := business.Programs.AttrRules
-	rules, err := attrrules.LoadExact(ctx, ref.Version, ref.Digest, func(ctx context.Context, fingerprint string) ([]byte, error) {
-		var raw []byte
-		err := tx.QueryRowContext(ctx, `SELECT content FROM attr_rule_versions WHERE fingerprint=$1`, fingerprint).Scan(&raw)
-		return raw, err
-	})
-	if err != nil {
-		return OneShotAdmissionResult{}, err
-	}
 	// One selected parser/profile governs the whole finite command: the same
 	// evidence feeds the verdict, the target/naming plan and the frozen input
 	// snapshot, so no second parser runs. The saved-revision selection is built
@@ -1080,7 +1068,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 			Message: "the instance selected parser/profile is unavailable: " + strings.TrimSpace(evidenceErr.Error()),
 		}
 	}
-	evaluation := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, hold, rules, evidence.Identity)
+	evaluation := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, hold, evidence.Identity)
 	// The item's identity falls back to the seed's torrent URL, which can carry
 	// a tracker key: the release stores the digested form, as RSS refresh does.
 	_, evaluation.StableItemKey = animedomain.PublicStableItemKey(item)

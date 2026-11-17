@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"bansoko/internal/qualityprofile"
+	releasefacts "bansoko/internal/release/facts"
 )
 
 func sizePtr(size int64) *int64 { return &size }
@@ -22,28 +23,28 @@ func TestCompareReadsFrozenValuesOnly(t *testing.T) {
 		t.Fatalf("facts without frozen values must tie: %+v", got)
 	}
 	got := Compare(released(candidate), released(current), profile)
-	if !got.Better || got.Decided != qualityprofile.KeyReleaseResolution || len(got.Steps) != 1 {
-		t.Fatalf("1080p must beat 720p on release.resolution: %+v", got)
+	if !got.Better || got.Decided != qualityprofile.KeyRtResolution || len(got.Steps) != 1 {
+		t.Fatalf("1080p must beat 720p on rt.resolution: %+v", got)
 	}
-	if got.Reason != "better on release.resolution" {
+	if got.Reason != "better on rt.resolution" {
 		t.Fatalf("reason = %q", got.Reason)
 	}
 }
 
 // The first differing item decides; later items are never read.
-func TestCompareLexicographicThenSizeThenKeepExisting(t *testing.T) {
+func TestCompareLexicographicThenKeepExisting(t *testing.T) {
 	profile := Profile{Version: qualityprofile.Version, Items: []qualityprofile.Item{
-		{Key: qualityprofile.KeyReleaseLang, Ranks: [][]string{{"chs"}, {"cht"}}},
-		{Key: qualityprofile.KeyReleaseResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
+		{Key: qualityprofile.KeyRtSubLang, Ranks: [][]string{{"chs"}, {"cht"}}},
+		{Key: qualityprofile.KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
 	}}
 	candidate := released(Facts{Language: "chs", Resolution: "720p", Size: sizePtr(1)})
 	current := released(Facts{Language: "cht", Resolution: "1080p", Size: sizePtr(9)})
-	if got := Compare(candidate, current, profile); !got.Better || got.Decided != qualityprofile.KeyReleaseLang {
+	if got := Compare(candidate, current, profile); !got.Better || got.Decided != qualityprofile.KeyRtSubLang {
 		t.Fatalf("the language item must decide before resolution: %+v", got)
 	}
 	same := released(Facts{Language: "chs", Resolution: "720p", Size: sizePtr(5)})
-	if got := Compare(same, candidate, profile); !got.Better || got.Decided != qualityprofile.SizeStep {
-		t.Fatalf("all items equal: the larger size must win: %+v", got)
+	if got := Compare(same, candidate, profile); got.Better || !got.Equal || got.Decided != "" {
+		t.Fatalf("all items equal: size must not decide: %+v", got)
 	}
 	unknown := released(Facts{Language: "chs", Resolution: "720p"})
 	if got := Compare(unknown, candidate, profile); got.Better || !got.Equal {
@@ -75,14 +76,50 @@ func TestScoredLooksUpTheFrozenSource(t *testing.T) {
 
 func TestWithFrozenValuesReadsTheStoredDocument(t *testing.T) {
 	values := qualityprofile.NewValues()
+	values.SourceDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	values.Set(qualityprofile.KeyAniBTLanguage, "CHS", "CHT")
 	values.Subgroup = &qualityprofile.SubgroupSource{Provider: "anibt", GroupRef: "g"}
-	facts := Facts{}.withFrozenValues(values.JSON())
+	facts, err := Facts{}.withFrozenValues(values.JSON())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(facts.Values[qualityprofile.KeyAniBTLanguage]) != 2 || facts.Subgroup == nil || facts.Subgroup.GroupRef != "g" {
 		t.Fatalf("facts = %+v", facts)
 	}
-	if empty := (Facts{}).withFrozenValues([]byte(`{}`)); len(empty.Values) != 0 || empty.Subgroup != nil {
-		t.Fatalf("an empty document has no values: %+v", empty)
+	if _, err := (Facts{}).withFrozenValues([]byte(`{}`)); err == nil {
+		t.Fatal("an unversioned cache must fail closed")
+	}
+}
+
+func TestCurrentComparisonRebuildsLegacyCacheFromFrozenSource(t *testing.T) {
+	source := releasefacts.CompareSource{
+		SourceFacts: []byte(`{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@test","tags":["resolution:1080p"]}}`),
+		RSSSourceID: "src-1", SourceKind: "custom_rss",
+	}
+	for _, legacy := range []string{`{}`, `{"version":"compare-values-v1","values":{"rt.resolution":["720p"]}}`} {
+		current, err := (Facts{}).withCurrentComparison([]byte(legacy), source)
+		if err != nil {
+			t.Fatalf("rebuild %s: %v", legacy, err)
+		}
+		if got := current.Values[qualityprofile.KeyRtResolution]; len(got) != 1 || got[0] != "1080p" {
+			t.Fatalf("rebuilt values = %+v", current.Values)
+		}
+		if current.Subgroup == nil || current.Subgroup.Key() != "custom:src-1" || current.SourceDigest == "" {
+			t.Fatalf("rebuilt source = %+v", current)
+		}
+	}
+}
+
+func TestCurrentComparisonKeepsValidFrozenCache(t *testing.T) {
+	values := qualityprofile.NewValues()
+	values.SourceDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	values.Set(qualityprofile.KeyRtResolution, "720p")
+	current, err := (Facts{}).withCurrentComparison(values.JSON(), releasefacts.CompareSource{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := current.Values[qualityprofile.KeyRtResolution]; len(got) != 1 || got[0] != "720p" {
+		t.Fatalf("valid frozen cache was replaced: %+v", current.Values)
 	}
 }
 
@@ -98,7 +135,7 @@ func TestParseProfileFailsClosed(t *testing.T) {
 
 func TestComparedDimensionsMapItemsToApprovalCategories(t *testing.T) {
 	got := comparedDimensions(qualityprofile.Default())
-	want := []string{"group", "languages", "resolution", "revision", "size"}
+	want := []string{"group", "languages", "resolution", "revision"}
 	if len(got) != len(want) {
 		t.Fatalf("dimensions = %v, want %v", got, want)
 	}
@@ -108,7 +145,7 @@ func TestComparedDimensionsMapItemsToApprovalCategories(t *testing.T) {
 		}
 	}
 	codecOnly := rankProfile(qualityprofile.KeyRtCodec, "HEVC")
-	if got := comparedDimensions(codecOnly); len(got) != 1 || got[0] != "size" {
+	if got := comparedDimensions(codecOnly); len(got) != 0 {
 		t.Fatalf("an item without a category is not named: %v", got)
 	}
 }

@@ -18,7 +18,7 @@ export const admissionOptions = (): { value: AdmissionMode; label: string; hint:
 
 export type ReplacementDraft = {
   admission_mode: AdmissionMode;
-  /** Ordered comparison items (profile-v1), edited whole. */
+  /** Ordered comparison items (profile-v2), edited whole. */
   quality_profile: QualityProfile;
 };
 

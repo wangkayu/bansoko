@@ -7,7 +7,6 @@ import (
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/namingvars"
 )
@@ -63,7 +62,6 @@ type catalogMaterial struct {
 	seedKey     string
 }
 type programMaterial struct {
-	attr       attrrules.Rules
 	vars       namingvars.Program
 	varsSource string
 }
@@ -166,9 +164,8 @@ func constructQualification(m qualificationMaterial) (admissionCapture, error) {
 	default:
 		return bad("config", nil)
 	}
-	attrDigest, err := attrrules.Fingerprint(m.programs.attr)
-	if err != nil || attrDigest != m.config.business.Programs.AttrRules.Digest || m.programs.vars.Ref() != m.config.business.Programs.Vars {
-		return bad("programs", err)
+	if m.programs.vars.Ref() != m.config.business.Programs.Vars {
+		return bad("programs", nil)
 	}
 	var observation, feed any
 	payloadDigest := m.payloadDigest
@@ -224,7 +221,7 @@ func constructQualification(m qualificationMaterial) (admissionCapture, error) {
 		"management":  managementQualificationValue(m),
 		"source":      map[string]any{"kind": "release", "release_ref": r.id, "expected_version": r.version, "source_ref": map[string]any{"ref": r.sourceID, "version": r.sourceVersion}},
 		"observation": observation, "feed": feed,
-		"programs":  map[string]any{"attr_fingerprint": attrDigest, "vars_digest": m.programs.vars.Ref().Digest, "translation": nil},
+		"programs":  map[string]any{"vars_digest": m.programs.vars.Ref().Digest, "translation": nil},
 		"placement": map[string]any{"kind": "none"},
 	})
 	if err != nil {

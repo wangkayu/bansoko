@@ -78,20 +78,20 @@ func TestEvaluateFeedItemAppliesBothTagRows(t *testing.T) {
 	anibtItem := anibtItem("language:CHS")
 	anibtItem.Title = "[Group] Show - 03 [1080p][CHT]"
 
-	both := EvaluateFeedItemWithIdentity(anibtItem, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHT"}, Exclude: []string{}}, TagFilterRow{Require: []string{"resolution:720p"}, Exclude: []string{}}), MetadataHold{}, testRules(), identity)
+	both := EvaluateFeedItemWithIdentity(anibtItem, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHT"}, Exclude: []string{}}, TagFilterRow{Require: []string{"resolution:720p"}, Exclude: []string{}}), MetadataHold{}, identity)
 	if both.ReasonCode != ReasonAniBTTagWhitelistUnmet {
 		t.Fatalf("AniBT row must decide first: %+v", both)
 	}
-	titleOnly := EvaluateFeedItemWithIdentity(anibtItem, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHS"}, Exclude: []string{}}, TagFilterRow{Require: []string{}, Exclude: []string{"sub_lang:TC"}}), MetadataHold{}, testRules(), identity)
+	titleOnly := EvaluateFeedItemWithIdentity(anibtItem, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHS"}, Exclude: []string{}}, TagFilterRow{Require: []string{}, Exclude: []string{"sub_lang:TC"}}), MetadataHold{}, identity)
 	if titleOnly.Verdict != "filtered" || titleOnly.ReasonCode != ReasonTitleTagBlacklisted || titleOnly.ReasonDetail == nil || *titleOnly.ReasonDetail != "blacklisted: sub_lang:TC" {
 		t.Fatalf("title row must apply to an AniBT release that passed its own row: %+v", titleOnly)
 	}
 	mikan := acquisitiondomain.FeedItem{Title: "[Group] Show - 03 [720p]", Provider: "mikan"}
-	filtered := EvaluateFeedItemWithIdentity(mikan, SourceEvaluationInput{}, effective(none, TagFilterRow{Require: []string{"resolution:1080p"}, Exclude: []string{}}), MetadataHold{}, testRules(), identity)
+	filtered := EvaluateFeedItemWithIdentity(mikan, SourceEvaluationInput{}, effective(none, TagFilterRow{Require: []string{"resolution:1080p"}, Exclude: []string{}}), MetadataHold{}, identity)
 	if filtered.ReasonCode != ReasonTitleTagWhitelistUnmet {
 		t.Fatalf("title row must apply to non-AniBT releases: %+v", filtered)
 	}
-	accepted := EvaluateFeedItemWithIdentity(mikan, SourceEvaluationInput{}, effective(none, TagFilterRow{Require: []string{"resolution:720p"}, Exclude: []string{}}), MetadataHold{}, testRules(), identity)
+	accepted := EvaluateFeedItemWithIdentity(mikan, SourceEvaluationInput{}, effective(none, TagFilterRow{Require: []string{"resolution:720p"}, Exclude: []string{}}), MetadataHold{}, identity)
 	if accepted.Verdict != "accepted_pending_download" {
 		t.Fatalf("passing title row must accept: %+v", accepted)
 	}

@@ -204,6 +204,11 @@ STRICT = {"dir-v2", "go-module", "api-path", "env-prefix", "kebab-v2", "mikan-pr
 ALLOW = [
     # --- keep: test fixture hosts ---
     ("keep", "kebab-v2", r"", r"v2-fixture", r"v2-fixture\.test|v2-fixture"),
+    # --- keep: oapi-codegen derives these constants from literal schema enum
+    # values; editing generated identifiers would break generation freshness.
+    ("keep", "ident-v2",
+     r"^internal/transport/httpapi/generated/oapi\.gen\.go$",
+     r"(?:BusinessSnapshotSchemaVersionBusinessSnapshotV2|QualityProfileVersionProfileV2)", None),
     # --- deferred: acquisition-input registry V2 family until Q11 collapses it ---
     ("deferred", "ident-v2",
      r"^(internal/acquisition/terminal/|internal/testutil/nativeinput/|internal/artifact/application/service\.go$"

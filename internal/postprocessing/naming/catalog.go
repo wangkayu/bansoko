@@ -101,7 +101,7 @@ func catalogFunctions() []CatalogFunction {
 func intPtr(value int) *int { return &value }
 
 func sampleTVContext() NamingContext {
-	return NamingContext{
+	ctx := NamingContext{
 		Anime: AnimeNamingFacts{
 			ID:     "ma_frieren_001",
 			Title:  "葬送的芙莉莲",
@@ -126,6 +126,10 @@ func sampleTVContext() NamingContext {
 			"Resolution": "1080p", "Subtitle": "INTERNAL", "Language": "CHS", "Format": "MKV", "Tag": "10bit+AAC+HEVC+WEBRip",
 		},
 	}
+	// The sample names its file, so its frt parse is prepared explicitly like
+	// every other render's.
+	ctx.FileTitleTags = ParseFileTitleTags(ctx.File)
+	return ctx
 }
 
 // sampleTVSubtitleContext is the standalone subtitle companion of sample-tv:
@@ -141,6 +145,8 @@ func sampleTVSubtitleContext() NamingContext {
 		SizeBytes:    102400,
 		Kind:         "subtitle",
 	}
+	// The subtitle's frt is its own file name, prepared explicitly.
+	ctx.FileTitleTags = ParseFileTitleTags(ctx.File)
 	return ctx
 }
 
@@ -156,7 +162,7 @@ func sampleTVSubtitleLocked() *SampleLockedTarget {
 }
 
 func sampleMovieContext() NamingContext {
-	return NamingContext{
+	ctx := NamingContext{
 		Anime: AnimeNamingFacts{
 			ID:    "ma_aot_movie_001",
 			Title: "进击的巨人 剧场版",
@@ -189,6 +195,8 @@ func sampleMovieContext() NamingContext {
 		// or subtitle language.
 		Rt: templatefacts.Values{"Title": "进击的巨人 剧场版", "Subgroup": "示例字幕组", "Resolution": "1080p", "Source": "WEB-DL"},
 	}
+	ctx.FileTitleTags = ParseFileTitleTags(ctx.File)
+	return ctx
 }
 
 // generateCatalogFields is the naming language field list: every visible naming

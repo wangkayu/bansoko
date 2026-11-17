@@ -154,10 +154,10 @@ func TestFromFlagsResolvesFixedSeedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.AttrRulesConfigPath != "/srv/bansoko-config/attr-rules.yaml" || cfg.NamingVarsConfigPath != "/srv/bansoko-config/naming-vars.js" {
-		t.Fatalf("config workspace paths = %q %q", cfg.AttrRulesConfigPath, cfg.NamingVarsConfigPath)
+	if cfg.NamingVarsConfigPath != "/srv/bansoko-config/naming-vars.js" {
+		t.Fatalf("config workspace path = %q", cfg.NamingVarsConfigPath)
 	}
-	if cfg.AttrRulesDefaultsPath != "deployment/defaults/attr-rules.yaml" || cfg.NamingVarsDefaultsPath != "deployment/defaults/naming-vars.js" {
-		t.Fatalf("bundled defaults paths = %q %q", cfg.AttrRulesDefaultsPath, cfg.NamingVarsDefaultsPath)
+	if cfg.NamingVarsDefaultsPath != "deployment/defaults/naming-vars.js" {
+		t.Fatalf("bundled default path = %q", cfg.NamingVarsDefaultsPath)
 	}
 }

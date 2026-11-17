@@ -11,7 +11,6 @@ import (
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/filekinds"
@@ -92,12 +91,10 @@ func (s *Service) evaluateFeedItemsWithSelection(
 	business ...*animedomain.BusinessSnapshot,
 ) error {
 	evalInput := animedomain.SourceEvaluationInput{Index: sourceIndex, Kind: sourceKind, GroupName: groupName, Group: group, Offset: selection.Offset}
-	// The attr rules and the Vars program are pinned by digest and identical for
-	// every release of this call, so they are loaded once, on the first release
-	// (a source with no seeds never needed the business snapshot), not per item.
+	// The Vars program is pinned by digest and identical for every release of
+	// this call, so it is loaded once, on the first release.
 	var (
 		loaded  bool
-		rules   attrrules.Rules
 		program namingvars.Program
 	)
 	return eachDistinctPreviewItem(items, func(item acquisitiondomain.FeedItem, stableKey string) error {
@@ -108,9 +105,6 @@ func (s *Service) evaluateFeedItemsWithSelection(
 		}
 		if !loaded {
 			var err error
-			if rules, err = s.loadPreviewAttrRules(ctx, business[0].Programs.AttrRules); err != nil {
-				return err
-			}
 			if program, err = s.loadPreviewVarsProgram(ctx, business[0].Programs.Vars); err != nil {
 				return err
 			}
@@ -120,7 +114,7 @@ func (s *Service) evaluateFeedItemsWithSelection(
 		if err != nil {
 			return previewNumberingError(err)
 		}
-		release := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, hold, rules, evidence.Identity)
+		release := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, hold, evidence.Identity)
 		selected := result.Selections[stableKey]
 		fileSelection := selected.selection
 		overrides := selected.overrides
@@ -136,7 +130,7 @@ func (s *Service) evaluateFeedItemsWithSelection(
 		frozen := freezeVarsWithProgram(program, varsEvidence, manifests[stableKey])
 		release.FrozenVars = &frozen
 		result.Releases = append(result.Releases, release)
-		files, err := previewFilesForItem(ctx, item, stableKey, release, manifests[stableKey], evalInput, effective, animeTitle, rules, evidence, business[0].UnclassifiedRoute, fileSelection, overrides)
+		files, err := previewFilesForItem(ctx, item, stableKey, release, manifests[stableKey], evalInput, effective, animeTitle, evidence, business[0].UnclassifiedRoute, fileSelection, overrides)
 		if err != nil {
 			return previewNumberingError(err)
 		}
@@ -172,7 +166,6 @@ func previewFilesForItem(
 	evalInput animedomain.SourceEvaluationInput,
 	effective animedomain.EffectiveConfig,
 	animeTitle string,
-	rules attrrules.Rules,
 	evidence acquisitiontarget.ParserEvidence,
 	unknownRoute string,
 	selection *filekinds.Selection,
@@ -185,7 +178,7 @@ func previewFilesForItem(
 	if err != nil {
 		return nil, err
 	}
-	projected := animedomain.PreviewFilesForManifestIn(item, release, manifestFiles, effective, animeTitle, evalInput, rules, unknownRoute, selection)
+	projected := animedomain.PreviewFilesForManifestIn(item, release, manifestFiles, effective, animeTitle, evalInput, unknownRoute, selection)
 	episodes := make(map[string]string, len(manifestFiles))
 	for _, file := range manifestFiles {
 		episode := animedomain.PreviewFileEpisode(release, file)

@@ -3,13 +3,9 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-
-	"bansoko/internal/attrrules"
 
 	templatecatalogapplication "bansoko/internal/templatecatalog/application"
 )
@@ -32,25 +28,6 @@ func postJSON(t *testing.T, handler func(http.ResponseWriter, *http.Request), pa
 // The parser surface answers a structured release-title parse and refuses an
 // unusable title with a typed 422 instead of a 200 carrying nulls.
 func TestParseReleaseTitleContract(t *testing.T) {
-	// The pure parse surface reads the process attribute rules, so the test
-	// loads the shipped defaults instead of inventing a shape.
-	rulesPath := filepath.Join("..", "..", "..", "deployment", "defaults", "attr-rules.yaml")
-	rulesData, err := os.ReadFile(rulesPath)
-	if err != nil {
-		t.Fatalf("read shipped attribute rules: %v", err)
-	}
-	rules, err := attrrules.Parse(rulesData, rulesPath)
-	if err != nil {
-		t.Fatalf("parse shipped attribute rules: %v", err)
-	}
-	fingerprint, err := attrrules.Canonical(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := attrrules.SetActive(rules, string(fingerprint)); err != nil {
-		t.Fatalf("activate attribute rules: %v", err)
-	}
-
 	server := &Server{}
 	ok := postJSON(t, server.ParseReleaseTitle, "/api/v1/parse/release-title",
 		`{"title":"[Group] Show - 01 [1080p] [CHS]"}`)

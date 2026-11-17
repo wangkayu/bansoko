@@ -10,7 +10,6 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
@@ -117,19 +116,9 @@ func FreezeReleaseMediaSnapshotTx(ctx context.Context, scope txscope.Tx, store f
 	if err := validSeedLimits(plan.DownloadCompletion, plan.DownloadCompletionSeedLimits); err != nil {
 		return fmt.Errorf("batch plan has invalid frozen seed limits: %w", err)
 	}
-	rules, _, _ := attrrules.Current()
-	base := acquisitiondomain.ParseReleaseFacts(in.Title, rules)
-	releaseFacts := facts.ReleaseFacts{
-		Title:      in.Title,
-		GroupName:  base.GroupName,
-		Resolution: base.Resolution,
-		Quality:    base.Quality,
-		Special:    base.Special,
-		Warnings:   base.Warnings,
-	}
-	if base.Language != "" {
-		releaseFacts.Languages = []string{base.Language}
-	}
+	// This snapshot owns identity and the batch plan, not another title-
+	// attribute parser. Release properties live only in native source tags.
+	releaseFacts := facts.ReleaseFacts{Title: in.Title}
 	releaseEvidence := parser.Evidence(evidence.Parsed, parser.InputReleaseTitle)
 	releaseFacts.EpisodeEvidence = &releaseEvidence
 	provenance := evidence.Provenance()

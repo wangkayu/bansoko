@@ -6,12 +6,13 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 type planLostCommitConnector struct {

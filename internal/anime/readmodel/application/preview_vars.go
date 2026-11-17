@@ -2,7 +2,6 @@ package application
 
 import (
 	acquisition "bansoko/internal/acquisition/domain"
-	"bansoko/internal/attrrules"
 	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/namingvars/adapter/persistence"
@@ -66,26 +65,4 @@ func freezeVarsWithProgram(program namingvars.Program, evidence namingvars.Relea
 		}
 	}
 	return program.FreezeEvaluation(namingvars.BuildInput(evidence))
-}
-
-// loadPreviewAttrRules resolves the same immutable business source as Vars;
-// active publication is neither initialization nor preview authority.
-// It is read through the cache and verified against its digest on load.
-func (s *Service) loadPreviewAttrRules(ctx context.Context, ref namingvars.ProgramRef) (attrrules.Rules, error) {
-	load := s.loadAttrRulesSource
-	if load == nil {
-		load = s.readPreviewAttrRules
-	}
-	return s.previewMaterials.attrRulesFor(ctx, ref, load)
-}
-
-func (s *Service) readPreviewAttrRules(ctx context.Context, ref namingvars.ProgramRef) (attrrules.Rules, error) {
-	if s == nil || s.db == nil {
-		return attrrules.Rules{}, fmt.Errorf("exact preview attrrules database unavailable")
-	}
-	return attrrules.LoadExact(ctx, ref.Version, ref.Digest, func(ctx context.Context, fingerprint string) ([]byte, error) {
-		var raw []byte
-		err := s.db.QueryRowContext(ctx, `SELECT content FROM attr_rule_versions WHERE fingerprint=$1`, fingerprint).Scan(&raw)
-		return raw, err
-	})
 }

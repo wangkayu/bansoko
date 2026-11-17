@@ -394,8 +394,8 @@ func TestCompileRulesRejectsBrokenBranch(t *testing.T) {
 
 func TestCatalogDocumentCoversFunctionsAndSamples(t *testing.T) {
 	doc := GenerateCatalogDocument()
-	if len(doc.Functions) != 20 {
-		t.Fatalf("function count = %d, want 20", len(doc.Functions))
+	if len(doc.Functions) != 21 {
+		t.Fatalf("function count = %d, want 21", len(doc.Functions))
 	}
 	if len(doc.Samples) != 3 ||
 		doc.Samples[0].Ref != "sample-tv" ||

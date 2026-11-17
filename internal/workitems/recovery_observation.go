@@ -11,6 +11,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 	adapter "bansoko/internal/workitems/adapter/persistence"
 	persistence "bansoko/internal/workitems/adapter/persistence/generated"
+
 	"github.com/lib/pq"
 )
 

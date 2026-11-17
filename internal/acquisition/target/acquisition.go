@@ -17,7 +17,6 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
@@ -580,10 +579,6 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 		// request is performed here.
 		previewItem.Enclosure = file.SourcePath
 		previewItem.TorrentURL = ""
-		rules, _, err := attrrules.Current()
-		if err != nil {
-			return fail("attr_rules_unavailable", strings.TrimSpace(err.Error()))
-		}
 		if file.SizeBytes == nil || *file.SizeBytes < 0 {
 			setTargetDiagnostic(file, "target_entry_size_unknown", "目标路径生成失败，文件大小未知，未执行重命名")
 			return fail("target_entry_size_unknown", "included torrent entry has no exact byte size")
@@ -597,8 +592,12 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			identity = *planned.Identity
 		}
 		manifestFile.FrozenEpisode, manifestFile.PerFileEpisode = ParserEvidence{Identity: identity}.NamingFacts(), true
-		rendered := animedomain.PreviewExactFile(previewItem, preview, manifestFile, input.Effective, animeTitle, source, rules)
+		rendered := animedomain.PreviewExactFile(previewItem, preview, manifestFile, input.Effective, animeTitle, source)
 		if !rendered.Included {
+			continue
+		}
+		plan.MarkTargetPending(sourcePath, rendered.TargetPendingFacts)
+		if len(rendered.TargetPendingFacts) > 0 {
 			continue
 		}
 		// Validity is never overridable: an invalid or unsafe render, or a
@@ -736,8 +735,8 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			// Every planned video collided with another one of this release.
 			return PlanResult{ReleaseFiles: files, Admission: AdmissionResult{Admission: AdmissionFailed, Reason: batchplan.ReasonTargetDuplicate}, PlanReason: "every planned target collides with another file of the release", Evidence: evidence, BatchPlan: plan}
 		}
-		// Only routed unknown videos remain: nothing has a pre-download
-		// target, and the frozen route places them after the download.
+		// Only pending or routed unknown videos remain. They have no guessed
+		// pre-download target; execution finishes preparation after download.
 		return result(AdmissionResult{Admission: AdmissionDownload, Reason: "target_work_required"}, Set{ReleaseID: strings.TrimSpace(input.ReleaseID), Targets: []Spec{}}, []Observation{})
 	}
 	set, err := Plan(input.ReleaseID, entries)
@@ -801,12 +800,17 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 		observations = remaining
 	}
 	admission := Decide(set, observations)
-	if admission.Admission == AdmissionAdopted && plan.UnclassifiedRoute == batchplan.RouteRoute && plan.UnknownVideos() > 0 {
-		// Routed unknown videos are placed after a download; the exact
-		// planned targets alone never make the release adopted.
+	if admission.Admission == AdmissionAdopted && hasExecutionOnlyTargets(plan) {
+		// Pending and routed unknown videos still require a download. Exact
+		// targets already present cannot make a mixed batch wholly adopted.
 		admission = AdmissionResult{Admission: AdmissionDownload, Reason: "target_work_required", Matched: admission.Matched}
 	}
 	return result(admission, set, observations)
+}
+
+// hasExecutionOnlyTargets prevents a ready subset from adopting the whole batch.
+func hasExecutionOnlyTargets(plan batchplan.Plan) bool {
+	return plan.PendingTargets() > 0 || (plan.UnclassifiedRoute == batchplan.RouteRoute && plan.UnknownVideos() > 0)
 }
 
 // cloneBatchPlan copies a caller's plan so target conflicts never mutate it.

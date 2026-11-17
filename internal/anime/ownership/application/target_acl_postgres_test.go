@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"bansoko/internal/testutil/animetest"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

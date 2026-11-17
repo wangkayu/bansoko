@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	acquisitiontarget "bansoko/internal/acquisition/target"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	facts "bansoko/internal/release/facts"
 )
@@ -69,12 +68,7 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version 
 	if err != nil {
 		return nil, err
 	}
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		return nil, fmt.Errorf("read active attr rules: %w", err)
-	}
-	projected := facts.CandidateFromCoverage(candidate.Title, rules, candidate.Coverage)
-	candidateFacts := Facts{Resolution: projected.Resolution, Revision: projected.Revision, Language: projected.Language, Group: projected.Group, Size: candidate.SizeBytes}
+	candidateFacts := Facts{Size: candidate.SizeBytes}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -87,7 +81,14 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version 
 	if err != nil {
 		return nil, err
 	}
-	candidateFacts = candidateFacts.withFrozenValues(facts.CompareValues(projected, source))
+	compareRaw, err := facts.CompareValues(source)
+	if err != nil {
+		return nil, err
+	}
+	candidateFacts, err = candidateFacts.withFrozenValues(compareRaw)
+	if err != nil {
+		return nil, err
+	}
 	placements, err := s.loadPlacementFacts(ctx, tx, managedAnimeID)
 	if err != nil {
 		return nil, err

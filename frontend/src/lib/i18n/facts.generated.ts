@@ -147,10 +147,6 @@ export const factsCopy = {
       label: "结束集数",
       description: "派生值：一个文件含多集时的最后一集，如 E01-E02 中的 2；单集为空。",
     },
-    kind: {
-      label: "特别篇类型",
-      description: "派生值：正片为空；ncop、nced 或 special。由发布标题里的关键词判定，不是解析器给出的集数身份证据。",
-    },
     number: {
       label: "集数",
       description: "派生值：应用偏移后的集数，如 12，不补零：由解析到的原文（ep.raw）与生效的偏移（ep.offset）算出，偏移只在身份解析时应用一次。有集数识别时才有定义；未识别的文件走未识别模板。",
@@ -169,7 +165,7 @@ export const factsCopy = {
     },
     source: {
       label: "集数来源",
-      description: "派生值：集数取自哪份证据：file_parser 为文件解析，release_parser 为发布标题解析，anibt 为来源站点标签，movie 为剧场版，manual 为手动匹配。",
+      description: "派生值：集数取自哪份证据：file_parser 为文件解析，release_parser 为发布标题解析，movie 为剧场版，manual 为手动匹配。",
     },
   },
   event: {
@@ -876,10 +872,6 @@ export const enFactsCopy = {
       label: "Last episode",
       description: "Derived: Last episode of a file holding several, such as 2 in E01-E02; empty for a single episode.",
     },
-    kind: {
-      label: "Special kind",
-      description: "Derived: Empty for a regular episode; ncop, nced or special. Decided by a keyword in the release title, not parser episode-identity evidence.",
-    },
     number: {
       label: "Episode",
       description: "Derived: Episode number after the offset, such as 12, not zero-padded: computed from the parsed capture (ep.raw) and the effective offset (ep.offset), which the identity resolver applies exactly once. Defined only with an episode identity; an unrecognized file uses the unknown template.",
@@ -898,7 +890,7 @@ export const enFactsCopy = {
     },
     source: {
       label: "Episode source",
-      description: "Derived: Which evidence supplied the episode: file_parser, release_parser, anibt, movie, or manual for a manual match.",
+      description: "Derived: Which evidence supplied the episode: file_parser, release_parser, movie, or manual for a manual match.",
     },
   },
   event: {

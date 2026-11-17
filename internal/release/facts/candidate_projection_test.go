@@ -3,17 +3,7 @@ package facts
 import (
 	"reflect"
 	"testing"
-
-	"bansoko/internal/attrrules"
 )
-
-func projectionRules() attrrules.Rules {
-	return attrrules.Rules{
-		Version: 1, Resolution: []string{"1080p"}, Quality: []string{"web-dl"},
-		Language: []string{"chs"}, SpecialMarkers: []string{"special", "ncop", "nced"},
-		GroupBrackets: []string{"[", "]"},
-	}
-}
 
 // Candidate coverage is a projection of the frozen BatchPlan coverage keys. It
 // never re-parses the title: a title naming another episode cannot move it, a
@@ -40,7 +30,7 @@ func TestCandidateFromCoverageNeverInventsCoverage(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			candidate := CandidateFromCoverage(test.title, projectionRules(), test.keys)
+			candidate := CandidateFromCoverage(test.title, test.keys)
 			if !reflect.DeepEqual(candidate.Coverage, test.wantCoverage) {
 				t.Fatalf("coverage = %v, want %v", candidate.Coverage, test.wantCoverage)
 			}
@@ -50,8 +40,8 @@ func TestCandidateFromCoverageNeverInventsCoverage(t *testing.T) {
 			if candidate.Episode != test.wantEpisode || candidate.MediaKind != test.wantKind {
 				t.Fatalf("candidate = %+v", candidate)
 			}
-			if candidate.Resolution != "1080p" {
-				t.Fatalf("quality dimensions still come from the title: %+v", candidate)
+			if candidate.Resolution != "" {
+				t.Fatalf("coverage projection must not parse title attributes: %+v", candidate)
 			}
 		})
 	}

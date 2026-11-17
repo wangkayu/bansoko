@@ -7,11 +7,10 @@ import (
 )
 
 // Subject is one side of a comparison: its frozen values, the subscription's
-// score for its subgroup source (nil = no source or no score), and its size.
+// score for its subgroup source (nil = no source or no score).
 type Subject struct {
 	Values map[string][]string
 	Score  *int64
-	Size   *int64
 }
 
 // Step results.
@@ -21,9 +20,6 @@ const (
 	StepEqual   = "equal"
 	StepSkipped = "skipped"
 )
-
-// SizeStep is the key of the size tiebreak step.
-const SizeStep = "size"
 
 // Step is one comparison step's evidence. Candidate/Current are the matched
 // entry (or the release's own values when nothing matched, empty when it has
@@ -38,13 +34,12 @@ type Step struct {
 }
 
 // Result is a comparison verdict: Better when the candidate wins on an item
-// or, all items equal, on a strictly larger size; Equal when nothing decides
+// only; Equal when nothing decides
 // (the caller keeps the existing file).
 type Result struct {
 	Better bool
 	Equal  bool
-	// Decided is the key of the deciding step ("size" for the tiebreak,
-	// empty when nothing decided).
+	// Decided is the configured item that decided, or empty for a tie.
 	Decided string
 	Steps   []Step
 }
@@ -58,8 +53,7 @@ type level struct {
 
 // Compare compares the candidate with the current file item by item: the
 // first item that ranks them differently decides and later items are not
-// read. All items equal: the larger size wins when both are known; otherwise
-// nothing decides and the existing file stays.
+// read. If all items tie, nothing decides and the existing file stays.
 func Compare(candidate, current Subject, profile Profile) Result {
 	result := Result{}
 	for _, item := range profile.Items {
@@ -78,6 +72,9 @@ func Compare(candidate, current Subject, profile Profile) Result {
 		// AniBT layer and the next item decides. A value that is present but
 		// not listed still ranks lowest.
 		noData := def.Ranked() && (len(candidate.Values[item.Key]) == 0 || len(current.Values[item.Key]) == 0)
+		if def.Kind == KindRevision {
+			noData = !a.listed || !b.listed
+		}
 		switch {
 		case noData:
 		case a.value > b.value:
@@ -92,19 +89,7 @@ func Compare(candidate, current Subject, profile Profile) Result {
 			return result
 		}
 	}
-	step := Step{Key: SizeStep, Candidate: sizeLabel(candidate.Size), Current: sizeLabel(current.Size), Result: StepEqual}
-	if candidate.Size != nil && current.Size != nil && *candidate.Size != *current.Size {
-		if *candidate.Size > *current.Size {
-			step.Result = StepBetter
-			result.Better = true
-		} else {
-			step.Result = StepWorse
-		}
-		result.Decided = SizeStep
-	} else {
-		result.Equal = true
-	}
-	result.Steps = append(result.Steps, step)
+	result.Equal = true
 	return result
 }
 
@@ -121,7 +106,8 @@ func levelOf(def ItemDef, item Item, subject Subject) level {
 		if len(values) > 0 {
 			label = values[0]
 		}
-		return level{value: RevisionNumber(label), label: label, listed: label != ""}
+		number, known := RevisionNumber(label)
+		return level{value: number, label: label, listed: known}
 	default:
 		have := subject.Values[item.Key]
 		index, ok := RankIndex(item.Ranks, matchValues(item.Key, have))
@@ -183,11 +169,4 @@ func RankIndex(ranks [][]string, have []string) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-func sizeLabel(size *int64) string {
-	if size == nil {
-		return ""
-	}
-	return strconv.FormatInt(*size, 10)
 }

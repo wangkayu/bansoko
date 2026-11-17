@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/namingvars"
 	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/postprocessing/naming"
@@ -99,18 +100,20 @@ type MatchRender struct {
 
 // matchLineage is the optional release-level evidence of a file.
 type matchLineage struct {
-	found          bool
-	releaseID      string
-	releaseVersion int
-	releaseTitle   string
-	sourceKind     string
-	groupName      string
-	sourceProvider string
-	sourceGroupRef string
-	sourceFacts    []byte
-	fileFacts      []byte
-	releaseFacts   []byte
-	frozenConfig   []byte
+	found             bool
+	releaseID         string
+	releaseVersion    int
+	releaseTitle      string
+	sourceKind        string
+	groupName         string
+	sourceProvider    string
+	sourceGroupRef    string
+	sourceFacts       []byte
+	fileFacts         []byte
+	frozenConfig      []byte
+	renderSnapshot    []byte
+	hasRenderSnapshot bool
+	originalFileName  string
 }
 
 // matchLineageOf reads the lineage of a placement leniently: any state of the
@@ -120,18 +123,18 @@ func (r *NamingTargetRenderer) matchLineageOf(ctx context.Context, placementID s
 	if strings.TrimSpace(placementID) == "" {
 		return l, nil
 	}
-	err := r.db.QueryRowContext(ctx, `SELECT COALESCE(rel.id,''), COALESCE(rel.version,0), COALESCE(rel.raw_facts->>'title',''), COALESCE(src.source_kind,''), COALESCE(src.group_name,''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''),
- COALESCE(rel.source_facts,'{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb)
+	err := r.db.QueryRowContext(ctx, `SELECT COALESCE(rel.id,''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''),
+ COALESCE(fo.frozen_render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence','{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), true, COALESCE(af.relative_path,'')
 FROM placements p
 JOIN file_operations fo ON fo.id=p.source_owner_ref AND p.source_evidence_type='file_operation'
 LEFT JOIN artifact_files af ON af.id=fo.artifact_file_id
 LEFT JOIN artifacts art ON art.id=fo.artifact_id
+LEFT JOIN acquisitions aq ON aq.id=art.acquisition_id
 LEFT JOIN download_tasks dt ON dt.id=art.download_task_id
 LEFT JOIN releases rel ON rel.id=dt.release_id
 LEFT JOIN rss_sources src ON src.id=rel.rss_source_id
-LEFT JOIN LATERAL (SELECT release_facts FROM media_fact_snapshots WHERE release_id=rel.id ORDER BY created_at DESC,id DESC LIMIT 1) snap ON true
 WHERE p.id=$1`, placementID).Scan(&l.releaseID, &l.releaseVersion, &l.releaseTitle, &l.sourceKind, &l.groupName, &l.sourceProvider, &l.sourceGroupRef,
-		&l.sourceFacts, &l.fileFacts, &l.releaseFacts, &l.frozenConfig)
+		&l.sourceFacts, &l.fileFacts, &l.frozenConfig, &l.renderSnapshot, &l.hasRenderSnapshot, &l.originalFileName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return matchLineage{}, nil
 	}
@@ -156,26 +159,26 @@ func (r *NamingTargetRenderer) matchLineageByPath(ctx context.Context, absoluteP
 		return l, nil
 	}
 	err := r.db.QueryRowContext(ctx, `WITH candidates AS (
- SELECT fo.artifact_file_id AS artifact_file_id, COALESCE(fo.frozen_config_snapshot,'{}'::jsonb) AS frozen_config, fo.created_at, fo.id AS candidate_id
+ SELECT fo.artifact_file_id AS artifact_file_id, COALESCE(fo.frozen_config_snapshot,'{}'::jsonb) AS frozen_config, COALESCE(fo.frozen_render_snapshot,'{}'::jsonb) AS render_snapshot, true AS has_render_snapshot, fo.created_at, fo.id AS candidate_id
  FROM file_operations fo
  WHERE fo.state = 'completed' AND fo.target_path = $1
  UNION ALL
- SELECT src.id, '{}'::jsonb, src.created_at, src.id
+ SELECT src.id, '{}'::jsonb, '{}'::jsonb, false, src.created_at, src.id
  FROM artifact_files src
  WHERE src.source_path = $1
 )
-SELECT COALESCE(rel.id,''), COALESCE(rel.version,0), COALESCE(rel.raw_facts->>'title',''), COALESCE(src.source_kind,''), COALESCE(src.group_name,''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''),
- COALESCE(rel.source_facts,'{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), COALESCE(snap.release_facts,'{}'::jsonb), c.frozen_config
+SELECT COALESCE(rel.id,''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''),
+ COALESCE(c.render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence','{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), c.frozen_config, c.render_snapshot, c.has_render_snapshot, COALESCE(af.relative_path,'')
 FROM candidates c
 JOIN artifact_files af ON af.id=c.artifact_file_id
 LEFT JOIN artifacts art ON art.id=af.artifact_id
+LEFT JOIN acquisitions aq ON aq.id=art.acquisition_id
 LEFT JOIN download_tasks dt ON dt.id=art.download_task_id
 LEFT JOIN releases rel ON rel.id=dt.release_id
 LEFT JOIN rss_sources src ON src.id=rel.rss_source_id
-LEFT JOIN LATERAL (SELECT release_facts FROM media_fact_snapshots WHERE release_id=rel.id ORDER BY created_at DESC,id DESC LIMIT 1) snap ON true
 ORDER BY c.created_at DESC, c.candidate_id DESC
 LIMIT 1`, absolutePath).Scan(&l.releaseID, &l.releaseVersion, &l.releaseTitle, &l.sourceKind, &l.groupName, &l.sourceProvider, &l.sourceGroupRef,
-		&l.sourceFacts, &l.fileFacts, &l.releaseFacts, &l.frozenConfig)
+		&l.sourceFacts, &l.fileFacts, &l.frozenConfig, &l.renderSnapshot, &l.hasRenderSnapshot, &l.originalFileName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return matchLineage{}, nil
 	}
@@ -184,6 +187,21 @@ LIMIT 1`, absolutePath).Scan(&l.releaseID, &l.releaseVersion, &l.releaseTitle, &
 	}
 	l.found = true
 	return l, nil
+}
+
+// fileTitleTags never reparses evidence from a completed operation.
+func (l matchLineage) fileTitleTags(file naming.FileNamingFacts) (*acquisitiondomain.TitleTagSet, error) {
+	if l.hasRenderSnapshot {
+		return naming.FrozenFileTitleTags(l.renderSnapshot)
+	}
+	if l.found {
+		if strings.TrimSpace(l.originalFileName) == "" {
+			return nil, nil
+		}
+		base := filepath.Base(l.originalFileName)
+		file.OriginalName, file.Basename = base, strings.TrimSuffix(base, filepath.Ext(base))
+	}
+	return naming.ParseFileTitleTags(file), nil
 }
 
 // frozenVarsOutput is the Vars output the file's acquisition froze, when it
@@ -279,15 +297,18 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 			SizeBytes: in.SizeBytes, Kind: "video",
 		},
 	}
+	// A published file keeps its frozen parse, including absent evidence.
+	// Only files without a prior operation prepare a parse from their original name.
+	facts.FileTitleTags, err = lineage.fileTitleTags(facts.File)
+	if err != nil {
+		return MatchRender{}, &MatchRenderError{Code: MatchRenderFactsMissing, cause: err}
+	}
 	if lineage.found {
 		facts.File.Media.Resolution = mediaFactStringFromJSON(lineage.fileFacts, "resolution")
 		facts.File.Media.VideoCodec = mediaFactStringFromJSON(lineage.fileFacts, "video_codec")
 		facts.File.Media.AudioCodec = mediaFactStringFromJSON(lineage.fileFacts, "audio_codec")
 		facts.File.Media.Container = mediaFactStringFromJSON(lineage.fileFacts, "container")
 		facts.File.Media.HDR = mediaFactStringFromJSON(lineage.fileFacts, "hdr")
-		if facts.File.Media.Resolution == "" {
-			facts.File.Media.Resolution = mediaFactStringFromJSON(lineage.releaseFacts, "resolution")
-		}
 		namespaces, err := templatefacts.FromSourceFacts(lineage.sourceFacts)
 		if err != nil {
 			return MatchRender{}, &MatchRenderError{Code: MatchRenderFactsMissing, cause: renderFactsUnavailable("frozen source facts are invalid")}
@@ -305,8 +326,6 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 		return MatchRender{}, &MatchRenderError{Code: MatchRenderTemplateInvalid, cause: err}
 	}
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: facts})
-	// The chosen episode is a regular one whatever the release title says.
-	resolved.Context.Parsed.Episode.SpecialKind = ""
 
 	// The match render is on the episode-title whitelist: a template that
 	// reads a provider episode title looks it up again before rendering. A

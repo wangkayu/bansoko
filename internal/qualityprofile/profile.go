@@ -1,4 +1,4 @@
-// Package qualityprofile owns the replacement comparison profile (profile-v1):
+// Package qualityprofile owns the replacement comparison profile (profile-v2):
 // the registry of namespaced comparison items, the profile value and its
 // validation, the frozen per-release comparison values, and the pure
 // item-by-item lexicographic comparison. Replacement (filemaintenance), the
@@ -6,7 +6,7 @@
 // read this one definition.
 //
 // Every item reads only its own namespaced key. There is no fallback between
-// namespaces: a value that is missing or not listed ranks worst.
+// namespaces: missing data ties a layer; an unlisted present value ranks worst.
 package qualityprofile
 
 import (
@@ -19,7 +19,7 @@ import (
 )
 
 // Version is the only accepted profile version.
-const Version = "profile-v1"
+const Version = "profile-v2"
 
 // Kind is how an item ranks a release.
 type Kind string
@@ -37,26 +37,23 @@ const (
 
 // Item keys.
 const (
-	KeySubgroupScore     = "subgroup.score"
-	KeyReleaseLang       = "release.lang"
-	KeyReleaseResolution = "release.resolution"
-	KeyReleaseRevision   = "release.revision"
-	KeyAniBTResolution   = "anibt.resolution"
-	KeyAniBTLanguage     = "anibt.language"
-	KeyAniBTSubtitle     = "anibt.subtitle"
-	KeyAniBTFormat       = "anibt.format"
-	KeyRtResolution      = "rt.resolution"
-	KeyRtSubLang         = "rt.sub_lang"
-	KeyRtSubFlag         = "rt.sub_flag"
-	KeyRtSource          = "rt.source"
-	KeyRtCodec           = "rt.codec"
-	KeyRtContentRating   = "rt.content_rating"
+	KeySubgroupScore   = "subgroup.score"
+	KeyRtRevision      = "rt.revision"
+	KeyAniBTResolution = "anibt.resolution"
+	KeyAniBTLanguage   = "anibt.language"
+	KeyAniBTSubtitle   = "anibt.subtitle"
+	KeyAniBTFormat     = "anibt.format"
+	KeyRtResolution    = "rt.resolution"
+	KeyRtSubLang       = "rt.sub_lang"
+	KeyRtSubFlag       = "rt.sub_flag"
+	KeyRtSource        = "rt.source"
+	KeyRtCodec         = "rt.codec"
+	KeyRtContentRating = "rt.content_rating"
 )
 
 // Namespaces.
 const (
 	NamespaceSubgroup = "subgroup"
-	NamespaceRelease  = "release"
 	NamespaceAniBT    = "anibt"
 	NamespaceRt       = "rt"
 )
@@ -74,9 +71,6 @@ func (d ItemDef) Ranked() bool { return d.Kind == KindSingle || d.Kind == KindMu
 // Items is the registry in catalog order (namespace, then attribute).
 var Items = []ItemDef{
 	{KeySubgroupScore, NamespaceSubgroup, KindScore},
-	{KeyReleaseLang, NamespaceRelease, KindSingle},
-	{KeyReleaseResolution, NamespaceRelease, KindSingle},
-	{KeyReleaseRevision, NamespaceRelease, KindRevision},
 	{KeyAniBTResolution, NamespaceAniBT, KindSingle},
 	{KeyAniBTLanguage, NamespaceAniBT, KindMulti},
 	{KeyAniBTSubtitle, NamespaceAniBT, KindSingle},
@@ -87,6 +81,7 @@ var Items = []ItemDef{
 	{KeyRtSource, NamespaceRt, KindSingle},
 	{KeyRtCodec, NamespaceRt, KindSingle},
 	{KeyRtContentRating, NamespaceRt, KindSingle},
+	{KeyRtRevision, NamespaceRt, KindRevision},
 }
 
 // Lookup returns the registered item.
@@ -123,7 +118,7 @@ type Profile struct {
 
 // Default is the built-in default: subgroup score, then the subtitle
 // languages AniBT declares and reltitle reads from the title, then the
-// built-in rules' resolution and revision. The two language items are
+// frozen rt resolution and revision. The two language items are
 // separate layers with no fallback between them, each in its own source's
 // spelling: reltitle reports Chinese plus Japanese subtitles as one combined
 // value (JPSC, JPTC), not SC plus JPN, so its entries mirror the AniBT order
@@ -139,7 +134,7 @@ func Default() Profile {
 		{Key: KeyRtSubLang, Ranks: [][]string{{"JPSC", "JPTC"}, {"JPSC"}, {"SC", "TC"}, {"SC"}, {"JPTC"}, {"TC"}, {"JPN"}, {"ENG"}}},
 		{Key: KeyAniBTResolution, Ranks: [][]string{{"4K"}, {"2160p"}, {"1080p"}, {"720p"}, {"480p"}, {"360p"}}},
 		{Key: KeyRtResolution, Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}},
-		{Key: KeyReleaseRevision, Ranks: [][]string{}},
+		{Key: KeyRtRevision, Ranks: [][]string{}},
 	}}
 }
 

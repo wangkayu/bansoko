@@ -27,9 +27,7 @@ VALUES ('tmdb', 'tv', '1', '星际邮差艾拉', NULL, 'Interstellar Postgirl')`
 		t.Fatalf("seed the tmdb row an installed database holds: %v", err)
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade an installed, populated database: %v", err)
-	}
+	applyMigrationsThrough(t, db, "007_metadata_work_titles_tmdb_title_cn.sql")
 
 	var title, titleCN sql.NullString
 	if err := db.QueryRowContext(ctx,
@@ -75,9 +73,7 @@ WHERE id = 'dt-acq-deferred103'`); err != nil {
 		t.Fatalf("seed the frozen input migration 101 rewrites: %v", err)
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade a populated database through migration 103: %v", err)
-	}
+	applyMigrationsThrough(t, db, "103_deselect_cancels_downloads.sql")
 	rewriteExpect(t, db, "deferred upgrade", "101 rewrites the row before 103 alters its table",
 		`SELECT NOT COALESCE(frozen_input->'target_facts' ? 'targets', false)
 		        AND NOT COALESCE(frozen_input->'selected_release' ? 'internal_facts', false)
@@ -100,6 +96,59 @@ func TestTMDBTitleMovesOnlyAfterTheInstalledCheckIsDropped(t *testing.T) {
 	}
 	if drop > update {
 		t.Fatal("007 moves tmdb titles before dropping the installed check; the old check requires title_cn IS NULL, so a populated database aborts")
+	}
+}
+
+// applyMigrationsThrough advances an installed historical schema only through
+// the migration under test. Runner.Apply deliberately requires the complete
+// current schema, while later migrations may reject the historical
+// configuration that an older migration was specifically responsible for
+// rewriting. Keep the runner's transaction and deferred-event boundary here.
+func applyMigrationsThrough(t *testing.T, db *sql.DB, last string) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin targeted upgrade: %v", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('bansoko:migrations')::bigint)`); err != nil {
+		t.Fatalf("lock targeted upgrade: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL search_path TO public`); err != nil {
+		t.Fatalf("set targeted upgrade search path: %v", err)
+	}
+	found := false
+	for _, name := range shippedMigrationFiles(t) {
+		var applied bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version=$1)`, name).Scan(&applied); err != nil {
+			t.Fatalf("inspect targeted upgrade history for %s: %v", name, err)
+		}
+		if !applied {
+			if err := settleMigrationTriggerEvents(ctx, tx); err != nil {
+				t.Fatalf("settle deferred events before %s: %v", name, err)
+			}
+			raw, err := os.ReadFile(filepath.Join(migrationsDir(t), name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.ExecContext(ctx, string(raw)); err != nil {
+				t.Fatalf("apply %s: %v", name, err)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version, checksum) VALUES ($1, $2)`, name, checksum(raw)); err != nil {
+				t.Fatalf("record %s: %v", name, err)
+			}
+		}
+		if name == last {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("migration %s not found", last)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit targeted upgrade through %s: %v", last, err)
 	}
 }
 

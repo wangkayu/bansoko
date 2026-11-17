@@ -11,8 +11,8 @@ import (
 )
 
 func TestReplacementPolicyInputsMapTheTypedProfile(t *testing.T) {
-	profile := generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{
-		{Key: "anibt.lang", Ranks: [][]string{{"CHS", "CHT"}, {"CHS"}}},
+	profile := generated.QualityProfile{Version: "profile-v2", Items: []generated.QualityCompareItem{
+		{Key: "anibt.language", Ranks: [][]string{{"CHS", "CHT"}, {"CHS"}}},
 		{Key: "subgroup.score", Ranks: [][]string{}},
 	}}
 	input, err := ReplacementPolicyDefaultInput(generated.ReplacementPolicyDefaultInput{
@@ -26,7 +26,7 @@ func TestReplacementPolicyInputsMapTheTypedProfile(t *testing.T) {
 	if input.ExpectedVersion != 7 || input.Policy.AdmissionMode != filemaintenance.ModePerGroup {
 		t.Fatalf("mapped input = %+v", input)
 	}
-	if got := string(input.Policy.QualityProfile); got != `{"items":[{"key":"anibt.lang","ranks":[["CHS","CHT"],["CHS"]]},{"key":"subgroup.score","ranks":[]}],"version":"profile-v1"}` {
+	if got := string(input.Policy.QualityProfile); got != `{"items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["CHS"]]},{"key":"subgroup.score","ranks":[]}],"version":"profile-v2"}` {
 		t.Fatalf("quality profile JSON = %s", got)
 	}
 }
@@ -35,7 +35,7 @@ func TestReplacementPolicyViewsMapNullableAndTypedFields(t *testing.T) {
 	updatedAt := time.Unix(123, 0).UTC()
 	policy := filemaintenance.ReplacementPolicy{
 		AdmissionMode:  filemaintenance.ModeSingleCopy,
-		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`),
+		QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p"],["720p"]]}]}`),
 	}
 	view, err := ReplacementPolicyDefaultView(filemaintenance.ReplacementPolicyDefaultView{
 		Policy:    policy,
@@ -48,8 +48,8 @@ func TestReplacementPolicyViewsMapNullableAndTypedFields(t *testing.T) {
 	if view.AdmissionMode != generated.ReplacementAdmissionModeSingleCopy || view.Version != 11 || view.UpdatedAt == nil || !view.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("mapped default view = %+v", view)
 	}
-	want := []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}
-	if view.QualityProfile.Version != "profile-v1" || !reflect.DeepEqual(view.QualityProfile.Items, want) {
+	want := []generated.QualityCompareItem{{Key: "rt.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}
+	if view.QualityProfile.Version != "profile-v2" || !reflect.DeepEqual(view.QualityProfile.Items, want) {
 		t.Fatalf("quality profile = %+v", view.QualityProfile)
 	}
 

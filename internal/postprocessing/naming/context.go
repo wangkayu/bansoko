@@ -36,8 +36,10 @@ type NamingContext struct {
 	// FileTitleTags is the reltitle parse of the file's own name (frt.*). An
 	// operation preparation parses it once and hands the same set to the
 	// naming render and to the frozen snapshots the notification producers
-	// read. A caller without a prepared set leaves it nil and the projection
-	// parses the rendered file name (naming previews and maintenance replays).
+	// read. Every other render (naming preview, maintenance replay, file
+	// manager match) prepares it explicitly from the original file name; nil
+	// means no prepared set and renders no frt values — the projection never
+	// parses a name on its own.
 	FileTitleTags *acquisitiondomain.TitleTagSet `json:"-"`
 	// Torrent is the torrent metadata frozen in the acquisition input. It is
 	// the torrent.* root.
@@ -259,26 +261,24 @@ type ParsedNamingVariables struct {
 
 // EpisodeNamingVariables holds the parsed episode values. Raw is the matched
 // text, DetectedNumber the numeric capture before the offset, Display the
-// presentation string, Number the integer value after the offset, and
-// SpecialKind the ncop/nced/special classification or empty.
+// presentation string and Number the integer value after the offset.
 type EpisodeNamingVariables struct {
 	Raw            string
 	DetectedNumber float64
 	Display        string
 	Number         int
 	Offset         int
-	SpecialKind    string
 }
 
-// LanguageNamingVariables holds the detected release language: the normalized
-// primary code (sc/tc/jpsc/jptc/jpn/eng), description, BCP47 tags, and the
-// complete structured language set (combined embedded sets carry several
-// codes). Templates default to Code; users map Languages further with rules.
+// LanguageNamingVariables holds the release title's language codes: the
+// normalized primary code (sc/tc/jpsc/jptc/jpn/eng, or the single code a list
+// names), the complete structured language list (combined embedded sets carry
+// several codes) and their BCP 47 tags. Templates default to Code; users map
+// Languages further with rules.
 type LanguageNamingVariables struct {
-	Code        string
-	Description string
-	BCP47       []string
-	Languages   []string
+	Code      string
+	BCP47     []string
+	Languages []string
 }
 
 // SubtitleNamingVariables holds the standalone-subtitle facts. They are only

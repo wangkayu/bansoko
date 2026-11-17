@@ -46,9 +46,7 @@ func TestSeasonlessEpisodeIdentityUpgradeBackfillsTheOwnerMediaKind(t *testing.T
 		}
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "095_seasonless_episode_identity.sql")
 
 	want := map[string]sql.NullString{
 		"k-tv":    {String: "tv", Valid: true},
@@ -58,7 +56,7 @@ func TestSeasonlessEpisodeIdentityUpgradeBackfillsTheOwnerMediaKind(t *testing.T
 	}
 	for id, expected := range want {
 		var kind sql.NullString
-		if err := db.QueryRowContext(ctx, `SELECT media_kind FROM anime_metadata WHERE managed_anime_id = $1`, id).Scan(&kind); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT media_kind_override FROM anime_metadata WHERE managed_anime_id = $1`, id).Scan(&kind); err != nil {
 			t.Fatal(err)
 		}
 		if kind != expected {

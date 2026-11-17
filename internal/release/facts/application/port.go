@@ -31,8 +31,8 @@ type ReleaseCandidateFacts struct {
 	Group            string
 	SizeBytes        *int64
 	CreatedAt        time.Time
-	// CompareValues are the frozen replacement comparison values
-	// (compare-values-v1); empty = none.
+	// CompareValues are a compare-values-v2 projection of frozen native release
+	// tags and stable source identity. Legacy caches are rebuilt, never read empty.
 	CompareValues json.RawMessage
 }
 

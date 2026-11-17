@@ -133,8 +133,29 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Migration 142 converts exactly that built-in v1 default to profile-v2.
+	// Custom and instance profiles block the upgrade; they are not reset here.
+	convergence, err := os.ReadFile("../../../../db/migrations/142_fact_source_convergence.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard142 := regexp.MustCompile(`(?s)old_default constant jsonb := '(\{.*?\})'::jsonb;`).FindSubmatch(convergence)
+	update142 := regexp.MustCompile(`(?s)SET value=jsonb_set\(value,'\{quality_profile\}','(\{.*?\})'::jsonb\)`).FindSubmatch(convergence)
+	if guard142 == nil || update142 == nil {
+		t.Fatal("quality profile conversion not found in migration 142")
+	}
+	var oldDefault, previous bytes.Buffer
+	if err := json.Compact(&oldDefault, guard142[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Compact(&previous, written094); err != nil {
+		t.Fatal(err)
+	}
+	if oldDefault.String() != previous.String() {
+		t.Fatal("migration 142 does not guard on the profile 094 writes")
+	}
 	var persisted, code bytes.Buffer
-	if err := json.Compact(&persisted, written094); err != nil {
+	if err := json.Compact(&persisted, update142[1]); err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Compact(&code, filemaintenance.DefaultQualityProfileJSON); err != nil {
@@ -156,7 +177,7 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(profile.Keys(), ",") != "subgroup.score,anibt.language,rt.sub_lang,anibt.resolution,rt.resolution,release.revision" {
+	if strings.Join(profile.Keys(), ",") != "subgroup.score,anibt.language,rt.sub_lang,anibt.resolution,rt.resolution,rt.revision" {
 		t.Fatalf("replacement items=%v", profile.Keys())
 	}
 }

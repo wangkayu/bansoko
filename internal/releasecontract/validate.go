@@ -8,6 +8,7 @@ import (
 	"os"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
+
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 

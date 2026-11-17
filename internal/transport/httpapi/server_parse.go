@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
-	acquisitiondomain "bansoko/internal/acquisition/domain"
-	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
+	"bansoko/internal/parser"
+	"bansoko/internal/parser/reltitletags"
 	rssapplication "bansoko/internal/rss/application"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -72,47 +72,37 @@ type acquisitionInvalidError struct{ message string }
 
 func (e *acquisitionInvalidError) Error() string { return e.message }
 
-// parseReleaseTitlePure mirrors the evaluation path parser: ParseReleaseFacts
-// (release-facts-v1) plus the default episode pattern list, returning the same
-// parser version constants the preview/execution path persists.
+// parseReleaseTitlePure exposes the native reltitle tag/value projection and
+// the same parser's episode evidence. No second attribute parser fills legacy
+// group, quality, language or special fields.
 func parseReleaseTitlePure(ctx context.Context, title string) (generated.ParseReleaseTitleResult, error) {
-	_ = ctx
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		return generated.ParseReleaseTitleResult{}, err
-	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return generated.ParseReleaseTitleResult{}, errors.New("release title is required")
 	}
-	facts := acquisitiondomain.ParseReleaseFacts(title, rules)
-	parsed := generated.ParsedReleaseFacts{}
-	if facts.GroupName != "" {
-		parsed.GroupName = &facts.GroupName
-	}
-	if facts.Quality != "" {
-		parsed.Quality = &facts.Quality
-	}
-	if facts.Language != "" {
-		parsed.Languages = &[]string{facts.Language}
-	}
-	special := facts.Special
-	parsed.Special = &special
+	tags := reltitletags.Extract(title)
 	result := generated.ParseReleaseTitleResult{
-		Facts:         parsed,
-		ParserVersion: animedomain.ParserVersion,
+		Facts: generated.TitleTagFacts{
+			Schema: tags.Schema, Implementation: tags.Implementation, Tags: tags.Tags,
+			ConfigDigest: stringPtr(tags.ConfigDigest), ValueTags: &tags.ValueTags, Diagnostic: stringPtr(tags.Diagnostic),
+		},
+		ParserVersion: tags.Implementation,
 	}
-	for _, pattern := range acquisitiondomain.DefaultEpisodePatterns {
-		episode, err := acquisitiondomain.ParseEpisode(title, pattern, 0)
-		if err == nil {
-			episodeNumber := float32(episode.EpisodeNumber)
-			result.Episode = &generated.EpisodeParseResult{
-				Matched:       true,
-				EpisodeNumber: episodeNumber,
-				Confidence:    &episode.Confidence,
-				Evidence:      &episode.Evidence,
-			}
-			break
+	selection, err := parser.NewSelectionFromProfile(parser.ParserReltitle, nil, 0)
+	if err != nil {
+		return generated.ParseReleaseTitleResult{}, err
+	}
+	episode, err := parser.ParseEpisode(ctx, parser.DefaultRegistry(), selection.Parser, parser.EpisodeParseInput{Kind: parser.InputReleaseTitle, Text: title})
+	if err != nil {
+		return generated.ParseReleaseTitleResult{}, err
+	}
+	if episode.Episode != nil {
+		number, err := strconv.ParseFloat(string(*episode.Episode), 32)
+		if err != nil {
+			return generated.ParseReleaseTitleResult{}, err
+		}
+		result.Episode = &generated.EpisodeParseResult{
+			Matched: true, EpisodeNumber: float32(number), Evidence: stringPtr(episode.RawCapture),
 		}
 	}
 	return result, nil

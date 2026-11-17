@@ -7,9 +7,10 @@ import (
 	"bansoko/internal/workitems"
 	"context"
 	"database/sql"
-	"github.com/google/uuid"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Arrange the committed planning output as fixture owner, then invoke the actual prepare stage.

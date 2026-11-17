@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 )
 
@@ -29,11 +28,10 @@ func businessPresetForLoadTest(t *testing.T) BusinessSnapshot {
 	}
 	business.Parser = ParserPolicyEnvelope{SchemaVersion: ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2}
 	business.Replacement = ReplacementValue{AdmissionMode: "all",
-		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
+		QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"subgroup.score","ranks":[]},{"key":"rt.sub_lang","ranks":[["SC"],["TC"],["JPN"],["ENG"]]},{"key":"rt.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"rt.revision","ranks":[]}]}`)}
 	business.ReplacementVersion, business.UnclassifiedRoute, business.FileEffectVersion = 4, "skip", 5
 	business.Programs = ProgramReferences{
-		Vars:      namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
-		AttrRules: namingvars.ProgramRef{Version: attrrules.ProfileVersion("sha256:attr"), Digest: "sha256:attr"},
+		Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
 	}
 	// The Global subgroups section knows one group the draft does not name.
 	var subgroups SubgroupsSection

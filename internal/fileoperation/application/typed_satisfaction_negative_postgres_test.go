@@ -12,11 +12,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // preparedObservedBatch plans the observed fixture — one file that already sits

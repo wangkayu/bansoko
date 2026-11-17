@@ -15,7 +15,6 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	draftapplication "bansoko/internal/anime/draft/application"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/frozenpolicy"
 )
@@ -133,14 +132,10 @@ VALUES ('qb-movie-test', 'qbittorrent', 'movie-test', 'http://127.0.0.1:1', 'sec
 	// Mirror the admission exactly: the same owner rows and the same evaluation
 	// the one-shot builds from the resolved evidence (its FrozenMediaKind/
 	// FrozenEpisode decide the naming branch), not a synthetic preview result.
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		t.Fatalf("active attr rules: %v", err)
-	}
 	hold := animedomain.MetadataHoldFromBindings(draft.Metadata.Bgm, draft.Metadata.Tmdb)
 	evaluation := animedomain.EvaluateFeedItemWithIdentity(item,
 		animedomain.SourceEvaluationInput{Index: 0, Kind: string(animedomain.SourceKindCustomRss), GroupName: oneShotSeedGroupName},
-		effective, hold, rules, evidence.Identity)
+		effective, hold, evidence.Identity)
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)

@@ -21,7 +21,7 @@ import (
 )
 
 // competitionProfile ranks the subgroup score first, then the resolution.
-const competitionProfile = `{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`
+const competitionProfile = `{"version":"profile-v2","items":[{"key":"subgroup.score","ranks":[]},{"key":"rt.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`
 
 // competitionFixture is one AniBT subscription instance with two subgroup
 // sources (alpha: source-rss-test, beta: source-beta), both selected with

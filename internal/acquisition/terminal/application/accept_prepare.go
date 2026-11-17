@@ -85,7 +85,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	}
 	item := acq.FeedItem{Title: seed.Title}
 	hold := admissionMetadataHold(c, allowMissingLinkage)
-	release := anime.EvaluateFeedItemWithIdentity(item, anime.SourceEvaluationInput{}, effective, hold, c.material.programs.attr, evidence.Identity)
+	release := anime.EvaluateFeedItemWithIdentity(item, anime.SourceEvaluationInput{}, effective, hold, evidence.Identity)
 	if string(release.Verdict) == "waiting_metadata" {
 		if !bypassMetadataHold(intent.entryMode) {
 			return admissionEvaluation{}, acceptError(422, "ADMISSION_REJECTED", "metadata_hold", nil)
@@ -131,6 +131,11 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	}
 	source := map[string]any{"kind": intent.entryMode, "release": frozenValue("known", map[string]any{"ref": c.material.release.id, "version": c.material.release.version}), "stable_item_key": frozenValue("known", seed.StableSeedKey), "title": frozenValue("known", seed.Title), "published_at": frozenValue("absent", nil), "provider": frozenValue("absent", nil), "group": group, "payload_digest": c.payloadDigest, "manifest_digest": seed.Manifest.ProjectionDigest, "infohash_v1": frozenValue("absent", nil), "infohash_v2": frozenValue("absent", nil), "locator_display": frozenValue("known", seed.LocatorDisplay), "locator_digest": frozenValue("known", catalog.DigestBytes([]byte(seed.Locator))), "download_provider": frozenValue("absent", nil)}
 	source["provenance"] = c.material.release.provenance
+	tagEvidence, err := protocol.FreezeSourceTags(c.material.releaseSourceFacts)
+	if err != nil {
+		return admissionEvaluation{}, err
+	}
+	source["tag_evidence"] = json.RawMessage(protocol.Canonical(tagEvidence))
 	if c.material.catalog != nil {
 		source["provider"] = frozenValue("known", c.material.catalog.feed.Provider)
 	}

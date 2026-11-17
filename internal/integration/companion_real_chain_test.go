@@ -814,7 +814,7 @@ func resolutionNamingRules(root string) generated.NamingRules {
 		Language: naming.Language,
 		Tv: generated.NamingVariant{
 			DirectoryTemplate:     prefix + "/${anime.kind}/${anime.title} ${anime.year}/${anime.season_folder}",
-			VideoFilenameTemplate: "${anime.title} ${s00e00} ${media.resolution}.${file.ext}",
+			VideoFilenameTemplate: "${anime.title} ${s00e00} ${rt.res}.${file.ext}",
 		},
 		Movie: generated.NamingVariant{
 			DirectoryTemplate:     prefix + "/${anime.kind}/${anime.title} ${anime.year}",

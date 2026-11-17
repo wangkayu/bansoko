@@ -4,8 +4,9 @@ import (
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/disposabledb"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Frozen 144/150/151 exclude non-acquisition media owners. Do not disable

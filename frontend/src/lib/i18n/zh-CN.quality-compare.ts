@@ -1,23 +1,19 @@
 // 版本优先顺序（比较项编辑器）：全局「同集多版本」设置和番剧配置共用。
-// 不出现"积分"；比较项按来源标注（内置规则 / AniBT 标签 / reltitle / 字幕组评分）。
+// 不出现"积分"；比较项按来源标注（AniBT 标签 / reltitle / 字幕组评分）。
 
 export const qualityCompareCopy = {
   title: "版本优先顺序",
-  description: "从上到下逐项比较，上面一项分出高下就不再看下面。全部相同时，体积更大的更好；仍然相同就保留现有文件。",
+  description: "从上到下逐项比较，上面一项分出高下就不再看下面。全部相同时保留现有文件，不按文件体积决胜。",
   sourceHint: "每一项都标明数据来自哪里。同一属性可以按不同来源分别加入，某个来源没有值时不会改用其他来源。",
   allModeNote: "当前是「全部保留」，不比较版本，无需设置优先顺序",
   listAria: "比较顺序",
   namespace: {
     subgroup: "字幕组",
-    release: "内置规则",
     anibt: "AniBT 标签",
     rt: "reltitle",
   },
   item: {
     subgroup_score: "字幕组评分",
-    release_lang: "语言",
-    release_resolution: "分辨率",
-    release_revision: "Rev",
     anibt_resolution: "分辨率",
     anibt_language: "语言",
     anibt_subtitle: "字幕",
@@ -28,6 +24,7 @@ export const qualityCompareCopy = {
     rt_source: "片源",
     rt_codec: "编码",
     rt_content_rating: "内容分级",
+    rt_revision: "Rev",
   },
   itemName: "{source} · {name}",
   rtSource: "取值来自 reltitle",
@@ -39,7 +36,7 @@ export const qualityCompareCopy = {
   scoreHint: "按种子所属字幕组在这部番「字幕组」页里的评分比较，评分高的更好，最高 100；必选的字幕组按 100 计。没有评分的种子最低。Mikan 和 AniBT 的字幕组各自评分。",
   scorePerGroup: "当前是「每个字幕组留一份」：只在同一字幕组内比较，这一项不起作用。",
   scoreLink: "前往字幕组评分",
-  revisionHint: "按 Rev 自动比较：v3 好于 v2，v2 好于没有 Rev。不需要设置。",
+  revisionHint: "按 reltitle 从发布标题读出的 Rev 自动比较：v3 好于 v2，不需要设置。任一侧没有 Rev 或不是数值时，这一项算平局，不会把缺失当成 v1。",
   rankHint: "从好到差排列，可以拖动或用 ‹ › 调整。没有列出的值算最差；种子没有这一项时，这一项算平局。",
   multiHint: "这一项可能有多个值。可以加入单个值，也可以加入组合（如 CHS+CHT），不看顺序。种子包含某一条的全部值就算命中，取命中的排名最高的一条；想优先多语言，就把更宽的组合排在前面。",
   anibtHint: "保留 AniBT 的原始写法，候选值包括常见的 AniBT 取值和种子里已出现过的取值。",

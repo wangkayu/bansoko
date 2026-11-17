@@ -33,7 +33,7 @@ VALUES ('sub-ov', 'anime-ov', 'custom', 'Show', 'stopped')`); err != nil {
 	if _, err := db.Exec(`
 INSERT INTO anime_business_configs
 (managed_anime_id, admission_mode, quality_profile, replacement_source_default_version, replacement_version, updated_at)
-VALUES ('anime-ov', 'all', '{"version":"profile-v1","items":[]}', 1, 1, CURRENT_TIMESTAMP)
+VALUES ('anime-ov', 'all', '{"version":"profile-v2","items":[]}', 1, 1, CURRENT_TIMESTAMP)
 ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, replacement_source_default_version=EXCLUDED.replacement_source_default_version, replacement_version=EXCLUDED.replacement_version, updated_at=EXCLUDED.updated_at`); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ VALUES ('plc-ov', '/library/Show/EP01.mkv', 'anime-ov', 'reconciliation', 'obs-1
 INSERT INTO replacement_decisions
 (id, idempotency_key, managed_anime_id, candidate_release_id, policy_version, profile_version,
  candidate_facts_ref, coverage_key, coverage_keys, admission_mode, pools, verdict, state, stale_reason, version, created_at, updated_at)
-VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v1', 'rel-x:1', 'tv:e1', '["tv:e1"]',
+VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v2', 'rel-x:1', 'tv:e1', '["tv:e1"]',
  'single_copy', '[]', 'replace', 'stale', 'subscription_stopped', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}

@@ -415,15 +415,6 @@ func decodeFeedItemWithInternal(rawFacts, internalFacts, sourceFacts, parsedFact
 			}
 		}
 	}
-	if len(parsedFacts) > 0 && string(parsedFacts) != "null" {
-		var parsed animedomain.ParsedReleaseFacts
-		if err := json.Unmarshal(parsedFacts, &parsed); err != nil {
-			return acquisitiondomain.FeedItem{}, fmt.Errorf("decode stored parsed facts: %w", err)
-		}
-		if item.Provider == "" && parsed.GroupName != nil {
-			item.Provider = "stored"
-		}
-	}
 	if item.GUID == "" && item.Enclosure == "" && item.Link == "" && stableKey != "" {
 		// A legacy content-hash row has no dedicated content-hash field in the
 		// FeedItem model. Keeping it as a GUID preserves a deterministic item

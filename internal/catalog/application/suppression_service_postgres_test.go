@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"bansoko/internal/catalog/domain"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

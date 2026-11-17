@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	acquisitiondomain "bansoko/internal/acquisition/domain"
-
 	"github.com/lib/pq"
 )
 
@@ -91,9 +89,6 @@ func appendWorkspaceReleaseObservation(summary *AnimeWorkspaceReleaseSummary, pu
 		if err := json.Unmarshal(anibt, &observation.AniBTTags); err != nil {
 			return fmt.Errorf("decode workspace AniBT tags: %w", err)
 		}
-		// Full workspace SourceFacts uses StoredAniBTTags.UnmarshalJSON. Reuse
-		// its existing dimension reclassification, never add canonicalization.
-		observation.AniBTTags = acquisitiondomain.ReclassifyAniBTTags(observation.AniBTTags)
 	}
 	if len(title) != 0 {
 		if err := json.Unmarshal(title, &observation.TitleTags); err != nil {

@@ -80,6 +80,48 @@ func TestTypedPlanFrozenValuesPreserveUnknownAndKnownZero(t *testing.T) {
 		}
 	})
 }
+func TestTypedPlanUsesAcceptedSourceEvidence(t *testing.T) {
+	for _, withTags := range []bool{false, true} {
+		var body map[string]any
+		if err := json.Unmarshal([]byte(nativeinput.Canonical(t, "sha256:"+stringRepeatA(64), "sha256:"+stringRepeatA(64))), &body); err != nil {
+			t.Fatal(err)
+		}
+		source := body["source"].(map[string]any)
+		source["title"] = map[string]any{"state": "known", "value": "Accepted title", "reason_code": nil}
+		source["group"] = map[string]any{"state": "absent", "value": nil, "reason_code": nil}
+		delete(source, "tag_evidence")
+		if withTags {
+			source["tag_evidence"] = map[string]any{"title_tags": map[string]any{"schema": "v2", "implementation": "accepted-parser", "tags": []string{"resolution:720p"}}, "anibt": nil}
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := &artifactPreparedBatch{}
+		b.artifact.sourceFacts = []byte(`{"title_tags":{"schema":"v2","implementation":"today","tags":["resolution:2160p"]}}`)
+		b.artifact.rawFacts = []byte(`{"title":"Changed current title"}`)
+		b.artifact.groupName = "Current group"
+		if err := applyTypedPlanInput(raw, b); err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := buildNamingContext(b.artifact, artifactFileContext{sourcePath: "/d/a.mkv", mediaKind: "video", sizeBytes: 1}, nil, realFrozenVarsFixture())
+		if err != nil {
+			t.Fatal(err)
+		}
+		facts := naming.UnifiedFacts(resolved.Context)
+		want := ""
+		if withTags {
+			want = "720p"
+		}
+		if facts.Rt["Resolution"] != want {
+			t.Fatalf("accepted tags=%v resolution=%q want=%q", withTags, facts.Rt["Resolution"], want)
+		}
+		if resolved.Context.Release.OriginalTitle != "Accepted title" || resolved.Context.Source.GroupName != "" {
+			t.Fatalf("current source leaked: %+v %+v", resolved.Context.Release, resolved.Context.Source)
+		}
+	}
+}
+
 func stringRepeatA(n int) string {
 	b := make([]byte, n)
 	for i := range b {

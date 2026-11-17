@@ -145,6 +145,15 @@ func TestRegistryIsStrictOnTheFullInput(t *testing.T) {
 		if s.node.Kind == KindObject {
 			for _, key := range sortedKeys(s.node.Object) {
 				key := key
+				if key == "quality" && strings.Join(s.path, "/") == "media" {
+					// New inputs omit this decode-only historical field. All of
+					// its members stay strict when a historical value is present.
+					without := rebuild(input, s.path, func(o Value) Value { delete(o.Object, key); return o })
+					if err := Validate("AcquisitionInputV1", without); err != nil {
+						t.Fatal(err)
+					}
+					continue
+				}
 				accept("missing key "+key, s.path, rebuild(input, s.path, func(o Value) Value { delete(o.Object, key); return o }))
 				checked++
 			}

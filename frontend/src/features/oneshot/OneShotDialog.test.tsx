@@ -998,7 +998,7 @@ describe("OneShotDialog 解析器与元数据", () => {
       seedGroup({
         items: [
           seedItem("seed-a", SEED_A, {
-            evaluation: { state: "evaluated", verdict: "accepted_pending_download", parsed_facts: { episode: body.draft?.business?.parser?.kind === "reltitle" ? 7 : 1, special: false } },
+            evaluation: { state: "evaluated", verdict: "accepted_pending_download", parsed_facts: { episode: body.draft?.business?.parser?.kind === "reltitle" ? 7 : 1 } },
           }),
         ],
       }),

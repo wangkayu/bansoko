@@ -22,6 +22,7 @@ func TestFileReltitleParseStaysOutOfTheReleaseNamespace(t *testing.T) {
 		Extension:    "mkv",
 		Kind:         "video",
 	}
+	ctx.FileTitleTags = ParseFileTitleTags(ctx.File)
 	resolved := DefaultRegistry().ResolveAll(ResolverInput{Facts: ctx}).Context
 	facts := UnifiedFacts(resolved)
 	if got, _ := facts.Rt.Get("Subgroup"); got != "发布组" {
@@ -53,6 +54,7 @@ func TestFileReltitleParseWithoutARelease(t *testing.T) {
 		Extension:    "mkv",
 		Kind:         "video",
 	}
+	ctx.FileTitleTags = ParseFileTitleTags(ctx.File)
 	resolved := DefaultRegistry().ResolveAll(ResolverInput{Facts: ctx}).Context
 	facts := UnifiedFacts(resolved)
 	if got, _ := facts.Rt.Get("Subgroup"); got != "" {
@@ -73,15 +75,17 @@ func TestFileReltitleParseWithoutARelease(t *testing.T) {
 	}
 }
 
-// TestFileReltitleParseFallsBackToTheOriginalName: a caller that carries only
-// the original name (with its extension) still gets the file parse.
-func TestFileReltitleParseFallsBackToTheOriginalName(t *testing.T) {
-	values := FileReltitleValues(FileNamingFacts{OriginalName: "[文件组] 进击的巨人 - 07 [1080p].mkv"})
+// TestFileReltitleParseFromTheOriginalName: a caller that carries only the
+// original name (with its extension) prepares the file parse from it, and a
+// nameless file prepares no set at all.
+func TestFileReltitleParseFromTheOriginalName(t *testing.T) {
+	set := ParseFileTitleTags(FileNamingFacts{OriginalName: "[文件组] 进击的巨人 - 07 [1080p].mkv"})
+	values := FileReltitleValuesFromTags(set)
 	if got, _ := values.Get("Subgroup"); got != "文件组" {
 		t.Fatalf("frt.group = %q, want the parse of the original name", got)
 	}
-	if values := FileReltitleValues(FileNamingFacts{}); values != nil {
-		t.Fatalf("a nameless file has no frt values, got %#v", values)
+	if set := ParseFileTitleTags(FileNamingFacts{}); set != nil {
+		t.Fatalf("a nameless file has no frt set, got %#v", set)
 	}
 }
 

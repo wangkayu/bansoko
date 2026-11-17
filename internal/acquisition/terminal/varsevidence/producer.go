@@ -10,6 +10,7 @@ import (
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	"bansoko/internal/namingvars"
+
 	"github.com/google/uuid"
 )
 

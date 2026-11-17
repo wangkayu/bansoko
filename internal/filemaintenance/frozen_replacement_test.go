@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/apperrors"
+	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/qualityprofile"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/testutil/disposabledb"
@@ -60,10 +62,11 @@ ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode = EXCLUDED.admission
 // fields, as acceptance freezes them (explicit Values win).
 func released(f Facts) Facts {
 	values := qualityprofile.NewValues()
-	values.Set(qualityprofile.KeyReleaseResolution, f.Resolution)
+	values.SourceDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	values.Set(qualityprofile.KeyRtResolution, f.Resolution)
-	values.Set(qualityprofile.KeyReleaseLang, f.Language)
-	values.Set(qualityprofile.KeyReleaseRevision, f.Revision)
+	values.Set(qualityprofile.KeyRtResolution, f.Resolution)
+	values.Set(qualityprofile.KeyRtSubLang, f.Language)
+	values.Set(qualityprofile.KeyRtRevision, f.Revision)
 	for key, list := range f.Values {
 		values.Set(key, list...)
 	}
@@ -74,6 +77,7 @@ func released(f Facts) Facts {
 // compareValuesJSON is the stored compare_values document of facts.
 func compareValuesJSON(f Facts) string {
 	values := qualityprofile.NewValues()
+	values.SourceDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	for key, list := range released(f).Values {
 		values.Set(key, list...)
 	}
@@ -95,9 +99,9 @@ func rankProfile(key string, best ...string) Profile {
 	return Profile{Version: qualityprofile.Version, Items: []qualityprofile.Item{{Key: key, Ranks: ranks}}}
 }
 
-// resolutionProfile ranks release.resolution, best first.
+// resolutionProfile ranks rt.resolution, best first.
 func resolutionProfile(best ...string) Profile {
-	return rankProfile(qualityprofile.KeyReleaseResolution, best...)
+	return rankProfile(qualityprofile.KeyRtResolution, best...)
 }
 
 // seedFilePlacement seeds the full verified release chain (release -> candidate
@@ -149,9 +153,15 @@ VALUES ($1, $2, 'custom_rss', $3, $3, $4, 'Show')`,
 			title = fmt.Sprintf("[%s] Show - 01 [1080p]", group)
 		}
 	}
+	sourceFacts, err := json.Marshal(map[string]any{
+		"title_tags": acquisitiondomain.StoredTitleTagsFromSet(reltitletags.Extract(title)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	insert(`INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, verdict, reason_code)
-VALUES ($1, $2, $3, $4::jsonb, '{}', 'discovered', 'new')`,
-		releaseID, "src-"+releaseID, "key-"+releaseID, fmt.Sprintf(`{"title":%q}`, title))
+VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'discovered', 'new')`,
+		releaseID, "src-"+releaseID, "key-"+releaseID, fmt.Sprintf(`{"title":%q}`, title), sourceFacts)
 	insert(`INSERT INTO release_candidate_facts
 (release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys,
  resolution, revision, source, language, "group", size_bytes, compare_values)
@@ -211,7 +221,7 @@ INSERT INTO replacement_decisions
 (id, idempotency_key, managed_anime_id, candidate_release_id, candidate_placement_id,
  policy_version, profile_version, subscription_version, input_digest,
  candidate_facts_ref, snapshot_generation, coverage_key, coverage_keys, admission_mode, pools, verdict, state, version, created_at, updated_at)
-VALUES ($1, $2, $3, 'release-new', $4, $5, 'profile-v1', $6, $7, 'release-new:facts', NULL,
+VALUES ($1, $2, $3, 'release-new', $4, $5, 'profile-v2', $6, $7, 'release-new:facts', NULL,
  'tv:e1', '["tv:e1"]', $8, $9::jsonb, 'replace', $10, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (idempotency_key) DO NOTHING`,
 		id, key, animeID, candidatePlacementID, policyVersion, subVersion, digest, string(mode), string(poolsRaw), state); err != nil {
@@ -410,7 +420,7 @@ func TestEvaluatePoolsUnrankedCandidateRetains(t *testing.T) {
 func TestEvaluatePoolsSubgroupScoreDecidesFirst(t *testing.T) {
 	// Real titles: ANi (1080p) vs SampleGroup (1080p). The default profile reads
 	// the subscription's subgroup score first; equal scores fall through to
-	// the other items and then to size.
+	// the other configured items, then keep the existing file.
 	profile := qualityprofile.Default()
 	candidate := released(Facts{Resolution: "1080p", Group: "ANi", Size: sizePtr(1 << 30), Score: int64Ptr(60)})
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
@@ -427,19 +437,21 @@ func TestEvaluatePoolsSubgroupScoreDecidesFirst(t *testing.T) {
 	if pools[0].Verdict != "replace" {
 		t.Fatalf("the higher subgroup score must replace despite the smaller size: %+v", pools)
 	}
-	// No score on either side: everything ties and the size decides.
+	// No score on either side: everything ties and the existing file stays.
 	candidate.Score, current[0].Facts.Score = nil, nil
 	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "retain" {
-		t.Fatalf("equal items must fall to size (current larger): %+v", pools)
+		t.Fatalf("equal items must keep existing: %+v", pools)
 	}
 	candidate.Size = sizePtr(3 << 30)
 	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
-	if pools[0].Verdict != "replace" || len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-samplegroup" {
-		t.Fatalf("equal items with a larger size must replace: %+v", pools)
+	if pools[0].Verdict != "retain" || len(pools[0].Losers) != 0 {
+		t.Fatalf("equal items must retain regardless of size: %+v", pools)
 	}
-	if last := pools[0].Steps[len(pools[0].Steps)-1]; last.Key != qualityprofile.SizeStep || last.Result != qualityprofile.StepBetter {
-		t.Fatalf("the size step must decide: %+v", pools[0].Steps)
+	for _, step := range pools[0].Steps {
+		if step.Key == "size" {
+			t.Fatal("hidden size step survived")
+		}
 	}
 	// A source without a score ranks below any scored source.
 	candidate.Size = sizePtr(1 << 30)
@@ -497,7 +509,7 @@ func openFrozenTestDB(t *testing.T) *sql.DB {
 	db := disposabledb.ResetDisposableSchema(t)
 	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
 	seedInstanceReplacement(t, db, "anime-1", ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
+		`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	return db
 }
 
@@ -686,7 +698,7 @@ func TestEvaluateServerComparesPlacedFileWithFrozenValues(t *testing.T) {
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
 SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
-WHERE managed_anime_id = 'anime-1'`, `{"version":"profile-v1","items":[{"key":"anibt.resolution","ranks":[["1080p"],["720p"]]}]}`); err != nil {
+WHERE managed_anime_id = 'anime-1'`, `{"version":"profile-v2","items":[{"key":"anibt.resolution","ranks":[["1080p"],["720p"]]}]}`); err != nil {
 		t.Fatal(err)
 	}
 	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},

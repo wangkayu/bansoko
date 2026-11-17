@@ -9,7 +9,6 @@ import (
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/release/facts"
 )
@@ -59,12 +58,10 @@ type Service struct {
 	// database directly.
 	observations GroupObservationReader
 
-	// previewMaterials caches the immutable attr rules and Vars programs a preview
-	// evaluates with, so they are not re-read for every release.
+	// previewMaterials caches the immutable Vars programs a preview evaluates
+	// with, so they are not re-read for every release.
 	previewMaterials previewMaterialCache
-	// loadAttrRulesSource and loadVarsProgramSource replace the database reads when
-	// set; they exist so the loading behaviour is testable without a database.
-	loadAttrRulesSource   func(context.Context, namingvars.ProgramRef) (attrrules.Rules, error)
+	// loadVarsProgramSource replaces the database read when set.
 	loadVarsProgramSource func(context.Context, namingvars.ProgramRef) (namingvars.Program, error)
 }
 

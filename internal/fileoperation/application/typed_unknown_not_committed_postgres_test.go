@@ -4,10 +4,11 @@ import (
 	"bansoko/internal/workitems"
 	"context"
 	"database/sql"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
 	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 func TestTypedPlanUnknownNotCommittedNeverReplays(t *testing.T) {

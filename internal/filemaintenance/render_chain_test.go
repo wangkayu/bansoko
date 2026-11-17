@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/episodeidentity"
+	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -161,10 +163,16 @@ ON CONFLICT (managed_anime_id) DO NOTHING`, spec.AnimeID+"-sub", spec.AnimeID)
 	exec(`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title)
 VALUES ($1, $2, 'custom_rss', $3, $3, $4, $5)`,
 		spec.Key+"-src", subscriptionID, "https://feeds.example.test/rss/"+spec.Key, spec.SourceGroup, spec.AnimeTitle)
+	sourceFacts, err := json.Marshal(map[string]any{
+		"title_tags": acquisitiondomain.StoredTitleTagsFromSet(reltitletags.Extract(spec.ReleaseTitle)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	exec(`INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, parsed_facts, verdict, reason_code, download_task_id, version)
-VALUES ($1, $2, $3, $4::jsonb, '{}'::jsonb, '{}'::jsonb, 'submitted', 'submitted', $5, 1)`,
+VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, '{}'::jsonb, 'submitted', 'submitted', $6, 1)`,
 		spec.Key+"-rel", spec.Key+"-src", "guid:"+spec.Key,
-		fmt.Sprintf(`{"title":%q}`, spec.ReleaseTitle), spec.Key+"-task")
+		fmt.Sprintf(`{"title":%q}`, spec.ReleaseTitle), sourceFacts, spec.Key+"-task")
 	manifest, err := json.Marshal([]any{map[string]any{"file_ref": "primary", "ordinal": 0, "relative_path": spec.DownloadName, "exact_size": spec.SizeBytes, "media_kind": "video", "identity_evidence": map[string]any{}}})
 	if err != nil {
 		t.Fatal(err)

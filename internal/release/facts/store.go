@@ -6,7 +6,7 @@ import (
 	"errors"
 
 	"bansoko/internal/persistence/txscope"
-	"bansoko/internal/release/facts/adapter/persistence/media"
+	persistence "bansoko/internal/release/facts/adapter/persistence/media"
 )
 
 // MediaRepository is the application-facing media facts port. It describes the

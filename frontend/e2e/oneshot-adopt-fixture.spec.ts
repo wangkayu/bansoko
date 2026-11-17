@@ -346,7 +346,7 @@ function unifiedView(): RSSListView {
               state: "evaluated",
               verdict: "accepted_pending_download",
               reason_code: "accepted",
-              parsed_facts: { episode: 1, group_name: GROUP, quality: "1080p", languages: ["简"], special: false },
+              parsed_facts: { episode: 1 },
             },
             files: [
               {

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/qualityprofile"
 )
 
@@ -32,10 +31,6 @@ var anibtCompareKeys = map[string]string{
 // transport.
 func (s *Service) CompareVocabularyApplication(ctx context.Context, animeID string) (map[string][]string, error) {
 	out := map[string][]string{}
-	if rules, _, err := attrrules.Current(); err == nil {
-		out[qualityprofile.KeyReleaseLang] = append([]string{}, rules.Language...)
-		out[qualityprofile.KeyReleaseResolution] = append([]string{}, rules.Resolution...)
-	}
 	if s == nil || s.replacement == nil || s.replacement.db == nil {
 		return out, nil
 	}

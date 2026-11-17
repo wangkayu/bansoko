@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"bansoko/internal/acquisition/target"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

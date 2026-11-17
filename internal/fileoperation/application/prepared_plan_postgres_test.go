@@ -11,12 +11,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func preparedPlanPGFixture(t *testing.T) (*Service, workitems.Claim) {

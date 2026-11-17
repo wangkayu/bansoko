@@ -10,9 +10,8 @@ import (
 // before and after 045: the literal form carries the outer backticks around
 // every template, the body form does not. The unknown variant of the body
 // document keeps a value that merely starts with a backtick: it was never one
-// complete literal, so the rewrite leaves it alone. The assertions run after
-// the whole remaining migration set, so the body document reads
-// `${sub.lang_tag}`: 053 later renamed the lang_bcp47 fact leaf.
+// complete literal, so the rewrite leaves it alone. The assertions run
+// immediately after 045, isolating the wrapper rewrite from later fact renames.
 var (
 	migrationNamingLiteral = `{"language":"js-naming-1",` +
 		`"tv":{"directory_template":"` + "`" + `/library/${anime.kind}/${anime.title}` + "`" + `","video_filename_template":"` + "`" + `${anime.title}.${file.ext}` + "`" + `"},` +
@@ -91,9 +90,7 @@ VALUES ($1, $2, 1, $3::jsonb,
 		}
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "045_naming_template_body.sql")
 
 	var globalMatches bool
 	var globalVersion int64

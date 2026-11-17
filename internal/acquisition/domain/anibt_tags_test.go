@@ -113,17 +113,17 @@ func TestClassifyAniBTCustomTagUsesTableCaseInsensitively(t *testing.T) {
 	}
 }
 
-func TestStoredAniBTTagsReclassifiesLegacyCustomTagsOnRead(t *testing.T) {
+func TestStoredAniBTTagsPreservesFrozenClassification(t *testing.T) {
 	var stored StoredAniBTTags
 	if err := json.Unmarshal([]byte(`{"schema":"anibt-rss-1.0","tags":["language:CHS","tag:HEVC","tag:BDRip","codec:AVC","tag:baha"]}`), &stored); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"language:CHS", "codec:HEVC", "tag:BDRip", "codec:AVC", "platform:baha"}
+	want := []string{"language:CHS", "tag:HEVC", "tag:BDRip", "codec:AVC", "tag:baha"}
 	if !reflect.DeepEqual(stored.Tags, want) || stored.Schema != AniBTTagSchemaV1 {
 		t.Fatalf("stored = %#v", stored)
 	}
 	_, anibt, err := DecodeSourceFactTagSets([]byte(`{"anibt":{"tags":["tag:10bit"]}}`))
-	if err != nil || anibt == nil || !reflect.DeepEqual(anibt.Tags, []string{"bitdepth:10bit"}) {
+	if err != nil || anibt == nil || !reflect.DeepEqual(anibt.Tags, []string{"tag:10bit"}) {
 		t.Fatalf("decoded = %#v, %v", anibt, err)
 	}
 }

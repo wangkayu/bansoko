@@ -40,7 +40,7 @@ func (c fixedCollision) EffectiveCollisionPolicy(context.Context, string) (strin
 	return string(c), nil
 }
 
-const offsetFixtureProfile = `{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`
+const offsetFixtureProfile = `{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`
 
 func newOffsetFixture(t *testing.T, mode AdmissionMode, collision domain.CollisionPolicy) *offsetFixture {
 	t.Helper()

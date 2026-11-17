@@ -42,21 +42,10 @@ func FileReltitleValuesFromTags(set *acquisitiondomain.TitleTagSet) templatefact
 	return templatefacts.ReltitleValues(set)
 }
 
-// FileReltitleValues is the reltitle parse of the file's own name, projected
-// onto the frt namespace. It reads only the file stem, never the release
-// title; a render without a file name has no frt values. The projection is
-// deliberately separate from rt.*: the release parse is never copied into the
-// file namespace and the file parse never into rt.*, so a template always
-// names the source it wants. Operation preparation freezes one set and
-// leaves it on NamingContext.FileTitleTags; this helper parses on demand for
-// the paths that have no prepared set.
-func FileReltitleValues(file FileNamingFacts) templatefacts.Values {
-	return FileReltitleValuesFromTags(ParseFileTitleTags(file))
-}
-
 // UnifiedFacts projects a resolved naming context onto the unified fact set
 // the naming language renders. It reads only values the context already
-// carries (the frozen facts plus the resolver outputs).
+// carries (the frozen facts, the explicitly prepared file title parse and the
+// resolver outputs); it never parses a name itself.
 func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 	title, titleSource := templatefacts.EffectiveTitle(templatefacts.TitleCandidates{
 		Override: ctx.Anime.TitleOverride, Provider: ctx.Anime.ProviderTitle,
@@ -73,7 +62,7 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 	}
 	episode := ctx.Parsed.Episode
 	resolved := strings.TrimSpace(episode.Display) != "" || strings.TrimSpace(episode.Raw) != ""
-	ep := templatefacts.EpFacts{Raw: episode.Raw, Display: episode.Display, Offset: templatefacts.Int64(int64(episode.Offset)), Kind: episode.SpecialKind}
+	ep := templatefacts.EpFacts{Raw: episode.Raw, Display: episode.Display, Offset: templatefacts.Int64(int64(episode.Offset))}
 	if resolved {
 		ep.Number = episode.Display
 		if frozen := ctx.Release.FrozenEpisode; frozen != nil && strings.TrimSpace(frozen.Number) != "" {
@@ -101,13 +90,11 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 			anibt[key] = value
 		}
 	}
-	// The prepared set is the operation's one parse; without one (naming
-	// preview, maintenance replay) the projection parses the rendered file
-	// name. A set is never rebuilt from the release namespace.
+	// The prepared set is the operation's one parse; a context without one
+	// (naming preview, maintenance replay) prepares it explicitly before the
+	// render. A set is never rebuilt here and never from the release
+	// namespace.
 	fileRt := FileReltitleValuesFromTags(ctx.FileTitleTags)
-	if ctx.FileTitleTags == nil {
-		fileRt = FileReltitleValues(ctx.File)
-	}
 	return templatefacts.FactSet{
 		Anime: templatefacts.AnimeFacts{
 			ID: ctx.Anime.ID, Title: title, TitleSource: titleSource, TitleOverride: ctx.Anime.TitleOverride, ProviderTitle: ctx.Anime.ProviderTitle, TitleBase: ctx.Anime.Title,

@@ -9,7 +9,6 @@ import (
 	anime "bansoko/internal/anime/domain"
 	draft "bansoko/internal/anime/draft/application"
 	"bansoko/internal/anime/metadatabinding"
-	"bansoko/internal/attrrules"
 	catalogdb "bansoko/internal/catalog/adapter/persistence"
 	catalogreader "bansoko/internal/catalog/application"
 	"bansoko/internal/namingvars"
@@ -200,15 +199,6 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 	}
 	if err := captureWorkTitlesTx(ctx, tx, &m); err != nil {
 		return admissionCapture{}, materialError("metadata", err)
-	}
-	ref := m.config.business.Programs.AttrRules
-	m.programs.attr, err = attrrules.LoadExact(ctx, ref.Version, ref.Digest, func(ctx context.Context, fp string) ([]byte, error) {
-		var raw []byte
-		err := tx.QueryRowContext(ctx, `SELECT content FROM attr_rule_versions WHERE fingerprint=$1`, fp).Scan(&raw)
-		return raw, err
-	})
-	if err != nil {
-		return admissionCapture{}, materialError("programs", err)
 	}
 	// Load and validate the exact Vars source from this same transaction.
 	if err := tx.QueryRowContext(ctx, `SELECT content #>> '{}' FROM naming_vars_versions WHERE fingerprint=$1`, m.config.business.Programs.Vars.Digest).Scan(&m.programs.varsSource); err != nil {

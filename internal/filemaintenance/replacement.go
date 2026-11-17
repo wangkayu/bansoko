@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"bansoko/internal/qualityprofile"
+	releasefacts "bansoko/internal/release/facts"
 )
 
 // Facts are the comparable facts of one candidate/placement: the release
@@ -17,27 +18,48 @@ import (
 // subgroup.score looks up), the subscription's score for that source
 // (resolved per evaluation), and the release-level size.
 type Facts struct {
-	Revision   string                         `json:"revision,omitempty"`
-	Resolution string                         `json:"resolution,omitempty"`
-	Source     string                         `json:"source,omitempty"`
-	Language   string                         `json:"language,omitempty"`
-	Group      string                         `json:"group,omitempty"`
-	Size       *int64                         `json:"size_bytes,omitempty"`
-	Values     map[string][]string            `json:"values,omitempty"`
-	Subgroup   *qualityprofile.SubgroupSource `json:"subgroup,omitempty"`
-	Score      *int64                         `json:"score,omitempty"`
+	SourceDigest string                         `json:"source_digest,omitempty"`
+	Revision     string                         `json:"revision,omitempty"`
+	Resolution   string                         `json:"resolution,omitempty"`
+	Source       string                         `json:"source,omitempty"`
+	Language     string                         `json:"language,omitempty"`
+	Group        string                         `json:"group,omitempty"`
+	Size         *int64                         `json:"size_bytes,omitempty"`
+	Values       map[string][]string            `json:"values,omitempty"`
+	Subgroup     *qualityprofile.SubgroupSource `json:"subgroup,omitempty"`
+	Score        *int64                         `json:"score,omitempty"`
 }
 
 func (f Facts) subject() qualityprofile.Subject {
-	return qualityprofile.Subject{Values: f.Values, Score: f.Score, Size: f.Size}
+	return qualityprofile.Subject{Values: f.Values, Score: f.Score}
 }
 
 // withFrozenValues attaches a release's stored compare_values document.
-func (f Facts) withFrozenValues(raw []byte) Facts {
-	values := qualityprofile.ParseValues(raw)
+func (f Facts) withFrozenValues(raw []byte) (Facts, error) {
+	values, err := qualityprofile.ParseValues(raw)
+	if err != nil {
+		return Facts{}, err
+	}
+	f.SourceDigest = values.SourceDigest
 	f.Values = values.Values
 	f.Subgroup = values.Subgroup
-	return f
+	return f, nil
+}
+
+// withCurrentComparison reads a valid v2 cache, or explicitly rebuilds an old
+// or malformed cache from the release's frozen native tags and stable source
+// identity. It never treats a legacy {} document as an empty evidence set and
+// never reparses the release title. The candidate-facts row stays immutable;
+// current candidate writes append a new version through EnsureCurrentProfile.
+func (f Facts) withCurrentComparison(raw []byte, source releasefacts.CompareSource) (Facts, error) {
+	if current, err := f.withFrozenValues(raw); err == nil {
+		return current, nil
+	}
+	projected, err := releasefacts.CompareValues(source)
+	if err != nil {
+		return Facts{}, fmt.Errorf("rebuild comparison values from source evidence: %w", err)
+	}
+	return f.withFrozenValues(projected)
 }
 
 // poolGroup is the stable group identity per_group pools by: the frozen
@@ -70,7 +92,7 @@ func (f Facts) scored(scores SubgroupScores) Facts {
 type Profile = qualityprofile.Profile
 
 // ParseProfile decodes a stored policy profile; a stored profile that is not
-// a valid profile-v1 fails the evaluation closed.
+// a valid profile-v2 fails the evaluation closed.
 func ParseProfile(raw json.RawMessage) (Profile, error) {
 	profile, err := qualityprofile.Parse(raw)
 	if err != nil {
@@ -89,8 +111,8 @@ func profileForMode(mode AdmissionMode, profile Profile) Profile {
 }
 
 // Comparison is one comparison verdict with its per-step evidence: Better
-// when the candidate wins an item or, all items equal, on a strictly larger
-// size; Equal when nothing decides (the caller keeps the existing file).
+// when the candidate wins a configured item; Equal when nothing decides
+// (the caller keeps the existing file).
 type Comparison struct {
 	Better  bool                  `json:"better"`
 	Equal   bool                  `json:"equal"`
@@ -100,7 +122,7 @@ type Comparison struct {
 }
 
 // Compare compares the candidate with one current file item by item
-// (qualityprofile.Compare): the first differing item decides, then size, then
+// (qualityprofile.Compare): the first differing item decides; otherwise
 // the existing file stays.
 func Compare(candidate, current Facts, profile Profile) Comparison {
 	result := qualityprofile.Compare(candidate.subject(), current.subject(), profile)

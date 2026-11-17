@@ -69,7 +69,10 @@ JOIN releases r ON r.id = f.release_id
 WHERE r.rss_source_id = $1 AND r.source_facts->>'identity_value' = $2`, sourceID, guid).Scan(&raw); err != nil {
 			t.Fatalf("read compare values of %s: %v", guid, err)
 		}
-		values := qualityprofile.ParseValues(raw)
+		values, err := qualityprofile.ParseValues(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if values.Version != qualityprofile.ValuesVersion {
 			t.Fatalf("%s compare values = %s", guid, raw)
 		}

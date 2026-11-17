@@ -16,7 +16,6 @@ import (
 	"bansoko/internal/agentguide"
 	animedomain "bansoko/internal/anime/domain"
 	animetransport "bansoko/internal/anime/transport"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/transport/mcp"
@@ -374,11 +373,10 @@ func guideBusinessPreset(t *testing.T) animedomain.BusinessSnapshot {
 	}
 	preset.Parser = animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 1}
 	preset.Replacement = animedomain.ReplacementValue{AdmissionMode: "all",
-		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
+		QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"subgroup.score","ranks":[]},{"key":"rt.sub_lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"rt.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"rt.revision","ranks":[]}]}`)}
 	preset.UnclassifiedRoute = "skip"
 	preset.Programs = animedomain.ProgramReferences{
-		Vars:      namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
-		AttrRules: namingvars.ProgramRef{Version: attrrules.ProfileVersion("sha256:attr"), Digest: "sha256:attr"},
+		Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
 	}
 	return preset
 }

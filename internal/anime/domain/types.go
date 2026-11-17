@@ -293,12 +293,8 @@ type RawReleaseFacts struct {
 type ParsedReleaseFacts struct {
 	// Coverage is the batch plan's placeable episodes when the release places
 	// more than one; Episode is set only when it places exactly one.
-	Coverage  *ReleaseCoverage `json:"coverage,omitempty"`
-	Episode   *float32         `json:"episode,omitempty"`
-	GroupName *string          `json:"group_name,omitempty"`
-	Languages *[]string        `json:"languages,omitempty"`
-	Quality   *string          `json:"quality,omitempty"`
-	Special   *bool            `json:"special,omitempty"`
+	Coverage *ReleaseCoverage `json:"coverage,omitempty"`
+	Episode  *float32         `json:"episode,omitempty"`
 }
 
 // ReleaseCoverage is the sorted episode numbers a batch release places

@@ -114,8 +114,8 @@ func TestNamingCatalogCompleteness(t *testing.T) {
 	if !refs["sample-tv"] || !refs["sample-movie"] || !refs["sample-tv-subtitle"] {
 		t.Errorf("unexpected sample refs: %+v", catalog.Samples)
 	}
-	if len(catalog.Functions) != 20 {
-		t.Fatalf("function count = %d, want 20", len(catalog.Functions))
+	if len(catalog.Functions) != len(naming.GenerateCatalogDocument().Functions) {
+		t.Fatalf("function count = %d, want %d", len(catalog.Functions), len(naming.GenerateCatalogDocument().Functions))
 	}
 	for _, function := range catalog.Functions {
 		if function.Signature == "" || function.Description == "" {

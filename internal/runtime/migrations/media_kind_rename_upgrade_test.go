@@ -67,9 +67,7 @@ WHERE candidate_id = 'mk-cand' AND revision = 1`)
 VALUES ('metadata_match', 'mk-key', $1, 'mk-1',
         '{"metadata":{"media_kind_override":"movie","version":2}}'::jsonb)`, sha256Fixture("e"))
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "100_media_kind_rename.sql")
 
 	// Column and constraint.
 	var kind string

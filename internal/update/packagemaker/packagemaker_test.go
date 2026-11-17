@@ -51,7 +51,6 @@ func buildFixture(t *testing.T) Options {
 	writePlain(t, distDir, "assets/app.js", "console.log(1)")
 	writePlain(t, migDir, "001_init.sql", "CREATE TABLE a();")
 	writePlain(t, migDir, "010_more.sql", "ALTER TABLE a ADD b int;")
-	writePlain(t, defaultsDir, "attr-rules.yaml", "version: 1\nresolution: [1080p]\nquality: [web]\nlanguage: [ja]\nspecial_markers: [hdr]\ngroup_brackets: ['[', ']']\n")
 	writePlain(t, defaultsDir, "naming-vars.js", "vars.anime = {ep: '1'};\n")
 	return Options{
 		ServerBinaryPath: server,
@@ -177,7 +176,7 @@ func TestArchiveShapeAndMetadata(t *testing.T) {
 	}
 	for _, want := range []string{ServerEntryPath,
 		"db/migrations/001_init.sql", "db/migrations/010_more.sql",
-		"deployment/defaults/attr-rules.yaml", "deployment/defaults/naming-vars.js",
+		"deployment/defaults/naming-vars.js",
 		"frontend/dist/index.html", "frontend/dist/assets/app.js"} {
 		if _, ok := fileSet[want]; !ok {
 			t.Fatalf("file manifest missing %s (entries: %v)", want, names)

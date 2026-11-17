@@ -44,9 +44,9 @@ func TestCompiledTemplateRenderFailureIsCarriedPerFile(t *testing.T) {
 		TorrentFilename: "Preview Show - 03.mkv",
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
-	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), testRules(), tvEpisodeIdentity(t, "3"))
+	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "3"))
 	release.FrozenVars = explicitTestFrozenVars()
-	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", source, testRules(), "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
+	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
 	if outcome.RenderedTarget != nil {
 		t.Fatalf("a throwing template must not produce a target: %+v", outcome)
 	}
@@ -82,9 +82,9 @@ func TestPreviewRefusesOnlyAnInvalidRenderedName(t *testing.T) {
 		TorrentFilename: "Preview Show - 03.mkv",
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
-	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), testRules(), tvEpisodeIdentity(t, "3"))
+	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "3"))
 	release.FrozenVars = explicitTestFrozenVars()
-	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", source, testRules(), "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
+	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
 	if outcome.RenderedTarget != nil {
 		t.Fatalf("a template needing absent work ids must not produce a target: %q", *outcome.RenderedTarget)
 	}
@@ -100,7 +100,7 @@ func TestPreviewRefusesOnlyAnInvalidRenderedName(t *testing.T) {
 		t.Fatalf("the refusal lists every undefined variable: %+v", outcome.EmptyFacts)
 	}
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${anime.title_override}-${tmdb.id}.${file.ext}"
-	outcome = renderPreviewFileForName(item, release, effective, "Preview Show", source, testRules(), "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
+	outcome = renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
 	if outcome.RenderedTarget == nil || *outcome.RenderedTarget != "/media/TV/Preview Show (2025)/Season 01/-1.mkv" || strings.Join(outcome.EmptyFacts, ",") != "anime.title_override" {
 		t.Fatalf("one empty value = %+v", outcome)
 	}

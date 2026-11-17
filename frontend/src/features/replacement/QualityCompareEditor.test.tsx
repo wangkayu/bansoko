@@ -11,7 +11,7 @@ import { QualityCompareEditor } from "./QualityCompareEditor";
 import { compareItemName } from "./compareCopy";
 
 const initial: QualityProfile = {
-  version: "profile-v1",
+  version: "profile-v2",
   items: [
     { key: "subgroup.score", ranks: [] },
     { key: "anibt.language", ranks: [["CHS"]] },
@@ -119,7 +119,7 @@ describe("QualityCompareEditor", () => {
     await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
     const menu = await screen.findByRole("menu");
     const offered = within(menu).getAllByRole("menuitem").map((item) => item.textContent);
-    expect(offered).toContain(compareItemName("release.lang"));
+    expect(offered).toContain(compareItemName("rt.revision"));
     expect(offered).toContain(compareItemName("rt.sub_lang"));
     expect(offered).not.toContain(compareItemName("anibt.language"));
     await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.sub_lang") }));
@@ -177,7 +177,7 @@ describe("QualityCompareEditor", () => {
   });
 
   it("offers the AniBT presets as candidates when no value has been seen", async () => {
-    renderWithQuery(<Harness start={{ version: "profile-v1", items: [{ key: "anibt.resolution", ranks: [] }] }} />);
+    renderWithQuery(<Harness start={{ version: "profile-v2", items: [{ key: "anibt.resolution", ranks: [] }] }} />);
     await waitFor(() => expect(vocabularyURLs.length).toBeGreaterThan(0));
     const input = screen.getByLabelText(t("qualityCompare.valueAria", { item: compareItemName("anibt.resolution") }));
     const options = Array.from(document.getElementById(input.getAttribute("list") ?? "")?.querySelectorAll("option") ?? []).map((option) => option.getAttribute("value"));

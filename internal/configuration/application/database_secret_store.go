@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"bansoko/internal/persistence/txscope"
+
 	"github.com/google/uuid"
 )
 

@@ -14,6 +14,7 @@ import (
 
 	"bansoko/internal/catalog/domain"
 	"bansoko/internal/events"
+
 	"github.com/google/uuid"
 )
 

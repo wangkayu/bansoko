@@ -102,7 +102,7 @@ func TestMapFileMaintenanceOverviewViewMapsReplacementAndPreservesShapes(t *test
 	global := filemaintenance.ReplacementPolicyDefaultView{
 		Policy: filemaintenance.ReplacementPolicy{
 			AdmissionMode:  filemaintenance.ModeAll,
-			QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"anibt.format","ranks":[["MKV"]]}]}`),
+			QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"anibt.format","ranks":[["MKV"]]}]}`),
 		},
 		UpdatedAt: &now,
 		Version:   3,

@@ -60,9 +60,7 @@ VALUES ($1, $2, 1, $3::jsonb,
 		}
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "094_rt_sub_lang_combined_defaults.sql")
 
 	var globalOK bool
 	var globalVersion int64
@@ -103,9 +101,7 @@ UPDATE global_config_sections
  WHERE section_name = 'replacement'`, edited); err != nil {
 		t.Fatalf("seed global: %v", err)
 	}
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "094_rt_sub_lang_combined_defaults.sql")
 	var same bool
 	var version int64
 	if err := db.QueryRowContext(ctx, `SELECT value->'quality_profile' = $1::jsonb, version FROM global_config_sections WHERE section_name = 'replacement'`, edited).Scan(&same, &version); err != nil {

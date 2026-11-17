@@ -14,7 +14,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-const profile = { version: "profile-v1", items: [{ key: "subgroup.score", ranks: [] }, { key: "release.resolution", ranks: [["1080p"], ["720p"]] }] };
+const profile = { version: "profile-v2", items: [{ key: "subgroup.score", ranks: [] }, { key: "rt.resolution", ranks: [["1080p"], ["720p"]] }] };
 let stored: { admission_mode: string; quality_profile: unknown; version: number };
 let puts: Record<string, unknown>[];
 let putUrls: string[];
@@ -69,7 +69,7 @@ function renderSection(props: { readOnly?: boolean } = {}) {
 }
 
 const unsavedCount = () => screen.getByTestId("unsaved-count").textContent;
-const moveUp = () => screen.findByRole("button", { name: t("qualityCompare.moveUp", { item: compareItemName("release.resolution") }) });
+const moveUp = () => screen.findByRole("button", { name: t("qualityCompare.moveUp", { item: compareItemName("rt.resolution") }) });
 const modeSelect = () => screen.findByRole("combobox", { name: t("replacement.admissionTitle") });
 
 describe("ReplacementPolicySection", () => {
@@ -91,7 +91,7 @@ describe("ReplacementPolicySection", () => {
     expect(puts[0]).toMatchObject({
       expected_version: 4,
       admission_mode: "per_group",
-      quality_profile: { items: [{ key: "release.resolution" }, { key: "subgroup.score" }] },
+      quality_profile: { items: [{ key: "rt.resolution" }, { key: "subgroup.score" }] },
     });
     await waitFor(() => expect(unsavedCount()).toBe("0"));
   });
@@ -107,7 +107,7 @@ describe("ReplacementPolicySection", () => {
     await userEvent.click(screen.getByRole("combobox", { name: t("replacement.admissionTitle") }));
     await userEvent.click(await screen.findByRole("option", { name: t("replacement.admission.single_copy") }));
     const items = within(screen.getByRole("list", { name: t("qualityCompare.listAria") })).getAllByRole("listitem", { hidden: false });
-    expect(items[0]).toHaveTextContent(t("qualityCompare.item.release_resolution"));
+    expect(items[0]).toHaveTextContent(t("qualityCompare.item.rt_resolution"));
   });
 
   it("shows a conflict note and keeps the local edit", async () => {

@@ -642,7 +642,6 @@ func TestAuthenticationRequiredAndErrorShape(t *testing.T) {
 }
 
 func TestSubscribePreviewWorkspaceOverHTTP(t *testing.T) {
-	ensureTestAttrRules(t)
 	rig := newTestRig(t, "development", true)
 
 	// Missing idempotency key is rejected at the generated parameter boundary.

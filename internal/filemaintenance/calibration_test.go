@@ -483,7 +483,7 @@ func TestStoppedGenerationAlignmentRunsReplacementZero(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-fan-1", "sub-1", "stopped")
 	seedInstanceReplacement(t, fixture.db, "anime-fan-1", ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
+		`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
 	enableAlignment(t, fixture.db, "anime-fan-1")
 	seedCompletedGeneration(t, fixture.db, "anime-fan-1", 1, map[string]string{
 		// Target renderer is absent (planner nil) in this fixture, so the
@@ -671,7 +671,7 @@ VALUES ('plc-old', '/library/Old/EP01.mkv', 'anime-unsub-2', 'reconciliation', '
 INSERT INTO replacement_decisions
 (id, idempotency_key, managed_anime_id, candidate_release_id, candidate_placement_id, policy_version,
  profile_version, subscription_version, candidate_facts_ref, coverage_key, coverage_keys, admission_mode, pools, verdict, state, version, created_at, updated_at)
-VALUES ('dec-settled', 'repl:anime-unsub-2:x', 'anime-unsub-2', 'rel-1', 'plc-new', 1, 'profile-v1', 1,
+VALUES ('dec-settled', 'repl:anime-unsub-2:x', 'anime-unsub-2', 'rel-1', 'plc-new', 1, 'profile-v2', 1,
  'rel-1:1', 'tv:e1', '["tv:e1"]', 'single_copy', '[]', 'replace', 'settled', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +745,7 @@ func TestResumeCreatesFreshEpochFromLatestFacts(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-resume-1", "sub-1", "active")
 	seedInstanceReplacement(t, fixture.db, "anime-resume-1", ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
+		`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
 	// Release-backed verified placement: the evaluate candidate chain.
 	seedFilePlacement(t, fixture.db, "anime-resume-1", "sub-1", "release-r1",
 		[]string{"tv:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")

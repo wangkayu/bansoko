@@ -66,26 +66,26 @@ func TestEvaluateFeedItemAppliesAniBTRowBeforeReleaseFilter(t *testing.T) {
 		return config
 	}
 	item := anibtItem("language:CHT")
-	both := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHS"}, Exclude: []string{}}, "720p"), MetadataHold{}, testRules(), identity)
+	both := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHS"}, Exclude: []string{}}, "720p"), MetadataHold{}, identity)
 	if both.Verdict != "filtered" || both.ReasonCode != ReasonAniBTTagWhitelistUnmet || both.ReasonDetail == nil || *both.ReasonDetail != "missing: language:CHS" {
 		t.Fatalf("tag row must decide first: %+v", both)
 	}
-	regexOnly := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHT"}, Exclude: []string{}}, "720p"), MetadataHold{}, testRules(), identity)
+	regexOnly := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHT"}, Exclude: []string{}}, "720p"), MetadataHold{}, identity)
 	if regexOnly.Verdict != "filtered" || regexOnly.ReasonCode != "filtered_by_rules" {
 		t.Fatalf("regex filter must still apply after a passing tag row: %+v", regexOnly)
 	}
-	accepted := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{}, Exclude: []string{"language:CHS"}}, ""), MetadataHold{}, testRules(), identity)
+	accepted := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{}, Exclude: []string{"language:CHS"}}, ""), MetadataHold{}, identity)
 	if accepted.Verdict != "accepted_pending_download" {
 		t.Fatalf("passing both rows must accept: %+v", accepted)
 	}
 	// A non-AniBT release ignores the tag row entirely.
 	mikan := acquisitiondomain.FeedItem{Title: item.Title, Provider: "mikan"}
-	plain := EvaluateFeedItemWithIdentity(mikan, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHS"}, Exclude: []string{}}, ""), MetadataHold{}, testRules(), identity)
+	plain := EvaluateFeedItemWithIdentity(mikan, SourceEvaluationInput{}, effective(TagFilterRow{Require: []string{"language:CHS"}, Exclude: []string{}}, ""), MetadataHold{}, identity)
 	if plain.Verdict != "accepted_pending_download" {
 		t.Fatalf("mikan release must not be tag-filtered: %+v", plain)
 	}
 	// The zero EffectiveConfig (frozen paths) filters nothing.
-	zero := EvaluateFeedItemWithIdentity(anibtItem(), SourceEvaluationInput{}, EffectiveConfig{}, MetadataHold{}, testRules(), identity)
+	zero := EvaluateFeedItemWithIdentity(anibtItem(), SourceEvaluationInput{}, EffectiveConfig{}, MetadataHold{}, identity)
 	if zero.Verdict != "accepted_pending_download" {
 		t.Fatalf("zero config must not tag-filter: %+v", zero)
 	}

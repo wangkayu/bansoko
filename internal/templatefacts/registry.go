@@ -606,11 +606,8 @@ var systemFacts = []Fact{
 		Text{"集数偏移", "Episode offset"}, Text{"生效的集数偏移。", "Episode offset in effect."},
 		int64(0), func(f *FactSet) any { return f.Ep.Offset }).hideIn(ScenarioNaming),
 	fact("ep.source", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
-		Text{"集数来源", "Episode source"}, Text{"集数取自哪份证据：file_parser 为文件解析，release_parser 为发布标题解析，anibt 为来源站点标签，movie 为剧场版，manual 为手动匹配。", "Which evidence supplied the episode: file_parser, release_parser, anibt, movie, or manual for a manual match."},
+		Text{"集数来源", "Episode source"}, Text{"集数取自哪份证据：file_parser 为文件解析，release_parser 为发布标题解析，movie 为剧场版，manual 为手动匹配。", "Which evidence supplied the episode: file_parser, release_parser, movie, or manual for a manual match."},
 		"release_parser", func(f *FactSet) any { return f.Ep.Source }).derived().hideIn(ScenarioNaming),
-	fact("ep.kind", TypeString, PhaseRelease, ScenarioNaming, ScenarioNaming,
-		Text{"特别篇类型", "Special kind"}, Text{"正片为空；ncop、nced 或 special。由发布标题里的关键词判定，不是解析器给出的集数身份证据。", "Empty for a regular episode; ncop, nced or special. Decided by a keyword in the release title, not parser episode-identity evidence."},
-		"special", func(f *FactSet) any { return f.Ep.Kind }).derived(),
 
 	// torrent
 	fact("torrent.name", TypeString, PhaseRelease, ScenarioDownloadSubmitted, ScenarioDownloadSubmitted,

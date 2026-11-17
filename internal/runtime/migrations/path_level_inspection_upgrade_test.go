@@ -69,9 +69,7 @@ func TestPathLevelInspectionUpgradeRewritesStoredFingerprints(t *testing.T) {
 		 VALUES ('cmp-`+tag+`', 'plc-`+tag+`', 'anime-`+tag+`', 'src-`+tag+`', 'intake', 'subtitle', 'chs', 'ass', '/library/ep.chs.ass', 5, '`+hexC+`')`,
 	)
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "102_path_level_inspection.sql")
 
 	videoFingerprint := `{"algorithm":"metadata","value":"meta:size=100","size_bytes":100}`
 	rewriteExpect(t, db, "upgrade", "artifact files carry the size-only metadata fingerprint of their row",

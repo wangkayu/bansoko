@@ -8,11 +8,12 @@ import (
 	"sort"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	"bansoko/internal/parser"
+	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/release/facts"
 	rssapplication "bansoko/internal/rss/application"
+	"bansoko/internal/templatefacts"
 )
 
 // fileEpisodeParser reads the episode badge of one release filename. It is
@@ -415,17 +416,19 @@ func (s *Service) projectReleaseFiles(files []releaseInternalFile, rows []facts.
 			result = append(result, projected)
 			continue
 		}
-		releaseRules, _, err := attrrules.Current()
-		if err != nil {
-			return nil
-		}
-		display := acquisitiondomain.ParseFileDisplayFacts(file.Filename, releaseRules)
+		tags := naming.ParseFileTitleTags(naming.FileNamingFacts{OriginalName: file.Filename})
+		display := templatefacts.ReltitleValues(tags)
 		if episodes != nil {
 			projected.Episode = optionalWorkspaceString(episodes(file.Filename))
 		}
-		projected.Resolution = optionalWorkspaceString(display.Resolution)
-		projected.Revision = optionalWorkspaceString(display.Revision)
-		projected.Language = optionalWorkspaceString(display.Language)
+		projected.Resolution = optionalWorkspaceString(display["Resolution"])
+		projected.Revision = optionalWorkspaceString(display["Version"])
+		if language, ok := display["SubLang"]; ok {
+			languages := templatefacts.SplitValues(language)
+			if len(languages) > 0 {
+				projected.Language = optionalWorkspaceString(languages[0])
+			}
+		}
 		result = append(result, projected)
 	}
 	return &result

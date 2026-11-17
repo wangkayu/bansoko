@@ -6,9 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func verifyReceiptStage3(t *testing.T, ctx context.Context, db *sql.DB, permit string) {

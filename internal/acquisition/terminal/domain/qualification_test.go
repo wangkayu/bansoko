@@ -7,7 +7,7 @@ import (
 
 func qualificationFixture() string {
 	d := `"sha256:` + strings.Repeat("a", 64) + `"`
-	return `{"config":{"kind":"submitted","request_hash":` + d + `,"config_digest":` + d + `},"management":{"kind":"none"},"source":{"kind":"seed","seed_identity_digest":` + d + `},"observation":null,"feed":null,"programs":{"attr_fingerprint":` + d + `,"vars_digest":null,"translation":null},"placement":{"kind":"none"}}`
+	return `{"config":{"kind":"submitted","request_hash":` + d + `,"config_digest":` + d + `},"management":{"kind":"none"},"source":{"kind":"seed","seed_identity_digest":` + d + `},"observation":null,"feed":null,"programs":{"vars_digest":null,"translation":null},"placement":{"kind":"none"}}`
 }
 func TestQualificationClosedRegistry(t *testing.T) {
 	raw := qualificationFixture()

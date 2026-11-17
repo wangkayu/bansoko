@@ -24,19 +24,8 @@ type StoredAniBTTags struct {
 	Diagnostic string   `json:"diagnostic,omitempty"`
 }
 
-// UnmarshalJSON reads a stored block and reclassifies customTag values frozen
-// as "tag:<value>" before the classification table existed, so every reader
-// of a persisted set sees the current dimensions.
-func (s *StoredAniBTTags) UnmarshalJSON(data []byte) error {
-	type plain StoredAniBTTags
-	var decoded plain
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	decoded.Tags = ReclassifyAniBTTags(decoded.Tags)
-	*s = StoredAniBTTags(decoded)
-	return nil
-}
+// Stored values are evidence, not new acquisition input. Decoding must not
+// reclassify legacy custom tags using today's classification table.
 
 // StoredTitleTagsFromSet is the persisted shape of a title tag set.
 func StoredTitleTagsFromSet(set TitleTagSet) *StoredTitleTags {

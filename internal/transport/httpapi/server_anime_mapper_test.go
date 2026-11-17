@@ -127,7 +127,6 @@ func TestMapAnimeWorkspacePreservesOwnerProjectionAndIsolation(t *testing.T) {
 	totalEpisodes := 12
 	episode := float32(3)
 	quality := "1080p"
-	special := false
 	language := "jpn"
 	filePath := "file.mkv"
 	fileRef := "video-1"
@@ -156,7 +155,7 @@ func TestMapAnimeWorkspacePreservesOwnerProjectionAndIsolation(t *testing.T) {
 		ManagedAnime:       animeapplication.ManagedAnime{ID: "anime-1", Title: "Title", TitleOverride: &titleOverride, Version: 7},
 		Metadata:           animeapplication.AnimeMetadata{ManagedAnimeID: "anime-1", BGM: &animeapplication.BGMBinding{WorkID: "bgm-1"}, TMDB: &animeapplication.TMDBBinding{WorkID: "tmdb-1", MediaKind: "tv", Season: 1}, TitleOverride: &titleOverride, TotalEpisodes: &totalEpisodes, Version: 8},
 		MetadataHold:       animeapplication.MetadataHold{Held: true, Missing: []string{"tmdb"}},
-		Releases:           []readmodelapplication.Release{{ID: "release-1", RSSSourceID: "source-1", StableItemKey: "stable-1", ReasonCode: "accepted", ReasonDetail: &reason, EvaluationVersion: &evalVersion, DownloadTaskID: &workItem, Verdict: "submitted", Version: 9, RawFacts: readmodelapplication.RawReleaseFacts{Title: "Episode", EnclosureLength: &observedSize}, SourceFacts: readmodelapplication.SourceFacts{IdentityKind: "guid", IdentityValue: "guid-1"}, ParsedFacts: &readmodelapplication.ReleaseParsedFacts{Episode: &episode, GroupName: &reason, Languages: &[]string{language}, Quality: &quality, Special: &special}, ReleaseFiles: &[]readmodelapplication.ReleaseFile{{Filename: "Episode.mkv", Path: filePath, MediaKind: "video", Episode: &reason, Language: &language, Resolution: &quality, SizeBytes: &observedSize}}, AcquisitionTargets: targets, TargetObservations: &[]readmodelapplication.TargetObservation{{TargetID: "target-1", State: "present_matched", ObservedAt: occurred, ObservedSizeBytes: &observedSize, ReasonCode: &reason, Version: 2}}}},
+		Releases:           []readmodelapplication.Release{{ID: "release-1", RSSSourceID: "source-1", StableItemKey: "stable-1", ReasonCode: "accepted", ReasonDetail: &reason, EvaluationVersion: &evalVersion, DownloadTaskID: &workItem, Verdict: "submitted", Version: 9, RawFacts: readmodelapplication.RawReleaseFacts{Title: "Episode", EnclosureLength: &observedSize}, SourceFacts: readmodelapplication.SourceFacts{IdentityKind: "guid", IdentityValue: "guid-1"}, ParsedFacts: &readmodelapplication.ReleaseParsedFacts{Episode: &episode, Coverage: &readmodelapplication.ReleaseCoverage{Episodes: []int{1}}}, ReleaseFiles: &[]readmodelapplication.ReleaseFile{{Filename: "Episode.mkv", Path: filePath, MediaKind: "video", Episode: &reason, Language: &language, Resolution: &quality, SizeBytes: &observedSize}}, AcquisitionTargets: targets, TargetObservations: &[]readmodelapplication.TargetObservation{{TargetID: "target-1", State: "present_matched", ObservedAt: occurred, ObservedSizeBytes: &observedSize, ReasonCode: &reason, Version: 2}}}},
 		RSSSourceRuntimes:  []animeapplication.RSSSourceRuntime{{RSSSourceID: "source-1", Health: "ready", Cursor: &animeapplication.RSSCursor{Strategy: "etag", Value: "etag-1"}, LastGoodFacts: &animeapplication.RSSLastGoodFacts{FeedTitle: &feedTitle, ItemCount: 1, NewestStableItemKey: "stable-1"}, FailedWorkItemID: &workItem, LastRefreshAt: &occurred, LastSuccessAt: &occurred, ReasonCode: &reason, ReasonDetail: &quality, Version: 3}},
 		RSSSources:         []animeapplication.RSSSource{{ID: "source-1", SubscriptionID: "subscription-1", SourceKind: animedomain.SourceKindProviderGroup, LocatorDisplay: "feed", GroupName: "Group", Title: "Feed", Version: 2}},
 		Rules:              ownershipapplication.RulesOwner{ManagedAnimeID: "anime-1", Sections: sections, Effective: animedomain.EffectiveRules{}, Version: 3},
@@ -171,7 +170,7 @@ func TestMapAnimeWorkspacePreservesOwnerProjectionAndIsolation(t *testing.T) {
 	if got.ManagedAnime.Id != "anime-1" || got.Metadata.Bgm == nil || got.Metadata.Tmdb == nil || got.Subscription.Id != "subscription-1" || got.EpisodeProgress == nil || len(got.Releases) != 1 || len(got.Artifacts) != 1 || len(got.FileOperations) != 1 || len(got.Logs) != 1 {
 		t.Fatalf("top-level workspace projection incomplete: %+v", got)
 	}
-	if got.Releases[0].ParsedFacts == nil || got.Releases[0].ParsedFacts.Languages == nil || got.Releases[0].ReleaseFiles == nil || got.Releases[0].AcquisitionTargets == nil || got.Releases[0].TargetObservations == nil {
+	if got.Releases[0].ParsedFacts == nil || got.Releases[0].ParsedFacts.Coverage == nil || got.Releases[0].ReleaseFiles == nil || got.Releases[0].AcquisitionTargets == nil || got.Releases[0].TargetObservations == nil {
 		t.Fatal("nested release projection incomplete")
 	}
 	if got.Artifacts[0].Files[0].SubtitleBinding == nil || got.Artifacts[0].Files[0].SubtitleBinding.Diagnostics[0].Path == nil || got.DownloadTasks[0].ProviderCorrelation == nil || got.FileOperations[0].TargetFingerprint == nil {
@@ -181,9 +180,9 @@ func TestMapAnimeWorkspacePreservesOwnerProjectionAndIsolation(t *testing.T) {
 		t.Fatal("pointer or rules projection incomplete")
 	}
 	workspace.ManagedAnime.TitleOverride = nil
-	workspace.Releases[0].ParsedFacts.Languages = &[]string{"mutated"}
+	workspace.Releases[0].ParsedFacts.Coverage.Episodes[0] = 2
 	workspace.Artifacts[0].Files[0].SubtitleBinding.Diagnostics[0].Path = nil
-	if got.ManagedAnime.TitleOverride == nil || got.Releases[0].ParsedFacts.Languages == nil || len(*got.Releases[0].ParsedFacts.Languages) != 1 || (*got.Releases[0].ParsedFacts.Languages)[0] != language || got.Artifacts[0].Files[0].SubtitleBinding.Diagnostics[0].Path == nil {
+	if got.ManagedAnime.TitleOverride == nil || got.Releases[0].ParsedFacts.Coverage == nil || len(got.Releases[0].ParsedFacts.Coverage.Episodes) != 1 || got.Releases[0].ParsedFacts.Coverage.Episodes[0] != 1 || got.Artifacts[0].Files[0].SubtitleBinding.Diagnostics[0].Path == nil {
 		t.Fatal("mapped nested values alias application input")
 	}
 	for _, key := range []string{"managed_anime", "title_override", "download_task_id", "source_fingerprint", "target_fingerprint", "rss_source_runtimes", "acquisition_targets"} {

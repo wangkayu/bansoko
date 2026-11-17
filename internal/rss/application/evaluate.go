@@ -14,7 +14,6 @@ import (
 	terminal "bansoko/internal/acquisition/terminal/application"
 	animedomain "bansoko/internal/anime/domain"
 	draft "bansoko/internal/anime/draft/application"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/observability/businesslog"
@@ -26,6 +25,7 @@ import (
 	"bansoko/internal/subscription/competition"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
+
 	"github.com/google/uuid"
 )
 
@@ -149,10 +149,6 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 	if gated {
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: ReleaseVerdictStartBaseline, ReasonCode: ReleaseVerdictStartBaseline}, s.startBaselineWriter(claim, snapshot)), nil
 	}
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		return worker.Outcome{}, fmt.Errorf("read active attr rules: %w", err)
-	}
 	// Exactly one parser selection is resolved per evaluation. It is the single
 	// source of the Release verdict, the target/naming plan, the frozen media
 	// facts, and the DownloadTask policy, so the selected parser runs once and
@@ -176,7 +172,7 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 		GroupName: snapshot.groupName,
 		Group:     providerdomain.GroupRefOrZero(providerdomain.Kind(snapshot.sourceProvider.String), snapshot.sourceGroupRef.String),
 		Offset:    snapshot.episodeOffset,
-	}, snapshot.effective, snapshot.metadataHold, rules, evidence.Identity)
+	}, snapshot.effective, snapshot.metadataHold, evidence.Identity)
 	if !snapshot.admitsWork(snapshot.subscriptionState) {
 		result.Verdict = animedomain.ReleaseVerdict("subscription_stopped")
 		result.ReasonCode = "subscription_stopped"
@@ -628,16 +624,12 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 					return 0, evidenceErr
 				}
 				frozenEvidence = &resolved
-				currentRules, _, rulesErr := attrrules.Current()
-				if rulesErr != nil {
-					return 0, fmt.Errorf("read active attr rules: %w", rulesErr)
-				}
 				result = animedomain.EvaluateFeedItemWithIdentity(item, animedomain.SourceEvaluationInput{
 					Index:     0,
 					GroupName: currentInputs.groupName,
 					Group:     providerdomain.GroupRefOrZero(currentInputs.sourceProvider, currentInputs.sourceGroupRef),
 					Offset:    currentInputs.episodeOffset,
-				}, currentInputs.effective, currentInputs.metadataHold, currentRules, resolved.Identity)
+				}, currentInputs.effective, currentInputs.metadataHold, resolved.Identity)
 			}
 			markTorrentUnavailable(&result, item)
 			applyMultiVideoIgnore(&result, item, snapshot.ignoreMultiVideoReleases, snapshot.manualRetry)
@@ -838,11 +830,18 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			if planErr != nil {
 				return 0, planErr
 			}
-			rules, _, err := attrrules.Current()
+			candidate := facts.CandidateFromCoverage(item.Title, plan.CoverageKeys)
+			compareRaw, err := facts.CompareValues(facts.CompareSource{
+				SourceFacts: snapshot.sourceFacts, RSSSourceID: snapshot.sourceID, SourceKind: snapshot.sourceKind,
+				Provider: snapshot.sourceProvider.String, ProviderGroupRef: snapshot.sourceGroupRef.String,
+			})
 			if err != nil {
-				return 0, fmt.Errorf("read active attr rules: %w", err)
+				return 0, fmt.Errorf("project comparison values: %w", err)
 			}
-			candidate := facts.CandidateFromCoverage(item.Title, rules, plan.CoverageKeys)
+			fingerprint, err := facts.ProjectionFingerprint(candidate, compareRaw)
+			if err != nil {
+				return 0, fmt.Errorf("fingerprint comparison values: %w", err)
+			}
 			raw, _ := json.Marshal(map[string]any{"title": item.Title, "stable_item_key": snapshot.stableItemKey})
 			factsJSON, _ := json.Marshal(map[string]any{
 				"resolution": candidate.Resolution, "quality": candidate.Quality,
@@ -854,7 +853,7 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 				ReleaseID:        snapshot.releaseID,
 				ReleaseVersion:   updatedVersion,
 				ParserVersion:    candidate.ParserVersion,
-				InputFingerprint: facts.InputFingerprint(item.Title, nil, false),
+				InputFingerprint: fingerprint,
 				RawEvidence:      raw,
 				Facts:            factsJSON,
 				CoverageKeys:     candidate.Coverage,
@@ -864,13 +863,10 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 				Group:            candidate.Group,
 				// The replacement comparison values freeze here, with the
 				// accepted candidate facts.
-				CompareValues: facts.CompareValues(candidate, facts.CompareSource{
-					SourceFacts: snapshot.sourceFacts, RSSSourceID: snapshot.sourceID, SourceKind: snapshot.sourceKind,
-					Provider: snapshot.sourceProvider.String, ProviderGroupRef: snapshot.sourceGroupRef.String,
-				}),
+				CompareValues: compareRaw,
 				// The release-level size comes from the fetched torrent payload
-				// (or the feed enclosure as fallback); it powers the
-				// replacement size tie-breaker between same-score candidates.
+				// (or the feed enclosure as fallback), for display and capacity only.
+				// It never breaks a resource-comparison tie.
 				SizeBytes: releaseSize(item),
 			}); err != nil {
 				return 0, fmt.Errorf("upsert candidate facts: %w", err)

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"bansoko/internal/attrrules"
 	"bansoko/internal/persistence/txscope"
 	generated "bansoko/internal/release/facts/adapter/persistence/candidate/generated"
 )
@@ -18,7 +17,7 @@ import (
 // placeable coverage (the media fact snapshot's BatchPlan coverage keys) is
 // passed through so coverage can only be projected, never re-parsed from the
 // title; nil means the release has no frozen plan.
-type currentProfileRecomputer func(CandidateFacts, attrrules.Rules, *[]string, CompareSource) (CandidateFacts, bool, error)
+type currentProfileRecomputer func(CandidateFacts, *[]string, CompareSource) (CandidateFacts, bool, error)
 
 // CompareSource is the frozen release input of the comparison values beyond
 // the title: the Release source_facts and the RSS source identity it arrived
@@ -119,16 +118,6 @@ func projectCandidateFactsTx(ctx context.Context, tx *sql.Tx, releaseID string, 
 	if coverage == nil {
 		return nil
 	}
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		// There is no safe parser when startup has not published an active
-		// profile. Do not invent a fallback profile or mutate facts.
-		return fmt.Errorf("read active attr rules: %w", err)
-	}
-	profileVersion, err := attrrules.CurrentProfileVersion()
-	if err != nil {
-		return fmt.Errorf("read current attr rules profile version: %w", err)
-	}
 	queries := generated.New(tx)
 	rawFacts, err := queries.LockReleaseRawFacts(ctx, releaseID)
 	if err != nil {
@@ -146,12 +135,6 @@ func projectCandidateFactsTx(ctx context.Context, tx *sql.Tx, releaseID string, 
 	hasLatest := err == nil
 	if hasLatest {
 		latest = fromGenerated(latestRow)
-		// A row of the current profile is final unless it predates frozen
-		// comparison values (written before they existed); that row is
-		// projected once more so comparisons read the release's values.
-		if latest.ParserVersion == profileVersion && hasCompareValues(latest.CompareValues) {
-			return nil
-		}
 	}
 
 	evidenceTitle := ""
@@ -183,7 +166,7 @@ func projectCandidateFactsTx(ctx context.Context, tx *sql.Tx, releaseID string, 
 	if err != nil {
 		return fmt.Errorf("read release comparison source: %w", err)
 	}
-	refreshed, changed, err := recompute(latest, rules, coverage, source)
+	refreshed, changed, err := recompute(latest, coverage, source)
 	if err != nil {
 		return fmt.Errorf("recompute candidate facts: %w", err)
 	}
@@ -223,15 +206,6 @@ WHERE r.id = $1`, releaseID).Scan(&source.SourceFacts, &source.RSSSourceID, &sou
 	source.Provider = provider.String
 	source.ProviderGroupRef = groupRef.String
 	return source, nil
-}
-
-// hasCompareValues reports whether a stored compare_values document carries
-// a version (the empty document is "no values").
-func hasCompareValues(raw json.RawMessage) bool {
-	var probe struct {
-		Version string `json:"version"`
-	}
-	return len(raw) > 0 && json.Unmarshal(raw, &probe) == nil && probe.Version != ""
 }
 
 // loadFrozenCoverage reads the placeable coverage keys frozen in the BatchPlan

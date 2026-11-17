@@ -12,6 +12,7 @@ import (
 	"time"
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

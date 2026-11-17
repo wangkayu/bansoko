@@ -2,7 +2,6 @@ package application
 
 import (
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/testutil/animetest"
 	"context"
@@ -26,19 +25,7 @@ func seedBusinessPrograms(t *testing.T, db *sql.DB, draft *animedomain.AnimeDraf
 	if _, err := db.ExecContext(ctx, `INSERT INTO naming_vars_versions(fingerprint,content,active) VALUES($1,$2,FALSE) ON CONFLICT(fingerprint) DO NOTHING`, fp, raw); err != nil {
 		t.Fatal(err)
 	}
-	rules := businessProgramRulesFixture()
-	attrFP, err := attrrules.Fingerprint(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	attrRaw, err := json.Marshal(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO attr_rule_versions(fingerprint,content,active) VALUES($1,$2,FALSE) ON CONFLICT(fingerprint) DO NOTHING`, attrFP, attrRaw); err != nil {
-		t.Fatal(err)
-	}
-	draft.Business.Programs = animedomain.ProgramReferences{Vars: namingvars.ProgramRef{Digest: fp, Version: namingvars.ProfileVersion(fp)}, AttrRules: namingvars.ProgramRef{Digest: attrFP, Version: attrrules.ProfileVersion(attrFP)}}
+	draft.Business.Programs = animedomain.ProgramReferences{Vars: namingvars.ProgramRef{Digest: fp, Version: namingvars.ProfileVersion(fp)}}
 	digest, err := draft.Business.Digest()
 	if err != nil {
 		t.Fatal(err)

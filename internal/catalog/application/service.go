@@ -17,6 +17,7 @@ import (
 	"bansoko/internal/events"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/runtime/buildinfo"
+
 	"golang.org/x/sync/singleflight"
 )
 

@@ -1,16 +1,19 @@
 package facts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/qualityprofile"
 	"bansoko/internal/templatefacts"
 )
 
-// CompareSource is the frozen release input of the replacement comparison
-// values beyond the title: the Release source_facts document and the RSS
-// source it arrived through (its id, kind and provider group identity).
+// CompareSource names the frozen release tags and its stable source identity.
+// No title, file-name parse, measured media or size enters the comparison.
 type CompareSource struct {
 	SourceFacts      []byte
 	RSSSourceID      string
@@ -19,57 +22,58 @@ type CompareSource struct {
 	ProviderGroupRef string
 }
 
-// RSS source kinds: a provider group carries (provider, group ref); a custom
-// RSS source is its own group identity.
 const (
 	sourceKindProviderGroup = "provider_group"
 	sourceKindCustomRSS     = "custom_rss"
 )
 
-// CompareValues freezes the replacement comparison values one release
-// contributes: release.* from the title parse (the candidate), anibt.* and
-// rt.* from the frozen source facts (each namespace its own values, no
-// cross-namespace fallback; multi-valued fields split on "+"), and the
-// subgroup source: (provider, group ref) of a provider-group RSS source, or
-// (custom, rss source id) of a custom RSS source. The subgroup source is the
-// stable group identity per_group pools by and subgroup.score looks up. An
-// unreadable source facts document contributes no anibt/rt values.
-func CompareValues(candidate Candidate, source CompareSource) json.RawMessage {
-	values := qualityprofile.NewValues()
-	values.Set(qualityprofile.KeyReleaseLang, candidate.Language)
-	values.Set(qualityprofile.KeyReleaseResolution, candidate.Resolution)
-	values.Set(qualityprofile.KeyReleaseRevision, candidate.Revision)
-	if len(source.SourceFacts) > 0 {
-		if projected, err := templatefacts.FromSourceFacts(source.SourceFacts); err == nil {
-			for key, field := range map[string]string{
-				qualityprofile.KeyAniBTResolution: "Resolution",
-				qualityprofile.KeyAniBTLanguage:   "Language",
-				qualityprofile.KeyAniBTSubtitle:   "Subtitle",
-				qualityprofile.KeyAniBTFormat:     "Format",
-			} {
-				if value, ok := projected.AniBTTags.Get(field); ok {
-					values.SetJoined(key, value)
-				}
-			}
-			for key, field := range map[string]string{
-				qualityprofile.KeyRtResolution:    "Resolution",
-				qualityprofile.KeyRtSubLang:       "SubLang",
-				qualityprofile.KeyRtSubFlag:       "SubFlag",
-				qualityprofile.KeyRtSource:        "Source",
-				qualityprofile.KeyRtCodec:         "Codec",
-				qualityprofile.KeyRtContentRating: "ContentRating",
-			} {
-				if value, ok := projected.Reltitle.Get(field); ok {
-					values.SetJoined(key, value)
-				}
-			}
-		}
+// CompareValues is a pure versioned projection of captured release evidence.
+// Missing tags contribute no value; corrupt evidence is not silently discarded.
+func CompareValues(source CompareSource) (json.RawMessage, error) {
+	title, anibt, err := acquisitiondomain.DecodeSourceFactTagSets(source.SourceFacts)
+	if err != nil {
+		return nil, err
 	}
+	values := qualityprofile.NewValues()
 	if source.SourceKind == sourceKindProviderGroup && strings.TrimSpace(source.Provider) != "" && strings.TrimSpace(source.ProviderGroupRef) != "" {
 		values.Subgroup = &qualityprofile.SubgroupSource{Provider: strings.TrimSpace(source.Provider), GroupRef: strings.TrimSpace(source.ProviderGroupRef)}
 	}
 	if source.SourceKind == sourceKindCustomRSS && strings.TrimSpace(source.RSSSourceID) != "" {
 		values.Subgroup = &qualityprofile.SubgroupSource{Provider: qualityprofile.CustomSubgroupProvider, GroupRef: strings.TrimSpace(source.RSSSourceID)}
 	}
-	return values.JSON()
+	evidence, err := json.Marshal(struct {
+		Title    *acquisitiondomain.TitleTagSet `json:"title_tags"`
+		AniBT    *acquisitiondomain.AniBTTagSet `json:"anibt"`
+		Subgroup *qualityprofile.SubgroupSource `json:"subgroup"`
+	}{title, anibt, values.Subgroup})
+	if err != nil {
+		return nil, fmt.Errorf("encode comparison source: %w", err)
+	}
+	digest := sha256.Sum256(evidence)
+	values.SourceDigest = hex.EncodeToString(digest[:])
+	projected := templatefacts.FromTagSets(title, anibt)
+	for key, field := range map[string]string{
+		qualityprofile.KeyAniBTResolution: "Resolution",
+		qualityprofile.KeyAniBTLanguage:   "Language",
+		qualityprofile.KeyAniBTSubtitle:   "Subtitle",
+		qualityprofile.KeyAniBTFormat:     "Format",
+	} {
+		if value, ok := projected.AniBTTags.Get(field); ok {
+			values.SetJoined(key, value)
+		}
+	}
+	for key, field := range map[string]string{
+		qualityprofile.KeyRtResolution:    "Resolution",
+		qualityprofile.KeyRtSubLang:       "SubLang",
+		qualityprofile.KeyRtSubFlag:       "SubFlag",
+		qualityprofile.KeyRtSource:        "Source",
+		qualityprofile.KeyRtCodec:         "Codec",
+		qualityprofile.KeyRtContentRating: "ContentRating",
+		qualityprofile.KeyRtRevision:      "Version",
+	} {
+		if value, ok := projected.Reltitle.Get(field); ok {
+			values.SetJoined(key, value)
+		}
+	}
+	return values.JSON(), nil
 }

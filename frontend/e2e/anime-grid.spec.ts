@@ -271,7 +271,7 @@ function workspaceFixture(id: string, title: string, state?: FixtureState): Anim
         stable_item_key: `release-key-${id}`,
         raw_facts: { title: `[北宇治字幕组] ${title} - 01`, published_at: "2026-07-20T00:00:00Z" },
         source_facts: { identity_kind: "guid", identity_value: `release-key-${id}`, group_name: "北宇治字幕组" },
-        parsed_facts: { episode: 1, group_name: "北宇治字幕组", quality: "1080p", languages: ["简"], special: false },
+        parsed_facts: { episode: 1 },
         verdict: "waiting_metadata",
         reason_code: "metadata_incomplete",
         reason_detail: "bgm,tmdb",

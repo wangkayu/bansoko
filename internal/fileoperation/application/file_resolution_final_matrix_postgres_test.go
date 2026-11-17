@@ -6,9 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Mutate both persistent-value representation and canonical bytes in memory.

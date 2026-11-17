@@ -395,12 +395,12 @@ INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, 
 VALUES ('plc-old', 'tv:e1', 0, 'parser-v1', 'obs-old');
 -- Complete retention axis (single_copy, version 1) on the same business row:
 -- the frozen evaluate/settle chain requires it and revalidates its version at
--- settle; without it evaluate fails closed. The quality profile (profile-v1)
--- ranks release.resolution 2160p > 1080p > 720p > 480p, so the 1080p candidate
+-- settle; without it evaluate fails closed. The quality profile (profile-v2)
+-- ranks rt.resolution 2160p > 1080p > 720p > 480p, so the 1080p candidate
 -- beats the old file (whose release froze no comparison values and ranks last).
 UPDATE anime_business_configs SET
   admission_mode = 'single_copy',
-  quality_profile = '{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
+  quality_profile = '{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
   replacement_source_default_version = 1,
   replacement_version = 1,
   -- The file-effect axis is the second policy the provisioning writes on the
@@ -555,7 +555,7 @@ INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, 
 VALUES ('plc-old-m', 'movie:0', 0, 'parser-v1', 'obs-old-m');
 UPDATE anime_business_configs SET
   admission_mode = 'single_copy',
-  quality_profile = '{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
+  quality_profile = '{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
   replacement_source_default_version = 1,
   replacement_version = 1,
   unclassified_route = 'skip',

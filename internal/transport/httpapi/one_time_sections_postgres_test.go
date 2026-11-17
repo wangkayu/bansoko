@@ -16,7 +16,6 @@ import (
 // every per-anime Global section leaves an existing saved draft and an existing
 // instance's rules and subgroups tabs byte-identical.
 func TestGlobalSaveLeavesDraftAndInstanceTabsByteIdentical(t *testing.T) {
-	ensureTestAttrRules(t)
 	rig := newTestRig(t, "development", true, func(deps *Dependencies) {
 		deps.GlobalSections = configurationapplication.NewService(deps.DB, nil)
 	})

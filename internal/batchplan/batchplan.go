@@ -25,9 +25,10 @@ import (
 // Version identifies the plan contract frozen into the Release media fact
 // snapshot.
 //
-// v2 adds the per-file coverage_keys of a multi-episode file. A reader takes a
-// file's keys through File.Keys, which reads a v1 file's single key the same.
-const Version = "batch-plan-v1"
+// v2 adds per-file coverage_keys and target_pending_facts. A reader takes a
+// v1 file's single key through File.Keys; a file with pending execution facts
+// remains planned but has no speculative target path.
+const Version = "batch-plan-v2"
 
 // Outcome is the closed per-file conclusion.
 type Outcome string
@@ -210,6 +211,27 @@ type File struct {
 	// its target is VersionedTargetPath(rendered, TargetVersion). Absent (0)
 	// means the rendered target itself.
 	TargetVersion int `json:"target_version,omitempty"`
+	// TargetPendingFacts are dependencies whose execution preparation has not
+	// finished. Identity/coverage stay planned; no guessed target is authorized.
+	TargetPendingFacts []string `json:"target_pending_facts,omitempty"`
+}
+
+// MarkTargetPending records an immutable ordered dependency list.
+func (p *Plan) MarkTargetPending(sourcePath string, facts []string) {
+	if index := p.indexOf(sourcePath); index >= 0 {
+		p.Files[index].TargetPendingFacts = append([]string(nil), facts...)
+	}
+}
+
+// PendingTargets counts placeable videos that require execution facts.
+func (p *Plan) PendingTargets() int {
+	count := 0
+	for _, file := range p.Files {
+		if p.placed(file) && len(file.TargetPendingFacts) > 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // MarkTargetVersion records the version number of a planned video's target.

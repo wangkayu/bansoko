@@ -22,7 +22,7 @@ func TestImportWaitingConfigMigrationKeepsPlansOfEveryState(t *testing.T) {
 	for _, state := range []string{"queued", "succeeded", "failed"} {
 		tag := "wait-" + state
 		seedAcceptableRelease(t, owner, tag)
-		p := validQueued(t, tag, tag+"-key", tag)
+		p := validHistoricalQueued(t, owner, tag, tag+"-key", tag)
 		if _, err := callQueuedAccept(t, owner, p); err != nil {
 			t.Fatal(err)
 		}
@@ -42,9 +42,7 @@ func TestImportWaitingConfigMigrationKeepsPlansOfEveryState(t *testing.T) {
 		}
 	}
 
-	if err := (Runner{DB: owner, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, owner, "097_import_waiting_config.sql")
 
 	rows, err := owner.QueryContext(ctx, `
 SELECT id, state, config_hold IS NULL AND config_hold_files IS NULL AND config_hold_since IS NULL

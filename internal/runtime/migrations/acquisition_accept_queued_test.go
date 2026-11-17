@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"bansoko/internal/runtime/database"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -175,7 +176,12 @@ func validQueued(t *testing.T, id, key, tag string) queuedParams {
 	input["source"].(map[string]any)["provenance"] = map[string]any{
 		"provider": "custom", "guid": "", "details_url": "", "download_url": "", "source_site": nil,
 	}
+	// The release fixture has no native tag blocks. Freeze those missing blocks
+	// explicitly; fresh acceptance no longer treats an omitted projection as an
+	// empty one.
+	input["source"].(map[string]any)["tag_evidence"] = map[string]any{"title_tags": nil, "anibt": nil}
 	input["source"].(map[string]any)["manifest_digest"] = acqDigest("8")
+	delete(input["media"].(map[string]any), "quality")
 	manifestFiles := []map[string]any{
 		{"file_ref": "file-a", "ordinal": 0, "relative_path": "a/file-a.mkv", "exact_size": 1000, "media_kind": "video", "identity_evidence": map[string]any{"source": "test"}},
 		{"file_ref": "file-b", "ordinal": 1, "relative_path": "a/file-b.ass", "exact_size": 100, "media_kind": "subtitle", "identity_evidence": map[string]any{"source": "test"}},

@@ -158,11 +158,11 @@ async function mockSettingsReads(page: Page) {
         body: JSON.stringify({
           admission_mode: "single_copy",
           quality_profile: {
-            version: "profile-v1",
+            version: "profile-v2",
             items: [
               { key: "anibt.language", ranks: [["CHS", "CHT"], ["CHS"], ["JP"], ["EN"]] },
               { key: "rt.sub_lang", ranks: [["jpsc"], ["sc"], ["tc"], ["eng"]] },
-              { key: "release.resolution", ranks: [["2160p"], ["1080p"]] },
+              { key: "rt.resolution", ranks: [["2160p"], ["1080p"]] },
             ],
           },
           version: 1,
@@ -810,10 +810,12 @@ test.describe("settings fixture coverage", () => {
     const preview = page.locator("[data-quality-compare-drag-preview]");
 
     for (const [label, screenshot] of [
-      ["AniBT 标签", "anibt-language-drag-preview.png"],
-      ["reltitle", "rt-sub-language-drag-preview.png"],
+      ["AniBT 标签 · 语言", "anibt-language-drag-preview.png"],
+      ["reltitle · 字幕语言", "rt-sub-language-drag-preview.png"],
     ] as const) {
-      const card = list.locator(":scope > li").filter({ hasText: label });
+      const card = list.locator(":scope > li").filter({
+        has: page.getByRole("button", { name: `移除 ${label}`, exact: true }),
+      });
       await expect(card).toBeVisible();
       await card.scrollIntoViewIfNeeded();
       const box = await card.boundingBox();
@@ -848,7 +850,9 @@ test.describe("settings fixture coverage", () => {
     }
 
     // 修复只覆盖两张大语言卡，普通比较项仍使用浏览器默认拖动预览。
-    const ordinary = list.locator(":scope > li").filter({ hasText: "内置规则" });
+    const ordinary = list.locator(":scope > li").filter({
+      has: page.getByRole("button", { name: "移除 reltitle · 分辨率", exact: true }),
+    });
     const ordinaryBox = await ordinary.boundingBox();
     if (!ordinaryBox) throw new Error("ordinary comparison card has no box");
     await page.mouse.move(ordinaryBox.x + 14, ordinaryBox.y + 20);

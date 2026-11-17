@@ -25,6 +25,6 @@ type ReleaseCandidateFacts struct {
 	Group            sql.NullString
 	SizeBytes        sql.NullInt64
 	CreatedAt        time.Time
-	// compare-values-v1: the replacement comparison values (item key -> values) and the RSS source subgroup this release contributes, frozen at acceptance. {} = no values.
+	// compare-values-v2: a pure projection of frozen native release tags and stable RSS source identity, with projection source_digest. Legacy rows are explicitly rebuilt from that evidence, never interpreted as empty values.
 	CompareValues json.RawMessage
 }

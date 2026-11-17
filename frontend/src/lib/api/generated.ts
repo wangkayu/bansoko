@@ -1147,7 +1147,7 @@ export interface paths {
         /** @description Persisted replacement decisions (side-effect free). */
         get: operations["listReplacementDecisions"];
         put?: never;
-        /** @description Evaluates one candidate release against the current verified active placements and persists one frozen decision per coverage key idempotently. Only the candidate identity is accepted: coverage, group identity, quality facts, Subscription version and the complete instance retention policy are read server-side inside the evaluate transaction. Winner-mode admission requires the candidate to be strictly better under the ordered comparison items (then larger size; a full tie keeps the existing file); all-mode never suppresses; missing/conflicting facts block the affected pool. A file replaces only the keys it covers. */
+        /** @description Evaluates one candidate release against the current verified active placements and persists one frozen decision per coverage key idempotently. Only the candidate identity is accepted: coverage, group identity, quality facts, Subscription version and the complete instance retention policy are read server-side inside the evaluate transaction. Winner-mode admission requires the candidate to be strictly better under the ordered comparison items (a full tie keeps the existing file); all-mode never suppresses; missing/conflicting facts block the affected pool. A file replaces only the keys it covers. */
         post: operations["evaluateReplacement"];
         delete?: never;
         options?: never;
@@ -4378,17 +4378,6 @@ export interface components {
             /** @description The single episode the release places. Absent for a batch (see coverage) and when no file carries an episode of its own. */
             episode?: number;
             coverage?: components["schemas"]["ReleaseCoverage"];
-            group_name?: string;
-            quality?: string;
-            languages?: string[];
-            /**
-             * @description Marks a special/extracurricular release (NCOP/NCED/Special) excluded
-             *     from the regular episode progress aggregation. Defaults to false
-             *     when absent so legacy rows aggregate normally.
-             *
-             * @default false
-             */
-            special: boolean;
         };
         /** @description The episodes a batch release places (two or more), from its accepted batch plan. Display only: coverage keys stay the authority. */
         ReleaseCoverage: {
@@ -4452,8 +4441,10 @@ export interface components {
         ParseReleaseTitleInput: {
             title: string;
         };
+        /** @description The native reltitle projection of the submitted release title. Group, source type, languages and revision are values in facts.tags or facts.value_tags, not separate guesses from another parser. */
         ParseReleaseTitleResult: {
-            facts: components["schemas"]["ParsedReleaseFacts"];
+            facts: components["schemas"]["TitleTagFacts"];
+            /** @description The reltitle implementation that produced facts. */
             parser_version: string;
             episode?: components["schemas"]["EpisodeParseResult"];
         };
@@ -5232,6 +5223,8 @@ export interface components {
             /** @description "lexicon:sha256:<hex>" over the embedded dictionary bundle. */
             config_digest?: string;
             tags: string[];
+            /** @description Native title, group and version values used by rt.*. */
+            value_tags?: string[];
             diagnostic?: string;
         };
         /** @description The title-parse row vocabulary: every dimension and canonical value of the pinned reltitle dictionary, in dictionary order. */
@@ -7937,7 +7930,7 @@ export interface components {
             reason?: string;
             winner?: components["schemas"]["ReplacementPlacementRef"];
             losers?: components["schemas"]["ReplacementPlacementRef"][];
-            /** @description The comparison steps that decided the pool, in item order; the last step decides (key "size" is the size tiebreak). */
+            /** @description The comparison steps that decided the pool, in item order; the last differing available configured step decides; ties keep the existing file. */
             steps?: components["schemas"]["ReplacementCompareStep"][];
         };
         ReplacementCompareStep: {
@@ -8114,7 +8107,7 @@ export interface components {
         };
         BusinessSnapshot: {
             /** @enum {string} */
-            schema_version: "business-snapshot-v1";
+            schema_version: "business-snapshot-v2";
             sections: components["schemas"]["BusinessSections"];
             section_versions: components["schemas"]["BusinessSectionVersions"];
             section_schemas: components["schemas"]["BusinessSectionSchemas"];
@@ -8126,7 +8119,6 @@ export interface components {
             /** Format: int64 */
             file_effect_version: number;
             programs: {
-                attrrules: components["schemas"]["BusinessProgramRef"];
                 vars: components["schemas"]["BusinessProgramRef"];
             };
         };
@@ -8181,20 +8173,20 @@ export interface components {
             admission_mode: components["schemas"]["ReplacementAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
         };
-        /** @description The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays. */
+        /** @description The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide. */
         QualityProfile: {
             /** @enum {string} */
-            version: "profile-v1";
+            version: "profile-v2";
             items: components["schemas"]["QualityCompareItem"][];
         };
-        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers. */
+        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that has an unlisted value ranks last; a missing value on either side makes that layer tie. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and rt.revision take no ranks (subscription subgroup score; numeric frozen rt Version). An absent or non-numeric revision on either side makes that layer tie. rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers. */
         QualityCompareItem: {
             key: components["schemas"]["QualityCompareKey"];
             ranks: string[][];
         };
         /** @enum {string} */
-        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.content_rating";
-        /** @description Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked. */
+        QualityCompareKey: "subgroup.score" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.content_rating" | "rt.revision";
+        /** @description Candidate values per ranked comparison item: anibt.* from frozen values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked. */
         ReplacementCompareVocabulary: {
             items: components["schemas"]["RetentionCompareVocabularyItem"][];
         };

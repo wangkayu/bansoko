@@ -24,8 +24,6 @@ import (
 	acquisitionsettlement "bansoko/internal/acquisition/terminal/settlement"
 	animeapplication "bansoko/internal/anime/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
-	"bansoko/internal/attrrules"
-	attrrulespersistence "bansoko/internal/attrrules/adapter/persistence"
 	automationapplication "bansoko/internal/automation/application"
 	catalogadapter "bansoko/internal/catalog/adapter"
 	configurationpersistence "bansoko/internal/configuration/adapter/persistence"
@@ -156,9 +154,6 @@ func runServe(args []string) {
 		if err := database.AssertRuntimeRoleSeparated(ctx, db); err != nil {
 			fatalStartup(runtimeLogger, "runtime database role separation violated", "runtime_role_separation_violated")
 		}
-	}
-	if _, _, err := attrrules.Initialize(ctx, attrrules.NewStore(attrrulespersistence.NewRepository(db)), cfg.AttrRulesConfigPath, cfg.AttrRulesDefaultsPath); err != nil {
-		fatalStartupDetail(runtimeLogger, "attr rules initialization failed", "attr_rules_init_failed", attrrules.StartupErrorDetail(err, cfg.AttrRulesConfigPath))
 	}
 	// The database owns the naming Vars program: the file only seeds the first
 	// version. A stored version is never replaced by a restart; a file that

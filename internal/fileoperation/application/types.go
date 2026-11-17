@@ -234,10 +234,6 @@ type artifactContext struct {
 	correlationID sql.NullString
 	files         []artifactFileContext
 	acceptedFacts bool
-	// acceptedResolution is media.quality.resolution frozen in the accepted
-	// input (same title and attribute rules as the pre-download TargetSet);
-	// it fills in when file inspection carries no resolution.
-	acceptedResolution string
 }
 
 // frozenBindingTitles are the bound works' native titles and provider years

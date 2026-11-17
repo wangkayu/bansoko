@@ -77,6 +77,9 @@ const (
 	// staleSubgroupScoreChanged: a subgroup score the comparison used was
 	// edited after the decision froze (scores are read live, not versioned).
 	staleSubgroupScoreChanged = "subgroup_score_changed"
+	// staleCandidateFactsChanged: the release's source evidence or projection
+	// changed after the decision froze; old pools must not be given a new digest.
+	staleCandidateFactsChanged = "candidate_facts_changed"
 	// staleLoserCoverageOutsideCandidate: a frozen loser now covers a key the
 	// candidate placement does not, so superseding it would drop that key.
 	staleLoserCoverageOutsideCandidate = "loser_coverage_outside_candidate"
@@ -416,11 +419,11 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version 
 		size                    sql.NullInt64
 	)
 	err = tx.QueryRowContext(ctx, `
-SELECT parser_version, input_fingerprint, coverage_keys,
+SELECT release_version, parser_version, input_fingerprint, coverage_keys,
        resolution, revision, source, language, "group", size_bytes, compare_values
 FROM release_candidate_facts
 WHERE release_id = $1 ORDER BY release_version DESC LIMIT 1`, input.CandidateRelease).
-		Scan(&ev.factsVersion, &ev.factsFingerprint, &coverageRaw,
+		Scan(&ev.factsReleaseVersion, &ev.factsVersion, &ev.factsFingerprint, &coverageRaw,
 			&resolution, &revision, &source, &language, &group, &size, &compareRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		if len(candidates) == 0 {
@@ -443,7 +446,10 @@ WHERE release_id = $1 ORDER BY release_version DESC LIMIT 1`, input.CandidateRel
 	if size.Valid {
 		ev.candidateFacts.Size = &size.Int64
 	}
-	ev.candidateFacts = ev.candidateFacts.withFrozenValues(compareRaw)
+	ev.candidateFacts, err = ev.candidateFacts.withFrozenValues(compareRaw)
+	if err != nil {
+		return nil, fmt.Errorf("candidate comparison cache: %w", err)
+	}
 	// Pool identity comes from the frozen batch plan coverage when the release
 	// has a snapshot: replacement must compare exactly the keys the release was
 	// accepted to place. Before the snapshot exists, the candidate-facts
@@ -559,11 +565,19 @@ type keyEvaluation struct {
 	mode                AdmissionMode
 	profile             Profile
 	factsVersion        string
+	factsReleaseVersion int64
 	factsFingerprint    string
 	candidateFacts      Facts
 	placements          []PlacementFacts
 	// scores are the subscription's current subgroup scores.
 	scores SubgroupScores
+}
+
+// candidateFactsRef identifies the exact immutable projection row used by the
+// decision. The parser version alone cannot invalidate a decision when the
+// frozen source tags or their comparison projection change.
+func (ev keyEvaluation) candidateFactsRef() string {
+	return fmt.Sprintf("%s:%d", ev.request.CandidateRelease, ev.factsReleaseVersion)
 }
 
 // releasePlacement is one verified active placement of the candidate release.
@@ -682,30 +696,42 @@ func poolsForKey(pools []PoolEvidence, key string, mode AdmissionMode) []PoolEvi
 }
 
 // liveUnboundDecisionTx returns a key's latest non-stale pre-acquisition
-// decision when it was frozen under the current Subscription and policy
-// versions. One frozen under other versions is staled, and the key is
+// decision when it was frozen under the current Subscription, policy and exact
+// candidate-facts row. One frozen under other inputs is staled, and the key is
 // evaluated again.
 func (s *ReplacementDecisionService) liveUnboundDecisionTx(ctx context.Context, tx *sql.Tx, ev keyEvaluation, key string) (ReplacementDecisionView, bool, error) {
 	var (
 		id                 string
 		frozenPolicy       int64
 		frozenSubscription sql.NullInt64
+		frozenFactsRef     string
 		state              string
 		poolsRaw           []byte
 	)
 	err := tx.QueryRowContext(ctx, `
-SELECT id, policy_version, subscription_version, state, pools
+SELECT id, policy_version, subscription_version, candidate_facts_ref, state, pools
 FROM replacement_decisions
 WHERE managed_anime_id = $1 AND candidate_release_id = $2 AND coverage_key = $3
   AND candidate_placement_id IS NULL AND state <> 'stale'
 ORDER BY created_at DESC, id DESC
 LIMIT 1
-FOR UPDATE`, ev.request.AnimeID, ev.request.CandidateRelease, key).Scan(&id, &frozenPolicy, &frozenSubscription, &state, &poolsRaw)
+FOR UPDATE`, ev.request.AnimeID, ev.request.CandidateRelease, key).Scan(&id, &frozenPolicy, &frozenSubscription, &frozenFactsRef, &state, &poolsRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ReplacementDecisionView{}, false, nil
 	}
 	if err != nil {
 		return ReplacementDecisionView{}, false, err
+	}
+	if frozenFactsRef != ev.candidateFactsRef() {
+		if state == "admitted" {
+			if _, err := tx.ExecContext(ctx, `
+UPDATE replacement_decisions
+SET state = 'stale', stale_reason = $2, version = version + 1, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND state = 'admitted'`, id, staleCandidateFactsChanged); err != nil {
+				return ReplacementDecisionView{}, false, err
+			}
+		}
+		return ReplacementDecisionView{}, false, nil
 	}
 	if frozenSubscription.Int64 != ev.subscriptionVersion || frozenPolicy != ev.policyVersion {
 		if state == "admitted" {
@@ -813,7 +839,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12, $13, $14, $15, 
 ON CONFLICT (idempotency_key) DO NOTHING`,
 		id, idempotencyKey, input.AnimeID, input.CandidateRelease, nullableText(candidatePlacementID),
 		ev.policyVersion, ev.profile.Version, ev.subscriptionVersion, digest,
-		input.CandidateRelease+":"+ev.factsVersion, key, coverageRaw, string(ev.mode), poolsRaw, verdict, state,
+		ev.candidateFactsRef(), key, coverageRaw, string(ev.mode), poolsRaw, verdict, state,
 		correlation, causationType, causationID)
 	if err != nil {
 		return ReplacementDecisionView{}, err
@@ -896,7 +922,9 @@ SELECT p.id, p.version, p.target_fingerprint, p.created_at,
        (f.parser_version IS NOT NULL) AS facts_ok,
        COALESCE(f.resolution, ''), COALESCE(f.revision, ''), COALESCE(f.source, ''),
        COALESCE(f.language, ''), COALESCE(f."group", ''), f.size_bytes,
-       COALESCE(f.compare_values, '{}'::jsonb)
+       COALESCE(f.compare_values, '{}'::jsonb),
+       COALESCE(r.source_facts, '{}'::jsonb), COALESCE(src.id, ''),
+       COALESCE(src.source_kind, ''), src.provider, src.provider_group_ref
 FROM placements p
 LEFT JOIN LATERAL (
     SELECT resolution, revision, source, language, "group", size_bytes, parser_version, compare_values
@@ -904,6 +932,8 @@ LEFT JOIN LATERAL (
     WHERE f.release_id = p.quality_facts_ref
     ORDER BY f.release_version DESC LIMIT 1
 ) f ON true
+LEFT JOIN releases r ON r.id = p.quality_facts_ref
+LEFT JOIN rss_sources src ON src.id = r.rss_source_id
 WHERE p.managed_anime_id = $1 AND p.verification_state = 'verified' AND p.state = 'active'
   AND p.replacement_eligible AND p.redownload_requested_at IS NULL
   AND `+latestObservationIssue+` = ''
@@ -916,18 +946,21 @@ ORDER BY p.created_at, p.id`, animeID)
 	ids := make([]string, 0)
 	for rows.Next() {
 		var (
-			placement  PlacementFacts
-			factsOK    bool
-			resolution string
-			revision   string
-			source     string
-			language   string
-			group      string
-			size       sql.NullInt64
-			compareRaw []byte
+			placement                  PlacementFacts
+			factsOK                    bool
+			resolution                 string
+			revision                   string
+			source                     string
+			language                   string
+			group                      string
+			size                       sql.NullInt64
+			compareRaw, sourceFacts    []byte
+			sourceID, sourceKind       string
+			provider, providerGroupRef sql.NullString
 		)
 		if err := rows.Scan(&placement.PlacementID, &placement.Version, &placement.Fingerprint,
-			&placement.CreatedAt, &factsOK, &resolution, &revision, &source, &language, &group, &size, &compareRaw); err != nil {
+			&placement.CreatedAt, &factsOK, &resolution, &revision, &source, &language, &group, &size, &compareRaw,
+			&sourceFacts, &sourceID, &sourceKind, &provider, &providerGroupRef); err != nil {
 			return nil, err
 		}
 		placement.FactsOK = factsOK
@@ -937,7 +970,13 @@ ORDER BY p.created_at, p.id`, animeID)
 		}
 		// A placed file compares with the values its own release froze at
 		// acceptance; a batch's files share them.
-		placement.Facts = placement.Facts.withFrozenValues(compareRaw)
+		if factsOK {
+			compareSource := facts.CompareSource{SourceFacts: sourceFacts, RSSSourceID: sourceID, SourceKind: sourceKind, Provider: provider.String, ProviderGroupRef: providerGroupRef.String}
+			placement.Facts, err = placement.Facts.withCurrentComparison(compareRaw, compareSource)
+			if err != nil {
+				return nil, fmt.Errorf("placement comparison cache: %w", err)
+			}
+		}
 		placements = append(placements, placement)
 		ids = append(ids, placement.PlacementID)
 	}
@@ -1049,9 +1088,9 @@ func decisionInputDigest(animeID, releaseID, placementID string, subscriptionVer
 // Placement to the key's decision that was frozen before download admission.
 // The row is deliberately not re-evaluated: its pool/loser evidence remains
 // the frozen winner decision, with only the synthetic candidate ref replaced
-// by the real Placement evidence needed for settlement revalidation. A policy
-// or Subscription version change invalidates the old row and lets the current
-// Placement run through a fresh evaluate instead.
+// by the real Placement evidence needed for settlement revalidation. A policy,
+// Subscription or exact candidate-facts row change invalidates the old row and
+// lets the current Placement run through a fresh evaluate instead.
 func (s *ReplacementDecisionService) bindPreAcquisitionDecisionTxApplication(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1066,10 +1105,11 @@ func (s *ReplacementDecisionService) bindPreAcquisitionDecisionTxApplication(
 		id                 string
 		frozenPolicy       int64
 		frozenSubscription int64
+		frozenFactsRef     string
 		poolsRaw           []byte
 	)
 	err := tx.QueryRowContext(ctx, `
-SELECT id, policy_version, subscription_version, pools
+SELECT id, policy_version, subscription_version, candidate_facts_ref, pools
 FROM replacement_decisions
 WHERE managed_anime_id = $1
   AND candidate_release_id = $2
@@ -1079,12 +1119,21 @@ WHERE managed_anime_id = $1
   AND state = 'admitted'
 ORDER BY created_at DESC, id DESC
 LIMIT 1
-FOR UPDATE`, input.AnimeID, input.CandidateRelease, key).Scan(&id, &frozenPolicy, &frozenSubscription, &poolsRaw)
+FOR UPDATE`, input.AnimeID, input.CandidateRelease, key).Scan(&id, &frozenPolicy, &frozenSubscription, &frozenFactsRef, &poolsRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ReplacementDecisionView{}, false, nil
 	}
 	if err != nil {
 		return ReplacementDecisionView{}, false, err
+	}
+	if frozenFactsRef != ev.candidateFactsRef() {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE replacement_decisions
+SET state = 'stale', stale_reason = $2, version = version + 1, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND state = 'admitted'`, id, staleCandidateFactsChanged); err != nil {
+			return ReplacementDecisionView{}, false, err
+		}
+		return ReplacementDecisionView{}, false, nil
 	}
 	if frozenSubscription != ev.subscriptionVersion {
 		if _, err := tx.ExecContext(ctx, `

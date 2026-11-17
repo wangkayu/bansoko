@@ -26,9 +26,7 @@ func TestAnimeMetadataSeasonUpgradeCarriesTheNamedTMDBSeason(t *testing.T) {
 		}
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "044_anime_metadata_season.sql")
 
 	want := map[string]sql.NullInt64{
 		"s-tv2":   {Int64: 2, Valid: true},

@@ -3,8 +3,9 @@ package application
 import (
 	"context"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestTypedPlanProofRejectsChangedCommittedOperation(t *testing.T) {

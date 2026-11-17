@@ -249,11 +249,7 @@ func mapWorkspaceParsedFacts(value *readmodelapplication.ReleaseParsedFacts) *ge
 		return nil
 	}
 	mapped := &generated.ParsedReleaseFacts{
-		Episode:   cloneWorkspaceFloat32(value.Episode),
-		GroupName: cloneWorkspaceString(value.GroupName),
-		Languages: cloneWorkspaceStrings(value.Languages),
-		Quality:   cloneWorkspaceString(value.Quality),
-		Special:   cloneWorkspaceBool(value.Special),
+		Episode: cloneWorkspaceFloat32(value.Episode),
 	}
 	if value.Coverage != nil {
 		mapped.Coverage = &generated.ReleaseCoverage{Episodes: append([]int(nil), value.Coverage.Episodes...)}

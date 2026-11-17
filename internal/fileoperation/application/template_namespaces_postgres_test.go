@@ -1,13 +1,13 @@
 package application
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
 	domain "bansoko/internal/anime/domain"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
-	"bansoko/internal/testutil/disposabledb"
 )
 
 // literalFrozenVars is the complete-policy fixture's Vars evaluation written as
@@ -59,15 +59,13 @@ func TestFilePlanRendersFrozenTemplateNamespaces(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db, fixture := openFileOperationDBWithPolicy(t, func(policy map[string]any) {
 				literalFrozenVars(policy)
+				policy["fixture_source_facts"] = json.RawMessage(tc.sourceFacts)
 				rules := naming.DefaultNamingRules()
 				rules.TV.VideoFilenameTemplate = tc.template
 				rules.Movie.VideoFilenameTemplate = tc.template
 				policy["effective_sections"].(map[string]any)[domain.SectionNamingRules] = rules
 			})
 			defer db.Close()
-			if _, err := disposabledb.Owner(t).Exec(`UPDATE releases SET source_facts=$1::jsonb WHERE id='release-file-test'`, tc.sourceFacts); err != nil {
-				t.Fatal(err)
-			}
 			service := newFixtureService(t, db, fixture)
 			prepareFixture(t, db, service, fixture.artifactID)
 			if tc.wantBase != "" {

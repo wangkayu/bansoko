@@ -1,22 +1,19 @@
 import type { QualityCompareKey, QualityProfile } from "../../lib/api/client";
 import { ANIBT_TAG_PRESETS, isAniBTDimension } from "../../lib/anibtTags";
 
-// Pure model of the replacement comparison profile (profile-v1), shared by the
+// Pure model of the replacement comparison profile (profile-v2), shared by the
 // global replacement default and the per-anime business snapshot. Mirrors the
 // backend owner (internal/qualityprofile): an ordered list of namespaced
 // items; ranked items list value sets best first. Edits that the backend would
 // reject are refused here with a problem code, never silently rewritten.
 
-export type CompareNamespace = "subgroup" | "release" | "anibt" | "rt";
+export type CompareNamespace = "subgroup" | "anibt" | "rt";
 export type CompareKind = "score" | "revision" | "single" | "multi";
 export type CompareItemDef = { key: QualityCompareKey; namespace: CompareNamespace; kind: CompareKind };
 
 /** Registry in catalog order (namespace, then attribute). */
 export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "subgroup.score", namespace: "subgroup", kind: "score" },
-  { key: "release.lang", namespace: "release", kind: "single" },
-  { key: "release.resolution", namespace: "release", kind: "single" },
-  { key: "release.revision", namespace: "release", kind: "revision" },
   { key: "anibt.resolution", namespace: "anibt", kind: "single" },
   { key: "anibt.language", namespace: "anibt", kind: "multi" },
   { key: "anibt.subtitle", namespace: "anibt", kind: "single" },
@@ -27,16 +24,17 @@ export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "rt.source", namespace: "rt", kind: "single" },
   { key: "rt.codec", namespace: "rt", kind: "single" },
   { key: "rt.content_rating", namespace: "rt", kind: "single" },
+  { key: "rt.revision", namespace: "rt", kind: "revision" },
 ];
 
-export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "release", "anibt", "rt"];
+export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "anibt", "rt"];
 
 export const MAX_RANKS = 64;
 export const MAX_SET_VALUES = 8;
 export const MAX_VALUE_BYTES = 128;
 
 export function itemDef(key: QualityCompareKey): CompareItemDef {
-  return COMPARE_ITEMS.find((item) => item.key === key) ?? { key, namespace: "release", kind: "single" };
+  return COMPARE_ITEMS.find((item) => item.key === key) ?? { key, namespace: "rt", kind: "single" };
 }
 
 export function isRanked(key: QualityCompareKey): boolean {

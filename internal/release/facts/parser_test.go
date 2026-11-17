@@ -3,13 +3,7 @@ package facts
 import (
 	"encoding/json"
 	"testing"
-
-	"bansoko/internal/attrrules"
 )
-
-func testRules() attrrules.Rules {
-	return attrrules.Rules{Version: 1, Resolution: []string{"2160p", "1440p", "1080p", "720p", "480p"}, Quality: []string{"remux", "web-dl", "webrip", "bluray", "bdrip", "hdtv"}, Language: []string{"chs", "cht", "sc", "tc", "jpn", "eng"}, SpecialMarkers: []string{"special", "ncop", "nced"}, GroupBrackets: []string{"[", "]"}}
-}
 
 // The lazy profile refresh must project the frozen plan coverage, not re-parse
 // the stored title. A title that would parse to another episode cannot move the
@@ -25,21 +19,21 @@ func TestRecomputeCurrentProfileProjectsFrozenCoverage(t *testing.T) {
 		CoverageKeys:     []string{"tv:e1"},
 	}
 	coverage := []string{"tv:e12"}
-	updated, changed, err := RecomputeCurrentProfile(existing, testRules(), &coverage, CompareSource{})
+	updated, changed, err := RecomputeCurrentProfile(existing, &coverage, CompareSource{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !changed || updated.ReleaseVersion != existing.ReleaseVersion {
 		t.Fatalf("recompute must be pure and report changed: changed=%v version=%d", changed, updated.ReleaseVersion)
 	}
-	if updated.Resolution != "1080p" || updated.ParserVersion == existing.ParserVersion {
-		t.Fatalf("current attr profile was not applied: %+v", updated)
+	if updated.Resolution != "" || updated.ParserVersion == existing.ParserVersion {
+		t.Fatalf("source projection must not parse title attributes: %+v", updated)
 	}
 	if len(updated.CoverageKeys) != 1 || updated.CoverageKeys[0] != "tv:e12" {
 		t.Fatalf("coverage = %v, want the frozen plan key tv:e12", updated.CoverageKeys)
 	}
-	if updated.InputFingerprint != InputFingerprint("[Group] Show - 99 [1080p]", nil, false) {
-		t.Fatal("input fingerprint must remain the title/input identity")
+	if updated.InputFingerprint == InputFingerprint("[Group] Show - 99 [1080p]", nil, false) {
+		t.Fatal("input fingerprint must include frozen coverage and comparison evidence")
 	}
 	if string(existing.Facts) != `{"resolution":"720p"}` {
 		t.Fatal("recompute must not mutate the old facts row")
@@ -55,7 +49,7 @@ func TestRecomputeCurrentProfileKeepsEmptyCoverageUnresolved(t *testing.T) {
 		CoverageKeys: []string{CoverageUnresolved},
 	}
 	coverage := []string{}
-	updated, changed, err := RecomputeCurrentProfile(existing, testRules(), &coverage, CompareSource{})
+	updated, changed, err := RecomputeCurrentProfile(existing, &coverage, CompareSource{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +70,7 @@ func TestRecomputeCurrentProfileNoOpWithoutFrozenPlan(t *testing.T) {
 		RawEvidence:   []byte(`{"title":"[Group] Show - 01 [1080p]"}`),
 		CoverageKeys:  []string{"tv:e1"},
 	}
-	updated, changed, err := RecomputeCurrentProfile(existing, testRules(), nil, CompareSource{})
+	updated, changed, err := RecomputeCurrentProfile(existing, nil, CompareSource{})
 	if err != nil || changed {
 		t.Fatalf("missing frozen plan must be a no-op: changed=%v err=%v", changed, err)
 	}
@@ -88,7 +82,7 @@ func TestRecomputeCurrentProfileNoOpWithoutFrozenPlan(t *testing.T) {
 func TestRecomputeCurrentProfileNoOpWithoutTitle(t *testing.T) {
 	coverage := []string{"tv:e12"}
 	for _, raw := range []json.RawMessage{nil, []byte(`{}`), []byte(`{"title":"  "}`), []byte(`not-json`)} {
-		updated, changed, err := RecomputeCurrentProfile(ReleaseCandidateFacts{RawEvidence: raw}, testRules(), &coverage, CompareSource{})
+		updated, changed, err := RecomputeCurrentProfile(ReleaseCandidateFacts{RawEvidence: raw}, &coverage, CompareSource{})
 		if err != nil || changed || updated.ParserVersion != "" {
 			t.Fatalf("missing title must be a no-op: raw=%s changed=%v err=%v", raw, changed, err)
 		}

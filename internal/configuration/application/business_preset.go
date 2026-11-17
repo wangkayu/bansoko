@@ -10,7 +10,6 @@ import (
 	"bansoko/internal/anime/animeconfig"
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 )
 
@@ -141,7 +140,7 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	if err != nil {
 		return result, fmt.Errorf("read complete file effect preset: %w", err)
 	}
-	var varsContent, attrContent []byte
+	var varsContent []byte
 	err = tx.QueryRowContext(ctx, `SELECT fingerprint,content FROM naming_vars_versions WHERE active`).Scan(&result.Programs.Vars.Digest, &varsContent)
 	if err != nil {
 		return result, fmt.Errorf("read Vars program reference: %w", err)
@@ -154,21 +153,5 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	if _, err := namingvars.NewProgram(result.Programs.Vars, source); err != nil {
 		return result, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT fingerprint,content FROM attr_rule_versions WHERE active`).Scan(&result.Programs.AttrRules.Digest, &attrContent)
-	if err != nil {
-		return result, fmt.Errorf("read attrrules reference: %w", err)
-	}
-	var rules attrrules.Rules
-	if err := json.Unmarshal(attrContent, &rules); err != nil {
-		return result, err
-	}
-	fp, err := attrrules.Fingerprint(rules)
-	if err != nil {
-		return result, err
-	}
-	if fp != result.Programs.AttrRules.Digest {
-		return result, fmt.Errorf("attrrules source digest mismatch")
-	}
-	result.Programs.AttrRules.Version = attrrules.ProfileVersion(fp)
 	return result.Freeze()
 }

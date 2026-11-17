@@ -6,10 +6,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
 )

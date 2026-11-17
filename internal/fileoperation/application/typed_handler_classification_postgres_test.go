@@ -8,12 +8,13 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // Intercept only the production capture query; all transaction and typed-stage

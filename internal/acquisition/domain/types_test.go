@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"bansoko/internal/attrrules"
 )
 
 func TestParseEpisodeUsesRegexAndOffset(t *testing.T) {
@@ -105,94 +103,6 @@ func TestParseEpisodeExactDefaultPatterns(t *testing.T) {
 		if string(result.EpisodeNumber) != tt.want {
 			t.Fatalf("%q: EpisodeNumber=%q, want %q", tt.title, result.EpisodeNumber, tt.want)
 		}
-	}
-}
-
-func testRules() attrrules.Rules {
-	return attrrules.Rules{Version: 1, Resolution: []string{"2160p", "1440p", "1080p", "720p", "480p"}, Quality: []string{"remux", "web-dl", "webrip", "bluray", "bdrip", "hdtv"}, Language: []string{"chs", "cht", "sc", "tc", "jpn", "eng"}, SpecialMarkers: []string{"special", "ncop", "nced"}, GroupBrackets: []string{"[", "]"}}
-}
-func TestParseReleaseFactsUsesConfiguredGroupBrackets(t *testing.T) {
-	rules := testRules()
-	rules.GroupBrackets = []string{"<", ">"}
-	parsed := ParseReleaseFacts("<Configured Group> Show 1080p", rules)
-	if parsed.GroupName != "Configured Group" {
-		t.Fatalf("group=%q, want configured bracket group", parsed.GroupName)
-	}
-	if parsed.Confidence != "certain" {
-		t.Fatalf("confidence=%q, want certain", parsed.Confidence)
-	}
-	parsed = ParseReleaseFacts("[Hardcoded Group] Show 1080p", rules)
-	if parsed.GroupName != "" {
-		t.Fatalf("group=%q, parser used hard-coded brackets", parsed.GroupName)
-	}
-}
-
-func TestParseReleaseFactsFailsClosedForInvalidGroupBrackets(t *testing.T) {
-	for _, brackets := range [][]string{nil, {}, {"["}, {"[", "]", "extra"}, {"", "]"}, {"[", ""}} {
-		rules := testRules()
-		rules.GroupBrackets = brackets
-		parsed := ParseReleaseFacts("[Group] Show 1080p", rules)
-		if parsed.GroupName != "" {
-			t.Fatalf("brackets=%v: group=%q, want empty", brackets, parsed.GroupName)
-		}
-		if parsed.Confidence != "uncertain" {
-			t.Fatalf("brackets=%v: confidence=%q, want uncertain", brackets, parsed.Confidence)
-		}
-	}
-}
-func TestParseFileDisplayFacts(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		want     FileDisplayFacts
-	}{
-		{
-			name:     "full badges with revision and language",
-			filename: "[Nekomoe kissaten][Sakamoto Days][01v2][1080p][CHS].mkv",
-			want:     FileDisplayFacts{Revision: "v2", Resolution: "1080p", Language: "chs"},
-		},
-		{
-			name:     "decimal episode keeps its revision",
-			filename: "[Group] Show - 07.5v3 [720p].mkv",
-			want:     FileDisplayFacts{Revision: "v3", Resolution: "720p"},
-		},
-		{
-			name:     "subtitle file carries language only",
-			filename: "[Group] Show - 12 [CHT].ass",
-			want:     FileDisplayFacts{Language: "cht"},
-		},
-		{
-			name:     "v0 is not a revision",
-			filename: "[Group] Show - 01v0 [1080p].mkv",
-			want:     FileDisplayFacts{Resolution: "1080p"},
-		},
-		{
-			name:     "a codec tag is not a revision",
-			filename: "[Group] Show - 01 [x265v2k][1080p].mkv",
-			want:     FileDisplayFacts{Resolution: "1080p"},
-		},
-		{
-			name:     "no episode yields only resolution",
-			filename: "[Group] Show [1080p].mkv",
-			want:     FileDisplayFacts{Resolution: "1080p"},
-		},
-		{
-			name:     "unparseable filename yields nothing",
-			filename: "menu.png",
-			want:     FileDisplayFacts{},
-		},
-		{
-			name:     "empty filename yields nothing",
-			filename: "   ",
-			want:     FileDisplayFacts{},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := ParseFileDisplayFacts(test.filename, testRules()); got != test.want {
-				t.Fatalf("ParseFileDisplayFacts(%q) = %+v, want %+v", test.filename, got, test.want)
-			}
-		})
 	}
 }
 
@@ -381,81 +291,5 @@ func TestParseFeedDetailedDistinguishesEmptyAndSkippedItems(t *testing.T) {
 func TestParseFeedDetailedRejectsUnsupportedRoot(t *testing.T) {
 	if _, err := ParseFeedDetailed([]byte(`<html><body>not a feed</body></html>`)); err == nil {
 		t.Fatal("non-feed XML root must be rejected")
-	}
-}
-
-func TestEvaluateCustomRSSUsesOneLogicalGroupAndRSSMax(t *testing.T) {
-	day := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
-	decision, err := Evaluate([]ReleaseCandidate{
-		{ID: "a", StableID: "a", Title: "show 01", Group: "Custom", Episode: 1, Published: day},
-		{ID: "b", StableID: "b", Title: "show 01 v2", Group: "Custom", Episode: 1, Published: day.Add(time.Hour)},
-		{ID: "c", StableID: "c", Title: "show 02", Group: "Custom", Episode: 2, Published: day.Add(2 * time.Hour)},
-	}, SelectionPolicy{Mode: ModeAll, RSSMax: 2})
-	if err != nil || len(decision.Candidates) != 3 || decision.Explanation["custom_group_count"] != 1 {
-		t.Fatalf("unexpected decision: %+v, err=%v", decision, err)
-	}
-}
-
-func TestEvaluateIgnoresPerEpisodeRSSMaxAndKeepsFullFeed(t *testing.T) {
-	day := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
-	decision, err := Evaluate([]ReleaseCandidate{
-		{ID: "1a", StableID: "1a", Group: "A", Episode: 1, Published: day},
-		{ID: "1b", StableID: "1b", Group: "A", Episode: 1, Published: day.Add(time.Minute)},
-		{ID: "1c", StableID: "1c", Group: "A", Episode: 1, Published: day.Add(2 * time.Minute)},
-		{ID: "2a", StableID: "2a", Group: "A", Episode: 2, Published: day.Add(3 * time.Minute)},
-		{ID: "2b", StableID: "2b", Group: "A", Episode: 2, Published: day.Add(4 * time.Minute)},
-	}, SelectionPolicy{Mode: ModeAll, RSSMax: 2})
-	if err != nil || len(decision.Candidates) != 5 {
-		t.Fatalf("full-feed evaluation must keep every filtered release: %+v, err=%v", decision, err)
-	}
-	if decision.Explanation["selection_scope"] != "full_feed" || decision.Explanation["rssmax_ignored"] != true {
-		t.Fatalf("full-feed evidence is missing: %+v", decision.Explanation)
-	}
-}
-
-func TestEvaluateRejectsRetiredPerGroupMode(t *testing.T) {
-	_, err := Evaluate([]ReleaseCandidate{
-		{ID: "1a", StableID: "1a", Group: "Custom", Episode: 1},
-		{ID: "1b", StableID: "1b", Group: "Custom", Episode: 1},
-		{ID: "2a", StableID: "2a", Group: "Custom", Episode: 2},
-	}, SelectionPolicy{Mode: ModePerGroup, RSSMax: 3})
-	if err == nil {
-		t.Fatal("retired per_group mode must be rejected")
-	}
-}
-
-func TestEvaluateAppliesTypedQualityAndLanguageFilters(t *testing.T) {
-	decision, err := Evaluate([]ReleaseCandidate{
-		{ID: "good", StableID: "good", Group: "Custom", Quality: "1080p", Language: "chs", Episode: 1},
-		{ID: "bad-quality", StableID: "bad-quality", Group: "Custom", Quality: "720p", Language: "chs", Episode: 1},
-		{ID: "bad-language", StableID: "bad-language", Group: "Custom", Quality: "1080p", Language: "eng", Episode: 1},
-	}, SelectionPolicy{Mode: ModeAll, RSSMax: 3, QualityInclude: []string{"1080p"}, LanguageInclude: []string{"chs"}})
-	if err != nil || len(decision.Candidates) != 1 || decision.Candidates[0].ID != "good" {
-		t.Fatalf("typed quality/language filters were not applied: %+v, err=%v", decision, err)
-	}
-	filters, ok := decision.Explanation["filters"].(map[string]any)
-	if !ok || filters["quality_include"] == nil || filters["language_include"] == nil {
-		t.Fatalf("filter explanation missing: %+v", decision.Explanation)
-	}
-}
-
-func TestParseReleaseRevision(t *testing.T) {
-	cases := map[string]string{
-		"[SampleGroup] 进击的巨人 - 01v2 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]": "v2",
-		"[示例字幕组&示例协作组] 进击的巨人 / 进击的巨人 [03V3][WebRip 1080p]":                 "v3",
-		"[Group] Title [v2][1080p]":           "v2",
-		"[Group] 标题 第01话v2 [1080p]":           "v2",
-		"[Group] Title - 01 [1080p]":          "",
-		"[Group] Title - 01v0 [1080p]":        "",
-		"[Group] Title - 12.5v2 [1080p]":      "v2",
-		"[Group] Title S2 - 01 [HEVC x265v2]": "",
-	}
-	for title, want := range cases {
-		if got := ParseReleaseRevision(title); got != want {
-			t.Errorf("ParseReleaseRevision(%q) = %q want %q", title, got, want)
-		}
-	}
-	if facts := ParseReleaseFacts("[Group] Title - 01v2 [1080p]", testRules()); facts.Revision != "v2" {
-		t.Fatalf("ParseReleaseFacts revision = %q", facts.Revision)
 	}
 }

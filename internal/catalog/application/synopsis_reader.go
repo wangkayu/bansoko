@@ -13,6 +13,7 @@ import (
 	"bansoko/internal/catalog/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/runtime/buildinfo"
+
 	"github.com/PuerkitoBio/goquery"
 )
 

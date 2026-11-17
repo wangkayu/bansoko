@@ -24,11 +24,7 @@ func mapRulesPreviewParsedFacts(value *animedomain.ParsedReleaseFacts) *generate
 		return nil
 	}
 	mapped := &generated.ParsedReleaseFacts{
-		Episode:   cloneRulesPreviewFloat32(value.Episode),
-		GroupName: cloneRulesPreviewString(value.GroupName),
-		Languages: cloneRulesPreviewStrings(value.Languages),
-		Quality:   cloneRulesPreviewString(value.Quality),
-		Special:   cloneRulesPreviewBool(value.Special),
+		Episode: cloneRulesPreviewFloat32(value.Episode),
 	}
 	if value.Coverage != nil {
 		mapped.Coverage = &generated.ReleaseCoverage{Episodes: append([]int(nil), value.Coverage.Episodes...)}

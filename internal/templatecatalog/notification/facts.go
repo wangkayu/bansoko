@@ -257,6 +257,20 @@ func FileReltitleFactsFromTitleTags(block []byte, prefix string, text func(strin
 	return facts
 }
 
+// InputSourceTags returns only native tags frozen in the accepted input.
+// Historical absence is not permission to read the current release row.
+func InputSourceTags(snapshot []byte) json.RawMessage {
+	var input struct {
+		Source struct {
+			Tags json.RawMessage `json:"tag_evidence"`
+		} `json:"source"`
+	}
+	if json.Unmarshal(snapshot, &input) != nil {
+		return nil
+	}
+	return input.Source.Tags
+}
+
 // InputVarsOutput returns the frozen Vars output of an acquisition input
 // snapshot (config.vars.output), or nil.
 func InputVarsOutput(snapshot []byte) map[string]any {

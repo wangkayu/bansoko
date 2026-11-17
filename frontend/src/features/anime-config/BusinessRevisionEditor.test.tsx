@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { BusinessRevisionEditor } from "./BusinessRevisionEditor";
 import type { AnimeDraft } from "../../lib/api/client";
-import type { BusinessPresetView } from "../../lib/api/client";
 import { webcrypto, createHash } from "node:crypto";
 import { canonicalJSON } from "../../lib/draft";
 import { preset } from "../../testing/businessPreset";
@@ -73,7 +72,7 @@ it("real complete business controls freeze SHA then save and explicitly apply ex
 });
 it("program digests are read-only; a failed save preserves the edited draft",async()=>{
  render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} />);fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
- expect(screen.queryByLabelText("vars digest")).toBeNull();expect(screen.queryByLabelText("attrrules digest")).toBeNull();
+ expect(screen.queryByLabelText("vars digest")).toBeNull();
  await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));mocks.save.mockRejectedValueOnce(new Error("exact Vars program is not persisted"));fireEvent.click(screen.getByText(t("config.revision.save")));
  await waitFor(()=>expect(mocks.save).toHaveBeenCalledTimes(1));await screen.findByRole("alert");
  expect(screen.getByRole("combobox",{name:t("replacement.admissionTitle")})).toHaveTextContent(t("replacement.admission.all"));expect(screen.getByText(t("config.revision.dirty"))).toBeTruthy();expect(mocks.apply).not.toHaveBeenCalled();

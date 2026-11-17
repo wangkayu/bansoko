@@ -474,7 +474,7 @@ const (
 
 // Defines values for BusinessSnapshotSchemaVersion.
 const (
-	BusinessSnapshotSchemaVersionBusinessSnapshotV1 BusinessSnapshotSchemaVersion = "business-snapshot-v1"
+	BusinessSnapshotSchemaVersionBusinessSnapshotV2 BusinessSnapshotSchemaVersion = "business-snapshot-v2"
 )
 
 // Defines values for CatalogEntrySynopsisProvider.
@@ -1768,25 +1768,23 @@ const (
 
 // Defines values for QualityCompareKey.
 const (
-	QualityCompareKeyAnibtFormat       QualityCompareKey = "anibt.format"
-	QualityCompareKeyAnibtLanguage     QualityCompareKey = "anibt.language"
-	QualityCompareKeyAnibtResolution   QualityCompareKey = "anibt.resolution"
-	QualityCompareKeyAnibtSubtitle     QualityCompareKey = "anibt.subtitle"
-	QualityCompareKeyReleaseLang       QualityCompareKey = "release.lang"
-	QualityCompareKeyReleaseResolution QualityCompareKey = "release.resolution"
-	QualityCompareKeyReleaseRevision   QualityCompareKey = "release.revision"
-	QualityCompareKeyRtCodec           QualityCompareKey = "rt.codec"
-	QualityCompareKeyRtContentRating   QualityCompareKey = "rt.content_rating"
-	QualityCompareKeyRtResolution      QualityCompareKey = "rt.resolution"
-	QualityCompareKeyRtSource          QualityCompareKey = "rt.source"
-	QualityCompareKeyRtSubFlag         QualityCompareKey = "rt.sub_flag"
-	QualityCompareKeyRtSubLang         QualityCompareKey = "rt.sub_lang"
-	QualityCompareKeySubgroupScore     QualityCompareKey = "subgroup.score"
+	QualityCompareKeyAnibtFormat     QualityCompareKey = "anibt.format"
+	QualityCompareKeyAnibtLanguage   QualityCompareKey = "anibt.language"
+	QualityCompareKeyAnibtResolution QualityCompareKey = "anibt.resolution"
+	QualityCompareKeyAnibtSubtitle   QualityCompareKey = "anibt.subtitle"
+	QualityCompareKeyRtCodec         QualityCompareKey = "rt.codec"
+	QualityCompareKeyRtContentRating QualityCompareKey = "rt.content_rating"
+	QualityCompareKeyRtResolution    QualityCompareKey = "rt.resolution"
+	QualityCompareKeyRtRevision      QualityCompareKey = "rt.revision"
+	QualityCompareKeyRtSource        QualityCompareKey = "rt.source"
+	QualityCompareKeyRtSubFlag       QualityCompareKey = "rt.sub_flag"
+	QualityCompareKeyRtSubLang       QualityCompareKey = "rt.sub_lang"
+	QualityCompareKeySubgroupScore   QualityCompareKey = "subgroup.score"
 )
 
 // Defines values for QualityProfileVersion.
 const (
-	QualityProfileVersionProfileV1 QualityProfileVersion = "profile-v1"
+	QualityProfileVersionProfileV2 QualityProfileVersion = "profile-v2"
 )
 
 // Defines values for RSSCursorStrategy.
@@ -4114,7 +4112,7 @@ type BusinessReplacement struct {
 	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	// QualityProfile The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide.
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
 
@@ -4157,8 +4155,7 @@ type BusinessSnapshot struct {
 	FileEffectVersion int64                  `json:"file_effect_version"`
 	Parser            BusinessParserEnvelope `json:"parser"`
 	Programs          struct {
-		Attrrules BusinessProgramRef `json:"attrrules"`
-		Vars      BusinessProgramRef `json:"vars"`
+		Vars BusinessProgramRef `json:"vars"`
 	} `json:"programs"`
 	Replacement        BusinessReplacement           `json:"replacement"`
 	ReplacementVersion int64                         `json:"replacement_version"`
@@ -5823,7 +5820,7 @@ type InstanceReplacementPolicyInput struct {
 	// ExpectedVersion CAS expected version (0 = create).
 	ExpectedVersion int `json:"expected_version"`
 
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	// QualityProfile The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide.
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
 
@@ -5833,7 +5830,7 @@ type InstanceReplacementPolicyView struct {
 	AdmissionMode  ReplacementAdmissionMode `json:"admission_mode"`
 	ManagedAnimeId ID                       `json:"managed_anime_id"`
 
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	// QualityProfile The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide.
 	QualityProfile       QualityProfile `json:"quality_profile"`
 	SourceDefaultVersion int            `json:"source_default_version"`
 	UpdatedAt            *time.Time     `json:"updated_at"`
@@ -6958,11 +6955,15 @@ type ParseReleaseTitleInput struct {
 	Title string `json:"title"`
 }
 
-// ParseReleaseTitleResult defines model for ParseReleaseTitleResult.
+// ParseReleaseTitleResult The native reltitle projection of the submitted release title. Group, source type, languages and revision are values in facts.tags or facts.value_tags, not separate guesses from another parser.
 type ParseReleaseTitleResult struct {
-	Episode       *EpisodeParseResult `json:"episode,omitempty"`
-	Facts         ParsedReleaseFacts  `json:"facts"`
-	ParserVersion string              `json:"parser_version"`
+	Episode *EpisodeParseResult `json:"episode,omitempty"`
+
+	// Facts The title-parse tags frozen when the release was observed, with the parser that read them. An empty list is a real fact; diagnostic (reltitle_unavailable, reltitle_parse_failed) explains a failed read.
+	Facts TitleTagFacts `json:"facts"`
+
+	// ParserVersion The reltitle implementation that produced facts.
+	ParserVersion string `json:"parser_version"`
 }
 
 // ParseTorrentFile defines model for ParseTorrentFile.
@@ -6999,15 +7000,7 @@ type ParsedReleaseFacts struct {
 	Coverage *ReleaseCoverage `json:"coverage,omitempty"`
 
 	// Episode The single episode the release places. Absent for a batch (see coverage) and when no file carries an episode of its own.
-	Episode   *float32  `json:"episode,omitempty"`
-	GroupName *string   `json:"group_name,omitempty"`
-	Languages *[]string `json:"languages,omitempty"`
-	Quality   *string   `json:"quality,omitempty"`
-
-	// Special Marks a special/extracurricular release (NCOP/NCED/Special) excluded
-	// from the regular episode progress aggregation. Defaults to false
-	// when absent so legacy rows aggregate normally.
-	Special *bool `json:"special,omitempty"`
+	Episode *float32 `json:"episode,omitempty"`
 }
 
 // ParserCatalogEntry defines model for ParserCatalogEntry.
@@ -7746,7 +7739,7 @@ type QBittorrentTorrentFile struct {
 	Size     int64   `json:"size"`
 }
 
-// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers.
+// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that has an unlisted value ranks last; a missing value on either side makes that layer tie. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and rt.revision take no ranks (subscription subgroup score; numeric frozen rt Version). An absent or non-numeric revision on either side makes that layer tie. rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers.
 type QualityCompareItem struct {
 	Key   QualityCompareKey `json:"key"`
 	Ranks [][]string        `json:"ranks"`
@@ -7755,7 +7748,7 @@ type QualityCompareItem struct {
 // QualityCompareKey defines model for QualityCompareKey.
 type QualityCompareKey string
 
-// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+// QualityProfile The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide.
 type QualityProfile struct {
 	Items   []QualityCompareItem  `json:"items"`
 	Version QualityProfileVersion `json:"version"`
@@ -8631,7 +8624,7 @@ type ReplacementCompareStep struct {
 // ReplacementCompareStepResult defines model for ReplacementCompareStep.Result.
 type ReplacementCompareStepResult string
 
-// ReplacementCompareVocabulary Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked.
+// ReplacementCompareVocabulary Candidate values per ranked comparison item: anibt.* from frozen values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked.
 type ReplacementCompareVocabulary struct {
 	Items []RetentionCompareVocabularyItem `json:"items"`
 }
@@ -8714,7 +8707,7 @@ type ReplacementPolicyDefaultInput struct {
 	// ExpectedVersion CAS expected version (0 = create).
 	ExpectedVersion int `json:"expected_version"`
 
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	// QualityProfile The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide.
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
 
@@ -8723,7 +8716,7 @@ type ReplacementPolicyDefaultView struct {
 	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	// QualityProfile The replacement comparison profile (profile-v2): ordered comparison items over frozen release rt/AniBT values and subgroup policy. The first differing available item decides; all items equal, the existing file stays. File size, file-name parsing and measured media never decide.
 	QualityProfile QualityProfile `json:"quality_profile"`
 	UpdatedAt      *time.Time     `json:"updated_at"`
 	Version        int            `json:"version"`
@@ -8737,7 +8730,7 @@ type ReplacementPoolEvidence struct {
 	PoolKey string  `json:"pool_key"`
 	Reason  *string `json:"reason,omitempty"`
 
-	// Steps The comparison steps that decided the pool, in item order; the last step decides (key "size" is the size tiebreak).
+	// Steps The comparison steps that decided the pool, in item order; the last differing available configured step decides; ties keep the existing file.
 	Steps   *[]ReplacementCompareStep      `json:"steps,omitempty"`
 	Verdict ReplacementPoolEvidenceVerdict `json:"verdict"`
 	Winner  *ReplacementPlacementRef       `json:"winner,omitempty"`
@@ -9853,6 +9846,9 @@ type TitleTagFacts struct {
 	// Schema reltitle-attrs-v1. The block also freezes the reltitle title, group and release version for the reltitle naming namespace; they are not filter tags and are not listed here.
 	Schema string   `json:"schema"`
 	Tags   []string `json:"tags"`
+
+	// ValueTags Native title, group and version values used by rt.*.
+	ValueTags *[]string `json:"value_tags,omitempty"`
 }
 
 // TitleTagVocabulary The title-parse row vocabulary: every dimension and canonical value of the pinned reltitle dictionary, in dictionary order.

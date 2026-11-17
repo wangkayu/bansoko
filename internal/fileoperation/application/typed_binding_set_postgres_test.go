@@ -8,9 +8,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestTypedBindingSetRejectsIncompleteAndForeignPreparedDecisions(t *testing.T) {

@@ -6,8 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"

@@ -24,14 +24,14 @@ const preset: BusinessPresetView = {
  tag_filters: { anibt: { require: ["resolution:1080p"], exclude: [] }, title: { require: [], exclude: [] } },
  subscription_defaults: { ignore_multi_video_releases: false },
  snapshot: {
-  schema_version: "business-snapshot-v1",
+  schema_version: "business-snapshot-v2",
   sections: { subgroups: { max_rss: 7, entries: [] }, parser: { episode_patterns: ["global"] }, release_rules: { must_contain: "Global", not_in: "" }, file_rules: { must_contain: "main/", not_in: "extra" }, naming_rules: { language: "js-naming-1", unknown: {directory_template:"",video_filename_template:""}, tv: { directory_template: "tv", video_filename_template: "video" }, movie: { directory_template: "movie", video_filename_template: "movie" }, subtitle_suffix_template: "sub" }, file_effect: { operation: "move", collision_policy: "fail" } },
   section_versions: { subgroups: 1, parser: 2, release_rules: 3, file_rules: 4, naming_rules: 5, file_effect: 6 },
   section_schemas: { subgroups: "1", parser: "2", release_rules: "3", file_rules: "4", naming_rules: "5", file_effect: "6" },
   parser: { schema_version: "parser-policy-envelope-v1", kind: "regex", policy_version: 8, provenance: "global", profile_version: 2, rules_owner_version: 2, source_owner: "global" },
-  replacement: { admission_mode: "single_copy", quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [] }] } },
+  replacement: { admission_mode: "single_copy", quality_profile: { version: "profile-v2", items: [{ key: "rt.resolution", ranks: [] }] } },
   replacement_version: 9, unclassified_route: "route", file_effect_version: 10,
-  programs: { vars: { version: `naming-vars-v1@sha256:${"b".repeat(64)}`, digest: `sha256:${"b".repeat(64)}` }, attrrules: { version: `release-facts-v1@sha256:${"c".repeat(64)}`, digest: `sha256:${"c".repeat(64)}` } },
+  programs: { vars: { version: `naming-vars-v1@sha256:${"b".repeat(64)}`, digest: `sha256:${"b".repeat(64)}` } },
  },
 };
 describe("atomic business load", () => {
@@ -64,7 +64,7 @@ describe("atomic business load", () => {
   renderWithQuery(createElement(Editor));
   const user=userEvent.setup();
   const pick=async(name:string,option:string)=>{await user.click(screen.getByRole("combobox",{name}));await user.click(await screen.findByRole("option",{name:option}));};
-  const resolution=compareItemName("release.resolution");
+  const resolution=compareItemName("rt.resolution");
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"720p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"1080p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.entryEarlier",{value:"1080p"})}));
@@ -73,10 +73,10 @@ describe("atomic business load", () => {
 
   await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
   // Program digests are provenance and are not shown at all.
-  expect(screen.queryByLabelText("vars digest")).toBeNull();expect(screen.queryByLabelText("attrrules digest")).toBeNull();
+  expect(screen.queryByLabelText("vars digest")).toBeNull();
   expect(screen.queryByText(/sha256/)).toBeNull();
   const frozen=await freezeBusinessDraft(edited);
-  expect(frozen.business?.replacement).toEqual({admission_mode:"all",quality_profile:{version:"profile-v1",items:[{key:"release.resolution",ranks:[["1080p"],["720p"]]}]}});
+  expect(frozen.business?.replacement).toEqual({admission_mode:"all",quality_profile:{version:"profile-v2",items:[{key:"rt.resolution",ranks:[["1080p"],["720p"]]}]}});
   expect(frozen.business?.unclassified_route).toBe("skip");
   expect(frozen.business?.programs).toEqual(preset.snapshot.programs);
   expect(frozen.business_digest).toMatch(/^sha256:[a-f0-9]{64}$/);expect(frozen.business_digest).not.toBe(preset.digest);

@@ -26,7 +26,7 @@ const ITEM: RSSListItem = {
       projection_digest: "projection",
     },
   },
-  evaluation: { state: "evaluated", verdict: "filtered", reason_code: "filtered_by_rules", reason_detail: "release_must_contain_not_matched", parsed_facts: { episode: 4, special: false } },
+  evaluation: { state: "evaluated", verdict: "filtered", reason_code: "filtered_by_rules", reason_detail: "release_must_contain_not_matched", parsed_facts: { episode: 4 } },
   files: [
     { file_ref: "file-1", ordinal: 0, source_path: "excluded.mkv", filename: "excluded.mkv", size_bytes: 123, media_kind: "video", included: false, reason_code: "file_not_in_matched", safety: "valid" },
   ],

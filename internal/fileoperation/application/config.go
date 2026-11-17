@@ -255,15 +255,10 @@ func namingContextFacts(artifact artifactContext, file artifactFileContext, froz
 		ctx.File.Media.HDR = mediaFactString(mediaFacts, "hdr")
 	}
 
-	// Release-level quality is the shared fallback for missing file facts
-	// (the downloaded filename usually carries no [1080p]/language markers):
-	// the typed input's frozen media.quality resolution fills in — the same
-	// value the pre-download TargetSet rendered with. Nothing re-parses the
-	// release title: a parse fact is never a display naming fact, and a file
-	// whose frozen facts carry no resolution renders media.resolution empty.
-	if artifact.acceptedFacts && ctx.File.Media.Resolution == "" {
-		ctx.File.Media.Resolution = artifact.acceptedResolution
-	}
+	// media.* is the inspected file's own measurement. The release title's
+	// parse never fills it in: a file whose frozen facts carry no resolution
+	// renders media.resolution empty, and a template that wants the release
+	// resolution names rt.res explicitly.
 
 	// The value namespaces are the Release's frozen source facts, the same
 	// block the pre-download TargetSet rendered with.

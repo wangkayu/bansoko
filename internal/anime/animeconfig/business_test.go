@@ -2,8 +2,8 @@ package animeconfig
 
 import (
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
+	"bansoko/internal/qualityprofile"
 	"encoding/json"
 	"testing"
 )
@@ -26,10 +26,10 @@ func presetFixture(t *testing.T) BusinessSnapshot {
 		versions[name] = 3
 		schemas[name] = animedomain.SectionSchemaVersions[name]
 	}
-	return BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: sections, SectionVersions: versions, SectionSchemas: schemas,
+	return BusinessSnapshot{SchemaVersion: animedomain.BusinessSnapshotSchemaVersion, Sections: sections, SectionVersions: versions, SectionSchemas: schemas,
 		Parser:      animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2},
-		Replacement: ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}, ReplacementVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
-		Programs: ProgramReferences{Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"}, AttrRules: namingvars.ProgramRef{Version: attrrules.ProfileVersion("sha256:attr"), Digest: "sha256:attr"}}}
+		Replacement: ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}, ReplacementVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
+		Programs: ProgramReferences{Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"}}}
 }
 func TestBusinessFreezeDoesNotFollowGlobalMutation(t *testing.T) {
 	original := presetFixture(t)

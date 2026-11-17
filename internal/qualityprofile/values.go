@@ -1,14 +1,17 @@
 package qualityprofile
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
-	"regexp"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
 
 // ValuesVersion identifies the frozen comparison values shape.
-const ValuesVersion = "compare-values-v1"
+const ValuesVersion = "compare-values-v2"
 
 // SubgroupSource is the frozen RSS source group identity of a release: the
 // provider and its group ref, or CustomSubgroupProvider and the RSS source id
@@ -33,9 +36,10 @@ func (s SubgroupSource) Key() string {
 // with its candidate facts at acceptance: item key -> values (multi-value
 // fields split on "+"), plus the subgroup source.
 type FrozenValues struct {
-	Version  string              `json:"version"`
-	Values   map[string][]string `json:"values"`
-	Subgroup *SubgroupSource     `json:"subgroup,omitempty"`
+	Version      string              `json:"version"`
+	SourceDigest string              `json:"source_digest"`
+	Values       map[string][]string `json:"values"`
+	Subgroup     *SubgroupSource     `json:"subgroup,omitempty"`
 }
 
 // NewValues starts an empty frozen value set.
@@ -71,20 +75,47 @@ func (v *FrozenValues) SetJoined(key, joined string) {
 	v.Set(key, strings.Split(joined, "+")...)
 }
 
-// ParseValues decodes a stored compare_values document; an empty or
-// unrecognized document has no values.
-func ParseValues(raw []byte) FrozenValues {
+// ParseValues rejects stale or malformed caches. Migration/refresh must
+// explicitly rebuild them from frozen source tags, never silently read them empty.
+func ParseValues(raw []byte) (FrozenValues, error) {
 	var values FrozenValues
-	if len(raw) == 0 || json.Unmarshal(raw, &values) != nil || values.Version != ValuesVersion {
-		return NewValues()
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&values); err != nil {
+		return FrozenValues{}, fmt.Errorf("decode comparison values: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return FrozenValues{}, fmt.Errorf("comparison values must contain exactly one JSON document")
+	}
+	if values.Version != ValuesVersion {
+		return FrozenValues{}, fmt.Errorf("comparison values version must be %s, got %q", ValuesVersion, values.Version)
+	}
+	if digest, err := hex.DecodeString(values.SourceDigest); err != nil || len(digest) != 32 || values.SourceDigest != strings.ToLower(values.SourceDigest) {
+		return FrozenValues{}, fmt.Errorf("comparison values source digest must be a lowercase SHA256")
 	}
 	if values.Values == nil {
-		values.Values = map[string][]string{}
+		return FrozenValues{}, fmt.Errorf("comparison values map is required")
 	}
-	if values.Subgroup != nil && (strings.TrimSpace(values.Subgroup.Provider) == "" || strings.TrimSpace(values.Subgroup.GroupRef) == "") {
-		values.Subgroup = nil
+	for key, items := range values.Values {
+		definition, ok := Lookup(key)
+		if !ok || definition.Kind == KindScore || len(items) == 0 {
+			return FrozenValues{}, fmt.Errorf("invalid comparison values key %q", key)
+		}
+		seen := map[string]bool{}
+		for _, item := range items {
+			folded := strings.ToLower(item)
+			if item == "" || item != strings.TrimSpace(item) || seen[folded] {
+				return FrozenValues{}, fmt.Errorf("invalid comparison value for %q", key)
+			}
+			seen[folded] = true
+		}
 	}
-	return values
+	if group := values.Subgroup; group != nil {
+		if (group.Provider != "mikan" && group.Provider != "anibt" && group.Provider != CustomSubgroupProvider) || group.GroupRef == "" || group.GroupRef != strings.TrimSpace(group.GroupRef) {
+			return FrozenValues{}, fmt.Errorf("invalid comparison source group")
+		}
+	}
+	return values, nil
 }
 
 // JSON encodes the frozen values.
@@ -92,24 +123,25 @@ func (v FrozenValues) JSON() json.RawMessage {
 	if v.Values == nil {
 		v.Values = map[string][]string{}
 	}
-	v.Version = ValuesVersion
 	raw, _ := json.Marshal(v)
 	return raw
 }
 
-// revisionPattern reads a stored revision marker: "v2" or "2".
-var revisionPattern = regexp.MustCompile(`(?i)^v?(\d+)$`)
-
-// RevisionNumber is the numeric vN of a revision marker; no marker (or an
-// unreadable one) is v1.
-func RevisionNumber(value string) int64 {
-	match := revisionPattern.FindStringSubmatch(strings.TrimSpace(value))
-	if len(match) != 2 {
-		return 1
+// RevisionNumber interprets only a frozen rt Version value. Missing/invalid
+// input has no rank; it is never defaulted to v1 or parsed from a title.
+func RevisionNumber(value string) (int64, bool) {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "v") || strings.HasPrefix(value, "V") {
+		value = value[1:]
 	}
-	number, err := strconv.ParseInt(match[1], 10, 64)
-	if err != nil || number < 1 {
-		return 1
+	if value == "" {
+		return 0, false
 	}
-	return number
+	for _, c := range value {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	number, err := strconv.ParseInt(value, 10, 64)
+	return number, err == nil && number > 0
 }

@@ -12,7 +12,7 @@ import (
 	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/persistence/txscope"
-	"bansoko/internal/release/facts/adapter/persistence/media"
+	persistence "bansoko/internal/release/facts/adapter/persistence/media"
 	"bansoko/internal/testutil/disposabledb"
 )
 

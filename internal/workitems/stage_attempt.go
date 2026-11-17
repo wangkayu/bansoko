@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"bansoko/internal/persistence/txscope"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

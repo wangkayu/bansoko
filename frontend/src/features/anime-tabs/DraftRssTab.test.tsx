@@ -192,7 +192,7 @@ function viewFixture(): RSSListView {
               state: "evaluated",
               verdict: "accepted_pending_download",
               reason_code: "accepted",
-              parsed_facts: { episode: 16, group_name: "一号组", special: false },
+              parsed_facts: { episode: 16 },
             },
             files: [
               {
@@ -803,7 +803,7 @@ describe("订阅前 RSS 工作区：草稿偏移编辑与文件行", () => {
 
   it("组内没有集数时偏移弹窗不显示换算行", async () => {
     const view = viewFixture();
-    view.groups[0]!.items[0]!.evaluation.parsed_facts = { group_name: "一号组", special: false };
+    view.groups[0]!.items[0]!.evaluation.parsed_facts = {};
     mockedView.mockResolvedValue(view);
     renderRssTab({
       draft: offsetDraft(),

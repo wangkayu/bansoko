@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"bansoko/internal/attrrules"
 	"bansoko/internal/filemaintenance/planner"
 	"bansoko/internal/filemaintenance/policy"
 	observabilityport "bansoko/internal/observability/port"
@@ -309,10 +308,9 @@ WHERE managed_anime_id = $1 AND generation < $2 AND NOT derived_missing`, animeI
 	for _, file := range observedFiles {
 		seen[file.path] = struct{}{}
 	}
-	parserVersion, err := attrrules.CurrentProfileVersion()
-	if err != nil {
-		return nil, fmt.Errorf("read active attr profile version: %w", err)
-	}
+	// Calibration projects only persisted observations and coverage. Its
+	// version belongs to this projection, not to a release-title dictionary.
+	parserVersion := releasefacts.ParserVersion
 	facts := make([]calibratedFile, 0, len(observedFiles))
 	for _, file := range observedFiles {
 		observation := decodePlacementObservation(file.facts)

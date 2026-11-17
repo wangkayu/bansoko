@@ -8,7 +8,6 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/parser"
 )
@@ -172,13 +171,9 @@ func TestTargetPlanningMovieBindingUsesMovieNamingBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rules, _, err := attrrules.Current()
-	if err != nil {
-		t.Fatal(err)
-	}
 	release := animedomain.EvaluateFeedItemWithIdentity(item, animedomain.SourceEvaluationInput{
 		Index: 0, GroupName: snapshot.groupName,
-	}, snapshot.effective, animedomain.MetadataHold{}, rules, evidence.Identity)
+	}, snapshot.effective, animedomain.MetadataHold{}, evidence.Identity)
 	if release.Verdict != animedomain.ReleaseVerdict("accepted_pending_download") {
 		t.Fatalf("verdict = %q, want accepted_pending_download", release.Verdict)
 	}

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
@@ -85,7 +84,7 @@ func isURLIdentity(value string) bool {
 // RSS refresh, Release evaluation and one-shot admission; it never parses the
 // title itself, so a second regex implementation can never decide an automatic
 // identity. It performs no I/O and no persistence.
-func EvaluateFeedItemWithIdentity(item acquisitiondomain.FeedItem, source SourceEvaluationInput, effective EffectiveConfig, hold MetadataHold, rules attrrules.Rules, identity episodeidentity.EpisodeIdentity) PreviewReleaseResult {
+func EvaluateFeedItemWithIdentity(item acquisitiondomain.FeedItem, source SourceEvaluationInput, effective EffectiveConfig, hold MetadataHold, identity episodeidentity.EpisodeIdentity) PreviewReleaseResult {
 	_, stableKey := StableItemKey(item)
 	result := PreviewReleaseResult{
 		SourceIndex:   source.Index,
@@ -106,23 +105,9 @@ func EvaluateFeedItemWithIdentity(item acquisitiondomain.FeedItem, source Source
 		result.RawFacts.EnclosureLength = &length
 	}
 
-	facts := acquisitiondomain.ParseReleaseFacts(item.Title, rules)
+	// This projection owns only the selected identity. Native rt/AniBT tags
+	// remain on the feed item and are not duplicated by a second title parser.
 	parsed := ParsedReleaseFacts{}
-	if facts.GroupName != "" {
-		parsed.GroupName = &facts.GroupName
-	} else if source.GroupName != "" {
-		parsed.GroupName = &source.GroupName
-	}
-	if facts.Quality != "" {
-		parsed.Quality = &facts.Quality
-	}
-	if facts.Language != "" {
-		parsed.Languages = &[]string{facts.Language}
-	}
-	// Persist the special-flag verdict so the episode progress aggregation
-	// can exclude NCOP/NCED/Special releases without re-parsing the title.
-	special := facts.Special
-	parsed.Special = &special
 
 	// The release identity is title evidence only: a batch title
 	// (range, list, season pack) is not a failure, because acceptance is the
@@ -175,8 +160,8 @@ func frozenEpisodeNamingFacts(identity episodeidentity.EpisodeIdentity) *naming.
 	}
 	facts := &naming.FrozenEpisodeNamingFacts{Raw: raw, Number: string(*identity.Episode), Offset: identity.Offset, Display: string(*identity.Episode)}
 	// ep.source reports which evidence owner supplied the episode: the frozen
-	// identity's selected source (file_parser, release_parser, anibt or
-	// movie). A file-manager match overwrites it with "manual" at its own
+	// identity's selected source (file_parser, release_parser or movie).
+	// A file-manager match overwrites it with "manual" at its own
 	// construction site; nothing here invents a class.
 	if identity.SelectedSource != nil {
 		facts.Source = string(*identity.SelectedSource)
@@ -234,8 +219,10 @@ type previewFileOutcome struct {
 	Included       bool
 	ReasonCode     *string
 	RenderedTarget *string
-	RenderError    *string
-	Safety         PreviewFileResultSafety
+	// TargetPendingFacts names execution dependencies, never a placeholder path.
+	TargetPendingFacts []string
+	RenderError        *string
+	Safety             PreviewFileResultSafety
 	// SubtitleSuffix is the subtitle suffix the naming rules rendered for this
 	// file, set only for a subtitle that reached the naming engine and only
 	// when the rules render one. A bound subtitle's own target is composed
@@ -256,9 +243,9 @@ type previewFileOutcome struct {
 // placeholders. It is the only entry point for one manifest file: a release
 // with no manifest has no file to render at all, so there is deliberately no
 // single-file view derived from the feed's own filename.
-func PreviewExactFile(item acquisitiondomain.FeedItem, release PreviewReleaseResult, file ManifestFileInput, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, rules attrrules.Rules) ManifestFileResult {
-	outcome := renderManifestFile(item, release, effective, animeTitle, source, rules, path.Base(file.SourcePath), file, "", false)
-	return ManifestFileResult{FileRef: file.FileRef, Ordinal: file.Ordinal, SourcePath: file.SourcePath, Filename: file.Filename, SizeBytes: file.SizeBytes, MediaKind: file.MediaKind, Included: outcome.Included, ReasonCode: outcome.ReasonCode, RenderedTarget: outcome.RenderedTarget, RenderError: outcome.RenderError, Safety: outcome.Safety, BoundVideo: file.BoundVideo, EmptyFacts: outcome.EmptyFacts, Subtitle: outcome.Subtitle}
+func PreviewExactFile(item acquisitiondomain.FeedItem, release PreviewReleaseResult, file ManifestFileInput, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput) ManifestFileResult {
+	outcome := renderManifestFile(item, release, effective, animeTitle, source, path.Base(file.SourcePath), file, "", false)
+	return ManifestFileResult{FileRef: file.FileRef, Ordinal: file.Ordinal, SourcePath: file.SourcePath, Filename: file.Filename, SizeBytes: file.SizeBytes, MediaKind: file.MediaKind, Included: outcome.Included, ReasonCode: outcome.ReasonCode, RenderedTarget: outcome.RenderedTarget, RenderError: outcome.RenderError, Safety: outcome.Safety, BoundVideo: file.BoundVideo, EmptyFacts: outcome.EmptyFacts, Subtitle: outcome.Subtitle, TargetPendingFacts: outcome.TargetPendingFacts}
 }
 
 // companionSidecarTarget is the one landing rule for a subtitle that follows a
@@ -333,8 +320,10 @@ type ManifestFileResult struct {
 	Included       bool
 	ReasonCode     *string
 	RenderedTarget *string
-	RenderError    *string
-	Safety         PreviewFileResultSafety
+	// TargetPendingFacts names execution dependencies, never a placeholder path.
+	TargetPendingFacts []string
+	RenderError        *string
+	Safety             PreviewFileResultSafety
 	// BoundVideo is the SourcePath of the video a bound subtitle follows by the
 	// product's strict-prefix binding ("" for a video or an unbound subtitle).
 	// It travels with the result so a reader lists the subtitle under that
@@ -365,10 +354,9 @@ func PreviewFilesForManifest(
 	effective EffectiveConfig,
 	animeTitle string,
 	source SourceEvaluationInput,
-	rules attrrules.Rules,
 	unknownRoute string,
 ) []ManifestFileResult {
-	return PreviewFilesForManifestIn(item, release, files, effective, animeTitle, source, rules, unknownRoute, nil)
+	return PreviewFilesForManifestIn(item, release, files, effective, animeTitle, source, unknownRoute, nil)
 }
 
 // PreviewFilesForManifestIn is PreviewFilesForManifest under an explicit
@@ -383,7 +371,6 @@ func PreviewFilesForManifestIn(
 	effective EffectiveConfig,
 	animeTitle string,
 	source SourceEvaluationInput,
-	rules attrrules.Rules,
 	unknownRoute string,
 	selection *filekinds.Selection,
 ) []ManifestFileResult {
@@ -410,7 +397,7 @@ func PreviewFilesForManifestIn(
 			Filename: filename, SizeBytes: file.SizeBytes, MediaKind: file.MediaKind, Language: file.Language,
 			Included: outcome.Included, ReasonCode: outcome.ReasonCode,
 			RenderedTarget: outcome.RenderedTarget, RenderError: outcome.RenderError, Safety: outcome.Safety,
-			BoundVideo: file.BoundVideo, EmptyFacts: outcome.EmptyFacts, Subtitle: outcome.Subtitle,
+			BoundVideo: file.BoundVideo, EmptyFacts: outcome.EmptyFacts, Subtitle: outcome.Subtitle, TargetPendingFacts: outcome.TargetPendingFacts,
 		}
 	}
 	// Videos first: a subtitle follows the decision made for its bound video.
@@ -440,9 +427,9 @@ func PreviewFilesForManifestIn(
 				outcome = previewFileOutcome{ReasonCode: &reason, Safety: PreviewFileResultSafety("valid")}
 			} else if pass == 1 && unknownBySource[file.BoundVideo] {
 				// A subtitle of a routed unknown video is an unknown file too.
-				outcome = renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, rules, filename, file.MediaKind, file.SizeBytes, nil, file.Season, true, true)
+				outcome = renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, filename, file.MediaKind, file.SizeBytes, nil, file.Season, true, true)
 			} else {
-				outcome = renderManifestFile(item, release, effective, animeTitle, source, rules, filename, file, unknownRoute, true)
+				outcome = renderManifestFile(item, release, effective, animeTitle, source, filename, file, unknownRoute, true)
 				unknownBySource[file.SourcePath] = pass == 0 && unknownRoute == UnknownRouteRoute && unknownVideo(file)
 			}
 			// A subtitle follows its bound video: it lands beside that video's
@@ -599,11 +586,11 @@ func unknownVideo(file ManifestFileInput) bool {
 // (media.resolution, media.video_codec, media.audio_codec, media.container)
 // renders as a minimal placeholder such as ⟨res⟩ only when absent. The
 // acquisition target set renders without placeholders (PreviewExactFile).
-func renderManifestFile(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, rules attrrules.Rules, filename string, file ManifestFileInput, unknownRoute string, preview bool) previewFileOutcome {
+func renderManifestFile(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, filename string, file ManifestFileInput, unknownRoute string, preview bool) previewFileOutcome {
 	if unknownVideo(file) {
 		switch unknownRoute {
 		case UnknownRouteRoute:
-			return renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, rules, filename, file.MediaKind, file.SizeBytes, nil, file.Season, true, preview)
+			return renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, filename, file.MediaKind, file.SizeBytes, nil, file.Season, true, preview)
 		case UnknownRouteSkip:
 			reason := "unknown_skipped"
 			return previewFileOutcome{ReasonCode: &reason, Safety: PreviewFileResultSafety("valid")}
@@ -613,7 +600,7 @@ func renderManifestFile(item acquisitiondomain.FeedItem, release PreviewReleaseR
 		}
 	}
 	episode := PreviewFileEpisode(release, file)
-	return renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, rules, filename, file.MediaKind, file.SizeBytes, episode, file.Season, false, preview)
+	return renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, filename, file.MediaKind, file.SizeBytes, episode, file.Season, false, preview)
 }
 
 // PreviewFileEpisode returns the identity the current manifest projection uses
@@ -636,11 +623,11 @@ func PreviewFileEpisode(release PreviewReleaseResult, file ManifestFileInput) *n
 // release verdict. When the caller supplies a frozen Release episode identity
 // the naming consumes it instead of re-parsing the title, so the pre-download
 // target equals the eventual artifact render.
-func renderPreviewFileForName(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, rules attrrules.Rules, filename, mediaKind string, sizeBytes int64, episode *naming.FrozenEpisodeNamingFacts, unknown, preview bool) previewFileOutcome {
-	return renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, rules, filename, mediaKind, sizeBytes, episode, nil, unknown, preview)
+func renderPreviewFileForName(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, filename, mediaKind string, sizeBytes int64, episode *naming.FrozenEpisodeNamingFacts, unknown, preview bool) previewFileOutcome {
+	return renderPreviewFileForNameAndSeason(item, release, effective, animeTitle, source, filename, mediaKind, sizeBytes, episode, nil, unknown, preview)
 }
 
-func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, rules attrrules.Rules, filename, mediaKind string, sizeBytes int64, episode *naming.FrozenEpisodeNamingFacts, season *int, unknown, preview bool) previewFileOutcome {
+func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release PreviewReleaseResult, effective EffectiveConfig, animeTitle string, source SourceEvaluationInput, filename, mediaKind string, sizeBytes int64, episode *naming.FrozenEpisodeNamingFacts, season *int, unknown, preview bool) previewFileOutcome {
 	outcome := previewFileOutcome{Included: true, Safety: PreviewFileResultSafety("valid")}
 	extension := strings.TrimPrefix(strings.ToLower(path.Ext(filename)), ".")
 
@@ -660,6 +647,11 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 	// read back from storage, or an item frozen when it was built); a set the
 	// item does not carry stays missing instead of being re-parsed here.
 	ctx = naming.WithTemplateFacts(ctx, templatefacts.FromTagSets(item.TitleTags, item.AniBTTags))
+	// frt.* is the parse of this manifest file's own name, prepared here once
+	// (the projection never parses it implicitly). Preview has no inspected
+	// media facts, so media.* stays empty rather than borrowing the release
+	// title's resolution.
+	ctx.FileTitleTags = naming.ParseFileTitleTags(ctx.File)
 	// The frozen movie identity (canonical movie:0) selects the movie naming
 	// branch exactly like the artifact render does; an empty value keeps the
 	// TV default. It is derived from the one frozen identity, never parsed
@@ -689,13 +681,6 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 		outcome.RenderError = boundedRenderError(varsErr)
 		return outcome
 	}
-	// The pre-download target planner has no inspected artifact facts yet.
-	// Mirror the file-operation planner's release-quality fallback so the
-	// frozen TargetSet path remains equal to the eventual artifact render when
-	// the torrent filename itself omits a resolution marker.
-	if parsed := acquisitiondomain.ParseReleaseFacts(item.Title, rules); parsed.Resolution != "" {
-		ctx.File.Media.Resolution = parsed.Resolution
-	}
 	// The frozen typed identity is the only episode authority; a render
 	// without one has a null parsed.episode.
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: ctx})
@@ -712,6 +697,17 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 		reason := "naming_template_invalid"
 		outcome.ReasonCode = &reason
 		outcome.RenderError = boundedRenderError(err)
+		return outcome
+	}
+	variant := compiled.TV
+	if naming.MediaKind(resolved.Context.Derived.EffectiveMediaKind) == naming.MediaKindMovie {
+		variant = compiled.Movie
+	}
+	if unknown {
+		variant = compiled.Unknown
+	}
+	outcome.TargetPendingFacts = variant.PendingFacts(resolved.Context, naming.FactPreparation{FileTitle: naming.PreparationComplete})
+	if !preview && len(outcome.TargetPendingFacts) > 0 {
 		return outcome
 	}
 	render := compiled.RenderVideoDetailed

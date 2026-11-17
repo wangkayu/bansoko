@@ -53,19 +53,28 @@ func TestReplacementProfileValidatorAndNoCutoff(t *testing.T) {
 	db := installedDB(t)
 	for raw, want := range map[string]bool{
 		string(qualityprofile.DefaultJSON()):                                                                                      true,
-		`{"version":"profile-v1","items":[]}`:                                                                                     true,
-		`{"version":"profile-v1","dimensions":[],"ranks":{},"codec_enabled":false}`:                                               false,
-		`{"version":"profile-v1","items":[{"key":"file.codec","ranks":[]}]}`:                                                      false,
-		`{"version":"profile-v1","items":[{"key":"rt.codec","ranks":[]},{"key":"rt.codec","ranks":[]}]}`:                          false,
-		`{"version":"profile-v1","items":[{"key":"rt.codec","ranks":[[]]}]}`:                                                      false,
-		`{"version":"profile-v1","items":[{"key":"rt.codec","ranks":[["HEVC"]]}],"cutoff":{}}`:                                    false,
-		`{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["CHS"]]}]}`:                             true,
-		`{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS",1]]}]}`:                                         false,
-		`{"version":"profile-v2","items":[]}`:                                                                                     false,
-		`{"version":"profile-v1","items":[{"key":"rt.sub_flag","ranks":[["soft","ex"],["hard"]]}]}`:                               true,
-		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[["true"]]}]}`:                                           false,
-		`{"version":"profile-v1","items":[{"key":"rt.content_rating","ranks":[["UNCENSORED"]]}]}`:                                 true,
-		`{"version":"profile-v1","items":[{"key":"rt.content_rating","ranks":[["UNCENSORED"],["AGE_RESTRICTED"],["CENSORED"]]}]}`: true,
+		`{"version":"profile-v1","items":[]}`:                                                                                     false,
+		`{"version":"profile-v2","dimensions":[],"ranks":{},"codec_enabled":false}`:                                               false,
+		`{"version":"profile-v2","items":[{"key":"file.codec","ranks":[]}]}`:                                                      false,
+		`{"version":"profile-v2","items":[{"key":"rt.codec","ranks":[]},{"key":"rt.codec","ranks":[]}]}`:                          false,
+		`{"version":"profile-v2","items":[{"key":"rt.codec","ranks":[[]]}]}`:                                                      false,
+		`{"version":"profile-v2","items":[{"key":"rt.codec","ranks":[["HEVC"]]}],"cutoff":{}}`:                                    false,
+		`{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["CHS"]]}]}`:                             true,
+		`{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[["CHS",1]]}]}`:                                         false,
+		`{"version":"profile-v2","items":[]}`:                                                                                     true,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_flag","ranks":[["soft","ex"],["hard"]]}]}`:                               true,
+		`{"version":"profile-v2","items":[{"key":"rt.uncensored","ranks":[["true"]]}]}`:                                           false,
+		`{"version":"profile-v2","items":[{"key":"rt.content_rating","ranks":[["UNCENSORED"]]}]}`:                                 true,
+		`{"version":"profile-v2","items":[{"key":"rt.content_rating","ranks":[["UNCENSORED"],["AGE_RESTRICTED"],["CENSORED"]]}]}`: true,
+		`{"version":"profile-v2","items":null}`:                                                                                   false,
+		`{"version":"profile-v2","items":[{"key":"rt.revision","ranks":[["v2"]]}]}`:                                               false,
+		`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p","720p"]]}]}`:                                   false,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[["SC","sc"]]}]}`:                                          false,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[["SC","SC"]]}]}`:                                          false,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[["SC","TC"],["TC","sc"]]}]}`:                              false,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[[" SC"]]}]}`:                                              false,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[[" SC"]]}]}`:                                              false,
+		`{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[["SC+TC"]]}]}`:                                            false,
 	} {
 		var ok bool
 		if err := db.QueryRow(`SELECT replacement_quality_profile_valid($1::jsonb)`, raw).Scan(&ok); err != nil {
@@ -128,9 +137,7 @@ VALUES ('anime-129', 'single_copy', $1::jsonb, 1, 1)`, legacy); err != nil {
 		t.Fatalf("seed legacy instance profile: %v", err)
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("apply migration 129: %v", err)
-	}
+	applyMigrationsThrough(t, db, "129_rt_content_rating.sql")
 
 	var globalProfile, instanceProfile []byte
 	if err := db.QueryRowContext(ctx, `SELECT value->'quality_profile' FROM global_config_sections WHERE section_name='replacement'`).Scan(&globalProfile); err != nil {
@@ -149,8 +156,12 @@ VALUES ('anime-129', 'single_copy', $1::jsonb, 1, 1)`, legacy); err != nil {
 			t.Errorf("%s profile = %s, want the profile without rt.uncensored", name, profile)
 		}
 	}
-	if _, err := qualityprofile.Parse(globalProfile); err != nil {
-		t.Errorf("cleaned Global profile is invalid: %v", err)
+	var validAt129 bool
+	if err := db.QueryRowContext(ctx, `SELECT replacement_quality_profile_valid($1::jsonb)`, globalProfile).Scan(&validAt129); err != nil {
+		t.Fatal(err)
+	}
+	if !validAt129 {
+		t.Error("cleaned Global profile is invalid under migration 129's validator")
 	}
 
 	var gotSectionVersion, replacementVersion, businessVersion int64
@@ -177,7 +188,8 @@ VALUES ('anime-129', 'single_copy', $1::jsonb, 1, 1)`, legacy); err != nil {
 // against seeded legacy bodies.
 func TestMigration129CleansBusinessSnapshotsAndCandidateDrafts(t *testing.T) {
 	ctx := context.Background()
-	db := installedDB(t)
+	db := openDisposableDB(t)
+	installMigrationsThrough(t, db, "128_github_update_connection.sql")
 	legacy := legacyUncensoredProfileJSON(t)
 	cleaned := cleanedUncensoredProfileJSON(t)
 
@@ -249,7 +261,7 @@ VALUES ('anime-129', 'single_copy', $1::jsonb, 1, 1, 'cand-129', 1, $2::jsonb,
 	}
 	defer rewrite.Rollback()
 	if _, err := rewrite.ExecContext(ctx, string(raw)); err != nil {
-		t.Fatalf("re-run migration 129: %v", err)
+		t.Fatalf("apply migration 129 to populated historical bodies: %v", err)
 	}
 	if err := rewrite.Commit(); err != nil {
 		t.Fatal(err)
@@ -323,6 +335,16 @@ func profileWithUncensored(t *testing.T, withItem bool) map[string]any {
 	items, ok := profile["items"].([]any)
 	if !ok {
 		t.Fatal("default profile items are not an array")
+	}
+	// Migration 129 predates profile-v2 and the rt.revision key rename. Build
+	// that release's profile explicitly instead of feeding today's default to
+	// the historical CHECK constraint.
+	profile["version"] = "profile-v1"
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["key"] == "rt.revision" {
+			item["key"] = "release.revision"
+		}
 	}
 	if withItem {
 		items = append(items, map[string]any{"key": "rt.uncensored", "ranks": [][]string{{"true"}}})

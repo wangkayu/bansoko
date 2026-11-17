@@ -95,12 +95,18 @@ func TestReleaseFilesFromInternalProjectsDisplayBadges(t *testing.T) {
 		t.Fatalf("expected three projected files: %+v", files)
 	}
 	video := (*files)[0]
-	if video.Episode == nil || *video.Episode != "1" || video.Revision == nil || *video.Revision != "v2" ||
-		video.Resolution == nil || *video.Resolution != "1080p" || video.Language == nil || *video.Language != "chs" {
-		t.Fatalf("video badges must project episode/revision/resolution/language: %+v", video)
+	stringValue := func(value *string) string {
+		if value == nil {
+			return ""
+		}
+		return *value
+	}
+	if video.Episode == nil || *video.Episode != "1" || video.Revision == nil || *video.Revision != "V2" ||
+		video.Resolution == nil || *video.Resolution != "1080p" || video.Language == nil || *video.Language != "SC" {
+		t.Fatalf("video badges must project episode/revision/resolution/language: episode=%q revision=%q resolution=%q language=%q file=%+v", stringValue(video.Episode), stringValue(video.Revision), stringValue(video.Resolution), stringValue(video.Language), video)
 	}
 	subtitle := (*files)[1]
-	if subtitle.Episode == nil || *subtitle.Episode != "1" || subtitle.Language == nil || *subtitle.Language != "cht" {
+	if subtitle.Episode == nil || *subtitle.Episode != "1" || subtitle.Language == nil || *subtitle.Language != "TC" {
 		t.Fatalf("subtitle badges must project episode/language: %+v", subtitle)
 	}
 	if subtitle.Resolution != nil || subtitle.Revision != nil {

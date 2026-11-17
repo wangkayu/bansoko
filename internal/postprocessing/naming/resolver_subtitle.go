@@ -105,10 +105,9 @@ type subtitleResolver struct{}
 
 func (subtitleResolver) Definition() ResolverDefinition {
 	return ResolverDefinition{
-		Key:          subtitleResolverKey,
-		OutputType:   "object",
-		Dependencies: []string{languageResolverKey},
-		Nullable:     true,
+		Key:        subtitleResolverKey,
+		OutputType: "object",
+		Nullable:   true,
 	}
 }
 

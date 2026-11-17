@@ -199,15 +199,15 @@ func cmdParseTitle(args []string) error {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return err
 	}
-	group := ""
-	if result.Facts.GroupName != nil {
-		group = *result.Facts.GroupName
-	}
 	episode := ""
 	if result.Episode != nil && result.Episode.Matched {
 		episode = strconv.FormatFloat(float64(result.Episode.EpisodeNumber), 'f', -1, 32)
 	}
-	fmt.Fprintf(human(), "group=%s quality=%s episode=%s parser=%s\n", group, stringOr(result.Facts.Quality, ""), episode, result.ParserVersion)
+	values := ""
+	if result.Facts.ValueTags != nil {
+		values = strings.Join(*result.Facts.ValueTags, ",")
+	}
+	fmt.Fprintf(human(), "tags=%s values=%s episode=%s parser=%s\n", strings.Join(result.Facts.Tags, ","), values, episode, result.ParserVersion)
 	return nil
 }
 

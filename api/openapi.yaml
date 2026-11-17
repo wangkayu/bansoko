@@ -2833,8 +2833,8 @@ paths:
         identity, quality facts, Subscription version and the complete
         instance retention policy are read server-side inside the evaluate
         transaction. Winner-mode admission requires the candidate to be
-        strictly better under the ordered comparison items (then larger size;
-        a full tie keeps the existing file); all-mode never suppresses;
+        strictly better under the ordered comparison items (a full tie keeps
+        the existing file); all-mode never suppresses;
         missing/conflicting facts block the affected pool. A file replaces
         only the keys it covers.
       requestBody:
@@ -11269,21 +11269,6 @@ components:
             coverage) and when no file carries an episode of its own.
         coverage:
           $ref: '#/components/schemas/ReleaseCoverage'
-        group_name:
-          type: string
-        quality:
-          type: string
-        languages:
-          type: array
-          items:
-            type: string
-        special:
-          type: boolean
-          default: false
-          description: |
-            Marks a special/extracurricular release (NCOP/NCED/Special) excluded
-            from the regular episode progress aggregation. Defaults to false
-            when absent so legacy rows aggregate normally.
     ReleaseCoverage:
       type: object
       additionalProperties: false
@@ -11441,12 +11426,17 @@ components:
       type: object
       additionalProperties: false
       required: [facts, parser_version]
+      description: >-
+        The native reltitle projection of the submitted release title. Group,
+        source type, languages and revision are values in facts.tags or
+        facts.value_tags, not separate guesses from another parser.
       properties:
         facts:
-          $ref: '#/components/schemas/ParsedReleaseFacts'
+          $ref: '#/components/schemas/TitleTagFacts'
         parser_version:
           type: string
           minLength: 1
+          description: The reltitle implementation that produced facts.
         episode:
           $ref: '#/components/schemas/EpisodeParseResult'
     EpisodeParseResult:
@@ -13307,6 +13297,11 @@ components:
           type: array
           items:
             type: string
+        value_tags:
+          type: array
+          items:
+            type: string
+          description: Native title, group and version values used by rt.*.
         diagnostic:
           type: string
     TitleTagVocabulary:
@@ -19544,7 +19539,7 @@ components:
           maxItems: 16
           description: >-
             The comparison steps that decided the pool, in item order; the
-            last step decides (key "size" is the size tiebreak).
+            last differing available configured step decides; ties keep the existing file.
           items:
             $ref: '#/components/schemas/ReplacementCompareStep'
     ReplacementCompareStep:
@@ -19954,7 +19949,7 @@ components:
       properties:
         schema_version:
           type: string
-          enum: [business-snapshot-v1]
+          enum: [business-snapshot-v2]
         sections:
           $ref: '#/components/schemas/BusinessSections'
         section_versions:
@@ -19978,10 +19973,8 @@ components:
         programs:
           type: object
           additionalProperties: false
-          required: [attrrules, vars]
+          required: [vars]
           properties:
-            attrrules:
-              $ref: '#/components/schemas/BusinessProgramRef'
             vars:
               $ref: '#/components/schemas/BusinessProgramRef'
     BusinessProgramRef:
@@ -20059,17 +20052,17 @@ components:
       additionalProperties: false
       required: [version, items]
       description: >-
-        The replacement comparison profile (profile-v1): ordered comparison
-        items. Items compare in order and the first item that ranks two
-        releases differently decides; all items equal, the larger size wins;
-        still equal, the existing file stays.
+        The replacement comparison profile (profile-v2): ordered comparison
+        items over frozen release rt/AniBT values and subgroup policy. The first
+        differing available item decides; all items equal, the existing file
+        stays. File size, file-name parsing and measured media never decide.
       properties:
         version:
           type: string
-          enum: [profile-v1]
+          enum: [profile-v2]
         items:
           type: array
-          maxItems: 14
+          maxItems: 12
           items:
             $ref: '#/components/schemas/QualityCompareItem'
     QualityCompareItem:
@@ -20080,10 +20073,12 @@ components:
         One comparison item. ranks lists value sets best first; a release hits
         an entry when its values contain every value of the entry
         (order- and case-insensitive) and takes its best-ranked hit; a release
-        that hits nothing, or has no value, ranks last. Only multi-valued items
+        that has an unlisted value ranks last; a missing value on either side
+        makes that layer tie. Only multi-valued items
         (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a
-        duplicate value set is rejected. subgroup.score and release.revision
-        take no ranks (subscription subgroup score; numeric Rev vN, absent = v1).
+        duplicate value set is rejected. subgroup.score and rt.revision
+        take no ranks (subscription subgroup score; numeric frozen rt Version).
+        An absent or non-numeric revision on either side makes that layer tie.
         rt.content_rating ranks the content_rating values reltitle read from
         the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry,
         in the order the user prefers.
@@ -20103,14 +20098,14 @@ components:
               maxLength: 128
     QualityCompareKey:
       type: string
-      enum: [subgroup.score, release.lang, release.resolution, release.revision, anibt.resolution, anibt.language, anibt.subtitle, anibt.format, rt.resolution, rt.sub_lang, rt.sub_flag, rt.source, rt.codec, rt.content_rating]
+      enum: [subgroup.score, anibt.resolution, anibt.language, anibt.subtitle, anibt.format, rt.resolution, rt.sub_lang, rt.sub_flag, rt.source, rt.codec, rt.content_rating, rt.revision]
     ReplacementCompareVocabulary:
       type: object
       additionalProperties: false
       required: [items]
       description: >-
-        Candidate values per ranked comparison item: release.* from the active
-        attribute rules, anibt.* from values seen on releases (of the anime
+        Candidate values per ranked comparison item: anibt.* from frozen
+        values seen on releases (of the anime
         when one is named), rt.* from the pinned reltitle dictionary (empty
         when it is unavailable). Values are suggestions; any value can be
         ranked.

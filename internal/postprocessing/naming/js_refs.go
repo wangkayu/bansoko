@@ -652,10 +652,10 @@ func (a *expressionAnalyzer) expression(expr ast.Expression) error {
 		}
 		// defaultIfEmpty(value, fallback) and the deprecated
 		// defaultValue(fallback, value) render the fallback whether or not the
-		// value exists, so only the value argument is optional. coalesce(...)
-		// returns the first non-empty argument, so every argument is a fallback,
-		// and chain(...) is a list of independent part expressions, so every
-		// part is referenced-not-required too.
+		// value exists, so only the value argument is optional. segment and
+		// joinNonEmpty tolerate absence only in their value/list argument; their
+		// decorations and separator remain required. coalesce(...) returns the
+		// first non-empty argument, so every argument is a fallback.
 		switch name {
 		case "defaultIfEmpty", "defaultValue":
 			valueIndex := 0
@@ -675,7 +675,21 @@ func (a *expressionAnalyzer) expression(expr ast.Expression) error {
 				}
 			}
 			return nil
-		case "coalesce", "chain":
+		case "segment", "joinNonEmpty":
+			for index, argument := range node.ArgumentList {
+				if index == 0 {
+					a.optional++
+				}
+				err := a.expression(argument)
+				if index == 0 {
+					a.optional--
+				}
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		case "coalesce":
 			a.optional++
 			defer func() { a.optional-- }()
 		}

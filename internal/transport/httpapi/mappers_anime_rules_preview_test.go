@@ -33,34 +33,21 @@ func TestMapRulesPreviewInputKeepsSections(t *testing.T) {
 	}
 }
 
-// mapRulesPreviewParsedFacts maps the parsed facts of every RSS list item row.
-func TestMapRulesPreviewParsedFactsPreservesLanguageSliceShape(t *testing.T) {
-	var nilLanguages *[]string
-	emptyLanguages := []string{}
-	nonEmptyLanguages := []string{"ja"}
-
-	cases := []struct {
-		name    string
-		in      *[]string
-		wantNil bool
-		wantLen int
-	}{
-		{name: "nil", in: nilLanguages, wantNil: true},
-		{name: "empty", in: &emptyLanguages, wantLen: 0},
-		{name: "non-empty", in: &nonEmptyLanguages, wantLen: 1},
+// mapRulesPreviewParsedFacts preserves episode and coverage independently of
+// native source tags.
+func TestMapRulesPreviewParsedFactsPreservesCoverage(t *testing.T) {
+	episode := float32(3)
+	mapped := mapRulesPreviewParsedFacts(&animedomain.ParsedReleaseFacts{
+		Episode:  &episode,
+		Coverage: &animedomain.ReleaseCoverage{Episodes: []int{3, 4}},
+	})
+	if mapped == nil || mapped.Episode == nil || *mapped.Episode != episode {
+		t.Fatalf("mapped episode = %#v", mapped)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			mapped := mapRulesPreviewParsedFacts(&animedomain.ParsedReleaseFacts{Languages: tc.in})
-			if mapped == nil {
-				t.Fatal("mapped parsed facts is nil")
-			}
-			if (mapped.Languages == nil) != tc.wantNil {
-				t.Fatalf("languages nil = %v, want %v", mapped.Languages == nil, tc.wantNil)
-			}
-			if mapped.Languages != nil && len(*mapped.Languages) != tc.wantLen {
-				t.Fatalf("languages = %#v, want length %d", *mapped.Languages, tc.wantLen)
-			}
-		})
+	if mapped.Coverage == nil || len(mapped.Coverage.Episodes) != 2 || mapped.Coverage.Episodes[1] != 4 {
+		t.Fatalf("mapped coverage = %#v", mapped.Coverage)
+	}
+	if mapped := mapRulesPreviewParsedFacts(&animedomain.ParsedReleaseFacts{}); mapped == nil || mapped.Episode != nil || mapped.Coverage != nil {
+		t.Fatalf("zero facts changed shape: %#v", mapped)
 	}
 }

@@ -49,17 +49,12 @@ type Config struct {
 	SecretEncryptionKey string
 	FrontendDir         string
 	// ConfigDir is the deployment's configuration workspace (BANSOKO_CONFIG_DIR).
-	// It holds the operator copies of the attr rules and naming vars, and the
-	// one writable location for a separately installed reltitle binary
-	// (<ConfigDir>/rt/reltitle).
+	// It holds the operator copy of naming vars and the one writable location
+	// for a separately installed reltitle binary (<ConfigDir>/rt/reltitle).
 	ConfigDir string
-	// Attr rules and the naming Vars seed live at fixed locations: the
-	// deployment config workspace (BANSOKO_CONFIG_DIR) holds the operator
-	// copies, and the image ships the defaults under deployment/defaults
-	// relative to its working directory (/app). Tests inject other paths
-	// through these fields.
-	AttrRulesConfigPath    string
-	AttrRulesDefaultsPath  string
+	// The naming Vars seed lives at a fixed location: the deployment config
+	// workspace (BANSOKO_CONFIG_DIR) holds the operator copy, and the image ships
+	// the default under deployment/defaults relative to /app.
 	NamingVarsConfigPath   string
 	NamingVarsDefaultsPath string
 	// TestFixtureHosts is an explicit development/test-only host→IP mapping for
@@ -89,8 +84,6 @@ func FromFlags(args []string) (Config, error) {
 		SecretEncryptionKey:    os.Getenv("BANSOKO_SECRET_ENCRYPTION_KEY"),
 		FrontendDir:            envOr("BANSOKO_FRONTEND_DIR", "frontend/dist"),
 		ConfigDir:              envOr("BANSOKO_CONFIG_DIR", "/config"),
-		AttrRulesConfigPath:    envOr("BANSOKO_CONFIG_DIR", "/config") + "/attr-rules.yaml",
-		AttrRulesDefaultsPath:  "deployment/defaults/attr-rules.yaml",
 		NamingVarsConfigPath:   envOr("BANSOKO_CONFIG_DIR", "/config") + "/naming-vars.js",
 		NamingVarsDefaultsPath: "deployment/defaults/naming-vars.js",
 		WorkerDisabled:         os.Getenv("BANSOKO_WORKER_DISABLED") == "true",

@@ -189,21 +189,6 @@
     "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
   },
   {
-    "table": "attr_rule_versions",
-    "privileges": [
-      "INSERT"
-    ],
-    "reason": "product owner DML from the listed application code",
-    "direct_access": [
-      "internal/attrrules/adapter/persistence/query.sql",
-      "internal/attrrules/adapter/persistence/generated/query.sql.go",
-      "internal/attrrules/adapter/persistence/generated/querier.go",
-      "internal/testutil/frozenpolicy/business.go"
-    ],
-    "closure_slice": "retained product owner",
-    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
-  },
-  {
     "table": "auth_sessions",
     "privileges": [
       "DELETE",

@@ -318,7 +318,7 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	policy := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
 	if _, err := policy.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
 		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
-		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}},
+		QualityProfile:  generated.QualityProfile{Version: "profile-v2", Items: []generated.QualityCompareItem{{Key: "rt.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}},
 		ExpectedVersion: version,
 	}, "test", "http"); err != nil {
 		t.Fatal(err)

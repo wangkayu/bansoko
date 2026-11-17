@@ -115,9 +115,7 @@ VALUES ($1, $2, 1, $3::jsonb,
 		}
 	}
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "053_lang_tag_fact_rename.sql")
 
 	var globalMatches bool
 	var globalValue string

@@ -1,7 +1,6 @@
 package migrations
 
 import (
-	"context"
 	"testing"
 )
 
@@ -10,7 +9,6 @@ import (
 // coverage plus an alignment request; every plan and generation row is then
 // removed. Migration 122 later drops the two retired tables outright.
 func TestOffsetAlignmentRequestsCarryUnappliedPlansForward(t *testing.T) {
-	ctx := context.Background()
 	db := openDisposableDB(t)
 	installMigrationsThrough(t, db, "096_seasonless_key_rewrite.sql")
 
@@ -35,9 +33,7 @@ func TestOffsetAlignmentRequestsCarryUnappliedPlansForward(t *testing.T) {
 		        ('plan-ineligible', 'o1', 'o1-ineligible', 2, 'fp-ineligible', '/library/o1-ineligible.mkv', 'planned', 'gen-current', 'tv:e11', 'tv:e12', NULL)`,
 	)
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, "122_drop_retired_offset_executor.sql")
 
 	// The two plans that never applied are re-keyed and requested.
 	assertRewritePlacement(t, db, "upgrade", "o1-open", "active", true, 2, "tv:e2")

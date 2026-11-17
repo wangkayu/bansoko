@@ -8,7 +8,6 @@ import (
 
 	acquisition "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
@@ -24,7 +23,6 @@ import (
 // binding named (naming-render-3), on both paths.
 func TestOwnerSeasonPreviewAndPlannerRenderTheSameTarget(t *testing.T) {
 	rules := naming.DefaultNamingRules()
-	attrRules := attrrules.Rules{Version: 1, Resolution: []string{"1080p"}, GroupBrackets: []string{"[", "]"}}
 	effective := animedomain.EffectiveConfig{}
 	effective.Rules.Naming = animedomain.NamingRulesFromDomain(rules)
 	episode := &naming.FrozenEpisodeNamingFacts{Raw: "3", Number: "3", Display: "3"}
@@ -62,12 +60,12 @@ func TestOwnerSeasonPreviewAndPlannerRenderTheSameTarget(t *testing.T) {
 
 			// Preview path.
 			release := animedomain.PreviewReleaseResult{FrozenVars: &frozen, FrozenEpisode: episode}
-			preview := animedomain.PreviewExactFile(acquisition.FeedItem{Title: title}, release, animedomain.ManifestFileInput{SourcePath: "Show - 03.mkv", MediaKind: "video", SizeBytes: 17}, effective, "Show", animedomain.SourceEvaluationInput{}, attrRules)
+			preview := animedomain.PreviewExactFile(acquisition.FeedItem{Title: title}, release, animedomain.ManifestFileInput{SourcePath: "Show - 03.mkv", MediaKind: "video", SizeBytes: 17}, effective, "Show", animedomain.SourceEvaluationInput{})
 
 			// Planner path: the artifact's season column comes from the same
 			// frozen binding through the prepare projection.
 			rawFacts, _ := json.Marshal(map[string]string{"title": title})
-			artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, acceptedFacts: true, acceptedResolution: "1080p"}
+			artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, acceptedFacts: true}
 			if tc.tmdb {
 				artifact.tmdbWorkID.String, artifact.tmdbWorkID.Valid = "tmdb-1", true
 				artifact.tmdbMediaKind.String, artifact.tmdbMediaKind.Valid = "tv", true
@@ -147,7 +145,7 @@ func TestPlannerKeepsADotDirectoryInTheLibraryRoot(t *testing.T) {
 	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "tmdb-1", "tv", &season
 	frozen := namingvars.FrozenEvaluation{Input: namingvars.Input{ReleaseTitle: title, Facts: namingvars.BuildInput(evidence).Facts}, Output: namingvars.Vars{}, Status: "ok"}
 	rawFacts, _ := json.Marshal(map[string]string{"title": title})
-	artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, acceptedFacts: true, acceptedResolution: "1080p"}
+	artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, acceptedFacts: true}
 	artifact.tmdbWorkID.String, artifact.tmdbWorkID.Valid = "tmdb-1", true
 	artifact.tmdbMediaKind.String, artifact.tmdbMediaKind.Valid = "tv", true
 	artifact.tmdbSeason = frozenSeasonColumn(1, false)
@@ -173,7 +171,7 @@ func TestPerFileNamingSeasonOverridesMainAndSubtitleInherits(t *testing.T) {
 	evidence := namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: &year, AnimeSeason: &mainSeason}, ReleaseTitle: title}
 	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "tmdb-1", "tv", &mainSeason
 	frozen := namingvars.FrozenEvaluation{Input: namingvars.Input{ReleaseTitle: title, Facts: namingvars.BuildInput(evidence).Facts}, Output: namingvars.Vars{}, Status: "ok"}
-	artifact := artifactContext{animeTitle: "Show", acceptedFacts: true, acceptedResolution: "1080p"}
+	artifact := artifactContext{animeTitle: "Show", acceptedFacts: true}
 	artifact.tmdbSeason = frozenSeasonColumn(1, false)
 	zero := 0
 	episode := &naming.FrozenEpisodeNamingFacts{Raw: "1", Number: "7", Display: "7"}

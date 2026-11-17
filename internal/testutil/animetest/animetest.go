@@ -12,33 +12,16 @@ import (
 	"testing"
 
 	"bansoko/internal/apperrors"
-	"bansoko/internal/attrrules"
-	attrpersistence "bansoko/internal/attrrules/adapter/persistence"
 	"bansoko/internal/namingvars"
 	varspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/testutil/disposabledb"
+
 	"github.com/lib/pq"
 )
 
-// InstallRegistries installs the shared test attribute rules and naming vars.
+// InstallRegistries installs the shared test naming vars.
 // It is safe to call from package TestMain functions and individual tests.
 func InstallRegistries() {
-	rules := attrrules.Rules{
-		Version:        1,
-		Resolution:     []string{"2160p", "1440p", "1080p", "720p", "480p"},
-		Quality:        []string{"remux", "web-dl", "webrip", "bluray", "bdrip", "hdtv"},
-		Language:       []string{"chs", "cht", "sc", "tc", "jpn", "eng"},
-		SpecialMarkers: []string{"special", "ncop", "nced"},
-		GroupBrackets:  []string{"[", "]"},
-	}
-	rulesFingerprint, err := attrrules.Fingerprint(rules)
-	if err != nil {
-		panic(err)
-	}
-	if err := attrrules.SetActive(rules, rulesFingerprint); err != nil {
-		panic(err)
-	}
-
 	vars := namingvars.Vars{"test": {"marker": "ok"}}
 	varsFingerprint, err := namingvars.SourceFingerprint(`vars.test = {marker: "ok"};`)
 	if err != nil {
@@ -58,26 +41,17 @@ func OpenTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// PublishRegistries persists the shared test attribute rules and naming vars
-// source installed by InstallRegistries, so a business snapshot that pins their
-// fingerprints can load them back by exact version. Packages with their own
-// disposable-schema rig call it after InstallRegistries.
+// PublishRegistries persists the shared test naming vars source installed by
+// InstallRegistries, so a business snapshot can load its exact version.
 func PublishRegistries(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
-	rules, fp, err := attrrules.Current()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := attrrules.NewStore(attrpersistence.NewRepository(db)).Publish(ctx, rules, fp); err != nil {
-		t.Fatal(err)
-	}
 	source := `vars.test = {marker: "ok"};`
 	vars, err := namingvars.Run(source, namingvars.DefaultInput, namingvars.DefaultTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fp, err = namingvars.SourceFingerprint(source)
+	fp, err := namingvars.SourceFingerprint(source)
 	if err != nil {
 		t.Fatal(err)
 	}

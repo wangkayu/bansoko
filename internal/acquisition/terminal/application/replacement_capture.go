@@ -14,6 +14,7 @@ import (
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	filesystem "bansoko/internal/library/adapter/filesystem"
 	library "bansoko/internal/library/domain"
+	"bansoko/internal/qualityprofile"
 )
 
 // ReplacementCapture has no JSON or public field assembly surface. Only this
@@ -101,6 +102,11 @@ func CaptureReplacement(ctx context.Context, db *sql.DB, release, path string) (
 		return nil, err
 	}
 	comparison["evaluated_at"] = at
+	native, err := stored.Comparison.nativeEvidence()
+	if err != nil {
+		return nil, err
+	}
+	comparison["native"] = json.RawMessage(protocol.Canonical(native))
 	value, err := valueOf(map[string]any{"placement": map[string]any{"ref": stored.Placement.ID, "version": stored.Placement.Version}, "expected_object": object, "comparison": comparison})
 	if err != nil {
 		return nil, err
@@ -181,17 +187,44 @@ func replacementObject(path string, o library.PathObservation) map[string]any {
 }
 
 type replacementFactsSnapshot struct {
-	Group      string `json:"group"`
-	Language   string `json:"language"`
-	Resolution string `json:"resolution"`
-	Source     string `json:"source"`
-	Revision   string `json:"revision"`
-	Size       *int64 `json:"size_bytes"`
+	SourceDigest string                         `json:"source_digest"`
+	Values       map[string][]string            `json:"values"`
+	Subgroup     *qualityprofile.SubgroupSource `json:"subgroup"`
+	Score        *int64                         `json:"score"`
+	Group        string                         `json:"group"`
+	Language     string                         `json:"language"`
+	Resolution   string                         `json:"resolution"`
+	Source       string                         `json:"source"`
+	Revision     string                         `json:"revision"`
+	Size         *int64                         `json:"size_bytes"`
 }
 type replacementComparisonSnapshot struct {
-	Candidate  replacementFactsSnapshot `json:"candidate"`
-	Existing   replacementFactsSnapshot `json:"existing"`
-	Dimensions []string                 `json:"dimensions"`
+	Profile         qualityprofile.Profile   `json:"profile"`
+	ExistingMissing bool                     `json:"existing_missing"`
+	Candidate       replacementFactsSnapshot `json:"candidate"`
+	Existing        replacementFactsSnapshot `json:"existing"`
+	Dimensions      []string                 `json:"dimensions"`
+}
+
+// nativeEvidence preserves every evaluated dimension, including multi-values and
+// group score, without collapsing rt and AniBT into legacy scalar fields.
+func (c replacementComparisonSnapshot) nativeEvidence() (protocol.Value, error) {
+	subject := func(f replacementFactsSnapshot) map[string]any {
+		values := qualityprofile.FrozenValues{Version: qualityprofile.ValuesVersion, SourceDigest: f.SourceDigest, Values: f.Values, Subgroup: f.Subgroup}
+		return map[string]any{"values": json.RawMessage(values.JSON()), "score": f.Score}
+	}
+	var existing any
+	if !c.ExistingMissing {
+		existing = subject(c.Existing)
+	}
+	value, err := valueOf(map[string]any{"profile": c.Profile, "candidate": subject(c.Candidate), "existing": existing})
+	if err != nil {
+		return protocol.Value{}, err
+	}
+	if err := protocol.Validate("NativeComparisonV1", value); err != nil {
+		return protocol.Value{}, err
+	}
+	return value, nil
 }
 
 func replacementQuality(f replacementFactsSnapshot) map[string]any {

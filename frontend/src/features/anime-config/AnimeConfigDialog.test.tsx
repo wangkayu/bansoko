@@ -132,7 +132,7 @@ function workspaceFixture(): AnimeWorkspace {
       stable_item_key: "release-key-1",
       raw_facts: { title: "[测试字幕组] 测试番 - 01" },
       source_facts: { identity_kind: "guid", identity_value: "release-key-1" },
-      parsed_facts: { episode: 1, special: false },
+      parsed_facts: { episode: 1 },
       verdict: "submitted",
       reason_code: "submitted",
       download_task_id: "task-1",
@@ -567,7 +567,7 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
         return new Response(JSON.stringify({
           managed_anime_id: "anime-1",
           admission_mode: "per_group",
-          quality_profile: { version: "profile-v1", items: [{ key: "subgroup.score", ranks: [] }] },
+          quality_profile: { version: "profile-v2", items: [{ key: "subgroup.score", ranks: [] }] },
           source_default_version: 1,
           version: 2,
         }), { status: 200, headers: { "Content-Type": "application/json" } });

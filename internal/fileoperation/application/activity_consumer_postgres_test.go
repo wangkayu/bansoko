@@ -470,7 +470,7 @@ func seedPlannedReplacement(t *testing.T, x typedRuntimeFixture, id string) {
 	defer owner.Close()
 	if _, err := owner.Exec(`
 INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,subscription_version,input_digest)
-VALUES ($1,$1,$2,$3,1,'profile-v1','release:1','tv:e1','["tv:e1"]','single_copy',$4,'replace','admitted',1,'digest')`, id, anime, release, string(pools)); err != nil {
+VALUES ($1,$1,$2,$3,1,'profile-v2','release:1','tv:e1','["tv:e1"]','single_copy',$4,'replace','admitted',1,'digest')`, id, anime, release, string(pools)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -667,7 +667,7 @@ FROM replacement_decisions d, acquisitions r WHERE d.id=$1 AND r.id=$2`, decisio
 			`UPDATE acquisitions SET activity_logged_at=NULL WHERE id='`+root+`'`,
 			`ALTER TABLE acquisitions ENABLE TRIGGER USER`,
 			`INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,stale_reason,stale_acquisition_id,subscription_version,input_digest,version)
-				SELECT '`+retried+`','`+retried+`',managed_anime_id,candidate_release_id,1,'profile-v1','release:1','tv:e1','["tv:e1"]','single_copy','`+string(pools)+`'::jsonb,'replace','stale','candidate_acquisition_failed','`+root+`',1,'digest',2
+				SELECT '`+retried+`','`+retried+`',managed_anime_id,candidate_release_id,1,'profile-v2','release:1','tv:e1','["tv:e1"]','single_copy','`+string(pools)+`'::jsonb,'replace','stale','candidate_acquisition_failed','`+root+`',1,'digest',2
 				FROM replacement_decisions WHERE id='`+decision+`'`)
 		if _, err := consumer.ConsumeOnce(ctx); err != nil {
 			t.Fatal(err)

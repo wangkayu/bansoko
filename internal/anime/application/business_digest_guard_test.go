@@ -8,7 +8,6 @@ import (
 
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 )
 
@@ -21,7 +20,7 @@ func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string
 	t.Helper()
 	digest := "sha256:" + strings.Repeat("a", 64)
 	b := animedomain.BusinessSnapshot{
-		SchemaVersion:   "business-snapshot-v1",
+		SchemaVersion:   animedomain.BusinessSnapshotSchemaVersion,
 		Sections:        map[string]json.RawMessage{},
 		SectionVersions: map[string]int64{},
 		SectionSchemas:  map[string]string{},
@@ -33,14 +32,13 @@ func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string
 		},
 		Replacement: animedomain.ReplacementValue{
 			AdmissionMode:  "single_copy",
-			QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`),
+			QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[]}]}`),
 		},
 		ReplacementVersion: 13,
 		FileEffectVersion:  17,
 		UnclassifiedRoute:  "route",
 		Programs: animedomain.ProgramReferences{
-			Vars:      namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)},
-			AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)},
+			Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)},
 		},
 	}
 	for _, name := range animedomain.EffectiveSectionOrder {

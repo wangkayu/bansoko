@@ -6,10 +6,11 @@ import (
 	"bansoko/internal/library/domain"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // The owner namespace is private to the service uid. Public basename races

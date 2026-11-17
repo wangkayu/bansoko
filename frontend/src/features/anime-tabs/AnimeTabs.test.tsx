@@ -391,7 +391,7 @@ describe("AnimeTabs 种子重试", () => {
       stable_item_key: "stable-1",
       raw_facts: { title: "[测试字幕组] 测试番 - 01", published_at: "2026-07-21T09:00:00Z" },
       source_facts: { identity_kind: "guid", identity_value: "stable-1" },
-      parsed_facts: { episode: 1, group_name: "测试字幕组", special: false },
+      parsed_facts: { episode: 1 },
       verdict: "filtered",
       reason_code: "filtered_by_rules",
       version: 1,
@@ -423,7 +423,7 @@ describe("AnimeTabs 种子重试", () => {
       snapshot_id: "release:release-1", stable_seed_key: "stable-1",
       seed: { title: "[测试字幕组] 测试番 - 01", locator_display: "https://example.test/seed" },
       torrent: { state: "not_applicable" as const },
-      evaluation: { state: "evaluated" as const, verdict: "accepted_pending_download" as const, reason_code: "accepted", parsed_facts: { episode: 1, group_name: "测试字幕组", special: false } },
+      evaluation: { state: "evaluated" as const, verdict: "accepted_pending_download" as const, reason_code: "accepted", parsed_facts: { episode: 1 } },
       files: [], download_action: { allowed: true, kind: "retry" as const },
       // No file rows means no comparable write set: the server's verdict is undetermined.
       library_overlap: { verdict: "undetermined" as const, present_files: null, pending_files: null, reason_code: "no_rendered_targets" },
@@ -894,7 +894,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
       stable_seed_key: "stable-1",
       seed: { title: "[G] 测试番 - 01", published_at: "2026-09-01T00:00:00Z", size_bytes: 1024, locator_display: "https://example.test/seed" },
       torrent: { state: "not_applicable" as const },
-      evaluation: { state: "evaluated" as const, verdict: "accepted_pending_download" as const, reason_code: "accepted", parsed_facts: { episode: 1, group_name: "G", special: false } },
+      evaluation: { state: "evaluated" as const, verdict: "accepted_pending_download" as const, reason_code: "accepted", parsed_facts: { episode: 1 } },
       files: [{ file_ref: "file-1", ordinal: 0, source_path: "测试番/01.mkv", filename: "01.mkv", size_bytes: 512, media_kind: "video" as const, included: false, reason_code: "file_not_in_matched", safety: "valid" as const }],
       download_action: { allowed: downloadKind === "retry", kind: downloadKind, reason_code: downloadKind === "retry" ? null : "not_allowed" },
       // The only file is not included and the write set is empty: absent and 0/0 (exactly how the server treats a decidable seed that needs no writes).
@@ -936,7 +936,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     workspace.releases = [{
       id: "release-1", rss_source_id: "selected", stable_item_key: "stable-1",
       raw_facts: { title: "[G] 测试番 - 01" }, source_facts: { identity_kind: "guid", identity_value: "stable-1" },
-      parsed_facts: { episode: 1, group_name: "G", special: false }, verdict: "accepted_pending_download", reason_code: "accepted", version: 1,
+      parsed_facts: { episode: 1 }, verdict: "accepted_pending_download", reason_code: "accepted", version: 1,
     }];
     renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rules" });
 
@@ -973,7 +973,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
       stable_seed_key: `stable-${index}`,
       seed: { title: `[G] 测试番 - 0${index}`, published_at: "2026-07-29T16:30:47Z", size_bytes: 1024, locator_display: "https://torrent.example.test/1.torrent" },
       torrent: { state: "not_applicable" as const },
-      evaluation: { state: "evaluated" as const, verdict, reason_code: reasonCode, parsed_facts: { episode: index, special: false } },
+      evaluation: { state: "evaluated" as const, verdict, reason_code: reasonCode, parsed_facts: { episode: index } },
       files: [],
       download_action: { allowed: false, kind: "none" as const },
       // No file rows means no structure to compare: undetermined.
@@ -987,8 +987,8 @@ describe("AnimeTabs owner RSS read model preview", () => {
     }));
     const workspace = workspaceFixture();
     workspace.releases = [
-      { id: "release-1", rss_source_id: "selected", stable_item_key: "stable-1", raw_facts: { title: "[G] 测试番 - 01" }, source_facts: { identity_kind: "guid", identity_value: "stable-1" }, parsed_facts: { episode: 1, group_name: "G", special: false }, verdict: "accepted_pending_download", reason_code: "accepted", version: 1 },
-      { id: "release-2", rss_source_id: "selected", stable_item_key: "stable-2", raw_facts: { title: "[G] 测试番 - 02" }, source_facts: { identity_kind: "guid", identity_value: "stable-2" }, parsed_facts: { episode: 2, group_name: "G", special: false }, verdict: "filtered", reason_code: "excluded_keyword", version: 1 },
+      { id: "release-1", rss_source_id: "selected", stable_item_key: "stable-1", raw_facts: { title: "[G] 测试番 - 01" }, source_facts: { identity_kind: "guid", identity_value: "stable-1" }, parsed_facts: { episode: 1 }, verdict: "accepted_pending_download", reason_code: "accepted", version: 1 },
+      { id: "release-2", rss_source_id: "selected", stable_item_key: "stable-2", raw_facts: { title: "[G] 测试番 - 02" }, source_facts: { identity_kind: "guid", identity_value: "stable-2" }, parsed_facts: { episode: 2 }, verdict: "filtered", reason_code: "excluded_keyword", version: 1 },
     ];
     renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rss" });
     await screen.findByRole("button", { name: t("rss.expandGroup", { name: "selected" }) });
@@ -1011,7 +1011,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
           stable_seed_key: "stable-3",
           seed: { title: "[G] 测试番 - 03", published_at: "2026-07-29T16:30:47Z", size_bytes: 1024, locator_display: "https://torrent.example.test/3.torrent", anibt_tags: ["resolution:1080p", "language:CHT"] },
           torrent: { state: "not_applicable" as const },
-          evaluation: { state: "evaluated" as const, verdict: "filtered" as const, reason_code: "anibt_tag_whitelist_unmet", reason_detail: "missing: language:CHS", parsed_facts: { episode: 3, special: false } },
+          evaluation: { state: "evaluated" as const, verdict: "filtered" as const, reason_code: "anibt_tag_whitelist_unmet", reason_detail: "missing: language:CHS", parsed_facts: { episode: 3 } },
           files: [],
           download_action: { allowed: false, kind: "none" as const },
           library_overlap: { verdict: "undetermined" as const, present_files: null, pending_files: null, reason_code: "no_rendered_targets" },
@@ -2137,7 +2137,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
       id: `release-${n}`, rss_source_id: "selected", stable_item_key: `stable-${n}`,
       raw_facts: { title: `[G] 测试番 - 0${n} [1080p][CHS]` },
       source_facts: { identity_kind: "guid" as const, identity_value: `stable-${n}`, title_tags: { schema: "reltitle-attrs-v1", implementation: "reltitle@test", tags: ["resolution:1080p", "sub_lang:SC"] } },
-      parsed_facts: { episode: n, group_name: "G", special: false },
+      parsed_facts: { episode: n },
       verdict: "accepted_pending_download" as const, reason_code: "accepted", version: 1,
     }));
     renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rules" });

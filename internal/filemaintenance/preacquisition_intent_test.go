@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"testing"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	acquisitiontarget "bansoko/internal/acquisition/target"
+	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/testutil/disposabledb"
 )
 
@@ -24,10 +26,16 @@ INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_displ
 VALUES ($1, $2, 'custom_rss', $3, $3, 'G', 'Show')`, sourceID, subID, "https://feeds.example/rss/"+releaseID); err != nil {
 		t.Fatal(err)
 	}
+	sourceFacts, err := json.Marshal(map[string]any{
+		"title_tags": acquisitiondomain.StoredTitleTagsFromSet(reltitletags.Extract(title)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`
 INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, verdict, reason_code)
-VALUES ($1, $2, $3, $4::jsonb, '{}', 'discovered', 'new')`,
-		releaseID, sourceID, "key-"+releaseID, fmt.Sprintf(`{"title":%q}`, title)); err != nil {
+VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'discovered', 'new')`,
+		releaseID, sourceID, "key-"+releaseID, fmt.Sprintf(`{"title":%q}`, title), sourceFacts); err != nil {
 		t.Fatal(err)
 	}
 }

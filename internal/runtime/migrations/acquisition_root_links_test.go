@@ -24,7 +24,7 @@ func seedAcquiredChain(t *testing.T, db *sql.DB, tag string, withArtifact bool) 
 	t.Helper()
 	ctx := context.Background()
 	seedAcceptableRelease(t, db, tag)
-	params := validQueued(t, "acq-"+tag, "key-"+tag, tag)
+	params := validQueuedForSchema(t, db, "acq-"+tag, "key-"+tag, tag)
 	if _, err := callQueuedAccept(t, db, params); err != nil {
 		t.Fatalf("accept the download root: %v", err)
 	}

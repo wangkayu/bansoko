@@ -3,15 +3,15 @@ package httpapi
 import (
 	domain "bansoko/internal/anime/domain"
 	transport "bansoko/internal/anime/transport"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
+	"bansoko/internal/qualityprofile"
 	"bansoko/internal/transport/httpapi/generated"
 	"encoding/json"
 	"testing"
 )
 
 func TestProviderFixtureBusinessDigestSurvivesExactTypedRequestRoundTrip(t *testing.T) {
-	b := domain.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: domain.ParserPolicyEnvelope{SchemaVersion: domain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", Provenance: "global", PolicyVersion: 1, ProfileVersion: 1, RulesOwnerVersion: 1}, ReplacementVersion: 1, FileEffectVersion: 1, UnclassifiedRoute: "skip"}
+	b := domain.BusinessSnapshot{SchemaVersion: domain.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: domain.ParserPolicyEnvelope{SchemaVersion: domain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", Provenance: "global", PolicyVersion: 1, ProfileVersion: 1, RulesOwnerVersion: 1}, ReplacementVersion: 1, FileEffectVersion: 1, UnclassifiedRoute: "skip"}
 	for _, name := range domain.EffectiveSectionOrder {
 		value, err := domain.DefaultSectionValue(name)
 		if err != nil {
@@ -24,10 +24,9 @@ func TestProviderFixtureBusinessDigestSurvivesExactTypedRequestRoundTrip(t *test
 		b.SectionVersions[name] = 1
 		b.SectionSchemas[name] = domain.SectionSchemaVersions[name]
 	}
-	b.Replacement = domain.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
+	b.Replacement = domain.ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}
 	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	b.Programs.Vars = namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}
-	b.Programs.AttrRules = namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}
 	request := providerDraftPayload("80801", "678")
 	d := request["draft"].(map[string]any)
 	b.Sections["subgroups"], _ = json.Marshal(d["subgroups"])

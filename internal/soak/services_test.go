@@ -15,8 +15,6 @@ import (
 	draftapplication "bansoko/internal/anime/draft/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
 	readmodel "bansoko/internal/anime/readmodel/application"
-	"bansoko/internal/attrrules"
-	attrpersistence "bansoko/internal/attrrules/adapter/persistence"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/namingvars"
 	varspersistence "bansoko/internal/namingvars/adapter/persistence"
@@ -37,25 +35,9 @@ func (noFeed) Fetch(context.Context, string) (rootapplication.FeedResult, error)
 	return rootapplication.FeedResult{}, fmt.Errorf("soak: no external feed access")
 }
 
-// installRegistries installs the attribute rules and naming vars registries the
-// owner and readmodel services evaluate with (same content as the PG test
-// fixtures; copied because the shared helper is part of the PG test inventory).
+// installRegistries installs the naming vars registry the owner and readmodel
+// services evaluate with.
 func installRegistries(db *sql.DB) error {
-	rules := attrrules.Rules{
-		Version:        1,
-		Resolution:     []string{"2160p", "1440p", "1080p", "720p", "480p"},
-		Quality:        []string{"remux", "web-dl", "webrip", "bluray", "bdrip", "hdtv"},
-		Language:       []string{"chs", "cht", "sc", "tc", "jpn", "eng"},
-		SpecialMarkers: []string{"special", "ncop", "nced"},
-		GroupBrackets:  []string{"[", "]"},
-	}
-	fp, err := attrrules.Fingerprint(rules)
-	if err != nil {
-		return err
-	}
-	if err := attrrules.SetActive(rules, fp); err != nil {
-		return err
-	}
 	source := `vars.test = {marker: "ok"};`
 	vars := namingvars.Vars{"test": {"marker": "ok"}}
 	vfp, err := namingvars.SourceFingerprint(source)
@@ -66,9 +48,6 @@ func installRegistries(db *sql.DB) error {
 		return err
 	}
 	ctx := context.Background()
-	if err := attrrules.NewStore(attrpersistence.NewRepository(db)).Publish(ctx, rules, fp); err != nil {
-		return fmt.Errorf("publish attr rules: %w", err)
-	}
 	computed, err := namingvars.Run(source, namingvars.DefaultInput, namingvars.DefaultTimeout)
 	if err != nil {
 		return err

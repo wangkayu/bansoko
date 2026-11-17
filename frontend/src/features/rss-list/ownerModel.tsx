@@ -430,13 +430,9 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
   return {
     key: `${item.snapshot_id}:${item.stable_seed_key}`,
     title: item.seed.title,
-    // With tags, show the merged single tag row (the row keeps only the filter-participating ones, the rest go into the expansion); with none, fall back to the parsed quality/language.
-    leadingMeta: item.seed.anibt_tags?.length || item.seed.title_tags?.length ? <TagBadges anibt={item.seed.anibt_tags} title={item.seed.title_tags} rules={workspace.rules?.effective_tag_filters} /> : (
-      <>
-        {evaluation.parsed_facts?.quality && <span className="text-caption text-muted">{evaluation.parsed_facts.quality}</span>}
-        {evaluation.parsed_facts?.languages?.length ? <span className="text-caption text-muted">{evaluation.parsed_facts.languages.join("/")}</span> : null}
-      </>
-    ),
+    // Native source tags are the only release-attribute badges. Episode evidence
+    // no longer carries a second quality/language projection for this fallback.
+    leadingMeta: item.seed.anibt_tags?.length || item.seed.title_tags?.length ? <TagBadges anibt={item.seed.anibt_tags} title={item.seed.title_tags} rules={workspace.rules?.effective_tag_filters} /> : undefined,
     publishedAt: item.seed.published_at ?? undefined,
     sizeBytes: item.seed.size_bytes,
     episodeLabel: releaseEpisodeLabel(evaluation.parsed_facts),

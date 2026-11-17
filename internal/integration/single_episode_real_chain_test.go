@@ -572,31 +572,19 @@ func TestSingleEpisodeRealPostgresQBRSSFileOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The frozen TargetSet and its pre-download observation are the admission
-	// evidence: exactly one video target carrying the selected torrent entry's
-	// exact byte size, and a missing observation recorded before qB admission.
-	var frozenTargetPath string
-	var frozenTargetSize int64
+	// This template needs execution-time media facts. Admission must not invent
+	// a placeholder TargetSet row for the pending video; the verified manifest
+	// still downloads and execution renders the concrete target below.
+	var frozenTargetCount int
 	if err := db.QueryRowContext(ctx, `
-SELECT t.target_path, t.expected_size_bytes
+SELECT count(*)
 FROM acquisition_targets t
 JOIN releases r ON r.id = t.release_id
-WHERE r.download_task_id = $1 AND t.media_kind = 'video'`, taskID).Scan(&frozenTargetPath, &frozenTargetSize); err != nil {
+WHERE r.download_task_id = $1 AND t.media_kind = 'video'`, taskID).Scan(&frozenTargetCount); err != nil {
 		t.Fatal(err)
 	}
-	if frozenTargetSize != int64(len(artifactBytes)) {
-		t.Fatalf("frozen target size=%d, want selected entry size %d", frozenTargetSize, len(artifactBytes))
-	}
-	var observedTargetState string
-	if err := db.QueryRowContext(ctx, `
-SELECT t.observation_state
-FROM acquisition_targets t
-JOIN releases r ON r.id = t.release_id
-WHERE r.download_task_id = $1`, taskID).Scan(&observedTargetState); err != nil {
-		t.Fatal(err)
-	}
-	if observedTargetState != "missing" {
-		t.Fatalf("pre-download target observation=%q, want missing", observedTargetState)
+	if frozenTargetCount != 0 {
+		t.Fatalf("pending media facts produced %d placeholder targets, want none", frozenTargetCount)
 	}
 
 	if err := runWorkerUntilIdle(ctx, runtime, db, 32); err != nil {
@@ -614,16 +602,11 @@ WHERE r.download_task_id = $1`, taskID).Scan(&observedTargetState); err != nil {
 		t.Fatalf("file operation did not complete: %+v", workspace.FileOperations)
 	}
 	targetPath := workspace.FileOperations[0].TargetPath
-	// The admission TargetSet is observed before the file exists, so its path
-	// has the title's resolution and no codec. The file operation renders the
-	// target at execution from the artifact's persisted facts: the placed path
-	// names the real resolution and the real video codec, and it is the typed
-	// acquisition's canonical path.
-	if strings.Contains(frozenTargetPath, "HEVC") {
-		t.Fatalf("admission target path %q cannot name a codec before the file exists", frozenTargetPath)
-	}
+	// Execution renders from the artifact's persisted measurements: the placed
+	// path names the real resolution and video codec, and is the typed
+	// acquisition's canonical path. No release-title value fills media.* here.
 	if !strings.HasSuffix(targetPath, " [1080p] [HEVC].mkv") {
-		t.Fatalf("file operation target=%q, want the real media.resolution and media.video_codec in its name (admission path %q)", targetPath, frozenTargetPath)
+		t.Fatalf("file operation target=%q, want the real media.resolution and media.video_codec in its name", targetPath)
 	}
 	var acquisitionCanonicalPath string
 	if err := db.QueryRowContext(ctx, `SELECT f.canonical_path FROM acquisition_files f JOIN artifacts a ON a.acquisition_id = f.acquisition_id WHERE a.id = $1 AND f.media_kind = 'video'`, artifactID).Scan(&acquisitionCanonicalPath); err != nil {
@@ -770,7 +753,7 @@ WHERE managed_anime_id = $1 AND kind IN ('release_processed', 'download_changed'
 	if renderedFromFacts != targetPath {
 		t.Fatalf("maintenance render of the persisted facts=%q, want the placed target %q", renderedFromFacts, targetPath)
 	}
-	t.Logf("MEDIAINFO EVIDENCE admission TargetSet path (before the file exists)=%q", frozenTargetPath)
+	t.Logf("MEDIAINFO EVIDENCE admission TargetSet rows for pending media=%d", frozenTargetCount)
 	t.Logf("MEDIAINFO EVIDENCE placed path (rendered at execution)=%q", targetPath)
 	t.Logf("MEDIAINFO EVIDENCE template rendered from persisted facts=%q", renderedFromFacts)
 }

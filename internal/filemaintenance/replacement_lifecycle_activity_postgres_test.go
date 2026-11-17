@@ -195,7 +195,7 @@ func TestRetriedCandidateLogsReplacedAfterNotReplaced(t *testing.T) {
 	pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:release-new", "version": 1, "fingerprint": "candidate"}}})
 	if _, err := owner.ExecContext(ctx, `
 INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,stale_reason,subscription_version,input_digest,version)
-VALUES ('dec-first','dec-first','anime-1','release-new',1,'profile-v1','release:1','tv:e1','["tv:e1"]','per_group',$1,'replace','stale','candidate_acquisition_failed',1,'digest',2)`, string(pools)); err != nil {
+VALUES ('dec-first','dec-first','anime-1','release-new',1,'profile-v2','release:1','tv:e1','["tv:e1"]','per_group',$1,'replace','stale','candidate_acquisition_failed',1,'digest',2)`, string(pools)); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := db.BeginTx(ctx, nil)

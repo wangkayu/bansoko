@@ -15,6 +15,7 @@ import (
 	deliverypayload "bansoko/internal/plugintarget/payload"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/templatecatalog/notification"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
 )

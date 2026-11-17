@@ -117,22 +117,16 @@ func TestRenderMatchPathLineage(t *testing.T) {
 	ctx := context.Background()
 	unplaced := seedPlacedRenderChain(t, db, placedRenderChainSpec{
 		Key: "unplaced", AnimeID: "anime-path", AnimeTitle: "路径番", TMDBMediaKind: "tv", TMDBSeason: 1,
-		SourceGroup: "PathGroup", ReleaseTitle: "[PathGroup] 路径番 - 05", PlacedPath: "/library/路径番/EP05.mkv",
+		SourceGroup: "PathGroup", ReleaseTitle: "[PathGroup] 路径番 - 05 [1080p]", PlacedPath: "/library/路径番/EP05.mkv",
 		DownloadName: "EP05.mkv", Rules: rendererRules(), FrozenEpisode: "5", NoPlacement: true,
 	})
 	freezeRenderFixtureBusiness(t, db, unplaced.OperationID)
 	placed := seedPlacedRenderChain(t, db, placedRenderChainSpec{
 		Key: "placed", AnimeID: "anime-path", AnimeTitle: "路径番", TMDBMediaKind: "tv", TMDBSeason: 1,
-		SourceGroup: "PlacementGroup", ReleaseTitle: "[PlacementGroup] 路径番 - 06", PlacedPath: "/library/路径番/EP06.mkv",
+		SourceGroup: "PlacementGroup", ReleaseTitle: "[PlacementGroup] 路径番 - 06 [1080p]", PlacedPath: "/library/路径番/EP06.mkv",
 		DownloadName: "EP06.mkv", Rules: rendererRules(), FrozenEpisode: "6",
 	})
 	freezeRenderFixtureBusiness(t, db, placed.OperationID)
-	sourceFacts := `{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"test","tags":["resolution:1080p"]}}`
-	for _, releaseID := range []string{"unplaced-rel", "placed-rel"} {
-		if _, err := db.ExecContext(ctx, `UPDATE releases SET source_facts=$2::jsonb WHERE id=$1`, releaseID, sourceFacts); err != nil {
-			t.Fatal(err)
-		}
-	}
 	render := func(rules naming.NamingRules, in MatchRenderInput) (MatchRender, error) {
 		return NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rules}).RenderMatch(ctx, in)
 	}

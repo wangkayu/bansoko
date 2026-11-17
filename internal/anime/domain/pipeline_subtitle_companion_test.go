@@ -42,7 +42,7 @@ func companionPreviewFixture(t *testing.T, title string) (EffectiveConfig, Previ
 		TitleTags: &acquisitiondomain.TitleTagSet{Tags: []string{"sub_lang:SC"}},
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
-	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), testRules(), tvEpisodeIdentity(t, "1"))
+	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "1"))
 	release.FrozenVars = explicitTestFrozenVars()
 	return effective, release, item
 }
@@ -80,7 +80,7 @@ func TestPreviewBoundSubtitleTargetMatchesThePlacementCompanionRule(t *testing.T
 				{FileRef: "video", Ordinal: 0, SourcePath: "Preview Show S1/ep1.mkv", Filename: "ep1.mkv", SizeBytes: 1234, MediaKind: "video"},
 				{FileRef: "subtitle", Ordinal: 1, SourcePath: "Preview Show S1/" + tc.subtitle, Filename: tc.subtitle, SizeBytes: 20, MediaKind: "subtitle", PerFileEpisode: true, FrozenEpisode: release.FrozenEpisode, BoundVideo: "Preview Show S1/ep1.mkv"},
 			}
-			results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), UnknownRouteSkip)
+			results := PreviewFilesForManifest(item, release, files, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, UnknownRouteSkip)
 			if !results[0].Included || results[0].RenderedTarget == nil {
 				t.Fatalf("the video did not render a target: %+v", results[0])
 			}
@@ -148,7 +148,7 @@ func TestPreviewDefaultSubtitleSuffixIsTheFileFirstLanguage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			effective, release, item := companionPreviewFixture(t, title)
 			item.TitleTags = &acquisitiondomain.TitleTagSet{Tags: tc.release}
-			results := PreviewFilesForManifest(item, release, precureManifest(release, tc.tails...), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, testRules(), UnknownRouteSkip)
+			results := PreviewFilesForManifest(item, release, precureManifest(release, tc.tails...), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, UnknownRouteSkip)
 			if !results[0].Included || results[0].RenderedTarget == nil {
 				t.Fatalf("the video did not render a target: %+v", results[0])
 			}
@@ -176,7 +176,7 @@ func TestPreviewDefaultSubtitleSuffixIsTheFileFirstLanguage(t *testing.T) {
 // unaffected. `.chs.ass` and `.sc.ass` both read SC (zh-Hans).
 func TestPreviewSubtitlesOfOneVideoOnOneTargetKeepTheFirstByPath(t *testing.T) {
 	effective, release, item := companionPreviewFixture(t, "[FLsnow][Star-Detective_Precure][36][TVer_1080p]")
-	results := PreviewFilesForManifest(item, release, precureManifest(release, ".sc.ass", ".chs.ass"), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, precureManifest(release, ".sc.ass", ".chs.ass"), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, UnknownRouteSkip)
 	if !results[0].Included || results[0].RenderedTarget == nil {
 		t.Fatalf("the video must stay included: %+v", results[0])
 	}
@@ -197,7 +197,7 @@ func TestPreviewSubtitlesOfOneVideoOnOneTargetKeepTheFirstByPath(t *testing.T) {
 func TestPreviewBoundSubtitlesFollowTheVideoNotTheFileRules(t *testing.T) {
 	effective, release, item := companionPreviewFixture(t, "[FLsnow][Star-Detective_Precure][36][TVer_1080p]")
 	effective.Rules.FileFilter = FileFilterRules{NotIn: "jpn"}
-	results := PreviewFilesForManifest(item, release, precureManifest(release, ".chs&jpn.ass"), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, testRules(), UnknownRouteSkip)
+	results := PreviewFilesForManifest(item, release, precureManifest(release, ".chs&jpn.ass"), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, UnknownRouteSkip)
 	if !results[0].Included || results[0].RenderedTarget == nil {
 		t.Fatalf("the video must stay included: %+v", results[0])
 	}
@@ -207,7 +207,7 @@ func TestPreviewBoundSubtitlesFollowTheVideoNotTheFileRules(t *testing.T) {
 	}
 
 	effective.Rules.FileFilter = FileFilterRules{NotIn: "TVer"}
-	results = PreviewFilesForManifest(item, release, precureManifest(release, ".chs&jpn.ass"), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, testRules(), UnknownRouteSkip)
+	results = PreviewFilesForManifest(item, release, precureManifest(release, ".chs&jpn.ass"), effective, "Preview Show", SourceEvaluationInput{GroupName: "FLsnow"}, UnknownRouteSkip)
 	if results[0].Included || results[0].ReasonCode == nil || *results[0].ReasonCode != "file_not_in_matched" {
 		t.Fatalf("the rule must exclude the video: %+v", results[0])
 	}

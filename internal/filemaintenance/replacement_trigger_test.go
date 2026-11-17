@@ -69,7 +69,7 @@ func newTriggerTestDB(t *testing.T) (*sql.DB, *workitems.Store, *ReplacementTrig
 	db := disposabledb.ResetDisposableSchema(t)
 	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
 	seedInstanceReplacement(t, db, "anime-1", ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
+		`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	store, err := workitems.NewStore(db, workitems.DefaultRetentionDays, port.NopRuntimeLogger{})
 	if err != nil {
 		t.Fatal(err)
@@ -223,8 +223,8 @@ func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
 		t.Helper()
 		if _, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
 			AdmissionMode: mode,
-			QualityProfile: generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{
-				{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}},
+			QualityProfile: generated.QualityProfile{Version: "profile-v2", Items: []generated.QualityCompareItem{
+				{Key: "rt.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}},
 			}},
 			ExpectedVersion: expectedVersion,
 		}, "test", "http"); err != nil {

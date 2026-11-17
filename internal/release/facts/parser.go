@@ -20,15 +20,13 @@ import (
 	"sort"
 	"strings"
 
-	"bansoko/internal/acquisition/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/episodeidentity"
 )
 
 // ParserVersion is retained as the parser family identifier for callers that
 // do not have an active profile available. Persisted facts should use the
 // profile-specific version returned by Candidate.ParserVersion.
-const ParserVersion = "candidate-facts-v1"
+const ParserVersion = "candidate-facts-v2"
 
 // CoverageUnresolved marks a candidate whose episode coverage cannot be
 // proven; such candidates are never eligible for automatic replacement.
@@ -58,22 +56,14 @@ type Candidate struct {
 // sorted) into the comparable candidate facts contract. It never parses a
 // title for an episode: the keys are the coverage authority, so candidate
 // facts cannot disagree with the plan the Release was accepted with. No key is
-// unresolved coverage. Quality dimensions still come from ParseReleaseFacts,
-// which never decides episode identity.
-func CandidateFromCoverage(title string, rules attrrules.Rules, keys []string) Candidate {
+// unresolved coverage. This projection never parses title attributes;
+// comparison values are projected separately from frozen source tags.
+func CandidateFromCoverage(title string, keys []string) Candidate {
 	candidate := Candidate{
-		ParserVersion: attrrules.ProfileVersion(mustFingerprint(rules)),
+		ParserVersion: ParserVersion,
 		Title:         strings.TrimSpace(title),
 		MediaKind:     "video",
 	}
-	base := domain.ParseReleaseFacts(candidate.Title, rules)
-	candidate.Resolution = base.Resolution
-	candidate.Revision = base.Revision
-	candidate.Quality = base.Quality
-	candidate.Language = base.Language
-	candidate.Group = base.GroupName
-	candidate.Special = base.Special
-	candidate.Warnings = append(candidate.Warnings, base.Warnings...)
 
 	coverage := make([]string, 0, len(keys))
 	seen := map[string]bool{}
@@ -109,12 +99,4 @@ func InputFingerprint(title string, seasonContext *int, isMovie bool) string {
 	raw := fmt.Sprintf("%s|%v|%v", strings.TrimSpace(title), seasonContext, isMovie)
 	digest := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(digest[:])
-}
-
-func mustFingerprint(r attrrules.Rules) string {
-	fp, err := attrrules.Fingerprint(r)
-	if err != nil {
-		return "invalid"
-	}
-	return fp
 }

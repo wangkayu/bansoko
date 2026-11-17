@@ -15,6 +15,7 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/runtime/buildinfo"
+
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 )

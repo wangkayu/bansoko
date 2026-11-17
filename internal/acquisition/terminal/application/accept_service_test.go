@@ -16,9 +16,10 @@ func serviceIntentFixture(t *testing.T, c admissionCapture) acquisitionIntent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The golden fixture is an older input shape; the intent media section
-	// only carries what the V6 media shape still has,
+	// The golden fixture is an older input shape; current intents carry neither
+	// the retired source offset nor the duplicate media-quality authority.
 	delete(v.Object["media"].Object, "source_offset")
+	delete(v.Object["media"].Object, "quality")
 	// and the delivery is the replacements shape: the golden fixture carries no
 	// approved replacement, so the approval list is empty.
 	delete(v.Object["delivery"].Object, "replacement")

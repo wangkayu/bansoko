@@ -11,25 +11,20 @@ import (
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/namingvars"
 	provider "bansoko/internal/provider/domain"
+	"bansoko/internal/qualityprofile"
 )
 
 func qualificationFixture(t *testing.T, mode string) qualificationMaterial {
 	t.Helper()
-	rules := attrrules.Rules{Version: 1, Resolution: []string{"1080p"}, Quality: []string{"web"}, Language: []string{"jpn"}, SpecialMarkers: []string{"special"}, GroupBrackets: []string{"[", "]"}}
-	attrDigest, err := attrrules.Fingerprint(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
 	source := "vars.actual = {title: input.release_title};"
 	varsDigest, err := namingvars.SourceFingerprint(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := anime.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: anime.ParserPolicyEnvelope{SchemaVersion: anime.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", Provenance: "global", PolicyVersion: 1, ProfileVersion: 1, RulesOwnerVersion: 1}, ReplacementVersion: 1, FileEffectVersion: 1, UnclassifiedRoute: "skip"}
+	b := anime.BusinessSnapshot{SchemaVersion: anime.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: anime.ParserPolicyEnvelope{SchemaVersion: anime.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", Provenance: "global", PolicyVersion: 1, ProfileVersion: 1, RulesOwnerVersion: 1}, ReplacementVersion: 1, FileEffectVersion: 1, UnclassifiedRoute: "skip"}
 	for _, name := range anime.EffectiveSectionOrder {
 		value, err := anime.DefaultSectionValue(name)
 		if err != nil {
@@ -41,8 +36,8 @@ func qualificationFixture(t *testing.T, mode string) qualificationMaterial {
 		}
 		b.SectionVersions[name], b.SectionSchemas[name] = 1, anime.SectionSchemaVersions[name]
 	}
-	b.Replacement = anime.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
-	b.Programs = anime.ProgramReferences{AttrRules: namingvars.ProgramRef{Digest: attrDigest, Version: attrrules.ProfileVersion(attrDigest)}, Vars: namingvars.ProgramRef{Digest: varsDigest, Version: namingvars.ProfileVersion(varsDigest)}}
+	b.Replacement = anime.ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}
+	b.Programs = anime.ProgramReferences{Vars: namingvars.ProgramRef{Digest: varsDigest, Version: namingvars.ProfileVersion(varsDigest)}}
 	digest, err := b.Digest()
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +67,7 @@ func qualificationFixture(t *testing.T, mode string) qualificationMaterial {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return qualificationMaterial{entryMode: mode, subgroupsOwnerVersion: 1, rulesOwnerVersion: 1, metadataVersion: 1, parserKind: "regex", parserVersion: 1, catalogKind: "provider_snapshot", config: configMaterial{kind: "owner", requestHash: catalog.DigestBytes([]byte("request")), managedID: "anime-1", version: 4, business: b, digest: digest}, management: managementMaterial{managedID: "anime-1", subscriptionID: "sub-1", subscriptionVersion: 5, lifecycleVersion: 6}, release: releaseMaterial{id: "rel-1", sourceID: "src-1", subscriptionID: "sub-1", version: 7, sourceVersion: 8}, payloadDigest: payloadDigest, catalog: &catalogMaterial{observation: group, feed: feed, seedKey: "seed"}, programs: programMaterial{attr: rules, vars: program}}
+	return qualificationMaterial{entryMode: mode, subgroupsOwnerVersion: 1, rulesOwnerVersion: 1, metadataVersion: 1, parserKind: "regex", parserVersion: 1, catalogKind: "provider_snapshot", config: configMaterial{kind: "owner", requestHash: catalog.DigestBytes([]byte("request")), managedID: "anime-1", version: 4, business: b, digest: digest}, management: managementMaterial{managedID: "anime-1", subscriptionID: "sub-1", subscriptionVersion: 5, lifecycleVersion: 6}, release: releaseMaterial{id: "rel-1", sourceID: "src-1", subscriptionID: "sub-1", version: 7, sourceVersion: 8}, payloadDigest: payloadDigest, catalog: &catalogMaterial{observation: group, feed: feed, seedKey: "seed"}, programs: programMaterial{vars: program}}
 }
 
 func TestQualificationConstructorBranchesAndCanonical(t *testing.T) {
@@ -143,7 +138,6 @@ func TestQualificationConstructorMissingMaterial(t *testing.T) {
 		{"subscription", func(m *qualificationMaterial) { m.management.subscriptionID = "" }},
 		{"source owner", func(m *qualificationMaterial) { m.release.subscriptionID = "other" }},
 		{"source version", func(m *qualificationMaterial) { m.release.sourceVersion = 0 }},
-		{"attr", func(m *qualificationMaterial) { m.programs.attr = attrrules.Rules{} }},
 		{"vars", func(m *qualificationMaterial) { m.programs.vars = namingvars.Program{} }},
 		{"group", func(m *qualificationMaterial) { m.catalog.observation = catalog.GroupObservation{} }},
 		{"feed", func(m *qualificationMaterial) { m.catalog.feed = catalog.ProviderFeedSnapshot{} }},

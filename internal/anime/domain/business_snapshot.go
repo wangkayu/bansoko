@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 )
 
-// BusinessSnapshotSchemaVersion is the business snapshot shape: v2 carries
-// the profile-v1 quality profile and no cutoff.
-const BusinessSnapshotSchemaVersion = "business-snapshot-v1"
+// BusinessSnapshotSchemaVersion is the business snapshot shape: v2 removes
+// the retired title-attribute program; the selected parser and native tags
+// already carry their own immutable versions.
+const BusinessSnapshotSchemaVersion = "business-snapshot-v2"
 
 // BusinessSnapshot is an internal complete value for the next candidate contract.
 // It is not embedded in the current HTTP draft: that contract cannot carry it.
@@ -34,8 +34,7 @@ type ReplacementValue struct {
 	QualityProfile json.RawMessage `json:"quality_profile"`
 }
 type ProgramReferences struct {
-	AttrRules namingvars.ProgramRef `json:"attrrules"`
-	Vars      namingvars.ProgramRef `json:"vars"`
+	Vars namingvars.ProgramRef `json:"vars"`
 }
 
 // Freeze copies every map/JSON level through serialization and verifies the
@@ -65,7 +64,7 @@ func (s BusinessSnapshot) Freeze() (BusinessSnapshot, error) {
 	if s.UnclassifiedRoute != "skip" && s.UnclassifiedRoute != "route" {
 		return BusinessSnapshot{}, errors.New("invalid unclassified route")
 	}
-	if !validVarsRef(s.Programs.Vars) || s.Programs.AttrRules.Digest == "" || s.Programs.AttrRules.Version != attrrules.ProfileVersion(s.Programs.AttrRules.Digest) {
+	if !validVarsRef(s.Programs.Vars) {
 		return BusinessSnapshot{}, errors.New("invalid immutable program references")
 	}
 	b, err := json.Marshal(s)

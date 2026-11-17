@@ -6,13 +6,12 @@ import (
 	"testing"
 
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	varspersistence "bansoko/internal/namingvars/adapter/persistence"
 )
 
 // seedActivePrograms stands in for the server's startup initialization, which
-// publishes one active Vars and one active attrrules program on a fresh install.
+// publishes one active Vars program on a fresh install.
 func seedActivePrograms(t *testing.T, ctx context.Context, service *Service) {
 	t.Helper()
 	source := `vars.actual = {title: input.release_title};`
@@ -22,15 +21,6 @@ func seedActivePrograms(t *testing.T, ctx context.Context, service *Service) {
 	}
 	raw, _ := json.Marshal(source)
 	if _, err := service.db.ExecContext(ctx, `INSERT INTO naming_vars_versions(fingerprint,content,active) VALUES($1,$2,TRUE)`, varsDigest, raw); err != nil {
-		t.Fatal(err)
-	}
-	rules := attrrules.Rules{Version: 1, Resolution: []string{"1080p"}, Quality: []string{"web"}, Language: []string{"jpn"}, SpecialMarkers: []string{"special"}, GroupBrackets: []string{"[", "]"}}
-	attrDigest, err := attrrules.Fingerprint(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ = json.Marshal(rules)
-	if _, err := service.db.ExecContext(ctx, `INSERT INTO attr_rule_versions(fingerprint,content,active) VALUES($1,$2,TRUE)`, attrDigest, raw); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -60,7 +50,7 @@ func TestReadBusinessPresetOnFreshInstall(t *testing.T) {
 			t.Fatalf("preset section %q missing", name)
 		}
 	}
-	if preset.Programs.Vars.Digest == "" || preset.Programs.AttrRules.Digest == "" {
+	if preset.Programs.Vars.Digest == "" {
 		t.Fatalf("preset must reference the active programs exactly: %+v", preset.Programs)
 	}
 	if _, err := preset.Digest(); err != nil {

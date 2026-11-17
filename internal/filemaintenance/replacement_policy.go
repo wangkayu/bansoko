@@ -90,7 +90,7 @@ func policyInvalid(detail string) error {
 
 // ValidateReplacementPolicy rejects incomplete or wrongly typed values before
 // any write: admission_mode must be the enum, quality_profile a valid
-// profile-v1 (qualityprofile.Parse: known unique items, well-formed rankings,
+// profile-v2 (qualityprofile.Parse: known unique items, well-formed rankings,
 // no duplicate value sets).
 func ValidateReplacementPolicy(policy ReplacementPolicy) error {
 	switch policy.AdmissionMode {

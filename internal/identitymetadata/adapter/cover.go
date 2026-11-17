@@ -19,6 +19,7 @@ import (
 	configurationdomain "bansoko/internal/configuration/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadataport "bansoko/internal/identitymetadata/port"
+
 	"golang.org/x/sync/singleflight"
 )
 

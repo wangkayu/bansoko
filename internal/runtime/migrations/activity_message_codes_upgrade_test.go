@@ -29,9 +29,7 @@ func TestActivityMessageCodesUpgradeAPopulatedJournal(t *testing.T) {
 		       ('log-refresh', 'sub-092', 'anime-092', 'rss_refresh_failed', 'failure', 'Journal Anime', 'RSS refresh failed', 'refresh'),
 		       ('log-replace', 'sub-092', 'anime-092', 'replacement_decided', 'info', 'Journal Anime', 'Will replace the old version', 'replace')`)
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade a populated journal: %v", err)
-	}
+	applyMigrationsThrough(t, db, "092_activity_message_codes.sql")
 
 	var rows int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM subscription_log_entries`).Scan(&rows); err != nil {

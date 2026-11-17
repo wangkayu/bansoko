@@ -3,8 +3,9 @@ package application
 import (
 	"context"
 	"database/sql"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"testing"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func TestCommittedPlanObservationDatabaseErrorIsNotConfirmation(t *testing.T) {

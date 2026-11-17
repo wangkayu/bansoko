@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"bansoko/internal/attrrules"
 	"bansoko/internal/persistence/txscope"
 	persistence "bansoko/internal/release/facts/adapter/persistence/candidate"
 	factsapplication "bansoko/internal/release/facts/application"
@@ -100,8 +99,8 @@ func EnsureSelectedEvidenceProjection(ctx context.Context, db *sql.DB, releaseID
 	return persistence.EnsureSelectedEvidenceProjection(ctx, db, releaseID, title, coverage, size, recomputePersistenceFacts)
 }
 
-func recomputePersistenceFacts(existing persistence.CandidateFacts, rules attrrules.Rules, coverage *[]string, source persistence.CompareSource) (persistence.CandidateFacts, bool, error) {
-	updated, changed, err := RecomputeCurrentProfile(fromPersistenceFacts(existing), rules, coverage, CompareSource(source))
+func recomputePersistenceFacts(existing persistence.CandidateFacts, coverage *[]string, source persistence.CompareSource) (persistence.CandidateFacts, bool, error) {
+	updated, changed, err := RecomputeCurrentProfile(fromPersistenceFacts(existing), coverage, CompareSource(source))
 	return toPersistenceFacts(updated), changed, err
 }
 
@@ -147,11 +146,11 @@ func fromPersistenceFacts(facts persistence.CandidateFacts) ReleaseCandidateFact
 
 // RecomputeCurrentProfile is the pure current-profile projection used by the
 // lazy writer. Coverage comes exclusively from the frozen BatchPlan coverage
-// keys (the release media fact snapshot); quality dimensions are refreshed from
-// the current attr profile. The title is never re-parsed into an episode: a nil
+// keys (the release media fact snapshot); comparison dimensions are projected from
+// the already recorded native source tags. The title is never re-parsed into an episode: a nil
 // coverage (no frozen plan) is a deliberate no-op rather than a second coverage
 // authority.
-func RecomputeCurrentProfile(existing ReleaseCandidateFacts, rules attrrules.Rules, coverage *[]string, source CompareSource) (ReleaseCandidateFacts, bool, error) {
+func RecomputeCurrentProfile(existing ReleaseCandidateFacts, coverage *[]string, source CompareSource) (ReleaseCandidateFacts, bool, error) {
 	if coverage == nil {
 		return existing, false, nil
 	}
@@ -161,7 +160,7 @@ func RecomputeCurrentProfile(existing ReleaseCandidateFacts, rules attrrules.Rul
 	if len(existing.RawEvidence) == 0 || json.Unmarshal(existing.RawEvidence, &evidence) != nil || strings.TrimSpace(evidence.Title) == "" {
 		return existing, false, nil
 	}
-	candidate := CandidateFromCoverage(evidence.Title, rules, *coverage)
+	candidate := CandidateFromCoverage(evidence.Title, *coverage)
 	factsJSON, err := json.Marshal(map[string]any{
 		"resolution": candidate.Resolution, "quality": candidate.Quality,
 		"language": candidate.Language, "group": candidate.Group,
@@ -171,15 +170,27 @@ func RecomputeCurrentProfile(existing ReleaseCandidateFacts, rules attrrules.Rul
 	if err != nil {
 		return ReleaseCandidateFacts{}, false, err
 	}
+	compare, err := CompareValues(source)
+	if err != nil {
+		return ReleaseCandidateFacts{}, false, err
+	}
+	fingerprint, err := ProjectionFingerprint(candidate, compare)
+	if err != nil {
+		return ReleaseCandidateFacts{}, false, err
+	}
+	if existing.ParserVersion == ParserVersion && existing.InputFingerprint == fingerprint && sameComparisonValues(existing.CompareValues, compare) {
+		return existing, false, nil
+	}
 	refreshed := existing
 	refreshed.ParserVersion = candidate.ParserVersion
-	refreshed.InputFingerprint = InputFingerprint(evidence.Title, nil, false)
+	refreshed.InputFingerprint = fingerprint
 	refreshed.Facts = factsJSON
 	refreshed.CoverageKeys = candidate.Coverage
 	refreshed.Resolution = candidate.Resolution
 	refreshed.Revision = candidate.Revision
+	refreshed.Source = candidate.Quality
 	refreshed.Language = candidate.Language
 	refreshed.Group = candidate.Group
-	refreshed.CompareValues = CompareValues(candidate, source)
+	refreshed.CompareValues = compare
 	return refreshed, true, nil
 }

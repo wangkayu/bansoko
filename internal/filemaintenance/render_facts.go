@@ -145,9 +145,10 @@ func (f placedRenderFacts) coverageEpisode(episode string) (*naming.FrozenEpisod
 // the alignment had just placed at its target as unscanned.
 func (r *NamingTargetRenderer) placedRenderFacts(ctx context.Context, animeID, path, placementID string) (placedRenderFacts, bool, error) {
 	var f placedRenderFacts
-	query := `SELECT p.id, ` + ExcludedPlacementSQL("p") + `, p.source_evidence_type = 'file_operation', COALESCE(rel.id,''), COALESCE(src.source_kind,''), COALESCE(src.group_name,''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''), COALESCE(rel.raw_facts->>'title',''), COALESCE(rel.version,0), COALESCE(af.file_ref,''), COALESCE(mf.file_evidence->>'name', af.relative_path, ''), COALESCE(mf.size_bytes, af.size_bytes, 0), COALESCE(af.media_kind,''), COALESCE(af.facts,'{}'::jsonb), COALESCE(mf.effective_facts,'{}'::jsonb), COALESCE(snap.id,''), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), COALESCE(rel.source_facts,'{}'::jsonb), COALESCE(fo.id,'')
+	query := `SELECT p.id, ` + ExcludedPlacementSQL("p") + `, p.source_evidence_type = 'file_operation', COALESCE(rel.id,''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(af.file_ref,''), COALESCE(mf.file_evidence->>'name', af.relative_path, ''), COALESCE(mf.size_bytes, af.size_bytes, 0), COALESCE(af.media_kind,''), COALESCE(af.facts,'{}'::jsonb), COALESCE(mf.effective_facts,'{}'::jsonb), COALESCE(snap.id,''), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence','{}'::jsonb), COALESCE(fo.id,'')
 FROM placements p
 LEFT JOIN file_operations fo ON fo.id=p.source_owner_ref AND p.source_evidence_type='file_operation'
+LEFT JOIN acquisitions aq ON aq.id=fo.acquisition_id
 LEFT JOIN artifact_files af ON af.id=fo.artifact_file_id
 LEFT JOIN artifacts art ON art.id=fo.artifact_id
 LEFT JOIN download_tasks dt ON dt.id=art.download_task_id
@@ -177,7 +178,7 @@ ORDER BY p.created_at DESC LIMIT 1`
 	if _, err := f.effective(); err != nil {
 		return f, true, err
 	}
-	if f.originalTitle == "" || f.sourceKind == "" || f.groupName == "" || string(f.releaseFacts) == "{}" {
+	if f.originalTitle == "" || f.sourceKind == "" || string(f.releaseFacts) == "{}" {
 		return f, true, renderFactsUnavailable("frozen release or source facts unavailable")
 	}
 	return f, true, nil
@@ -339,14 +340,11 @@ func (r *NamingTargetRenderer) renderNamingContext(ctx context.Context, animeID,
 	} else {
 		return naming.ResolvedContext{}, "", renderFactsUnavailable("placement is not a video file")
 	}
-	var releaseFacts struct {
-		Resolution string `json:"resolution"`
-	}
-	if err := json.Unmarshal(lineage.releaseFacts, &releaseFacts); err != nil {
-		return naming.ResolvedContext{}, "", renderFactsUnavailable("frozen release facts are invalid")
-	}
-	if ctxFacts.File.Media.Resolution == "" {
-		ctxFacts.File.Media.Resolution = strings.TrimSpace(releaseFacts.Resolution)
+	// Maintenance uses the original frozen parse, including an empty result.
+	// Missing historical evidence stays absent; no current parser can replace it.
+	ctxFacts.FileTitleTags, err = naming.FrozenFileTitleTags(lineage.renderSnapshot)
+	if err != nil {
+		return naming.ResolvedContext{}, "", err
 	}
 	// The torrent facts belong to the release and stay as the effect read them.
 	if binding, hasBinding := lineage.bindingFacts(); hasBinding {

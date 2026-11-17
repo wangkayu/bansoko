@@ -5,11 +5,11 @@ import { draftFromView, draftsEqual, inputFromDraft } from "./replacementDraft";
 const view: ReplacementPolicyDefaultView = {
   admission_mode: "per_group",
   quality_profile: {
-    version: "profile-v1",
+    version: "profile-v2",
     items: [
       { key: "subgroup.score", ranks: [] },
       { key: "anibt.language", ranks: [["CHS", "CHT"], ["CHS"]] },
-      { key: "release.resolution", ranks: [["1080p"], ["720p"]] },
+      { key: "rt.resolution", ranks: [["1080p"], ["720p"]] },
     ],
   },
   version: 5,

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"bansoko/internal/workitems"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

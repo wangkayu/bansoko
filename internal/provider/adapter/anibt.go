@@ -14,6 +14,7 @@ import (
 
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/runtime/buildinfo"
+
 	"github.com/PuerkitoBio/goquery"
 )
 

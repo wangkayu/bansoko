@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	protocol "bansoko/internal/acquisition/terminal/domain"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
@@ -36,11 +37,13 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 			ProviderTitle frozenPlanValue `json:"provider_title"`
 			BGM           frozenPlanValue `json:"bgm"`
 			TMDB          frozenPlanValue `json:"tmdb"`
-			Quality       frozenPlanValue `json:"quality"`
 			BGMTitles     frozenPlanValue `json:"bgm_titles"`
 			TMDBTitles    frozenPlanValue `json:"tmdb_titles"`
 		} `json:"media"`
 		Source struct {
+			Title            frozenPlanValue `json:"title"`
+			Group            frozenPlanValue `json:"group"`
+			TagEvidence      json.RawMessage `json:"tag_evidence"`
 			InfohashV1       frozenPlanValue `json:"infohash_v1"`
 			InfohashV2       frozenPlanValue `json:"infohash_v2"`
 			TorrentSize      frozenPlanValue `json:"torrent_size"`
@@ -110,23 +113,37 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 	if config.effect.CollisionPolicy == fileOperationCollisionOverwrite && in.Delivery.Intent == "ensure_present" && in.Delivery.Collision == "block" {
 		config.effect.CollisionPolicy = fileOperationCollisionFail
 	}
-	b.artifact.acceptedResolution = ""
-	if in.Media.Quality.State == "known" {
-		var quality struct {
-			Resolution struct {
-				State string `json:"state"`
-				Value string `json:"value"`
-			} `json:"resolution"`
-		}
-		if err := json.Unmarshal(in.Media.Quality.Value, &quality); err != nil {
-			return err
-		}
-		if quality.Resolution.State == "value" {
-			b.artifact.acceptedResolution = quality.Resolution.Value
-		}
-	}
 	b.artifact.frozenPolicy = policy
 	b.artifact.acceptedFacts = true
+	// Current release/source rows only locate owners. Their changing values
+	// must not supply evidence to an already accepted operation.
+	b.artifact.sourceFacts = nil
+	if len(in.Source.TagEvidence) > 0 {
+		evidence, err := protocol.ParseStrict(in.Source.TagEvidence)
+		if err != nil {
+			return fmt.Errorf("accepted source tags: %w", err)
+		}
+		if err := protocol.Validate("SourceTagsV1", evidence); err != nil {
+			return fmt.Errorf("accepted source tags: %w", err)
+		}
+		b.artifact.sourceFacts = protocol.Canonical(evidence)
+	}
+	b.artifact.groupName = ""
+	if in.Source.Group.State == "known" {
+		if err := json.Unmarshal(in.Source.Group.Value, &b.artifact.groupName); err != nil {
+			return err
+		}
+	}
+	var releaseTitle string
+	if in.Source.Title.State == "known" {
+		if err := json.Unmarshal(in.Source.Title.Value, &releaseTitle); err != nil {
+			return err
+		}
+	}
+	b.artifact.rawFacts, err = json.Marshal(map[string]string{"title": releaseTitle})
+	if err != nil {
+		return err
+	}
 	// The accepted delivery route mode says nothing about unknown files. The
 	// unclassified_route switch is the instance policy, read by
 	// captureArtifactBatch; until then unknown files fail closed to skip.

@@ -15,6 +15,7 @@ import (
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/testutil/nativeinput"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sqlc-dev/pqtype"
 )
@@ -47,6 +48,12 @@ func checkQualifiedQueuedPostgres(t *testing.T, ctx context.Context, db *sql.DB,
 		t.Fatal(err)
 	}
 	inputValue.Object["source"].Object["provenance"] = provenance
+	tagEvidence, err := protocol.FreezeSourceTags(c.material.releaseSourceFacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputValue.Object["source"].Object["tag_evidence"] = tagEvidence
+	delete(inputValue.Object["media"].Object, "quality")
 	if c.configKind == "owner" {
 		resolved := captureSections(c.material)
 		for i, section := range inputValue.Object["config"].Object["sections"].Array {

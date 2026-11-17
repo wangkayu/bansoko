@@ -810,7 +810,7 @@ func (s *Service) enqueueDownloadSubmittedTx(ctx context.Context, tx *sql.Tx, ta
 	}
 	var row downloadNotificationRow
 	if err := tx.QueryRowContext(ctx, `
-SELECT anime.title, COALESCE(anime.title_override, ''), release.raw_facts, release.parsed_facts, release.source_facts,
+SELECT anime.title, COALESCE(anime.title_override, ''), release.raw_facts, release.parsed_facts,
        input.input, input.entry_kind, connection.name,
        (SELECT snap.release_identity FROM media_fact_snapshots snap
         WHERE snap.release_id = task.release_id ORDER BY snap.created_at DESC, snap.id DESC LIMIT 1),
@@ -825,7 +825,7 @@ JOIN managed_anime anime ON anime.id = sub.managed_anime_id
 JOIN acquisitions input ON input.id = task.acquisition_id
 LEFT JOIN connections connection ON connection.id = task.qbittorrent_connection_id
 LEFT JOIN release_torrent_inputs torrent_input ON torrent_input.release_id = task.release_id
-WHERE task.id = $1`, task.id).Scan(&row.animeTitle, &row.titleOverride, &row.rawFacts, &row.parsedFacts, &row.sourceFacts,
+WHERE task.id = $1`, task.id).Scan(&row.animeTitle, &row.titleOverride, &row.rawFacts, &row.parsedFacts,
 		&row.inputSnapshot, &row.entryKind, &row.clientName, &row.releaseIdentity, &row.coverageKeys, &row.torrentPayload); err != nil {
 		return fmt.Errorf("read download notification facts: %w", err)
 	}
@@ -899,7 +899,6 @@ type downloadNotificationRow struct {
 	entryKind                 string
 	animeTitle, titleOverride string
 	rawFacts, parsedFacts     []byte
-	sourceFacts               []byte
 	inputSnapshot             []byte
 	clientName                sql.NullString
 	releaseIdentity           []byte
@@ -966,9 +965,9 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 			facts[key] = nil
 		}
 	}
-	// vars frozen at accept; rt/anibt from the source facts this submit fixes.
+	// Vars and native release tags both come from the accepted input.
 	providerText := func(value string) any { return nullableFact(bounded(value, maxProviderText)) }
-	for key, value := range notification.ValueFacts(notification.InputVarsOutput(row.inputSnapshot), row.sourceFacts, providerText) {
+	for key, value := range notification.ValueFacts(notification.InputVarsOutput(row.inputSnapshot), notification.InputSourceTags(row.inputSnapshot), providerText) {
 		facts[key] = value
 	}
 	for key, value := range notification.TitleFacts(row.inputSnapshot, providerText) {

@@ -27,6 +27,7 @@ import (
 	"bansoko/internal/postprocessing/naming"
 	facts "bansoko/internal/release/facts"
 	"bansoko/internal/workitems"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -662,15 +663,16 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
 	renderSnapshot := map[string]any{
-		"renderer_version": rendererVersion,
-		"naming_renderer":  naming.RendererVersion,
-		"directory":        directory,
-		"filename":         renderedFilename,
-		"target":           plan.targetPath,
-		"resolved":         frozenResolvedValues(resolved.Results),
-		"binding_facts":    renderBindingFacts(resolved.Context),
-		"render_facts":     naming.ReplayFactValues(resolved.Context),
-		"file_title_tags":  fileTitleTagsBlock(prep.fileTitleTags(file)),
+		"renderer_version":     rendererVersion,
+		"naming_renderer":      naming.RendererVersion,
+		"directory":            directory,
+		"filename":             renderedFilename,
+		"target":               plan.targetPath,
+		"resolved":             frozenResolvedValues(resolved.Results),
+		"binding_facts":        renderBindingFacts(resolved.Context),
+		"render_facts":         naming.ReplayFactValues(resolved.Context),
+		"file_title_tags":      fileTitleTagsBlock(prep.fileTitleTags(file)),
+		"release_source_facts": json.RawMessage(artifact.sourceFacts),
 	}
 	// The block lands only when a template referenced an ep_title fact; note
 	// 025's render validator accepts snapshots without the key.
@@ -959,16 +961,17 @@ func (s *Service) prepareSubtitleFileTx(ctx context.Context, tx *sql.Tx, artifac
 	}
 	plan.boundVideoOperationID = videoTarget.operationID
 	renderSnapshot := map[string]any{
-		"renderer_version": rendererVersion,
-		"naming_renderer":  naming.RendererVersion,
-		"directory":        videoTarget.directory,
-		"filename":         renderedFilename,
-		"target":           plan.targetPath,
-		"resolved":         frozenResolvedValues(resolved.Results),
-		"binding_facts":    renderBindingFacts(resolved.Context),
-		"render_facts":     naming.ReplayFactValues(resolved.Context),
-		"file_title_tags":  fileTitleTagsBlock(prep.fileTitleTags(file)),
-		"suffix":           suffix,
+		"renderer_version":     rendererVersion,
+		"naming_renderer":      naming.RendererVersion,
+		"directory":            videoTarget.directory,
+		"filename":             renderedFilename,
+		"target":               plan.targetPath,
+		"resolved":             frozenResolvedValues(resolved.Results),
+		"binding_facts":        renderBindingFacts(resolved.Context),
+		"render_facts":         naming.ReplayFactValues(resolved.Context),
+		"file_title_tags":      fileTitleTagsBlock(prep.fileTitleTags(file)),
+		"release_source_facts": json.RawMessage(artifact.sourceFacts),
+		"suffix":               suffix,
 		"binding": map[string]any{
 			"state":                    bindingStateBound,
 			"bound_video_file_ref":     boundRef,

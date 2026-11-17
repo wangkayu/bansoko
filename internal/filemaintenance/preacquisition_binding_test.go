@@ -23,7 +23,7 @@ INSERT INTO replacement_decisions
  candidate_facts_ref, snapshot_generation, coverage_key, coverage_keys, admission_mode, pools,
  verdict, state, version, created_at, updated_at)
 VALUES ('dec-pre', 'key-pre', 'anime-pre', 'rel-pre', NULL,
- 2, 'profile-v1', 3, 'old-digest', 'rel-pre:facts', NULL,
+ 2, 'profile-v2', 3, 'old-digest', 'rel-pre:1', NULL,
  'tv:e1', '["tv:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, string(pools)); err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ INSERT INTO replacement_decisions
  candidate_facts_ref, snapshot_generation, coverage_key, coverage_keys, admission_mode, pools,
  verdict, state, version, created_at, updated_at)
 VALUES ('dec-stale', 'key-stale', 'anime-stale', 'rel-stale', NULL,
- 2, 'profile-v1', 3, 'old-digest', 'rel-stale:facts', NULL,
+ 2, 'profile-v2', 3, 'old-digest', 'rel-stale:1', NULL,
  'tv:e1', '["tv:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, pools); err != nil {
 		t.Fatal(err)
@@ -104,11 +104,62 @@ VALUES ('dec-stale', 'key-stale', 'anime-stale', 'rel-stale', NULL,
 	}
 }
 
+func TestPreAcquisitionReuseStalesCandidateFactsMismatch(t *testing.T) {
+	for _, reuse := range []string{"bind", "live"} {
+		t.Run(reuse, func(t *testing.T) {
+			db := openFrozenTestDB(t)
+			defer db.Close()
+			pools := `[{"pool_key":"tv:e1","verdict":"replace","winner":{"placement_id":"release:rel-facts","version":1,"fingerprint":"old-fp"}}]`
+			if _, err := db.Exec(`
+INSERT INTO replacement_decisions
+(id, idempotency_key, managed_anime_id, candidate_release_id, candidate_placement_id,
+ policy_version, profile_version, subscription_version, input_digest,
+ candidate_facts_ref, snapshot_generation, coverage_key, coverage_keys, admission_mode, pools,
+ verdict, state, version, created_at, updated_at)
+VALUES ('dec-facts', 'key-facts', 'anime-facts', 'rel-facts', NULL,
+ 2, 'profile-v2', 3, 'old-digest', 'rel-facts:1', NULL,
+ 'tv:e1', '["tv:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
+ CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, pools); err != nil {
+				t.Fatal(err)
+			}
+			tx, err := db.BeginTx(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			evaluation := bindingEvaluation("anime-facts", "rel-facts", 3, 2)
+			evaluation.factsReleaseVersion = 2
+			evaluation.factsFingerprint = "new-fp"
+			service := NewReplacementDecisionService(db)
+			var bound bool
+			if reuse == "bind" {
+				_, bound, err = service.bindPreAcquisitionDecisionTxApplication(context.Background(), tx, evaluation, "tv:e1", []string{"tv:e1"},
+					PlacementRef{PlacementID: "plc-facts", Version: 1, Fingerprint: "target-fp"}, "")
+			} else {
+				_, bound, err = service.liveUnboundDecisionTx(context.Background(), tx, evaluation, "tv:e1")
+			}
+			if err != nil || bound {
+				_ = tx.Rollback()
+				t.Fatalf("%s facts mismatch = bound=%t err=%v", reuse, bound, err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			var state, reason, digest string
+			if err := db.QueryRow(`SELECT state, stale_reason, input_digest FROM replacement_decisions WHERE id = 'dec-facts'`).Scan(&state, &reason, &digest); err != nil {
+				t.Fatal(err)
+			}
+			if state != "stale" || reason != staleCandidateFactsChanged || digest != "old-digest" {
+				t.Fatalf("facts mismatch must stale the old input unchanged: state=%s reason=%s digest=%s", state, reason, digest)
+			}
+		})
+	}
+}
+
 // bindingEvaluation is the frozen evaluate input the bind compares against.
 func bindingEvaluation(animeID, releaseID string, subscriptionVersion, policyVersion int64) keyEvaluation {
 	return keyEvaluation{
 		request:             EvaluateRequest{AnimeID: animeID, CandidateRelease: releaseID},
 		subscriptionVersion: subscriptionVersion, policyVersion: policyVersion, mode: ModeSingleCopy,
-		profile: Profile{Version: "profile-v1"}, factsVersion: "facts-v1", factsFingerprint: "facts-fp",
+		profile: Profile{Version: "profile-v2"}, factsVersion: "facts-v1", factsReleaseVersion: 1, factsFingerprint: "facts-fp",
 	}
 }

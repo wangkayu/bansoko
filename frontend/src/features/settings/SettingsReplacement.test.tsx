@@ -23,7 +23,7 @@ function json(body: unknown, status = 200) {
 beforeEach(() => {
   replacementPolicy = {
     admission_mode: "per_group",
-    quality_profile: { version: "profile-v1", items: [{ key: "subgroup.score", ranks: [] }, { key: "release.resolution", ranks: [["1080p"], ["720p"]] }] },
+    quality_profile: { version: "profile-v2", items: [{ key: "subgroup.score", ranks: [] }, { key: "rt.resolution", ranks: [["1080p"], ["720p"]] }] },
     version: 3,
   };
   route = { unclassified_route: "skip", version: 1 };
@@ -72,14 +72,14 @@ function renderPage(onDirtyChange?: (dirty: boolean) => void, Page: typeof Setti
   );
 }
 
-const moveResolutionUp = () => t("qualityCompare.moveUp", { item: compareItemName("release.resolution") });
+const moveResolutionUp = () => t("qualityCompare.moveUp", { item: compareItemName("rt.resolution") });
 
 describe("SettingsReplacement", () => {
   it("loads the global defaults and keeps save disabled until something changes", async () => {
     renderPage();
     await screen.findByRole("button", { name: moveResolutionUp() });
     expect(screen.getByRole("button", { name: t("settings.replacement.saveAria") })).toBeDisabled();
-    const resolution = compareItemName("release.resolution");
+    const resolution = compareItemName("rt.resolution");
     const ranks = screen.getByRole("list", { name: t("qualityCompare.ranksAria", { item: resolution }) });
     expect(within(ranks).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["11080p", "2720p", t("qualityCompare.others")]);
     expect(screen.getByText(t("settings.replacement.replacedNote"))).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe("SettingsReplacement", () => {
     fireEvent.click(screen.getByRole("button", { name: t("settings.replacement.saveAria") }));
     await waitFor(() => expect(replacementPuts).toHaveLength(1));
     expect(replacementPuts[0]).toMatchObject({
-      quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [["1080p"], ["720p"]] }, { key: "subgroup.score", ranks: [] }] },
+      quality_profile: { version: "profile-v2", items: [{ key: "rt.resolution", ranks: [["1080p"], ["720p"]] }, { key: "subgroup.score", ranks: [] }] },
     });
     expect(replacementPuts[0]).not.toHaveProperty("cutoff");
     expect(replacementPuts[0]).not.toHaveProperty("cleanup_policy");

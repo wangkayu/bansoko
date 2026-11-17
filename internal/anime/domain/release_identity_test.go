@@ -131,7 +131,7 @@ func TestEvaluateFeedItemWithIdentityShapeMatrix(t *testing.T) {
 				SourceEvaluationInput{},
 				EffectiveConfig{},
 				MetadataHold{},
-				testRules(),
+
 				identity,
 			)
 			if result.Verdict != test.wantVerdict {
@@ -144,9 +144,6 @@ func TestEvaluateFeedItemWithIdentityShapeMatrix(t *testing.T) {
 				t.Fatal("parsed facts must always be present")
 			}
 			assertEpisodeScalar(t, result.ParsedFacts.Episode, test.wantEpisode)
-			if result.ParsedFacts.Special == nil {
-				t.Fatal("the release-facts special flag must always be persisted")
-			}
 		})
 	}
 }
@@ -162,7 +159,7 @@ func TestEvaluateFeedItemWithIdentityRangeTitleIsEvidenceOnly(t *testing.T) {
 	})
 	result := EvaluateFeedItemWithIdentity(
 		acquisitiondomain.FeedItem{Title: rangeTitle},
-		SourceEvaluationInput{}, EffectiveConfig{}, MetadataHold{}, testRules(), identity,
+		SourceEvaluationInput{}, EffectiveConfig{}, MetadataHold{}, identity,
 	)
 	if result.Verdict != ReleaseVerdict("accepted_pending_download") {
 		t.Fatalf("verdict = %q, a batch title goes on to the batch plan", result.Verdict)

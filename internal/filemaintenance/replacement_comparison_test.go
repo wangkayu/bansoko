@@ -13,15 +13,15 @@ func TestFrozenReplacementComparisonKeepsEvaluatedInputs(t *testing.T) {
 	ref := PlacementRef{PlacementID: "incumbent", Version: 2, Fingerprint: "fingerprint"}
 	pools := []PoolEvidence{{Verdict: "replace", Losers: []PlacementRef{ref}}, {Verdict: "retain", Losers: []PlacementRef{ref}}}
 	profile := Profile{Version: qualityprofile.Version, Items: []qualityprofile.Item{
-		{Key: qualityprofile.KeyReleaseResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
-		{Key: qualityprofile.KeyReleaseLang, Ranks: [][]string{}},
+		{Key: qualityprofile.KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
+		{Key: qualityprofile.KeyRtSubLang, Ranks: [][]string{}},
 	}}
 	freezeReplacementComparisons(pools, candidate, []PlacementFacts{{PlacementID: ref.PlacementID, Version: ref.Version, Fingerprint: ref.Fingerprint, Facts: incumbent, FactsOK: true}}, profile)
 	if len(pools[0].Comparisons) != 1 || len(pools[1].Comparisons) != 0 {
 		t.Fatal("incorrect comparison admission")
 	}
 	frozen := pools[0].Comparisons[0]
-	if !reflect.DeepEqual(frozen.Candidate, candidate) || !reflect.DeepEqual(frozen.Existing, incumbent) || frozen.Placement != ref || !reflect.DeepEqual(frozen.Dimensions, []string{"languages", "resolution", "size"}) {
+	if !reflect.DeepEqual(frozen.Candidate, candidate) || !reflect.DeepEqual(frozen.Existing, incumbent) || frozen.Placement != ref || !reflect.DeepEqual(frozen.Dimensions, []string{"languages", "resolution"}) {
 		t.Fatalf("input changed %+v", frozen)
 	}
 }

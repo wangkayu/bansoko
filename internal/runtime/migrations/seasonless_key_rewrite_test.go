@@ -153,7 +153,6 @@ func TestSeasonlessKeyRewriteKeepsTheBoundSeasonAndExcludesTheRest(t *testing.T)
 // An unbound instance keeps the season with the most active files; a tie goes
 // to the larger season.
 func TestSeasonlessKeyRewriteKeepsTheLargestSeasonOfAnUnboundInstance(t *testing.T) {
-	ctx := context.Background()
 	db := openDisposableDB(t)
 	installMigrationsThrough(t, db, "095_seasonless_episode_identity.sql")
 
@@ -167,9 +166,7 @@ func TestSeasonlessKeyRewriteKeepsTheLargestSeasonOfAnUnboundInstance(t *testing
 	seedRewritePlacement(t, db, "most", "most-s1-2", "active", "tv:s1:e2")
 	seedRewritePlacement(t, db, "most", "most-s2-1", "active", "tv:s2:e1")
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
+	applyMigrationsThrough(t, db, seasonlessKeyRewriteMigration)
 
 	assertRewritePlacement(t, db, "upgrade", "tie-s3-1", "active", true, 1, "tv:e1")
 	assertRewritePlacement(t, db, "upgrade", "tie-s3-2", "active", true, 1, "tv:e2")
@@ -189,13 +186,9 @@ func TestSeasonlessKeyRewriteKeepsTheLargestSeasonOfAnUnboundInstance(t *testing
 // A fresh database, and one whose rows already carry the seasonless key,
 // upgrade through 096 unchanged: nothing is excluded, rewritten or recorded.
 func TestSeasonlessKeyRewriteIsANoOpWithoutV1Keys(t *testing.T) {
-	ctx := context.Background()
-
 	fresh := openDisposableDB(t)
 	installMigrationsThrough(t, fresh, "095_seasonless_episode_identity.sql")
-	if err := (Runner{DB: fresh, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade a fresh database: %v", err)
-	}
+	applyMigrationsThrough(t, fresh, seasonlessKeyRewriteMigration)
 	rewriteExpect(t, fresh, "fresh", "a fresh database holds no placement and no entry",
 		`SELECT (SELECT count(*) FROM placements) = 0 AND (SELECT count(*) FROM subscription_log_entries) = 0`)
 
@@ -208,9 +201,7 @@ func TestSeasonlessKeyRewriteIsANoOpWithoutV1Keys(t *testing.T) {
 	rewriteExec(t, db,
 		`INSERT INTO release_candidate_facts(release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys)
 		 VALUES ('rel-v2', 1, 'parser-v1', 'input-v2', '{}', '{"episode":2}', '["tv:e2"]')`)
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
-		t.Fatalf("upgrade v2 rows: %v", err)
-	}
+	applyMigrationsThrough(t, db, seasonlessKeyRewriteMigration)
 	assertRewritePlacement(t, db, "v2", "seasonless-1", "active", true, 1, "tv:e1")
 	assertRewritePlacement(t, db, "v2", "seasonless-2", "active", true, 1, "tv:e2")
 	assertRewritePlacement(t, db, "v2", "seasonless-movie", "active", true, 1, "movie:0")

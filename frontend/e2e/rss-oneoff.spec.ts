@@ -153,7 +153,7 @@ function ownerWorkspace(retried: boolean): AnimeWorkspace {
       stable_item_key: `release-key-${ANIME_ID}`,
       raw_facts: { title: `[${GROUP}] ${TITLE} - 01`, published_at: "2026-07-20T00:00:00Z" },
       source_facts: { identity_kind: "guid", identity_value: `release-key-${ANIME_ID}`, group_name: GROUP },
-      parsed_facts: { episode: 1, group_name: GROUP, quality: "1080p", languages: ["简"], special: false },
+      parsed_facts: { episode: 1 },
       verdict: "accepted_pending_download",
       reason_code: "accepted",
       ...(retried ? { download_task_id: `task-${ANIME_ID}` } : {}),

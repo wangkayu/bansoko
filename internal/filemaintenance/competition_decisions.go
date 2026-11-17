@@ -11,6 +11,7 @@ import (
 
 	"bansoko/internal/batchplan"
 	"bansoko/internal/filekinds"
+	releasefacts "bansoko/internal/release/facts"
 	"bansoko/internal/subscription/competition"
 )
 
@@ -237,7 +238,8 @@ func loadCompetitionCandidatesTx(ctx context.Context, tx *sql.Tx, managedAnimeID
 SELECT r.id, r.version, r.discovered_at, r.verdict = 'awaiting_competition', m.plan,
        COALESCE(f.resolution, ''), COALESCE(f.revision, ''), COALESCE(f.source, ''),
        COALESCE(f.language, ''), COALESCE(f."group", ''), f.size_bytes,
-       COALESCE(f.compare_values, '{}'::jsonb)
+       COALESCE(f.compare_values, '{}'::jsonb),
+       r.source_facts, src.id, src.source_kind, src.provider, src.provider_group_ref
 FROM releases r
 JOIN rss_sources src ON src.id = r.rss_source_id
 JOIN subscriptions sub ON sub.id = src.subscription_id
@@ -274,12 +276,15 @@ ORDER BY r.discovered_at, r.id`, managedAnimeID)
 	for rows.Next() {
 		var (
 			candidate                                     competitionCandidate
-			planRaw, compareRaw                           []byte
+			planRaw, compareRaw, sourceFacts              []byte
 			resolution, revision, source, language, title string
+			sourceID, sourceKind                          string
+			provider, providerGroupRef                    sql.NullString
 			size                                          sql.NullInt64
 		)
 		if err := rows.Scan(&candidate.releaseID, &candidate.version, &candidate.discoveredAt, &candidate.awaiting, &planRaw,
-			&resolution, &revision, &source, &language, &title, &size, &compareRaw); err != nil {
+			&resolution, &revision, &source, &language, &title, &size, &compareRaw,
+			&sourceFacts, &sourceID, &sourceKind, &provider, &providerGroupRef); err != nil {
 			return nil, err
 		}
 		var plan batchplan.Plan
@@ -294,7 +299,11 @@ ORDER BY r.discovered_at, r.id`, managedAnimeID)
 		if size.Valid {
 			candidate.facts.Size = &size.Int64
 		}
-		candidate.facts = candidate.facts.withFrozenValues(compareRaw)
+		compareSource := releasefacts.CompareSource{SourceFacts: sourceFacts, RSSSourceID: sourceID, SourceKind: sourceKind, Provider: provider.String, ProviderGroupRef: providerGroupRef.String}
+		candidate.facts, err = candidate.facts.withCurrentComparison(compareRaw, compareSource)
+		if err != nil {
+			return nil, fmt.Errorf("competition comparison cache: %w", err)
+		}
 		out = append(out, candidate)
 	}
 	return out, rows.Err()

@@ -8,9 +8,8 @@ import (
 )
 
 // TestReplacementDefaultQualityProfile proves the installed global replacement default
-// is a profile-v1 document with explicit resolution and language ranks, so the
-// replacement chain can compare across those dimensions instead of blocking on
-// "no explicit rank and values differ".
+// is a profile-v2 document with explicit source-tag resolution, language and
+// revision ranks.
 func TestReplacementDefaultQualityProfile(t *testing.T) {
 	db := installedDB(t)
 	ctx := context.Background()
@@ -30,8 +29,8 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 	if err := json.Unmarshal(profileRaw, &profile); err != nil {
 		t.Fatalf("decode default quality profile: %v", err)
 	}
-	if profile.Version != "profile-v1" {
-		t.Fatalf("profile version = %q, want profile-v1", profile.Version)
+	if profile.Version != "profile-v2" {
+		t.Fatalf("profile version = %q, want profile-v2", profile.Version)
 	}
 	ranks := map[string][][]string{}
 	var keys []string
@@ -39,7 +38,7 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 		keys = append(keys, item.Key)
 		ranks[item.Key] = item.Ranks
 	}
-	wantKeys := []string{"subgroup.score", "anibt.language", "rt.sub_lang", "anibt.resolution", "rt.resolution", "release.revision"}
+	wantKeys := []string{"subgroup.score", "anibt.language", "rt.sub_lang", "anibt.resolution", "rt.resolution", "rt.revision"}
 	if len(keys) != len(wantKeys) {
 		t.Fatalf("dimension keys = %v, want %v", keys, wantKeys)
 	}

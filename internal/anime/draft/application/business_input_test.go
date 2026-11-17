@@ -2,7 +2,6 @@ package application
 
 import (
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/testutil/presetdraft"
 	"context"
@@ -13,9 +12,9 @@ import (
 
 func frozenBusinessFixture(t *testing.T) animedomain.AnimeDraft {
 	t.Helper()
-	b := animedomain.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 7}, Replacement: animedomain.ReplacementValue{AdmissionMode: "single_copy", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`)}, ReplacementVersion: 13, FileEffectVersion: 17, UnclassifiedRoute: "route"}
+	b := animedomain.BusinessSnapshot{SchemaVersion: animedomain.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 7}, Replacement: animedomain.ReplacementValue{AdmissionMode: "single_copy", QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[]}]}`)}, ReplacementVersion: 13, FileEffectVersion: 17, UnclassifiedRoute: "route"}
 	digest := "sha256:" + strings.Repeat("a", 64)
-	b.Programs = animedomain.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}}
+	b.Programs = animedomain.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}}
 	for _, name := range animedomain.EffectiveSectionOrder {
 		v, err := animedomain.DefaultSectionValue(name)
 		if err != nil {

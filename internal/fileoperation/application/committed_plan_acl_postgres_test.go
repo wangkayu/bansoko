@@ -3,9 +3,10 @@ package application
 import (
 	"context"
 	"errors"
-	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestCommittedPlanObserverHasNoRepairPrivileges(t *testing.T) {

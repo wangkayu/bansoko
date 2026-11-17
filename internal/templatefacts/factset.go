@@ -138,7 +138,6 @@ type EpFacts struct {
 	Display   string
 	Offset    *int64
 	Source    string
-	Kind      string
 	// S00E00 is the season/episode composite (ep.s00e00).
 	S00E00 string
 }

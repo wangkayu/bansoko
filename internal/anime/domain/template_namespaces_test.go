@@ -32,20 +32,20 @@ func TestPreviewRendersFrozenNamespacesWithoutReparsing(t *testing.T) {
 		TitleTags: &acquisition.TitleTagSet{Schema: acquisition.TitleTagSchema, Tags: []string{"resolution:1080p"}, ValueTags: []string{"title:Frozen Title", "group:Frozen Group"}},
 		AniBTTags: &acquisition.AniBTTagSet{Tags: []string{"language:CHT", "language:CHS"}},
 	}
-	result := PreviewExactFile(frozen, release, file, effective, "Anime", SourceEvaluationInput{}, testRules())
+	result := PreviewExactFile(frozen, release, file, effective, "Anime", SourceEvaluationInput{})
 	if result.RenderedTarget == nil || *result.RenderedTarget != "/library/Frozen Title/[Frozen Group] [CHS+CHT]E3.mkv" {
 		t.Fatalf("frozen render = %+v", result)
 	}
 
 	// Non-AniBT release: the conditional AniBT segment drops out.
 	frozen.AniBTTags = nil
-	result = PreviewExactFile(frozen, release, file, effective, "Anime", SourceEvaluationInput{}, testRules())
+	result = PreviewExactFile(frozen, release, file, effective, "Anime", SourceEvaluationInput{})
 	if result.RenderedTarget == nil || *result.RenderedTarget != "/library/Frozen Title/[Frozen Group] E3.mkv" {
 		t.Fatalf("non-AniBT render = %+v", result)
 	}
 
 	// No frozen title tags: Rt stays missing, the title is not parsed again.
-	result = PreviewExactFile(acquisition.FeedItem{Title: title}, release, file, effective, "Anime", SourceEvaluationInput{}, testRules())
+	result = PreviewExactFile(acquisition.FeedItem{Title: title}, release, file, effective, "Anime", SourceEvaluationInput{})
 	if result.RenderedTarget != nil || result.ReasonCode == nil || !strings.HasPrefix(*result.ReasonCode, "naming_fact_missing_rt_") {
 		t.Fatalf("unfrozen render = %+v", result)
 	}

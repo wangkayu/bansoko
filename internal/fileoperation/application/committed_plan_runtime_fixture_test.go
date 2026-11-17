@@ -2,10 +2,11 @@ package application
 
 import (
 	"database/sql"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
 	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 func useRuntimePlanObserver(t *testing.T, s *Service) {

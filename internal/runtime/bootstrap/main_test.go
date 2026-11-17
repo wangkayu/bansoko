@@ -30,7 +30,6 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 		packagemaker.ServerEntryPath:                   []byte("#!/bin/elf-fake-server\n"),
 		packagemaker.MigrationsPrefix + "001_init.sql": []byte("CREATE TABLE noop();\n"),
 		packagemaker.FrontendPrefix + "index.html":     []byte("<html></html>\n"),
-		"deployment/defaults/attr-rules.yaml":          []byte("version: 1\nresolution:\n  - 1080p\n"),
 		"deployment/defaults/naming-vars.js":           []byte("vars.anime = {ep: '1'};\n"),
 	}
 	sourceRoot := t.TempDir()

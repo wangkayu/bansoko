@@ -19,6 +19,7 @@ import (
 	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/runtime/migrations"
 	"bansoko/internal/transport/httpapi/generated"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

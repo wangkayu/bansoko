@@ -24,6 +24,7 @@ import (
 
 	observabilityport "bansoko/internal/observability/port"
 	persistence "bansoko/internal/workitems/adapter/persistence/generated"
+
 	"github.com/lib/pq"
 )
 

@@ -15,6 +15,7 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/runtime/buildinfo"
+
 	"github.com/PuerkitoBio/goquery"
 )
 

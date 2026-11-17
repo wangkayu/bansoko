@@ -44,8 +44,8 @@ import (
 //     subtitle-mode swap is the render change: release.subtitle_mode now
 //     derives from the release's parsed subtitle flags (rt.subflag) instead
 //     of the retired hand-rolled title token scan, and the new lang_code /
-//     lang_name / sub.lang display facts and the chain helper join the fact
-//     and helper catalogs every render at this floor reads. Frozen snapshots
+//     lang_name / sub.lang display facts joined the fact and helper catalogs
+//     every render at this floor reads. Frozen snapshots
 //     of naming-render-5 and earlier replay the retired token scan
 //     (legacyRenderSubtitleMode) so an older target re-renders unchanged.
 //   - naming-render-7: as naming-render-6 for the engine semantics; the

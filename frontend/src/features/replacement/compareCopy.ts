@@ -7,9 +7,6 @@ import { itemDef, type CompareNamespace, type EntryProblem } from "./qualityProf
 
 export const ITEM_COPY: Record<QualityCompareKey, CopyKey> = {
   "subgroup.score": "qualityCompare.item.subgroup_score",
-  "release.lang": "qualityCompare.item.release_lang",
-  "release.resolution": "qualityCompare.item.release_resolution",
-  "release.revision": "qualityCompare.item.release_revision",
   "anibt.resolution": "qualityCompare.item.anibt_resolution",
   "anibt.language": "qualityCompare.item.anibt_language",
   "anibt.subtitle": "qualityCompare.item.anibt_subtitle",
@@ -20,11 +17,11 @@ export const ITEM_COPY: Record<QualityCompareKey, CopyKey> = {
   "rt.source": "qualityCompare.item.rt_source",
   "rt.codec": "qualityCompare.item.rt_codec",
   "rt.content_rating": "qualityCompare.item.rt_content_rating",
+  "rt.revision": "qualityCompare.item.rt_revision",
 };
 
 export const NAMESPACE_COPY: Record<CompareNamespace, CopyKey> = {
   subgroup: "qualityCompare.namespace.subgroup",
-  release: "qualityCompare.namespace.release",
   anibt: "qualityCompare.namespace.anibt",
   rt: "qualityCompare.namespace.rt",
 };

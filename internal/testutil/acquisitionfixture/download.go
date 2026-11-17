@@ -63,13 +63,35 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 	if err := json.Unmarshal([]byte(input), &body); err != nil {
 		t.Fatal(err)
 	}
-	var provenance json.RawMessage
-	if err := db.QueryRowContext(ctx, `SELECT public.release_source_evidence($1)`, release).Scan(&provenance); err != nil {
+	var provenance, sourceFacts json.RawMessage
+	var title, group sql.NullString
+	var stableKey string
+	var releaseVersion int64
+	if err := db.QueryRowContext(ctx, `SELECT public.release_source_evidence(r.id), r.source_facts, r.raw_facts->>'title', src.group_name, r.version, r.stable_item_key FROM releases r JOIN rss_sources src ON src.id=r.rss_source_id WHERE r.id=$1`, release).Scan(&provenance, &sourceFacts, &title, &group, &releaseVersion, &stableKey); err != nil {
 		t.Fatal(err)
 	}
+	known := func(value any) map[string]any {
+		return map[string]any{"state": "known", "value": value, "reason_code": nil}
+	}
+	if title.Valid {
+		body["source"].(map[string]any)["title"] = known(title.String)
+	}
+	body["source"].(map[string]any)["stable_item_key"] = known(stableKey)
+	body["source"].(map[string]any)["release"] = known(map[string]any{"ref": release, "version": releaseVersion})
+	if !group.Valid || strings.TrimSpace(group.String) == "" {
+		body["source"].(map[string]any)["group"] = map[string]any{"state": "absent", "value": nil, "reason_code": nil}
+	} else {
+		body["source"].(map[string]any)["group"] = known(group.String)
+	}
 	body["source"].(map[string]any)["provenance"] = provenance
+	tagEvidence, err := protocol.FreezeSourceTags(sourceFacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body["source"].(map[string]any)["tag_evidence"] = json.RawMessage(protocol.Canonical(tagEvidence))
 	body["source"].(map[string]any)["kind"] = "subscription_direct"
 	body["source"].(map[string]any)["manifest_digest"] = digest([]byte(root))
+	delete(body["media"].(map[string]any), "quality")
 	// Golden DTO templates demonstrate wire values, not executable JS. Downstream
 	// application fixtures must freeze the actual policy's naming sections.
 	var frozenPolicy struct {
@@ -280,7 +302,7 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 		return string(b)
 	}
 	d := digest([]byte(root))
-	var sourceVersion, releaseVersion, subscriptionVersion, lifecycleVersion int64
+	var sourceVersion, subscriptionVersion, lifecycleVersion int64
 	if err := db.QueryRowContext(ctx, `SELECT s.version,r.version,sub.version,l.lifecycle_version FROM rss_sources s JOIN releases r ON r.rss_source_id=s.id JOIN subscriptions sub ON sub.id=$3 JOIN managed_anime l ON l.id=$4 WHERE s.id=$1 AND r.id=$2`, source, release, subscription, animeID).Scan(&sourceVersion, &releaseVersion, &subscriptionVersion, &lifecycleVersion); err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +310,7 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 		"config":      map[string]any{"kind": "submitted", "request_hash": d, "config_digest": businessDigest},
 		"management":  map[string]any{"kind": "instance", "managed_anime_ref": animeID, "subscription_ref": subscription, "expected_subscription_version": subscriptionVersion, "expected_lifecycle_version": lifecycleVersion, "expected_metadata_version": nil, "expected_parser_policy_version": nil, "expected_rules_owner_version": nil, "expected_subgroups_owner_version": nil, "subscription_policy": "manual_active_or_stopped"},
 		"source":      map[string]any{"kind": "release", "release_ref": release, "expected_version": releaseVersion, "source_ref": map[string]any{"ref": source, "version": sourceVersion}},
-		"observation": nil, "feed": nil, "programs": map[string]any{"attr_fingerprint": business.Programs.AttrRules.Digest, "vars_digest": business.Programs.Vars.Digest, "translation": nil}, "placement": map[string]any{"kind": "none"},
+		"observation": nil, "feed": nil, "programs": map[string]any{"vars_digest": business.Programs.Vars.Digest, "translation": nil}, "placement": map[string]any{"kind": "none"},
 	})
 	defaults := map[string]json.RawMessage{}
 	for _, name := range anime.EffectiveSectionOrder {

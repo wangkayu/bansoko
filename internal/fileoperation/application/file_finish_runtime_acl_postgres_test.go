@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"bansoko/internal/testutil/disposabledb"
+
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

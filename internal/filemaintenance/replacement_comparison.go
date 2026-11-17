@@ -9,11 +9,13 @@ import (
 // FrozenReplacementComparison preserves the actual evaluated input for a new
 // decision. Old pools without this field cannot be promoted to typed approval.
 type FrozenReplacementComparison struct {
-	Placement  PlacementRef `json:"placement"`
-	Candidate  Facts        `json:"candidate"`
-	Existing   Facts        `json:"existing"`
-	Dimensions []string     `json:"dimensions"`
-	Verdict    string       `json:"verdict"`
+	Profile         Profile      `json:"profile"`
+	ExistingMissing bool         `json:"existing_missing"`
+	Placement       PlacementRef `json:"placement"`
+	Candidate       Facts        `json:"candidate"`
+	Existing        Facts        `json:"existing"`
+	Dimensions      []string     `json:"dimensions"`
+	Verdict         string       `json:"verdict"`
 }
 
 // approvalDimension maps a comparison item to the category the typed
@@ -21,21 +23,18 @@ type FrozenReplacementComparison struct {
 // category (anibt.subtitle, anibt.format, rt.codec) are not named there; the
 // decision's own steps keep them.
 var approvalDimension = map[string]string{
-	qualityprofile.KeySubgroupScore:     "group",
-	qualityprofile.KeyReleaseLang:       "languages",
-	qualityprofile.KeyAniBTLanguage:     "languages",
-	qualityprofile.KeyRtSubLang:         "languages",
-	qualityprofile.KeyReleaseResolution: "resolution",
-	qualityprofile.KeyAniBTResolution:   "resolution",
-	qualityprofile.KeyRtResolution:      "resolution",
-	qualityprofile.KeyReleaseRevision:   "revision",
-	qualityprofile.KeyRtSource:          "source",
+	qualityprofile.KeySubgroupScore:   "group",
+	qualityprofile.KeyAniBTLanguage:   "languages",
+	qualityprofile.KeyRtSubLang:       "languages",
+	qualityprofile.KeyAniBTResolution: "resolution",
+	qualityprofile.KeyRtResolution:    "resolution",
+	qualityprofile.KeyRtRevision:      "revision",
+	qualityprofile.KeyRtSource:        "source",
 }
 
-// comparedDimensions is the sorted category set of the profile's items plus
-// the size tiebreak, which every comparison carries.
+// comparedDimensions is the sorted category set of configured comparison items.
 func comparedDimensions(profile Profile) []string {
-	dimensions := []string{"size"}
+	dimensions := []string{}
 	for _, item := range profile.Items {
 		if category, ok := approvalDimension[item.Key]; ok {
 			dimensions = append(dimensions, category)
@@ -69,7 +68,7 @@ func freezeReplacementComparisons(pools []PoolEvidence, candidate Facts, placeme
 			if existing.Version != loser.Version || existing.Fingerprint != loser.Fingerprint || !compareWithMember(candidate, existing, profile).Better {
 				continue
 			}
-			pool.Comparisons = append(pool.Comparisons, FrozenReplacementComparison{Placement: loser, Candidate: candidate, Existing: comparableFacts(existing), Dimensions: dimensions, Verdict: "replace"})
+			pool.Comparisons = append(pool.Comparisons, FrozenReplacementComparison{Placement: loser, Candidate: candidate, Existing: comparableFacts(existing), Dimensions: dimensions, Verdict: "replace", Profile: profile, ExistingMissing: !existing.FactsOK})
 		}
 	}
 }

@@ -73,7 +73,7 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 	svc := NewReplacementPolicyService(db)
 
 	policy := replacementPolicy(t, ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`)
+		`{"version":"profile-v2","items":[{"key":"rt.revision","ranks":[]},{"key":"rt.resolution","ranks":[["1080p"],["720p"]]}]}`)
 	saved, err := svc.SaveDefault(ctx, 0, policy, "owner", "web")
 	if err != nil {
 		t.Fatal(err)
@@ -90,23 +90,23 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 	}
 
 	// Invalid admission mode is rejected without a version change.
-	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, "everyone", `{"version":"profile-v1","items":[]}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, "everyone", `{"version":"profile-v2","items":[]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Incomplete/wrongly typed profile JSON is rejected.
 	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"dimensions":"not-an-array"}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[],"cutoff":{"x":1}}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v2","items":[],"cutoff":{"x":1}}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
-	// A profile-v1 document and a duplicate value set are rejected.
+	// A profile-v2 document and a duplicate value set are rejected.
 	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v0","dimensions":["resolution"],"ranks":{},"codec_enabled":false}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.lang","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Correct CAS succeeds and bumps the version exactly once.
-	next := replacementPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
+	next := replacementPolicy(t, ModeSingleCopy, `{"version":"profile-v2","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
 	updated, err := svc.SaveDefault(ctx, 1, next, "owner", "cli")
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestCopyDefaultToInstanceTx(t *testing.T) {
 	svc := NewReplacementPolicyService(db)
 
 	policy := replacementPolicy(t, ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
+		`{"version":"profile-v2","items":[{"key":"rt.revision","ranks":[]},{"key":"rt.resolution","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 0, policy, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestSaveInstanceCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	replacement := replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
+	replacement := replacementPolicy(t, ModeAll, `{"version":"profile-v2","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
 	saved, err := svc.SaveInstance(ctx, "anime-1", 1, replacement, "owner", "web")
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ func TestSaveInstanceCAS(t *testing.T) {
 	}
 
 	// Stale CAS conflicts and must not partially write any field.
-	_, err = svc.SaveInstance(ctx, "anime-1", 1, replacementPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[]}`), "owner", "web")
+	_, err = svc.SaveInstance(ctx, "anime-1", 1, replacementPolicy(t, ModePerGroup, `{"version":"profile-v2","items":[]}`), "owner", "web")
 	var conflict *apperrors.VersionConflict
 	if !errors.As(err, &conflict) || conflict.CurrentVersion != 2 {
 		t.Fatalf("expected version conflict with current 2, got %v", err)
@@ -306,7 +306,7 @@ func TestSaveInstanceProducesNoEffects(t *testing.T) {
 		t.Fatalf("fixture must start empty, got %+v", before)
 	}
 	for version := int64(1); version <= 3; version++ {
-		if _, err := svc.SaveInstance(ctx, "anime-1", version, replacementPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]}]}`), "owner", "web"); err != nil {
+		if _, err := svc.SaveInstance(ctx, "anime-1", version, replacementPolicy(t, ModePerGroup, `{"version":"profile-v2","items":[{"key":"rt.revision","ranks":[]}]}`), "owner", "web"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -321,7 +321,7 @@ func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
 	ctx := context.Background()
 	svc := NewReplacementPolicyService(db)
 
-	first := replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
+	first := replacementPolicy(t, ModeAll, `{"version":"profile-v2","items":[{"key":"rt.revision","ranks":[]},{"key":"rt.resolution","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 0, first, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
 	}
 
 	// Change the global default: future instances only.
-	second := replacementPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[]},{"key":"subgroup.score","ranks":[]}]}`)
+	second := replacementPolicy(t, ModeSingleCopy, `{"version":"profile-v2","items":[{"key":"rt.source","ranks":[]},{"key":"subgroup.score","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 1, second, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}

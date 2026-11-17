@@ -15,7 +15,6 @@ import (
 	acquisitionapplication "bansoko/internal/acquisition/application"
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/attrrules"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parserpolicy"
 	"bansoko/internal/persistence/txscope"
@@ -23,6 +22,7 @@ import (
 	"bansoko/internal/runtime/worker"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
+
 	"github.com/google/uuid"
 )
 
@@ -170,10 +170,6 @@ func buildFeedEvaluations(ctx context.Context, items []acquisitiondomain.FeedIte
 		}
 		seen[seenKey] = struct{}{}
 		item = refuseOversizedTorrent(item)
-		rules, _, err := attrrules.Current()
-		if err != nil {
-			return nil, fmt.Errorf("read active attr rules: %w", err)
-		}
 		// One selected parser/profile governs this discovery pass. An
 		// unavailable/offline selection fails this item closed with a typed
 		// reason instead of degrading to the bundled parser; it never becomes a
@@ -183,7 +179,7 @@ func buildFeedEvaluations(ctx context.Context, items []acquisitiondomain.FeedIte
 		if evidenceErr == nil {
 			identity = evidence.Identity
 		}
-		evaluation := animedomain.EvaluateFeedItemWithIdentity(item, input, snapshot.effective, snapshot.metadataHold, rules, identity)
+		evaluation := animedomain.EvaluateFeedItemWithIdentity(item, input, snapshot.effective, snapshot.metadataHold, identity)
 		switch {
 		case evidenceErr != nil:
 			evaluation.Verdict = animedomain.ReleaseVerdict("parse_failed")

@@ -49,7 +49,6 @@ func safeEntryName(name string) (string, error) {
 	switch {
 	case name == packagemaker.ServerEntryPath,
 		name == packagemaker.MetaEntryPath,
-		name == "deployment/defaults/attr-rules.yaml",
 		name == "deployment/defaults/naming-vars.js",
 		strings.HasPrefix(name, packagemaker.MigrationsPrefix),
 		strings.HasPrefix(name, packagemaker.FrontendPrefix):
@@ -250,7 +249,6 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 	}
 	for _, required := range []string{
 		packagemaker.ServerEntryPath,
-		"deployment/defaults/attr-rules.yaml",
 		"deployment/defaults/naming-vars.js",
 	} {
 		info, statErr := os.Lstat(filepath.Join(releaseDir, required))

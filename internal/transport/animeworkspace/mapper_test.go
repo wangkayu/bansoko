@@ -50,12 +50,13 @@ func TestMapAnimeWorkspacePreservesNilAndEmptyCollections(t *testing.T) {
 		t.Fatal("non-nil empty top-level slices were not preserved")
 	}
 
-	parsed := &readmodelapplication.ReleaseParsedFacts{Languages: &[]string{}}
-	if got := mapWorkspaceParsedFacts(parsed); got == nil || got.Languages == nil || len(*got.Languages) != 0 {
-		t.Fatal("non-nil empty parsed-facts languages were not preserved")
+	emptyEpisodes := []int{}
+	parsed := &readmodelapplication.ReleaseParsedFacts{Coverage: &readmodelapplication.ReleaseCoverage{Episodes: emptyEpisodes}}
+	if got := mapWorkspaceParsedFacts(parsed); got == nil || got.Coverage == nil || len(got.Coverage.Episodes) != 0 {
+		t.Fatal("non-nil empty parsed-facts coverage was not preserved")
 	}
-	if got := mapWorkspaceParsedFacts(&readmodelapplication.ReleaseParsedFacts{}); got == nil || got.Languages != nil {
-		t.Fatal("nil parsed-facts languages became non-nil")
+	if got := mapWorkspaceParsedFacts(&readmodelapplication.ReleaseParsedFacts{}); got == nil || got.Coverage != nil {
+		t.Fatal("nil parsed-facts coverage became non-nil")
 	}
 
 	emptyFiles := []readmodelapplication.ReleaseFile{}
@@ -151,7 +152,6 @@ func TestMapAnimeWorkspaceProjectsRepresentativeOwners(t *testing.T) {
 	episode := float32(3)
 	parsedGroup := "[Group]"
 	quality := "1080p"
-	special := false
 	languages := []string{"ja", "zh"}
 	releaseDetail := "waiting for metadata"
 	releaseFiles := []readmodelapplication.ReleaseFile{{
@@ -162,7 +162,7 @@ func TestMapAnimeWorkspaceProjectsRepresentativeOwners(t *testing.T) {
 	observedSize := int64(1234)
 	target := readmodelapplication.AcquisitionTarget{CollisionPolicy: "fail", ExpectedSizeBytes: 1234, ID: "target-42", Intent: "primary", MediaKind: "video", ReleaseID: "release-42", SourcePath: "show.mkv", SpecDigest: "spec-42", TargetPath: "library/show.mkv", TargetRef: "target-ref-42", Version: 2}
 	targetObservation := readmodelapplication.TargetObservation{ObservedAt: observedAt, ObservedSizeBytes: &observedSize, ReasonCode: stringPointer("MATCHED"), State: "present_matched", TargetID: target.ID, Version: 3}
-	parsedFacts := &readmodelapplication.ReleaseParsedFacts{Episode: &episode, GroupName: &parsedGroup, Languages: &languages, Quality: &quality, Special: &special}
+	parsedFacts := &readmodelapplication.ReleaseParsedFacts{Episode: &episode, Coverage: &readmodelapplication.ReleaseCoverage{Episodes: []int{3}}}
 	release := readmodelapplication.Release{
 		AcquisitionTargets: &[]readmodelapplication.AcquisitionTarget{target}, DownloadTaskID: stringPointer("download-42"),
 		EvaluationVersion: stringPointer("eval-42"), ID: "release-42", ParsedFacts: parsedFacts,
@@ -203,7 +203,7 @@ func TestMapAnimeWorkspaceProjectsRepresentativeOwners(t *testing.T) {
 	if mapped.ManagedAnime.TitleOverride == nil || *mapped.ManagedAnime.TitleOverride != titleOverride || mapped.Metadata.Bgm == nil || mapped.Metadata.Bgm.WorkId != bgmWorkID || mapped.Metadata.Tmdb == nil || mapped.Metadata.Tmdb.WorkId != tmdbWorkID || mapped.Metadata.Tmdb.MediaKind != generated.TMDBMediaKind("tv") {
 		t.Fatalf("managed anime/metadata projection = %#v / %#v", mapped.ManagedAnime, mapped.Metadata)
 	}
-	if len(mapped.Releases) != 1 || mapped.Releases[0].ParsedFacts == nil || mapped.Releases[0].ParsedFacts.Languages == nil || mapped.Releases[0].ReleaseFiles == nil || len(*mapped.Releases[0].ReleaseFiles) != 1 || mapped.Releases[0].TargetObservations == nil || len(*mapped.Releases[0].TargetObservations) != 1 {
+	if len(mapped.Releases) != 1 || mapped.Releases[0].ParsedFacts == nil || mapped.Releases[0].ParsedFacts.Episode == nil || mapped.Releases[0].ReleaseFiles == nil || len(*mapped.Releases[0].ReleaseFiles) != 1 || mapped.Releases[0].TargetObservations == nil || len(*mapped.Releases[0].TargetObservations) != 1 {
 		t.Fatalf("release nested projection = %#v", mapped.Releases)
 	}
 	if mapped.RssSourceRuntimes[0].Cursor == nil || mapped.RssSourceRuntimes[0].Cursor.Strategy != generated.RSSCursorStrategy("published_at") || mapped.RssSourceRuntimes[0].LastGoodFacts == nil || mapped.RssSourceRuntimes[0].LastGoodFacts.FeedTitle == nil || mapped.RssSources[0].EpisodeOffset != offset || mapped.RssSources[0].ProviderProvenance == nil || mapped.RssSources[0].ProviderProvenance.Provider != generated.ProviderKind("mikan") || mapped.RssSources[0].ProviderProvenance.ProviderGroupRef != "group-42" {
@@ -246,7 +246,7 @@ func TestMapAnimeWorkspaceDoesNotAliasNestedApplicationValues(t *testing.T) {
 	if mapped.EpisodeProgress == nil || mapped.EpisodeProgress.Total == workspace.EpisodeProgress.Total || mapped.EpisodeProgress.Episodes == nil || &mapped.EpisodeProgress.Episodes[0] == &workspace.EpisodeProgress.Episodes[0] {
 		t.Fatal("episode progress aliases application values")
 	}
-	if mapped.Releases[0].ParsedFacts == nil || pointerAddress(mapped.Releases[0].ParsedFacts) == pointerAddress(workspace.Releases[0].ParsedFacts) || pointerAddress(mapped.Releases[0].ParsedFacts.Languages) == pointerAddress(workspace.Releases[0].ParsedFacts.Languages) || pointerAddress(mapped.Releases[0].ReleaseFiles) == pointerAddress(workspace.Releases[0].ReleaseFiles) || pointerAddress(mapped.Releases[0].AcquisitionTargets) == pointerAddress(workspace.Releases[0].AcquisitionTargets) || pointerAddress(mapped.Releases[0].TargetObservations) == pointerAddress(workspace.Releases[0].TargetObservations) {
+	if mapped.Releases[0].ParsedFacts == nil || pointerAddress(mapped.Releases[0].ParsedFacts) == pointerAddress(workspace.Releases[0].ParsedFacts) || pointerAddress(mapped.Releases[0].ParsedFacts.Coverage) == pointerAddress(workspace.Releases[0].ParsedFacts.Coverage) || pointerAddress(mapped.Releases[0].ReleaseFiles) == pointerAddress(workspace.Releases[0].ReleaseFiles) || pointerAddress(mapped.Releases[0].AcquisitionTargets) == pointerAddress(workspace.Releases[0].AcquisitionTargets) || pointerAddress(mapped.Releases[0].TargetObservations) == pointerAddress(workspace.Releases[0].TargetObservations) {
 		t.Fatal("release nested pointers alias application values")
 	}
 	if pointerAddress(mapped.RssSourceRuntimes[0].Cursor) == pointerAddress(workspace.RSSSourceRuntimes[0].Cursor) || pointerAddress(mapped.RssSourceRuntimes[0].LastGoodFacts) == pointerAddress(workspace.RSSSourceRuntimes[0].LastGoodFacts) || pointerAddress(mapped.RssSourceRuntimes[0].LastGoodFacts.FeedTitle) == pointerAddress(workspace.RSSSourceRuntimes[0].LastGoodFacts.FeedTitle) {
@@ -264,7 +264,7 @@ func TestMapAnimeWorkspaceDoesNotAliasNestedApplicationValues(t *testing.T) {
 	workspace.Metadata.BGM.WorkID = "changed"
 	workspace.Metadata.TMDB.WorkID = "changed"
 	workspace.EpisodeProgress.Episodes[0] = 99
-	*workspace.Releases[0].ParsedFacts.Languages = []string{"changed"}
+	workspace.Releases[0].ParsedFacts.Coverage.Episodes[0] = 99
 	(*workspace.Releases[0].ReleaseFiles)[0].Filename = "changed"
 	(*workspace.Releases[0].AcquisitionTargets)[0].TargetPath = "changed"
 	workspace.RSSSourceRuntimes[0].Cursor.Value = "changed"
@@ -279,7 +279,7 @@ func TestMapAnimeWorkspaceDoesNotAliasNestedApplicationValues(t *testing.T) {
 	*workspace.Logs[0].Details.ReasonCode = "changed"
 	*workspace.Logs[0].Details.ReasonDetail = "changed"
 
-	if *mapped.ManagedAnime.TitleOverride != "Custom title" || *mapped.Metadata.TitleOverride != "Custom title" || mapped.Metadata.Bgm.WorkId != "bgm" || mapped.Metadata.Tmdb.WorkId != "tmdb" || mapped.EpisodeProgress.Episodes[0] != 1 || (*mapped.Releases[0].ParsedFacts.Languages)[0] != "ja" || (*mapped.Releases[0].ReleaseFiles)[0].Filename != "show.mkv" || (*mapped.Releases[0].AcquisitionTargets)[0].TargetPath != "library/show.mkv" || mapped.RssSourceRuntimes[0].Cursor.Value != "cursor-42" || *mapped.RssSourceRuntimes[0].LastGoodFacts.FeedTitle != "Feed title" || *mapped.Artifacts[0].Files[0].SubtitleBinding.Diagnostics[0].Path != "subtitle.ass" || *mapped.Artifacts[0].Files[0].SubtitleBinding.BoundVideoFileRef != "video-42" || *mapped.Artifacts[0].Files[0].SubtitleBinding.Confidence != 0.95 || *mapped.Artifacts[0].Files[0].SubtitleBinding.Method != "basename_match" || mapped.FileOperations[0].TargetFingerprint.Value != "target-fp" || *mapped.Logs[0].Details.ErrorCount != 1 || *mapped.Logs[0].Details.ItemCount != 4 || *mapped.Logs[0].Details.ReasonCode != "REFRESHED" || *mapped.Logs[0].Details.ReasonDetail != "details" {
+	if *mapped.ManagedAnime.TitleOverride != "Custom title" || *mapped.Metadata.TitleOverride != "Custom title" || mapped.Metadata.Bgm.WorkId != "bgm" || mapped.Metadata.Tmdb.WorkId != "tmdb" || mapped.EpisodeProgress.Episodes[0] != 1 || mapped.Releases[0].ParsedFacts.Coverage.Episodes[0] != 1 || (*mapped.Releases[0].ReleaseFiles)[0].Filename != "show.mkv" || (*mapped.Releases[0].AcquisitionTargets)[0].TargetPath != "library/show.mkv" || mapped.RssSourceRuntimes[0].Cursor.Value != "cursor-42" || *mapped.RssSourceRuntimes[0].LastGoodFacts.FeedTitle != "Feed title" || *mapped.Artifacts[0].Files[0].SubtitleBinding.Diagnostics[0].Path != "subtitle.ass" || *mapped.Artifacts[0].Files[0].SubtitleBinding.BoundVideoFileRef != "video-42" || *mapped.Artifacts[0].Files[0].SubtitleBinding.Confidence != 0.95 || *mapped.Artifacts[0].Files[0].SubtitleBinding.Method != "basename_match" || mapped.FileOperations[0].TargetFingerprint.Value != "target-fp" || *mapped.Logs[0].Details.ErrorCount != 1 || *mapped.Logs[0].Details.ItemCount != 4 || *mapped.Logs[0].Details.ReasonCode != "REFRESHED" || *mapped.Logs[0].Details.ReasonDetail != "details" {
 		t.Fatal("mapped workspace changed after application nested values were mutated")
 	}
 }
@@ -320,11 +320,11 @@ func representativeWorkspaceForIsolation() readmodelapplication.AnimeWorkspace {
 	workspace.Metadata = animeapplication.AnimeMetadata{ManagedAnimeID: "anime-42", TitleOverride: &title, BGM: &animeapplication.BGMBinding{WorkID: "bgm"}, TMDB: &animeapplication.TMDBBinding{WorkID: "tmdb", MediaKind: "tv"}}
 	total := 12
 	workspace.EpisodeProgress = &readmodelapplication.EpisodeProgress{Episodes: []int{1, 2}, Total: &total}
-	languages := []string{"ja"}
+	coverage := []int{1}
 	files := []readmodelapplication.ReleaseFile{{Filename: "show.mkv", Language: stringPointer("ja")}}
 	targets := []readmodelapplication.AcquisitionTarget{{TargetPath: "library/show.mkv"}}
 	observations := []readmodelapplication.TargetObservation{{ObservedSizeBytes: int64Pointer(1)}}
-	workspace.Releases = []readmodelapplication.Release{{ParsedFacts: &readmodelapplication.ReleaseParsedFacts{Languages: &languages}, ReleaseFiles: &files, AcquisitionTargets: &targets, TargetObservations: &observations}}
+	workspace.Releases = []readmodelapplication.Release{{ParsedFacts: &readmodelapplication.ReleaseParsedFacts{Coverage: &readmodelapplication.ReleaseCoverage{Episodes: coverage}}, ReleaseFiles: &files, AcquisitionTargets: &targets, TargetObservations: &observations}}
 	feedTitle := "Feed title"
 	workspace.RSSSourceRuntimes = []animeapplication.RSSSourceRuntime{{Cursor: &animeapplication.RSSCursor{Value: "cursor-42"}, LastGoodFacts: &animeapplication.RSSLastGoodFacts{FeedTitle: &feedTitle}}}
 	path := "subtitle.ass"

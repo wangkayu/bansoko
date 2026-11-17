@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/acquisition/target"
 	targetpersistence "bansoko/internal/acquisition/target/adapter/persistence"
 	"bansoko/internal/runtime/worker"
@@ -228,9 +229,10 @@ func insertReleaseForEvaluation(t *testing.T, db *sql.DB, sourceID, releaseID, t
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceFacts, err := json.Marshal(map[string]string{
-		"identity_kind":  "guid",
-		"identity_value": releaseID,
+	sourceFacts, err := json.Marshal(storedSourceFacts{
+		IdentityKind:  "guid",
+		IdentityValue: releaseID,
+		Title:         storedTitleTagsFromItem(acquisitiondomain.FeedItem{Title: title}),
 	})
 	if err != nil {
 		t.Fatal(err)

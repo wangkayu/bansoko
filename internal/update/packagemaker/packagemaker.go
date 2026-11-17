@@ -268,13 +268,6 @@ func planEntries(opts Options) ([]plannedEntry, error) {
 	}
 
 	if strings.TrimSpace(opts.DefaultsDir) != "" {
-		defaultsPath := filepath.Join(opts.DefaultsDir, "attr-rules.yaml")
-		if info, statErr := os.Stat(defaultsPath); statErr != nil || info.IsDir() {
-			return nil, fmt.Errorf("packagemaker: attr rules defaults at %s are missing", defaultsPath)
-		}
-		if err := addFile("deployment/defaults/attr-rules.yaml", defaultsPath, fileMode); err != nil {
-			return nil, err
-		}
 		namingVarsPath := filepath.Join(opts.DefaultsDir, "naming-vars.js")
 		if info, statErr := os.Stat(namingVarsPath); statErr != nil || info.IsDir() {
 			return nil, fmt.Errorf("packagemaker: naming vars defaults at %s are missing", namingVarsPath)

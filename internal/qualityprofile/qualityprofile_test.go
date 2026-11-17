@@ -8,8 +8,8 @@ import (
 
 func i64(v int64) *int64 { return &v }
 
-func subject(values map[string][]string, score, size *int64) Subject {
-	return Subject{Values: values, Score: score, Size: size}
+func subject(values map[string][]string, score, _ *int64) Subject {
+	return Subject{Values: values, Score: score}
 }
 
 func TestDefaultProfileIsValidAndBuiltInOnly(t *testing.T) {
@@ -17,7 +17,7 @@ func TestDefaultProfileIsValidAndBuiltInOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{KeySubgroupScore, KeyAniBTLanguage, KeyRtSubLang, KeyAniBTResolution, KeyRtResolution, KeyReleaseRevision}
+	want := []string{KeySubgroupScore, KeyAniBTLanguage, KeyRtSubLang, KeyAniBTResolution, KeyRtResolution, KeyRtRevision}
 	if strings.Join(profile.Keys(), ",") != strings.Join(want, ",") {
 		t.Fatalf("default items = %v", profile.Keys())
 	}
@@ -26,28 +26,28 @@ func TestDefaultProfileIsValidAndBuiltInOnly(t *testing.T) {
 func TestValidateRejections(t *testing.T) {
 	cases := map[string]string{
 		"unknown version":      `{"version":"profile-v0","items":[]}`,
-		"unknown key":          `{"version":"profile-v1","items":[{"key":"media.resolution","ranks":[]}]}`,
-		"duplicate key":        `{"version":"profile-v1","items":[{"key":"release.lang","ranks":[]},{"key":"release.lang","ranks":[]}]}`,
-		"missing ranks":        `{"version":"profile-v1","items":[{"key":"release.lang"}]}`,
-		"score with values":    `{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[["x"]]}]}`,
-		"revision with values": `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[["v2"]]}]}`,
-		"combo on single item": `{"version":"profile-v1","items":[{"key":"release.lang","ranks":[["sc","tc"]]}]}`,
-		"duplicate set":        `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`,
-		"duplicate single":     `{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["1080P"]]}]}`,
-		"repeat inside entry":  `{"version":"profile-v1","items":[{"key":"rt.sub_lang","ranks":[["SC","sc"]]}]}`,
-		"blank value":          `{"version":"profile-v1","items":[{"key":"release.lang","ranks":[[" "]]}]}`,
-		"untrimmed value":      `{"version":"profile-v1","items":[{"key":"release.lang","ranks":[[" sc"]]}]}`,
-		"joined value":         `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS+CHT"]]}]}`,
-		"empty entry":          `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[[]]}]}`,
-		"unknown field":        `{"version":"profile-v1","items":[],"cutoff":{}}`,
-		"null items":           `{"version":"profile-v1","items":null}`,
+		"unknown key":          `{"version":"profile-v2","items":[{"key":"media.resolution","ranks":[]}]}`,
+		"duplicate key":        `{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[]},{"key":"rt.sub_lang","ranks":[]}]}`,
+		"missing ranks":        `{"version":"profile-v2","items":[{"key":"rt.sub_lang"}]}`,
+		"score with values":    `{"version":"profile-v2","items":[{"key":"subgroup.score","ranks":[["x"]]}]}`,
+		"revision with values": `{"version":"profile-v2","items":[{"key":"rt.revision","ranks":[["v2"]]}]}`,
+		"combo on single item": `{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p","720p"]]}]}`,
+		"duplicate set":        `{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`,
+		"duplicate single":     `{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p"],["1080P"]]}]}`,
+		"repeat inside entry":  `{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[["SC","sc"]]}]}`,
+		"blank value":          `{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[[" "]]}]}`,
+		"untrimmed value":      `{"version":"profile-v2","items":[{"key":"rt.sub_lang","ranks":[[" sc"]]}]}`,
+		"joined value":         `{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[["CHS+CHT"]]}]}`,
+		"empty entry":          `{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[[]]}]}`,
+		"unknown field":        `{"version":"profile-v2","items":[],"cutoff":{}}`,
+		"null items":           `{"version":"profile-v2","items":null}`,
 	}
 	for name, raw := range cases {
 		if _, err := Parse(json.RawMessage(raw)); err == nil {
 			t.Errorf("%s: accepted %s", name, raw)
 		}
 	}
-	ok := `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT","JPN"],["CHS","CHT"],["CHS"]]},{"key":"rt.codec","ranks":[]}]}`
+	ok := `{"version":"profile-v2","items":[{"key":"anibt.language","ranks":[["CHS","CHT","JPN"],["CHS","CHT"],["CHS"]]},{"key":"rt.codec","ranks":[]}]}`
 	if _, err := Parse(json.RawMessage(ok)); err != nil {
 		t.Fatalf("valid profile rejected: %v", err)
 	}
@@ -55,36 +55,28 @@ func TestValidateRejections(t *testing.T) {
 
 func TestLexicographicFirstDifferenceDecides(t *testing.T) {
 	profile := Profile{Version: Version, Items: []Item{
-		{Key: KeyReleaseLang, Ranks: [][]string{{"sc"}, {"tc"}}},
-		{Key: KeyReleaseResolution, Ranks: [][]string{{"2160p"}, {"1080p"}}},
+		{Key: KeyRtSubLang, Ranks: [][]string{{"sc"}, {"tc"}}},
+		{Key: KeyRtResolution, Ranks: [][]string{{"2160p"}, {"1080p"}}},
 	}}
 	// Candidate has the better language but the worse resolution: language decides.
-	candidate := subject(map[string][]string{KeyReleaseLang: {"sc"}, KeyReleaseResolution: {"1080p"}}, nil, i64(1))
-	current := subject(map[string][]string{KeyReleaseLang: {"tc"}, KeyReleaseResolution: {"2160p"}}, nil, i64(9))
+	candidate := subject(map[string][]string{KeyRtSubLang: {"sc"}, KeyRtResolution: {"1080p"}}, nil, i64(1))
+	current := subject(map[string][]string{KeyRtSubLang: {"tc"}, KeyRtResolution: {"2160p"}}, nil, i64(9))
 	result := Compare(candidate, current, profile)
-	if !result.Better || result.Decided != KeyReleaseLang || len(result.Steps) != 1 {
+	if !result.Better || result.Decided != KeyRtSubLang || len(result.Steps) != 1 {
 		t.Fatalf("result = %+v", result)
 	}
 	// Reversed: the candidate loses on the first item.
-	if back := Compare(current, candidate, profile); back.Better || back.Equal || back.Decided != KeyReleaseLang {
+	if back := Compare(current, candidate, profile); back.Better || back.Equal || back.Decided != KeyRtSubLang {
 		t.Fatalf("reverse = %+v", back)
 	}
 }
 
-func TestSizeTiebreakAndKeepExisting(t *testing.T) {
-	profile := Profile{Version: Version, Items: []Item{{Key: KeyReleaseResolution, Ranks: [][]string{{"1080p"}}}}}
-	values := map[string][]string{KeyReleaseResolution: {"1080p"}}
-	if r := Compare(subject(values, nil, i64(2)), subject(values, nil, i64(1)), profile); !r.Better || r.Decided != SizeStep {
-		t.Fatalf("larger size must win: %+v", r)
-	}
-	if r := Compare(subject(values, nil, i64(1)), subject(values, nil, i64(2)), profile); r.Better || r.Equal {
-		t.Fatalf("smaller size must lose: %+v", r)
-	}
-	if r := Compare(subject(values, nil, i64(1)), subject(values, nil, i64(1)), profile); r.Better || !r.Equal {
-		t.Fatalf("equal size keeps existing: %+v", r)
-	}
-	if r := Compare(subject(values, nil, i64(5)), subject(values, nil, nil), profile); r.Better || !r.Equal {
-		t.Fatalf("unknown size keeps existing: %+v", r)
+func TestEqualItemsKeepExisting(t *testing.T) {
+	profile := Profile{Version: Version, Items: []Item{{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}}}}}
+	values := map[string][]string{KeyRtResolution: {"1080p"}}
+	result := Compare(Subject{Values: values}, Subject{Values: values}, profile)
+	if result.Better || !result.Equal || result.Decided != "" || len(result.Steps) != 1 {
+		t.Fatalf("equal items must keep existing without a hidden step: %+v", result)
 	}
 }
 
@@ -145,7 +137,7 @@ func TestNoCrossNamespaceFallback(t *testing.T) {
 	profile := Profile{Version: Version, Items: []Item{{Key: KeyAniBTResolution, Ranks: [][]string{{"1080p"}}}}}
 	// The candidate has 1080p only under release.* and rt.*: anibt.* reads its
 	// own key and finds nothing.
-	candidate := subject(map[string][]string{KeyReleaseResolution: {"1080p"}, KeyRtResolution: {"1080p"}}, nil, nil)
+	candidate := subject(map[string][]string{KeyRtResolution: {"1080p"}}, nil, nil)
 	current := subject(map[string][]string{}, nil, nil)
 	if r := Compare(candidate, current, profile); r.Better || !r.Equal {
 		t.Fatalf("anibt.resolution must not fall back to another namespace: %+v", r)
@@ -153,28 +145,26 @@ func TestNoCrossNamespaceFallback(t *testing.T) {
 }
 
 func TestRevisionComparesNumerically(t *testing.T) {
-	profile := Profile{Version: Version, Items: []Item{{Key: KeyReleaseRevision, Ranks: [][]string{}}}}
-	rev := func(v string) Subject {
-		if v == "" {
-			return subject(map[string][]string{}, nil, nil)
+	profile := Profile{Version: Version, Items: []Item{{Key: KeyRtRevision, Ranks: [][]string{}}}}
+	rev := func(v string) Subject { return Subject{Values: map[string][]string{KeyRtRevision: {v}}} }
+	for _, pair := range [][2]string{{"v3", "v2"}, {"v10", "v9"}, {"10", "9"}} {
+		if got := Compare(rev(pair[0]), rev(pair[1]), profile); !got.Better {
+			t.Fatalf("numeric ordering failed: %+v", got)
 		}
-		return subject(map[string][]string{KeyReleaseRevision: {v}}, nil, nil)
 	}
-	if r := Compare(rev("v3"), rev("v2"), profile); !r.Better {
-		t.Fatal("v3 must beat v2")
+	for _, missing := range []string{"", "v0", "x", "-1", "1.5", "v2+v3", "9999999999999999999999999"} {
+		for _, pair := range [][2]string{{"v2", missing}, {missing, "v2"}} {
+			if got := Compare(rev(pair[0]), rev(pair[1]), profile); got.Better || !got.Equal {
+				t.Fatalf("missing revision must tie: %v %+v", pair, got)
+			}
+		}
+		if _, ok := RevisionNumber(missing); ok {
+			t.Fatalf("accepted invalid revision %q", missing)
+		}
 	}
-	if r := Compare(rev("v10"), rev("v9"), profile); !r.Better {
-		t.Fatal("v10 must beat v9 (numeric, not lexical)")
-	}
-	if r := Compare(rev("v2"), rev(""), profile); !r.Better {
-		t.Fatal("v2 must beat no revision")
-	}
-	if r := Compare(rev("v1"), rev(""), profile); r.Better || !r.Equal {
-		t.Fatal("v1 equals no revision")
-	}
-	for value, want := range map[string]int64{"v2": 2, "V3": 3, "4": 4, "": 1, "v0": 1, "x": 1} {
-		if got := RevisionNumber(value); got != want {
-			t.Errorf("RevisionNumber(%q) = %d want %d", value, got, want)
+	for value, want := range map[string]int64{"v2": 2, "V3": 3, "4": 4} {
+		if got, ok := RevisionNumber(value); !ok || got != want {
+			t.Fatalf("revision %q = %d,%v", value, got, ok)
 		}
 	}
 }
@@ -199,21 +189,27 @@ func TestSubgroupScoreNoSourceIsLowest(t *testing.T) {
 
 func TestFrozenValuesRoundTrip(t *testing.T) {
 	values := NewValues()
+	values.SourceDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	values.SetJoined(KeyAniBTLanguage, "CHS+CHT+chs")
-	values.Set(KeyReleaseLang, " ", "")
+	values.Set(KeyRtSubLang, " ", "")
 	values.Subgroup = &SubgroupSource{Provider: "mikan", GroupRef: "370"}
-	parsed := ParseValues(values.JSON())
+	parsed, err := ParseValues(values.JSON())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Join(parsed.Values[KeyAniBTLanguage], ",") != "CHS,CHT" {
 		t.Fatalf("values = %v", parsed.Values)
 	}
-	if _, has := parsed.Values[KeyReleaseLang]; has {
+	if _, has := parsed.Values[KeyRtSubLang]; has {
 		t.Fatal("blank values must not be recorded")
 	}
 	if parsed.Subgroup == nil || parsed.Subgroup.GroupRef != "370" {
 		t.Fatalf("subgroup = %+v", parsed.Subgroup)
 	}
-	if empty := ParseValues([]byte(`{}`)); len(empty.Values) != 0 || empty.Subgroup != nil {
-		t.Fatalf("an unversioned document has no values: %+v", empty)
+	for _, raw := range []string{`{}`, `{"version":"compare-values-v1","values":{}}`, `not-json`} {
+		if _, err := ParseValues([]byte(raw)); err == nil {
+			t.Fatalf("stale/corrupt cache accepted: %s", raw)
+		}
 	}
 }
 

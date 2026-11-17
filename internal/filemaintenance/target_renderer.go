@@ -102,9 +102,9 @@ type CalibratedRenderFacts struct {
 }
 
 // RenderCalibratedTarget renders the expected canonical target for one
-// reconciliation calibration row: it resolves the naming context but then
-// overrides Parsed.Episode / File.Media.Resolution / Parsed.Language with the
-// frozen calibration facts before rendering. The release and file facts stay
+// reconciliation calibration row: only the coverage-derived episode display
+// is applied to the naming context. Legacy quality projections never override
+// measured media or release-language facts. The release and file facts stay
 // as acquisition froze them; the title, the owner season, year and media kind
 // and the metadata binding are the anime's current configuration. A missing
 // binding or an undefined template variable fails the render with a typed
@@ -138,12 +138,6 @@ func (r *NamingTargetRenderer) RenderCalibratedTarget(ctx context.Context, anime
 	}
 	resolved.Context.Parsed.Episode.Display = facts.EpisodeDisplay
 	resolved.Context.Parsed.Episode.Raw = facts.EpisodeDisplay
-	if facts.Resolution != "" {
-		resolved.Context.File.Media.Resolution = facts.Resolution
-	}
-	if facts.Language != "" {
-		resolved.Context.Parsed.Language.Code = facts.Language
-	}
 	return renderResolvedTarget(base, rules, resolved.Context, lineage.renderFacts(), lineage.namingRenderer())
 }
 
@@ -182,12 +176,6 @@ func (r *NamingTargetRenderer) RenderTarget(ctx context.Context, observation pla
 	if episode != "" {
 		resolved.Context.Parsed.Episode.Display = episode
 		resolved.Context.Parsed.Episode.Raw = episode
-	}
-	if observation.Resolution != "" {
-		resolved.Context.File.Media.Resolution = observation.Resolution
-	}
-	if observation.Language != "" {
-		resolved.Context.Parsed.Language.Code = observation.Language
 	}
 	// The alignment candidate render is on the episode-title whitelist: fill
 	// the facts before rendering. A transient lookup failure fails this
