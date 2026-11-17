@@ -1007,7 +1007,7 @@ function TemplateEventList({
       <button
         key={kind}
         type="button"
-        className={cn("settings-notifications-tpl-row", kind === current && "settings-notifications-tpl-row-on", !enabled && "settings-notifications-tpl-row-off")}
+        className={cn("settings-notifications-tpl-row text-body", kind === current && "settings-notifications-tpl-row-on", !enabled && "settings-notifications-tpl-row-off")}
         onClick={() => onPick(kind)}
       >
         <span className="settings-notifications-tpl-tick">{enabled && <Check size={10} aria-hidden />}</span>
@@ -1160,11 +1160,11 @@ function TemplatePane({
               <div className="settings-notifications-template-defaults">
                 <div className="settings-notifications-template-ro">
                   <span className="settings-notifications-template-ro-label text-caption">{t("settings.notifications.template.defaultTitle")}</span>
-                  <p className="settings-notifications-template-ro-box">{defaults.title_template}</p>
+                  <p className="settings-notifications-template-ro-box text-body">{defaults.title_template}</p>
                 </div>
                 <div className="settings-notifications-template-ro">
                   <span className="settings-notifications-template-ro-label text-caption">{t("settings.notifications.template.defaultBody")}</span>
-                  <p className="settings-notifications-template-ro-box settings-notifications-template-ro-pre">{defaults.body_template}</p>
+                  <p className="settings-notifications-template-ro-box settings-notifications-template-ro-pre text-body">{defaults.body_template}</p>
                 </div>
               </div>
               <p className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.followDefault")}</p>
@@ -1186,7 +1186,7 @@ function TemplatePane({
             body={previewBody}
           />
         ) : (
-          <div className="settings-notifications-preview">
+          <div className="settings-notifications-preview text-body">
             <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.defaultLoading")}</span>
           </div>
         )}
@@ -1245,7 +1245,7 @@ function TemplatePreview({
   }, [kind, catalogVersion, title, body]);
 
   return (
-    <div className="settings-notifications-preview">
+    <div className="settings-notifications-preview text-body">
       <div className="settings-notifications-preview-label text-caption">
         {t("settings.notifications.template.previewAs", { adapter: adapterLabel()[adapter] })}
         {loading && <SpinnerIcon />}

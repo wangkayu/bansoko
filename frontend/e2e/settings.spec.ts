@@ -557,6 +557,7 @@ test.describe("settings fixture coverage", () => {
 
     const editor = page.getByRole("dialog", { name: "编辑模板" });
     await expect(editor).toBeVisible();
+    await expect(editor.locator(".settings-notifications-tpl-row").first()).toHaveCSS("font-size", "14px");
     // 手机形态下模板页先出事件列表，点进事件才是编辑器（钻取）。
     if ((await editor.getByRole("radio", { name: "自定义模板" }).count()) === 0) {
       await editor.locator(".settings-notifications-tpl-row", { hasText: "下载已提交" }).click();
@@ -568,6 +569,8 @@ test.describe("settings fixture coverage", () => {
     const preview = editor.locator(".settings-notifications-preview");
     await expect(preview.getByText("默认正文", { exact: true })).toBeVisible({ timeout: 10000 });
     await expect(preview.getByText("节目图片（封面或占位图）")).toBeVisible();
+    await expect(preview.locator(".settings-notifications-preview-tg-title")).toHaveCSS("font-size", "14px");
+    await expect(preview.locator(".settings-notifications-preview-body")).toHaveCSS("font-size", "14px");
     // 几何断言：预览卡片在弹窗内、页面无横向滚动。
     const previewBox = await preview.boundingBox();
     const editorBox = await editor.boundingBox();
@@ -620,6 +623,8 @@ test.describe("settings fixture coverage", () => {
     const roBoxes = editor.locator(".settings-notifications-template-ro-box");
     await expect(roBoxes.first()).toHaveText("默认标题", { timeout: 10000 });
     await expect(roBoxes.nth(1)).toContainText("默认正文");
+    await expect(roBoxes.first()).toHaveCSS("font-size", "14px");
+    await expect(roBoxes.nth(1)).toHaveCSS("font-size", "14px");
     // 默认态没有可编辑的正文输入框。
     await expect(editor.getByLabel("正文模板")).toHaveCount(0);
 
