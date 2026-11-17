@@ -268,6 +268,17 @@ func planEntries(opts Options) ([]plannedEntry, error) {
 	}
 
 	if strings.TrimSpace(opts.DefaultsDir) != "" {
+		// attr-rules.yaml is no longer read at runtime, but updaters released
+		// before its removal verify every payload against a required-file list
+		// that names it. Ship the file while it exists so those updaters can
+		// stage this release; a later release drops the file and this entry
+		// together, once no live updater demands it.
+		attrRulesPath := filepath.Join(opts.DefaultsDir, "attr-rules.yaml")
+		if info, statErr := os.Stat(attrRulesPath); statErr == nil && !info.IsDir() {
+			if err := addFile("deployment/defaults/attr-rules.yaml", attrRulesPath, fileMode); err != nil {
+				return nil, err
+			}
+		}
 		namingVarsPath := filepath.Join(opts.DefaultsDir, "naming-vars.js")
 		if info, statErr := os.Stat(namingVarsPath); statErr != nil || info.IsDir() {
 			return nil, fmt.Errorf("packagemaker: naming vars defaults at %s are missing", namingVarsPath)

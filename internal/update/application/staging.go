@@ -49,6 +49,10 @@ func safeEntryName(name string) (string, error) {
 	switch {
 	case name == packagemaker.ServerEntryPath,
 		name == packagemaker.MetaEntryPath,
+		// Legacy defaults file: not required any more, but updaters released
+		// before its removal demand it when they stage a payload. Keep the name
+		// allowed so a transition release can carry it.
+		name == "deployment/defaults/attr-rules.yaml",
 		name == "deployment/defaults/naming-vars.js",
 		strings.HasPrefix(name, packagemaker.MigrationsPrefix),
 		strings.HasPrefix(name, packagemaker.FrontendPrefix):

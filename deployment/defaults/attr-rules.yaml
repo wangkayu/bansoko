@@ -1,0 +1,34 @@
+# Legacy attribute rules. Nothing reads this file at runtime any more; the
+# acquisition pipeline uses release facts and tracker tags instead. It stays
+# in the embedded payload only so an updater released before its removal can
+# stage the next release, because that updater verifies this path is present.
+# Remove the file (and the packagemaker compatibility entry) once every live
+# instance runs a release whose verifier no longer demands it.
+version: 1
+resolution:
+  - 2160p
+  - 1440p
+  - 1080p
+  - 720p
+  - 480p
+quality:
+  - remux
+  - web-dl
+  - webrip
+  - bluray
+  - bdrip
+  - hdtv
+language:
+  - chs
+  - cht
+  - sc
+  - tc
+  - jpn
+  - eng
+special_markers:
+  - special
+  - ncop
+  - nced
+group_brackets:
+  - '['
+  - ']'

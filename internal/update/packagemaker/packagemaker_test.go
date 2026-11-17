@@ -51,6 +51,7 @@ func buildFixture(t *testing.T) Options {
 	writePlain(t, distDir, "assets/app.js", "console.log(1)")
 	writePlain(t, migDir, "001_init.sql", "CREATE TABLE a();")
 	writePlain(t, migDir, "010_more.sql", "ALTER TABLE a ADD b int;")
+	writePlain(t, defaultsDir, "attr-rules.yaml", "version: 1\n")
 	writePlain(t, defaultsDir, "naming-vars.js", "vars.anime = {ep: '1'};\n")
 	return Options{
 		ServerBinaryPath: server,
@@ -176,7 +177,7 @@ func TestArchiveShapeAndMetadata(t *testing.T) {
 	}
 	for _, want := range []string{ServerEntryPath,
 		"db/migrations/001_init.sql", "db/migrations/010_more.sql",
-		"deployment/defaults/naming-vars.js",
+		"deployment/defaults/attr-rules.yaml", "deployment/defaults/naming-vars.js",
 		"frontend/dist/index.html", "frontend/dist/assets/app.js"} {
 		if _, ok := fileSet[want]; !ok {
 			t.Fatalf("file manifest missing %s (entries: %v)", want, names)
@@ -188,6 +189,38 @@ func TestArchiveShapeAndMetadata(t *testing.T) {
 	record := fileSet["frontend/dist/index.html"]
 	if record.Size != int64(len("<html></html>")) || record.SHA256 == "" {
 		t.Fatalf("bad record: %+v", record)
+	}
+}
+
+func TestLegacyAttrRulesIsOptional(t *testing.T) {
+	opts := buildFixture(t)
+	if err := os.Remove(filepath.Join(opts.DefaultsDir, "attr-rules.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildEmbeddedPayload(opts); err != nil {
+		t.Fatalf("a missing optional attr-rules.yaml must still pack: %v", err)
+	}
+	payloadBytes, err := os.ReadFile(opts.OutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gzr, err := gzip.NewReader(bytes.NewReader(payloadBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gzr.Close()
+	tr := tar.NewReader(gzr)
+	for {
+		header, readErr := tr.Next()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if header.Name == "deployment/defaults/attr-rules.yaml" {
+			t.Fatalf("payload must omit attr-rules.yaml once the file is gone")
+		}
 	}
 }
 

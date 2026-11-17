@@ -28,7 +28,10 @@ func buildFixturePayload(t *testing.T) (payloadPath string, meta packagemaker.Me
 	writeTree("sql/001_a.sql", 0o644)
 	writeTree("dist/index.html", 0o644)
 	writeTree("dist/assets/app.js", 0o644)
-	// Defaults are part of the signed payload contract.
+	// Defaults are part of the payload contract. attr-rules.yaml is optional
+	// now but must still stage when a transition release carries it for
+	// older updaters.
+	writeTree("defaults/attr-rules.yaml", 0o644)
 	writeTree("defaults/naming-vars.js", 0o644)
 	meta = packagemaker.Metadata{
 		FormatVersion: "embedded-update-v1",
@@ -194,7 +197,7 @@ func TestVerifyStagedTreeDetectsTampering(t *testing.T) {
 
 func TestSafeEntryNameAllowlist(t *testing.T) {
 	valid := []string{"bansoko-server", "release-metadata.json",
-		"deployment/defaults/naming-vars.js",
+		"deployment/defaults/attr-rules.yaml", "deployment/defaults/naming-vars.js",
 		"db/migrations/067_x.sql", "frontend/dist/index.html"}
 	for _, name := range valid {
 		if _, err := safeEntryName(name); err != nil {
