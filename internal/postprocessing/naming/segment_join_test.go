@@ -23,7 +23,6 @@ func TestChainIsNoLongerATemplateFunction(t *testing.T) {
 	}
 }
 
-
 func TestSegmentPreservesExplicitValuesAndDecorations(t *testing.T) {
 	ctx := NamingContext{FileTitleTags: &acquisitiondomain.TitleTagSet{Schema: acquisitiondomain.TitleTagSchema, ValueTags: []string{"group:@"}}}
 	if got := renderSuffix(t, "Show${segment(frt.group, ' [', ']')}", ctx); got != "Show [@]" {
