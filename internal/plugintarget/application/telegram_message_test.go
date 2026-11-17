@@ -81,7 +81,7 @@ func TestTelegramRichMessageUsesEscapedHTMLPhotoAndMetadataLinks(t *testing.T) {
 		"anime.title": "Show <&>", "release.title": "Episode & 1", "release.src": "mikan",
 		"bgm.id": "123", "tmdb.id": "456", "tmdb.kind": "tv",
 	})
-	message, err := handler.resolveOutboundMessage(context.Background(), row, "Show <&>", "Episode & 1")
+	message, err := handler.resolveOutboundMessage(context.Background(), row, "Show <&>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestCustomNotificationImageAndLinkUseValidatedTemplateValues(t *testing.T) 
 	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
 	row := richDeliveryRow(t, map[string]any{"anime.title": "Custom", "release.title": "One shot"})
 	row.bodyTemplate = "{{release.title}}\n{{image('https://example.com/cover.jpg')}}\n{{link('https://example.com/release', 'Release page')}}"
-	message, err := handler.resolveOutboundMessage(context.Background(), row, "Custom", "One shot")
+	message, err := handler.resolveOutboundMessage(context.Background(), row, "Custom")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestTelegramOneShotWithoutMetadataUsesBuiltInPlaceholder(t *testing.T) {
 	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
 	handler.SetNotificationImageResolver(resolver)
 	row := richDeliveryRow(t, map[string]any{"anime.title": "Custom", "release.title": "One shot"})
-	message, err := handler.resolveOutboundMessage(context.Background(), row, "Custom", "One shot")
+	message, err := handler.resolveOutboundMessage(context.Background(), row, "Custom")
 	if err != nil {
 		t.Fatal(err)
 	}

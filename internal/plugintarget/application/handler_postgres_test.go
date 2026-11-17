@@ -20,6 +20,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 	deliverypayload "bansoko/internal/plugintarget/payload"
 	runtimeworker "bansoko/internal/runtime/worker"
+	"bansoko/internal/templatecatalog/notification"
 	"bansoko/internal/testutil/disposabledb"
 	"bansoko/internal/workitems"
 )
@@ -732,8 +733,17 @@ func TestHandlerTelegramDeliveryShape(t *testing.T) {
 	if fields["parse_mode"] != "HTML" {
 		t.Errorf("telegram parse_mode = %q, want HTML", fields["parse_mode"])
 	}
-	if !strings.HasPrefix(fields["caption"], "<b>Title</b>\n\nBody") {
-		t.Errorf("telegram caption = %q, want bold title and body", fields["caption"])
+	// The fake renderer only supplies the title; the body is the delivery's own
+	// render, so the caption keeps the links inline where the default template
+	// wrote them.
+	_, defaultBody := notification.DefaultsFor(notification.TriggerDownloadSubmitted, notification.LocaleZH)
+	rendered, ok := notification.RenderMessage(notification.TriggerDownloadSubmitted, "", defaultBody, notification.Sample(notification.TriggerDownloadSubmitted))
+	if !ok || !rendered.Valid() {
+		t.Fatalf("default body render = %+v", rendered.Errors)
+	}
+	wantCaption := "<b>Title</b>\n\n" + telegramBodyHTML(outboundMessage{Parts: rendered.BodyParts})
+	if fields["caption"] != wantCaption {
+		t.Errorf("telegram caption = %q, want %q", fields["caption"], wantCaption)
 	}
 	if len(photo) == 0 || !bytes.Equal(photo, notificationPlaceholderJPEG) {
 		t.Errorf("telegram photo = %d bytes, want the built-in placeholder (%d bytes)", len(photo), len(notificationPlaceholderJPEG))

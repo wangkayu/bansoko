@@ -230,11 +230,11 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		return h.settleAttempt(claim, row, attempt, result, newSecretRedactor("")), nil
 	}
 
-	title, body, err := h.resolveMessage(row)
+	title, _, err := h.resolveMessage(row)
 	if err != nil {
 		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
 	}
-	message, err := h.resolveOutboundMessage(ctx, row, title, body)
+	message, err := h.resolveOutboundMessage(ctx, row, title)
 	if err != nil {
 		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification message is invalid", newSecretRedactor("")), nil
 	}

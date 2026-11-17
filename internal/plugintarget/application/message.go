@@ -43,21 +43,23 @@ func placeholderNotificationImage() *outboundImage {
 	}
 }
 
-func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row deliveryRow, title, body string) (outboundMessage, error) {
-	message := outboundMessage{Title: title, Body: body}
+func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row deliveryRow, title string) (outboundMessage, error) {
 	facts, err := notificationFactsForDelivery(row)
 	if err != nil {
-		return message, err
+		return outboundMessage{Title: title}, err
 	}
-	attachments, ok := notification.SemanticAttachments(row.triggerKind, row.titleTemplate, row.bodyTemplate, facts)
-	if !ok {
-		return message, errors.New("notification trigger is invalid")
-	}
+	// Body and its inline parts come from one render so the text and the link
+	// positions can never disagree. The title keeps the resolveMessage value
+	// (a test delivery's render carries the [TEST] marker).
 	rendered, ok := notification.RenderMessage(row.triggerKind, row.titleTemplate, row.bodyTemplate, facts)
 	if !ok {
-		return message, errors.New("notification trigger is invalid")
+		return outboundMessage{Title: title}, errors.New("notification trigger is invalid")
 	}
-	message.Parts = rendered.BodyParts
+	message := outboundMessage{Title: title, Body: rendered.Body, Parts: rendered.BodyParts}
+	attachments, ok := notification.SemanticAttachments(row.triggerKind, row.titleTemplate, row.bodyTemplate, facts)
+	if !ok {
+		return outboundMessage{Title: title}, errors.New("notification trigger is invalid")
+	}
 	message.Links = attachments.Links
 	if !attachments.Image {
 		return message, nil
