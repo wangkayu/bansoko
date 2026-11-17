@@ -19,6 +19,7 @@
 
 ## Fixed
 
+- Files imported before the upgrade now retain their historical release evidence during library scans and file matching, instead of incorrectly reporting that the naming template lacks required information when newer snapshot fields are absent.
 - One-shot tasks from keyword search no longer render the internal search identity (search-query:…) into preview paths as the naming group fact; preview and actual import now agree, with anime.group empty in both.
 - Secret inputs in forms such as notification channels (Bot Token, webhook URL, signing secret) had lost their standard height and text size; they now match the other inputs.
 - Original file-name attributes remain with managed files after operation details are cleared, so later replacement notifications can still compare the two versions.

@@ -123,8 +123,11 @@ func (r *NamingTargetRenderer) matchLineageOf(ctx context.Context, placementID s
 	if strings.TrimSpace(placementID) == "" {
 		return l, nil
 	}
+	// Source facts fall back to the release row for placements written before
+	// the convergence, which carry neither the frozen evidence nor the
+	// acceptance input's tag_evidence.
 	err := r.db.QueryRowContext(ctx, `SELECT COALESCE(rel.id,''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''),
- COALESCE(fo.frozen_render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence','{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), true, COALESCE(af.relative_path,'')
+ COALESCE(fo.frozen_render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence',rel.source_facts,'{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), true, COALESCE(af.relative_path,'')
 FROM placements p
 JOIN file_operations fo ON fo.id=p.source_owner_ref AND p.source_evidence_type='file_operation'
 LEFT JOIN artifact_files af ON af.id=fo.artifact_file_id
@@ -168,7 +171,7 @@ func (r *NamingTargetRenderer) matchLineageByPath(ctx context.Context, absoluteP
  WHERE src.source_path = $1
 )
 SELECT COALESCE(rel.id,''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''),
- COALESCE(c.render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence','{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), c.frozen_config, c.render_snapshot, c.has_render_snapshot, COALESCE(af.relative_path,'')
+ COALESCE(c.render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence',rel.source_facts,'{}'::jsonb), COALESCE(af.facts,'{}'::jsonb), c.frozen_config, c.render_snapshot, c.has_render_snapshot, COALESCE(af.relative_path,'')
 FROM candidates c
 JOIN artifact_files af ON af.id=c.artifact_file_id
 LEFT JOIN artifacts art ON art.id=af.artifact_id

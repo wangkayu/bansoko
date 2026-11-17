@@ -145,7 +145,12 @@ func (f placedRenderFacts) coverageEpisode(episode string) (*naming.FrozenEpisod
 // the alignment had just placed at its target as unscanned.
 func (r *NamingTargetRenderer) placedRenderFacts(ctx context.Context, animeID, path, placementID string) (placedRenderFacts, bool, error) {
 	var f placedRenderFacts
-	query := `SELECT p.id, ` + ExcludedPlacementSQL("p") + `, p.source_evidence_type = 'file_operation', COALESCE(rel.id,''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(af.file_ref,''), COALESCE(mf.file_evidence->>'name', af.relative_path, ''), COALESCE(mf.size_bytes, af.size_bytes, 0), COALESCE(af.media_kind,''), COALESCE(af.facts,'{}'::jsonb), COALESCE(mf.effective_facts,'{}'::jsonb), COALESCE(snap.id,''), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence','{}'::jsonb), COALESCE(fo.id,'')
+	// Source facts order: the operation's frozen evidence, the acceptance input
+	// that produced it, and the release row's historical source_facts. A
+	// placement written before the convergence carries neither of the first two,
+	// and the release row is the only source evidence it has; replaying it as
+	// empty would refuse every pre-existing file.
+	query := `SELECT p.id, ` + ExcludedPlacementSQL("p") + `, p.source_evidence_type = 'file_operation', COALESCE(rel.id,''), COALESCE(src.source_kind,''), COALESCE(aq.input->'source'->'group'->>'value',''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''), COALESCE(aq.input->'source'->'title'->>'value',''), COALESCE((aq.input->'source'->'release'->'value'->>'version')::bigint,0), COALESCE(af.file_ref,''), COALESCE(mf.file_evidence->>'name', af.relative_path, ''), COALESCE(mf.size_bytes, af.size_bytes, 0), COALESCE(af.media_kind,''), COALESCE(af.facts,'{}'::jsonb), COALESCE(mf.effective_facts,'{}'::jsonb), COALESCE(snap.id,''), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot->'release_source_facts',aq.input->'source'->'tag_evidence',rel.source_facts,'{}'::jsonb), COALESCE(fo.id,'')
 FROM placements p
 LEFT JOIN file_operations fo ON fo.id=p.source_owner_ref AND p.source_evidence_type='file_operation'
 LEFT JOIN acquisitions aq ON aq.id=fo.acquisition_id
