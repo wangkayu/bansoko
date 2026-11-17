@@ -24,6 +24,11 @@ func TestPGOffsetRetryRevivesSupersededCandidateThroughCompetition(t *testing.T)
 	f.mustRunCompetition("competition_decided")
 	f.requireAdmitted("rel-offset-revive")
 	oldTaskID := completeCurrentDownload(t, "rel-offset-revive", "succeeded")
+	// Once the task reaches the downloader the feed marks the Release submitted.
+	// Withdrawing that task must not leave the submitted verdict without a task.
+	if _, err := f.db.Exec(`UPDATE releases SET verdict = 'submitted' WHERE id = 'rel-offset-revive'`); err != nil {
+		t.Fatal(err)
+	}
 
 	var oldNamespace string
 	if err := f.db.QueryRow(`SELECT request_namespace FROM acquisitions WHERE id = (SELECT acquisition_id FROM download_tasks WHERE id = $1)`, oldTaskID).Scan(&oldNamespace); err != nil {

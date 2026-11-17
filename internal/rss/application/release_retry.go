@@ -126,7 +126,8 @@ func detachRetriedTaskTx(ctx context.Context, tx *sql.Tx, snapshot releaseSnapsh
 		return nil
 	}
 	if _, err := tx.ExecContext(ctx, `
-UPDATE releases SET download_task_id = NULL
+UPDATE releases SET download_task_id = NULL,
+       verdict = CASE WHEN verdict = 'submitted' THEN 'accepted_pending_download' ELSE verdict END
 WHERE id = $1 AND download_task_id = $2`, snapshot.releaseID, currentTask.String); err != nil {
 		return fmt.Errorf("detach the failed download task: %w", err)
 	}

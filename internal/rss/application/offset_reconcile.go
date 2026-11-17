@@ -255,8 +255,13 @@ WHERE r.id = $1`, snapshot.releaseID, snapshot.managedAnimeID).Scan(&taskState, 
 		return false, version, err
 	}
 	if currentTask.Valid {
+		// A submitted verdict requires a task pointer (releases_verdict_check).
+		// Withdrawing the pointer returns the Release to pending acceptance; the
+		// same transaction's owner write decides the verdict that replaces it.
 		if _, err := tx.ExecContext(ctx, `
-UPDATE releases SET download_task_id = NULL, updated_at = CURRENT_TIMESTAMP
+UPDATE releases SET download_task_id = NULL,
+       verdict = CASE WHEN verdict = 'submitted' THEN 'accepted_pending_download' ELSE verdict END,
+       updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND version = $2 AND download_task_id = $3 AND competition_retry_key = $4`,
 			snapshot.releaseID, currentVersion, currentTask.String, snapshot.retryKey); err != nil {
 			return false, 0, fmt.Errorf("detach offset-retried download task: %w", err)
