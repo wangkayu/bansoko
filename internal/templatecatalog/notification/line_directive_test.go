@@ -102,15 +102,31 @@ func TestShowIfComposesWithAStandaloneListLine(t *testing.T) {
 	}
 }
 
-// An attachment directive produces an attachment, never text: a gated line that
-// carries only attachments leaves no blank line behind.
-func TestShowIfLeavesNoBlankLineForAttachmentOnlyLines(t *testing.T) {
-	body := "开头\n{{showIf(bgm.link)}}{{link(bgm.link, 'Bangumi')}}\n结尾"
+// An image directive produces a message-level attachment, never text: a gated
+// line that carries only images leaves no blank line behind. A link line is
+// text in place, so it keeps its line.
+func TestShowIfLeavesNoBlankLineForImageOnlyLines(t *testing.T) {
+	body := "开头\n{{showIf(bgm.id)}}{{image}}\n结尾"
 	for _, facts := range []map[string]any{{}, {"bgm.id": "123"}} {
 		message := renderBody(t, TriggerDownloadSubmitted, body, facts)
 		if message.Body != "开头\n结尾" {
 			t.Fatalf("body with facts %v = %q", facts, message.Body)
 		}
+	}
+}
+
+func TestShowIfRendersGatedLinkLinesInPlace(t *testing.T) {
+	body := "开头\n{{showIf(bgm.link)}}{{link(bgm.link, 'Bangumi')}}\n结尾"
+	hidden := renderBody(t, TriggerDownloadSubmitted, body, map[string]any{})
+	if hidden.Body != "开头\n结尾" {
+		t.Fatalf("hidden body = %q", hidden.Body)
+	}
+	shown := renderBody(t, TriggerDownloadSubmitted, body, map[string]any{"bgm.id": "123"})
+	if shown.Body != "开头\nBangumi\n结尾" {
+		t.Fatalf("shown body = %q", shown.Body)
+	}
+	if len(Links(shown.BodyParts)) != 1 {
+		t.Fatalf("shown parts = %+v", shown.BodyParts)
 	}
 }
 

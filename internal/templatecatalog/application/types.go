@@ -129,9 +129,17 @@ type NotificationTemplatePreviewAttachments struct {
 	Links []NotificationTemplatePreviewLink
 }
 
+// NotificationTemplatePreviewBodyPart is one inline piece of the preview body:
+// literal text (Link nil) or a resolved link at its template position.
+type NotificationTemplatePreviewBodyPart struct {
+	Text string
+	Link *NotificationTemplatePreviewLink
+}
+
 type NotificationTemplatePreview struct {
 	Attachments     NotificationTemplatePreviewAttachments
 	Body            string
+	BodyParts       []NotificationTemplatePreviewBodyPart
 	CatalogVersion  NotificationTemplatePreviewCatalogVersion
 	Errors          []TemplateSourceError
 	LanguageVersion NotificationTemplatePreviewLanguageVersion

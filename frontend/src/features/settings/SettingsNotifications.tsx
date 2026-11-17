@@ -69,7 +69,7 @@ import { ConfirmDialog, SecretField, SegmentedControl, type SecretMode } from ".
 import { DeliveryHistoryDialog } from "./DeliveryHistoryDialog";
 import { deliveryStateLabel } from "./DeliveryDetailDialog";
 import { SettingsEditDialog } from "./SettingsEditDialog";
-import { getLocale, t } from "../../lib/i18n";
+import { getLocale, t, tryT } from "../../lib/i18n";
 import { FactCatalog } from "../templateFacts/FactCatalog";
 
 // Notification channels: the target list and the create/edit dialogs for the telegram / feishu /
@@ -1138,9 +1138,22 @@ function TemplatePane({
                     onInsert={insertToken}
                   />
                   <div className="settings-notifications-template-functions">
-                    <span className="text-caption tw:text-muted-foreground">
-                      {t("settings.notifications.template.functions", { names: catalog.data.functions.map((fn) => fn.name).join(" / ") })}
-                    </span>
+                    <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.syntaxTitle")}</span>
+                    <ul className="settings-notifications-template-syntax">
+                      <li className="text-caption">{t("settings.notifications.template.syntaxLines")}</li>
+                      <li className="text-caption">{t("settings.notifications.template.syntaxLinkInline")}</li>
+                      <li className="text-caption">{t("settings.notifications.template.syntaxImage")}</li>
+                      <li className="text-caption">{t("settings.notifications.template.syntaxTitlePlain")}</li>
+                    </ul>
+                    <span className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.functionsTitle")}</span>
+                    <ul className="settings-notifications-template-syntax">
+                      {catalog.data.functions.map((fn) => (
+                        <li key={fn.name} className="text-caption">
+                          <code>{fn.name}({fn.arguments.join(", ")})</code>{" — "}
+                          {tryT(`templateFacts.functions.${fn.name}`) ?? fn.description}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </details>
               ) : (
@@ -1255,7 +1268,7 @@ function TemplatePreview({
         <StatePill tone="offline">{t("settings.notifications.template.invalid")}</StatePill>
       )}
       {result && result.valid && (
-        <AdapterMessage adapter={adapter} kind={kind} title={result.title} body={result.body} attachments={result.attachments} />
+        <AdapterMessage adapter={adapter} kind={kind} title={result.title} body={result.body} bodyParts={result.body_parts} attachments={result.attachments} />
       )}
       {result?.errors.map((item, index) => (
         <div key={`e${index}`}>
@@ -1281,24 +1294,16 @@ function AdapterMessage({
   kind,
   title,
   body,
+  bodyParts,
   attachments,
 }: {
   adapter: PluginTargetConfig["adapter_kind"];
   kind: NotificationTriggerKind;
   title: string;
   body: string;
+  bodyParts: NotificationTemplatePreview["body_parts"];
   attachments: NotificationTemplatePreview["attachments"];
 }) {
-  const linkLine = attachments.links.length > 0 ? (
-    <div className="settings-notifications-preview-links text-caption">
-      {attachments.links.map((link, index) => (
-        <span key={`${link.provider}:${link.label}:${index}`}>
-          {index > 0 && " · "}
-          <span className="settings-notifications-preview-anchor">{link.label}</span>
-        </span>
-      ))}
-    </div>
-  ) : null;
   if (adapter === "telegram") {
     // With an image the adapter sends a photo whose caption is the whole text.
     return (
@@ -1307,8 +1312,7 @@ function AdapterMessage({
           <div className="settings-notifications-preview-image text-caption">{t("settings.notifications.template.imageNote")}</div>
         )}
         <div className="settings-notifications-preview-tg-title">{title}</div>
-        <div className="settings-notifications-preview-body">{body}</div>
-        {linkLine}
+        <div className="settings-notifications-preview-body">{renderBodyInline(bodyParts, body)}</div>
       </div>
     );
   }
@@ -1317,11 +1321,10 @@ function AdapterMessage({
     return (
       <div className="settings-notifications-preview-fs">
         <div className="settings-notifications-preview-fs-head">{title}</div>
-        <div className="settings-notifications-preview-body settings-notifications-preview-fs-body">{body}</div>
+        <div className="settings-notifications-preview-body settings-notifications-preview-fs-body">{renderBodyInline(bodyParts, body)}</div>
         {attachments.image && (
           <div className="settings-notifications-preview-fs-foot text-caption">{t("settings.notifications.template.feishuImageNote")}</div>
         )}
-        {linkLine && <div className="settings-notifications-preview-fs-foot">{linkLine}</div>}
       </div>
     );
   }
@@ -1331,6 +1334,31 @@ function AdapterMessage({
   return (
     <pre className="settings-notifications-preview-wh">{JSON.stringify({ event: kind, message }, null, 2)}</pre>
   );
+}
+
+/** Body parts in template order: links stay inline where the template wrote them. */
+function renderBodyInline(
+  bodyParts: NotificationTemplatePreview["body_parts"],
+  fallback: string,
+): React.ReactNode {
+  if (bodyParts.length === 0) return fallback;
+  const nodes: React.ReactNode[] = [];
+  let key = 0;
+  for (const part of bodyParts) {
+    if (part.link) {
+      nodes.push(
+        <span key={key++} className="settings-notifications-preview-anchor">
+          {part.text}
+        </span>,
+      );
+      continue;
+    }
+    part.text.split("\n").forEach((chunk, index) => {
+      if (index > 0) nodes.push(<br key={key++} />);
+      if (chunk) nodes.push(chunk);
+    });
+  }
+  return nodes;
 }
 
 function Field({

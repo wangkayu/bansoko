@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSemanticAttachmentsAreNotTextFacts(t *testing.T) {
+func TestSemanticAttachmentsStayAtTheirTemplatePosition(t *testing.T) {
 	facts := map[string]any{
 		"anime.title": "<Show & Co>", "release.title": "Episode 1",
 		"bgm.id": "123", "tmdb.id": "456", "tmdb.kind": "tv",
@@ -15,8 +15,14 @@ func TestSemanticAttachmentsAreNotTextFacts(t *testing.T) {
 	if !ok || !message.Valid() || len(message.Warnings) != 0 {
 		t.Fatalf("semantic render = %+v", message)
 	}
-	if message.Body != "Episode 1" || strings.Contains(message.Body, "http") {
-		t.Fatalf("semantic directives leaked into text: %q", message.Body)
+	if message.Body != "Episode 1\nBangumi\nTMDB" || strings.Contains(message.Body, "http") {
+		t.Fatalf("semantic render text = %q", message.Body)
+	}
+	if len(message.BodyParts) != 5 || message.BodyParts[0].Link != nil || message.BodyParts[2].Link == nil || message.BodyParts[4].Link == nil {
+		t.Fatalf("body parts = %+v", message.BodyParts)
+	}
+	if Links(message.BodyParts)[0].URL != "https://bgm.tv/subject/123" || Links(message.BodyParts)[1].URL != "https://www.themoviedb.org/tv/456" {
+		t.Fatalf("inline links = %+v", Links(message.BodyParts))
 	}
 	attachments, ok := SemanticAttachments(TriggerDownloadSubmitted, "{{anime.title}}", body, facts)
 	if !ok || !attachments.Image || len(attachments.Links) != 2 {
@@ -27,7 +33,7 @@ func TestSemanticAttachmentsAreNotTextFacts(t *testing.T) {
 	}
 }
 
-func TestSemanticDirectiveLinesKeepSourceOffsetsAndAllowWhitespace(t *testing.T) {
+func TestImageDirectiveLinesKeepSourceOffsetsAndDisappear(t *testing.T) {
 	source := "{{ image }}\n{{anime.title}}\n{{unknown}}\n{{ link(bgm.link, 'Bangumi') }}"
 	errors, ok := Compile(TriggerDownloadSubmitted, "title", source)
 	if !ok || len(errors) != 1 {
@@ -38,8 +44,8 @@ func TestSemanticDirectiveLinesKeepSourceOffsetsAndAllowWhitespace(t *testing.T)
 		t.Fatalf("error span = %d..%d, want %d..%d", errors[0].Start, errors[0].End, start, start+len("{{unknown}}"))
 	}
 	message, _ := RenderMessage(TriggerDownloadSubmitted, "title", "{{ image }}\n{{anime.title}}\n{{ link(bgm.link, 'Bangumi') }}", map[string]any{"anime.title": "Show", "bgm.id": "123"})
-	if message.Body != "Show" {
-		t.Fatalf("whitespace directives left blank lines: %q", message.Body)
+	if message.Body != "Show\nBangumi" {
+		t.Fatalf("image line left a blank line or link moved: %q", message.Body)
 	}
 }
 

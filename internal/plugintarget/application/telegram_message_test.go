@@ -177,7 +177,10 @@ func TestTelegramLongCaptionFallsBackToBoundedHTMLText(t *testing.T) {
 	message := outboundMessage{
 		Title: "Title", Body: strings.Repeat("界", 5000),
 		Image: &outboundImage{Source: "bgm", URL: "https://lain.bgm.tv/pic/1.jpg"},
-		Links: []notification.Link{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+		Parts: []notification.BodyPart{
+			{Text: strings.Repeat("界", 5000)},
+			{Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+		},
 	}
 	req, mode, err := handler.buildTelegramMessageRequest(context.Background(), row, message, `{"bot_token":"123:abc"}`)
 	if err != nil {
@@ -209,7 +212,10 @@ func TestTelegramFullTorrentTreeKeepsTheCompleteTotals(t *testing.T) {
 	message := outboundMessage{
 		Title: "Show 第一季",
 		Body:  torrenttree.Render(files),
-		Links: []notification.Link{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+		Parts: []notification.BodyPart{
+			{Text: torrenttree.Render(files)},
+			{Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+		},
 	}
 	got := fitTelegramHTML(message, telegramTextLimit)
 	if telegramTextLength(got) > telegramTextLimit {
@@ -228,7 +234,10 @@ func TestTelegramHTMLTruncationBudgetsEscapedText(t *testing.T) {
 		message := outboundMessage{
 			Title: strings.Repeat(`<&>"'`, 100),
 			Body:  strings.Repeat(`<&>"'`, 5000),
-			Links: []notification.Link{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+			Parts: []notification.BodyPart{
+				{Text: strings.Repeat(`<&>"'`, 5000)},
+				{Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+			},
 		}
 		got := fitTelegramHTML(message, limit)
 		if telegramTextLength(got) > limit {
@@ -341,7 +350,7 @@ func TestTelegramRealImageFailuresConvergeToPlaceholderThenText(t *testing.T) {
 		}}
 		handler := NewPluginDeliverHandler(nil, nil, nil, client, nil)
 		row := richDeliveryRow(t, map[string]any{})
-		message := outboundMessage{Title: "Title", Body: "Body", Image: placeholderNotificationImage(), Links: []notification.Link{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}}}
+		message := outboundMessage{Title: "Title", Body: "Body", Image: placeholderNotificationImage(), Parts: []notification.BodyPart{{Text: "Body"}, {Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}}}}
 		req, mode, _ := handler.buildTelegramMessageRequest(context.Background(), row, message, `{"bot_token":"123:abc"}`)
 		result, _ := handler.sendTelegramMessage(context.Background(), req, mode, row, message, `{"bot_token":"123:abc"}`, newSecretRedactor(""))
 		if result.state != "delivered" || strings.Join(result.telegramModes, ",") != "sendPhoto:placeholder,sendMessage" || !strings.Contains(string(client.bodies[1]), "bgm.tv") {

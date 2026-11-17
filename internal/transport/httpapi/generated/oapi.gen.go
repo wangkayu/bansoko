@@ -6632,6 +6632,7 @@ type NotificationTemplateCatalogLanguageVersion string
 type NotificationTemplatePreview struct {
 	Attachments     NotificationTemplatePreviewAttachments     `json:"attachments"`
 	Body            string                                     `json:"body"`
+	BodyParts       []NotificationTemplatePreviewBodyPart      `json:"body_parts"`
 	CatalogVersion  NotificationTemplatePreviewCatalogVersion  `json:"catalog_version"`
 	Errors          []TemplateSourceError                      `json:"errors"`
 	LanguageVersion NotificationTemplatePreviewLanguageVersion `json:"language_version"`
@@ -6651,6 +6652,15 @@ type NotificationTemplatePreviewLanguageVersion string
 type NotificationTemplatePreviewAttachments struct {
 	Image *NotificationTemplatePreviewImage `json:"image"`
 	Links []NotificationTemplatePreviewLink `json:"links"`
+}
+
+// NotificationTemplatePreviewBodyPart defines model for NotificationTemplatePreviewBodyPart.
+type NotificationTemplatePreviewBodyPart struct {
+	// Link Present when this part is a clickable link at its template position.
+	Link *NotificationTemplatePreviewLink `json:"link"`
+
+	// Text Literal text, or the label when link is present.
+	Text string `json:"text"`
 }
 
 // NotificationTemplatePreviewImage defines model for NotificationTemplatePreviewImage.

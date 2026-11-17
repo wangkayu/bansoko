@@ -173,9 +173,18 @@ func (s *Service) PreviewNotification(_ context.Context, input NotificationTempl
 	for _, link := range semantic.Links {
 		attachments.Links = append(attachments.Links, NotificationTemplatePreviewLink{Provider: link.Provider, Label: link.Label, URL: link.URL})
 	}
+	bodyParts := make([]NotificationTemplatePreviewBodyPart, 0, len(message.BodyParts))
+	for _, part := range message.BodyParts {
+		mapped := NotificationTemplatePreviewBodyPart{Text: part.Text}
+		if part.Link != nil {
+			mapped.Link = &NotificationTemplatePreviewLink{Provider: part.Link.Provider, Label: part.Link.Label, URL: part.Link.URL}
+		}
+		bodyParts = append(bodyParts, mapped)
+	}
 	return NotificationTemplatePreview{
 		Attachments:     attachments,
 		Body:            message.Body,
+		BodyParts:       bodyParts,
 		CatalogVersion:  NotificationTemplatePreviewCatalogVersion(catalog),
 		Errors:          mapSourceErrors(message.Errors),
 		LanguageVersion: NotificationTemplatePreviewLanguageVersionBansokoTemplate1,

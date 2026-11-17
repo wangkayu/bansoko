@@ -18750,6 +18750,19 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NotificationTemplatePreviewLink'
+    NotificationTemplatePreviewBodyPart:
+      type: object
+      additionalProperties: false
+      required: [text, link]
+      properties:
+        text:
+          type: string
+          description: Literal text, or the label when link is present.
+        link:
+          allOf:
+            - $ref: '#/components/schemas/NotificationTemplatePreviewLink'
+          nullable: true
+          description: Present when this part is a clickable link at its template position.
     NotificationTemplatePreviewInput:
       type: object
       additionalProperties: false
@@ -18774,7 +18787,7 @@ components:
     NotificationTemplatePreview:
       type: object
       additionalProperties: false
-      required: [language_version, catalog_version, valid, title, body, attachments, warnings, errors, variables]
+      required: [language_version, catalog_version, valid, title, body, body_parts, attachments, warnings, errors, variables]
       properties:
         attachments:
           $ref: '#/components/schemas/NotificationTemplatePreviewAttachments'
@@ -18792,6 +18805,10 @@ components:
         body:
           type: string
           maxLength: 8192
+        body_parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTemplatePreviewBodyPart'
         warnings:
           type: array
           items:

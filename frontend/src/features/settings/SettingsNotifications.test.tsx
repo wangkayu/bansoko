@@ -137,6 +137,7 @@ function stubFetch(
         catalog_version: "notification-catalog-v1",
         title: "预览标题",
         body: "预览正文",
+        body_parts: [{ text: "预览正文", link: null }],
         valid: true,
         attachments: {
           image: { source: "automatic" },

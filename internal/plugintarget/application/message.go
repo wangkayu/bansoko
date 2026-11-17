@@ -18,6 +18,9 @@ import (
 type outboundMessage struct {
 	Title string
 	Body  string
+	// Parts is the body in template order. Channels that can show inline
+	// links render it; Body is the same content as one text string.
+	Parts []notification.BodyPart
 	Image *outboundImage
 	Links []notification.Link
 }
@@ -50,6 +53,11 @@ func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row d
 	if !ok {
 		return message, errors.New("notification trigger is invalid")
 	}
+	rendered, ok := notification.RenderMessage(row.triggerKind, row.titleTemplate, row.bodyTemplate, facts)
+	if !ok {
+		return message, errors.New("notification trigger is invalid")
+	}
+	message.Parts = rendered.BodyParts
 	message.Links = attachments.Links
 	if !attachments.Image {
 		return message, nil

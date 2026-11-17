@@ -7565,6 +7565,12 @@ export interface components {
             image: components["schemas"]["NotificationTemplatePreviewImage"] | null;
             links: components["schemas"]["NotificationTemplatePreviewLink"][];
         };
+        NotificationTemplatePreviewBodyPart: {
+            /** @description Literal text, or the label when link is present. */
+            text: string;
+            /** @description Present when this part is a clickable link at its template position. */
+            link: components["schemas"]["NotificationTemplatePreviewLink"] | null;
+        };
         NotificationTemplatePreviewInput: {
             trigger_kind: components["schemas"]["NotificationTriggerKind"];
             /** @enum {string} */
@@ -7583,6 +7589,7 @@ export interface components {
             valid: boolean;
             title: string;
             body: string;
+            body_parts: components["schemas"]["NotificationTemplatePreviewBodyPart"][];
             warnings: components["schemas"]["TemplateWarning"][];
             errors: components["schemas"]["TemplateSourceError"][];
             variables: components["schemas"]["TemplateVariable"][];

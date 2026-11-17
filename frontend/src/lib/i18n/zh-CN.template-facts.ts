@@ -70,4 +70,16 @@ export const templateFactsCopy = {
     release_title: "发布标题",
     files: "文件清单",
   },
+  functions: {
+    coalesce: "返回第一个非空的值。",
+    defaultIfEmpty: "第一个值为空时改用回退值。",
+    lower: "转为小写。",
+    upper: "转为大写。",
+    replace: "替换所有出现的子串。",
+    if: "按条件在两个值之间选择。",
+    eq: "比较两个值是否相等。",
+    showIf: "行首门控：任一参数有值才显示本行。",
+    link: "在写到的位置插入可点击链接；目标须为链接变量或安全地址。",
+    image: "插入消息级图片附件，须独立成行。",
+  },
 } as const;

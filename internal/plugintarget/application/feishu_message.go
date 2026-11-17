@@ -58,26 +58,46 @@ func feishuImageLabel(source string) string {
 	}
 }
 
+// feishuPostContent renders the body as paragraphs: a source line is one
+// paragraph, and links keep their place inside the line. An empty line stays an
+// empty paragraph. Without parts the plain body is split the same way.
 func feishuPostContent(message outboundMessage) [][]feishuPostElement {
 	lines := make([][]feishuPostElement, 0, len(message.Links)+2)
-	for _, line := range strings.Split(message.Body, "\n") {
-		if line == "" {
-			line = " "
+	current := []feishuPostElement{}
+	flush := func() {
+		if len(current) == 0 {
+			current = append(current, feishuPostElement{Tag: "text", Text: " "})
 		}
-		lines = append(lines, []feishuPostElement{{Tag: "text", Text: line}})
+		lines = append(lines, current)
+		current = nil
+	}
+	if len(message.Parts) == 0 {
+		for _, line := range strings.Split(message.Body, "\n") {
+			if line != "" {
+				current = append(current, feishuPostElement{Tag: "text", Text: line})
+			}
+			flush()
+		}
+	} else {
+		for _, part := range message.Parts {
+			if part.Link != nil {
+				current = append(current, feishuPostElement{Tag: "a", Text: part.Link.Label, Href: part.Link.URL})
+				continue
+			}
+			chunks := strings.Split(part.Text, "\n")
+			for index, chunk := range chunks {
+				if index > 0 {
+					flush()
+				}
+				if chunk != "" {
+					current = append(current, feishuPostElement{Tag: "text", Text: chunk})
+				}
+			}
+		}
+		flush()
 	}
 	if message.Image != nil && message.Image.URL != "" {
 		lines = append(lines, []feishuPostElement{{Tag: "a", Text: feishuImageLabel(message.Image.Source), Href: message.Image.URL}})
-	}
-	if len(message.Links) > 0 {
-		elements := make([]feishuPostElement, 0, len(message.Links)*2-1)
-		for index, link := range message.Links {
-			if index > 0 {
-				elements = append(elements, feishuPostElement{Tag: "text", Text: " · "})
-			}
-			elements = append(elements, feishuPostElement{Tag: "a", Text: link.Label, Href: link.URL})
-		}
-		lines = append(lines, elements)
 	}
 	return lines
 }

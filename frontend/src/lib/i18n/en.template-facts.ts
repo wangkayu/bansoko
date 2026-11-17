@@ -74,4 +74,16 @@ export const enTemplateFactsCopy = {
     release_title: "Release title",
     files: "File list",
   },
+  functions: {
+    coalesce: "Return the first non-empty value.",
+    defaultIfEmpty: "Use the fallback when the first value is empty.",
+    lower: "Lowercase the string.",
+    upper: "Uppercase the string.",
+    replace: "Replace every occurrence of the substring.",
+    if: "Choose between two values by condition.",
+    eq: "Compare two values for equality.",
+    showIf: "Line gate: show the line only when any argument has a value.",
+    link: "Insert a clickable link where written; the target must be a link variable or a safe URL.",
+    image: "Insert a message-level picture attachment; it must stand on its own line.",
+  },
 } as const satisfies CopyShape<typeof templateFactsCopy>;

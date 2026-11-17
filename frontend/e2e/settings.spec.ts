@@ -282,7 +282,13 @@ async function mockSettingsReads(page: Page) {
         language_version: "bansoko-template-1",
         catalog_version: "notification-catalog-v1",
         title: "预览标题",
-        body: "默认正文",
+        body: "默认正文\nBangumi\nTMDB",
+        body_parts: [
+          { text: "默认正文\n", link: null },
+          { text: "Bangumi", link: { provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" } },
+          { text: "\n", link: null },
+          { text: "TMDB", link: { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" } },
+        ],
         valid: true,
         attachments: {
           image: { source: "automatic" },
@@ -567,7 +573,9 @@ test.describe("settings fixture coverage", () => {
 
     // 实时预览（无按钮）：正文渲染进 Telegram 形态卡片，{{image}} 指令渲染图片占位块。
     const preview = editor.locator(".settings-notifications-preview");
-    await expect(preview.getByText("默认正文", { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(preview.locator(".settings-notifications-preview-body")).toContainText("默认正文", { timeout: 10000 });
+    // link() 原位渲染：链接留在正文行内，不再汇聚到卡片末尾的链接行。
+    await expect(preview.locator(".settings-notifications-preview-body .settings-notifications-preview-anchor").first()).toHaveText("Bangumi");
     await expect(preview.getByText("节目图片（封面或占位图）")).toBeVisible();
     await expect(preview.locator(".settings-notifications-preview-tg-title")).toHaveCSS("font-size", "14px");
     await expect(preview.locator(".settings-notifications-preview-body")).toHaveCSS("font-size", "14px");

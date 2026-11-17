@@ -134,33 +134,40 @@ func renderTelegramHTML(message outboundMessage) string {
 		builder.WriteString(html.EscapeString(message.Title))
 		builder.WriteString("</b>")
 	}
-	if message.Body != "" {
+	body := telegramBodyHTML(message)
+	if body != "" {
 		if builder.Len() > 0 {
 			builder.WriteString("\n\n")
 		}
-		builder.WriteString(html.EscapeString(message.Body))
+		builder.WriteString(body)
 	}
-	appendTelegramLinks(&builder, message.Links)
 	return builder.String()
 }
 
-func appendTelegramLinks(builder *strings.Builder, links []notification.Link) {
-	if len(links) == 0 {
-		return
+// telegramBodyHTML renders body parts in template order: links stay inline,
+// text is escaped. Without parts (a text-only caller) the plain body is used.
+func telegramBodyHTML(message outboundMessage) string {
+	if len(message.Parts) == 0 {
+		return html.EscapeString(message.Body)
 	}
-	if builder.Len() > 0 {
-		builder.WriteString("\n\n")
+	var builder strings.Builder
+	for _, part := range message.Parts {
+		builder.WriteString(telegramPartHTML(part))
 	}
-	for index, link := range links {
-		if index > 0 {
-			builder.WriteString(" · ")
-		}
-		builder.WriteString(`<a href="`)
-		builder.WriteString(html.EscapeString(link.URL))
-		builder.WriteString(`">`)
-		builder.WriteString(html.EscapeString(link.Label))
-		builder.WriteString("</a>")
+	return builder.String()
+}
+
+func telegramPartHTML(part notification.BodyPart) string {
+	if part.Link == nil {
+		return html.EscapeString(part.Text)
 	}
+	var builder strings.Builder
+	builder.WriteString(`<a href="`)
+	builder.WriteString(html.EscapeString(part.Link.URL))
+	builder.WriteString(`">`)
+	builder.WriteString(html.EscapeString(part.Link.Label))
+	builder.WriteString("</a>")
+	return builder.String()
 }
 
 func fitTelegramHTML(message outboundMessage, limit int) string {
@@ -169,12 +176,78 @@ func fitTelegramHTML(message outboundMessage, limit int) string {
 		return full
 	}
 	message.Title = truncateTelegramHTMLText(message.Title, min(256, limit/4))
-	var links strings.Builder
-	appendTelegramLinks(&links, message.Links)
-	reserved := telegramTextLength(html.EscapeString(message.Title)) + len("<b></b>") + telegramTextLength(links.String()) + 4
-	bodyBudget := max(0, limit-reserved)
-	message.Body = truncateTelegramHTMLText(message.Body, bodyBudget)
+	reserved := telegramTextLength(html.EscapeString(message.Title)) + len("<b></b>") + 2
+	budget := max(0, limit-reserved)
+	if len(message.Parts) == 0 {
+		message.Body = truncateTelegramHTMLText(message.Body, budget)
+		return renderTelegramHTML(message)
+	}
+	message.Parts = truncateTelegramParts(message.Parts, budget)
+	message.Body = notification.PlainText(message.Parts)
 	return renderTelegramHTML(message)
+}
+
+// truncateTelegramParts keeps every link and spends the remaining budget on
+// text in template order, so an overflowing body still carries its links. A
+// text part that does not fit ends the body with an ellipsis.
+func truncateTelegramParts(parts []notification.BodyPart, limit int) []notification.BodyPart {
+	linkWidth := 0
+	for _, part := range parts {
+		if part.Link != nil {
+			linkWidth += telegramTextLength(telegramPartHTML(part))
+		}
+	}
+	if linkWidth >= limit {
+		return truncateTelegramPartsPrefix(parts, limit)
+	}
+	textBudget := limit - linkWidth
+	kept := make([]notification.BodyPart, 0, len(parts))
+	truncated := false
+	for _, part := range parts {
+		if part.Link != nil {
+			kept = append(kept, part)
+			continue
+		}
+		if truncated {
+			continue
+		}
+		if width := telegramTextLength(telegramPartHTML(part)); width <= textBudget {
+			kept = append(kept, part)
+			textBudget -= width
+			continue
+		}
+		text := truncateTelegramHTMLText(part.Text, textBudget-1)
+		if text != "" {
+			kept = append(kept, notification.BodyPart{Text: text})
+		}
+		truncated = true
+	}
+	return kept
+}
+
+// truncateTelegramPartsPrefix fills the budget in template order and drops the
+// rest, closing with an ellipsis; it is the last resort when the links alone
+// exceed the limit.
+func truncateTelegramPartsPrefix(parts []notification.BodyPart, limit int) []notification.BodyPart {
+	kept := make([]notification.BodyPart, 0, len(parts))
+	remaining := limit
+	for _, part := range parts {
+		width := telegramTextLength(telegramPartHTML(part))
+		if width <= remaining {
+			kept = append(kept, part)
+			remaining -= width
+			continue
+		}
+		if part.Link != nil {
+			return append(kept, notification.BodyPart{Text: "…"})
+		}
+		text := truncateTelegramHTMLText(part.Text, remaining-1)
+		if text != "" {
+			kept = append(kept, notification.BodyPart{Text: text})
+		}
+		return kept
+	}
+	return kept
 }
 
 // truncateTelegramHTMLText budgets the escaped representation that Telegram

@@ -311,14 +311,15 @@ func isSemanticDirectiveLine(line string) bool {
 	return isAttachmentExpression(expression)
 }
 
-// isAttachmentExpression reports whether an expression produces an attachment
-// rather than text.
+// isAttachmentExpression reports whether an expression produces a message-level
+// attachment rather than text. Images are message-level because channels take
+// them outside the text (photo, post image); links render in place.
 func isAttachmentExpression(expression templateExpression) bool {
 	switch node := expression.(type) {
 	case variableExpression:
 		return node.name == ImageVariable
 	case callExpression:
-		return node.name == ImageVariable || node.name == "link"
+		return node.name == ImageVariable
 	default:
 		return false
 	}

@@ -40,20 +40,21 @@ func TestWebhookEnvelopeCarriesTypedAttachments(t *testing.T) {
 	}
 }
 
-func TestFeishuPostContentUsesNativeMetadataLinks(t *testing.T) {
+func TestFeishuPostContentRendersLinksInline(t *testing.T) {
 	message := outboundMessage{
-		Title: "Title", Body: "First\n\nSecond",
-		Links: []notification.Link{
-			{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"},
-			{Provider: "tmdb", Label: "TMDB", URL: "https://www.themoviedb.org/tv/456"},
+		Title: "Title", Body: "First\n\nBangumi\nTMDB",
+		Parts: []notification.BodyPart{
+			{Text: "First\n\n"},
+			{Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+			{Text: "\n"},
+			{Text: "TMDB", Link: &notification.Link{Provider: "tmdb", Label: "TMDB", URL: "https://www.themoviedb.org/tv/456"}},
 		},
 	}
 	content := feishuPostContent(message)
 	if len(content) != 4 || content[1][0].Text != " " {
 		t.Fatalf("content = %+v", content)
 	}
-	links := content[3]
-	if len(links) != 3 || links[0].Tag != "a" || links[0].Href != message.Links[0].URL || links[2].Href != message.Links[1].URL {
-		t.Fatalf("links = %+v", links)
+	if content[2][0].Tag != "a" || content[2][0].Href != "https://bgm.tv/subject/123" || content[3][0].Tag != "a" || content[3][0].Href != "https://www.themoviedb.org/tv/456" {
+		t.Fatalf("content = %+v", content)
 	}
 }

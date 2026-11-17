@@ -268,6 +268,14 @@ func TestPreviewNotificationReturnsStructuredAttachments(t *testing.T) {
 	if len(preview.Attachments.Links) != 1 || preview.Attachments.Links[0].Provider != "download" || preview.Attachments.Links[0].Label != "下载" {
 		t.Fatalf("link attachments = %+v", preview.Attachments.Links)
 	}
+	// The body keeps the link at its template position: the image line is gone
+	// and the link is the last body part, not a footer attachment.
+	if len(preview.BodyParts) != 3 || preview.BodyParts[0].Link != nil || preview.BodyParts[2].Link == nil || preview.BodyParts[2].Link.Provider != "download" {
+		t.Fatalf("body parts = %+v", preview.BodyParts)
+	}
+	if !strings.HasSuffix(preview.Body, "下载") {
+		t.Fatalf("body = %q", preview.Body)
+	}
 }
 
 func TestPreviewNotificationUnknownVariable(t *testing.T) {

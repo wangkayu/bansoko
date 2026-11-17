@@ -34,9 +34,20 @@ func mapNotificationTemplatePreview(preview templatecatalogapplication.Notificat
 			Provider: generated.NotificationTemplatePreviewLinkProvider(link.Provider), Label: link.Label, Url: link.URL,
 		})
 	}
+	bodyParts := make([]generated.NotificationTemplatePreviewBodyPart, 0, len(preview.BodyParts))
+	for _, part := range preview.BodyParts {
+		mapped := generated.NotificationTemplatePreviewBodyPart{Text: part.Text}
+		if part.Link != nil {
+			mapped.Link = &generated.NotificationTemplatePreviewLink{
+				Provider: generated.NotificationTemplatePreviewLinkProvider(part.Link.Provider), Label: part.Link.Label, Url: part.Link.URL,
+			}
+		}
+		bodyParts = append(bodyParts, mapped)
+	}
 	return generated.NotificationTemplatePreview{
 		Attachments:     attachments,
 		Body:            preview.Body,
+		BodyParts:       bodyParts,
 		CatalogVersion:  generated.NotificationTemplatePreviewCatalogVersion(preview.CatalogVersion),
 		Errors:          mapTemplateSourceErrors(preview.Errors),
 		LanguageVersion: generated.NotificationTemplatePreviewLanguageVersion(preview.LanguageVersion),

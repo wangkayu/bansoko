@@ -48,11 +48,47 @@ type Warning struct {
 
 // Message is the rendered {title, body} plus every diagnostic. Valid reports
 // whether the message may be sent.
+//
+// BodyParts is the body in template order: literal text and links at the
+// positions the template wrote them. Body is the same content as plain text
+// (one label per link) for storage, limits and text-only consumers.
 type Message struct {
-	Title    string
-	Body     string
-	Errors   []SourceError
-	Warnings []Warning
+	Title     string
+	Body      string
+	BodyParts []BodyPart
+	Errors    []SourceError
+	Warnings  []Warning
+}
+
+// BodyPart is one inline piece of the rendered body: literal text (Link nil)
+// or one resolved link. Text on a link part is its label.
+type BodyPart struct {
+	Text string
+	Link *Link
+}
+
+// Links returns the links of a body in order.
+func Links(parts []BodyPart) []Link {
+	links := make([]Link, 0, len(parts))
+	for _, part := range parts {
+		if part.Link != nil {
+			links = append(links, *part.Link)
+		}
+	}
+	return links
+}
+
+// PlainText flattens body parts into the text a text-only channel receives.
+func PlainText(parts []BodyPart) string {
+	var builder strings.Builder
+	for _, part := range parts {
+		if part.Link != nil {
+			builder.WriteString(part.Link.Label)
+			continue
+		}
+		builder.WriteString(part.Text)
+	}
+	return builder.String()
 }
 
 // Valid reports whether the render produced no errors.
@@ -72,10 +108,11 @@ func RenderMessage(trigger, titleTemplate, bodyTemplate string, facts map[string
 	title := renderText(titleTemplate, facts, known, FieldTitle)
 	body := renderText(bodyTemplate, facts, known, FieldBody)
 	message := Message{
-		Title:    title.text,
-		Body:     body.text,
-		Errors:   append(append([]SourceError{}, title.errors...), body.errors...),
-		Warnings: mergeWarnings(title.warnings, body.warnings),
+		Title:     title.text,
+		Body:      PlainText(body.parts),
+		BodyParts: body.parts,
+		Errors:    append(append([]SourceError{}, title.errors...), body.errors...),
+		Warnings:  mergeWarnings(title.warnings, body.warnings),
 	}
 	if len(message.Errors) == 0 {
 		message.Errors = outputErrors(message.Title, message.Body, len(titleTemplate), len(bodyTemplate))
@@ -217,6 +254,7 @@ func listEntryText(entry map[string]any) string {
 
 type renderResult struct {
 	text     string
+	parts    []BodyPart
 	errors   []SourceError
 	warnings []Warning
 }
@@ -337,6 +375,7 @@ type templateSourceSegment struct {
 
 func renderText(source string, facts map[string]any, known map[string]bool, field Field) renderResult {
 	var builder strings.Builder
+	var parts []BodyPart
 	var errors []SourceError
 	var warnings []Warning
 	if len(source) > maxTemplateBytes {
@@ -355,11 +394,12 @@ func renderText(source string, facts map[string]any, known map[string]bool, fiel
 	for _, segment := range semanticSourceSegments(source) {
 		result := renderTextSegment(source, segment, facts, known, field)
 		builder.WriteString(result.text)
+		parts = append(parts, result.parts...)
 		errors = append(errors, result.errors...)
 		warnings = append(warnings, result.warnings...)
 	}
 	sort.SliceStable(errors, func(i, j int) bool { return errors[i].Start < errors[j].Start })
-	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
 }
 
 func validateStandaloneSemanticDirectives(source string, facts map[string]any, known map[string]bool, field Field) ([]SourceError, []Warning) {
@@ -483,6 +523,7 @@ func mentionsShowIf(expression templateExpression) bool {
 
 func renderTextSegment(source string, segment templateSourceSegment, facts map[string]any, known map[string]bool, field Field) renderResult {
 	var builder strings.Builder
+	var parts []BodyPart
 	var errors []SourceError
 	var warnings []Warning
 	remaining := segment.text
@@ -532,33 +573,56 @@ func renderTextSegment(source string, segment templateSourceSegment, facts map[s
 			rest := line[restOffset:]
 			switch {
 			case facts != nil && !gateHasValue(gate, facts):
-				dropLine(&builder, final)
+				dropLine(&builder, &parts, final)
 			case isAttachmentOnlyLine(rest):
-				dropLine(&builder, final)
+				dropLine(&builder, &parts, final)
 			default:
-				renderLine(&builder, source, rest, cursor+restOffset, final, facts, known, field, &errors, &warnings)
+				result, drop := renderLine(source, rest, cursor+restOffset, final, facts, known, field)
+				appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
 			}
 		} else {
-			renderLine(&builder, source, line, cursor, final, facts, known, field, &errors, &warnings)
+			result, drop := renderLine(source, line, cursor, final, facts, known, field)
+			appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
 		}
 		remaining = remaining[consumed:]
 		cursor += consumed
 	}
-	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
+}
+
+// appendLine writes one rendered line, or drops it without leaving its line
+// break behind.
+func appendLine(builder *strings.Builder, parts *[]BodyPart, errors *[]SourceError, warnings *[]Warning, result renderResult, drop, final bool) {
+	*errors = append(*errors, result.errors...)
+	*warnings = append(*warnings, result.warnings...)
+	if drop {
+		dropLine(builder, parts, final)
+		return
+	}
+	builder.WriteString(result.text)
+	*parts = append(*parts, result.parts...)
 }
 
 func renderPlainLine(source, remaining string, cursor int, facts map[string]any, known map[string]bool, field Field) renderResult {
 	var builder strings.Builder
+	var parts []BodyPart
 	var errors []SourceError
 	var warnings []Warning
+	appendText := func(text string) {
+		if text == "" {
+			return
+		}
+		builder.WriteString(text)
+		parts = append(parts, BodyPart{Text: text})
+	}
 	for len(remaining) > 0 {
 		start := strings.Index(remaining, "{{")
 		if start < 0 {
-			builder.WriteString(remaining)
+			appendText(remaining)
 			break
 		}
 		if start > 0 {
-			builder.WriteString(remaining[:start])
+			appendText(remaining[:start])
 		}
 		expressionStart := cursor + start
 		afterOpen := remaining[start+2:]
@@ -575,7 +639,7 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 		}
 		inner := afterOpen[:end]
 		expressionEnd := expressionStart + 2 + end + 2
-		text, exprWarnings, exprError := evaluateExpression(inner, facts, known)
+		text, link, exprWarnings, exprError := evaluateExpressionNode(inner, facts, known)
 		if exprError != nil {
 			errors = append(errors, SourceError{
 				Code:    exprError.code,
@@ -585,31 +649,57 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 				Start:   expressionStart,
 			})
 		} else {
-			builder.WriteString(text)
+			switch {
+			case link == nil:
+				appendText(text)
+			case field == FieldTitle:
+				// A Feishu post title is plain text, so a title link can only
+				// keep its label; the warning keeps the loss visible.
+				appendText(link.Label)
+				warnings = append(warnings, Warning{
+					Code:     "link_in_title",
+					Message:  "标题不支持可点击链接，只显示文字：" + link.Label,
+					Variable: link.Provider + ".link",
+				})
+			default:
+				parts = append(parts, BodyPart{Text: link.Label, Link: link})
+			}
 			warnings = append(warnings, exprWarnings...)
 		}
 		cursor = expressionEnd
 		remaining = afterOpen[end+2:]
 	}
-	return renderResult{text: builder.String(), errors: errors, warnings: warnings}
+	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
 }
 
 // renderLine renders one line chunk: a standalone list variable repeats its
-// prefix per item, everything else renders as plain text. A line that renders
-// nothing is dropped; a dropped final line must not leave its line break behind.
-func renderLine(builder *strings.Builder, source, line string, cursor int, final bool, facts map[string]any, known map[string]bool, field Field, errors *[]SourceError, warnings *[]Warning) {
+// prefix per item, everything else renders as plain text with links kept in
+// place. A line carrying directives that all render empty is dropped instead
+// of leaving a blank line behind.
+func renderLine(source, line string, cursor int, final bool, facts map[string]any, known map[string]bool, field Field) (renderResult, bool) {
 	if text, _, handled, exprWarnings := renderStandaloneListLine(line, facts, known); handled {
 		if text == "" {
-			dropLine(builder, final)
+			return renderResult{warnings: exprWarnings}, true
 		}
-		builder.WriteString(text)
-		*warnings = append(*warnings, exprWarnings...)
-		return
+		return renderResult{text: text, parts: []BodyPart{{Text: text}}, warnings: exprWarnings}, false
 	}
 	result := renderPlainLine(source, line, cursor, facts, known, field)
-	builder.WriteString(result.text)
-	*errors = append(*errors, result.errors...)
-	*warnings = append(*warnings, result.warnings...)
+	return result, lineRenderedNothing(line, result)
+}
+
+// lineRenderedNothing reports a line that contains directives but produced no
+// text and no link. Whitespace alone does not keep such a line alive; a blank
+// source line without directives is still preserved as a paragraph break.
+func lineRenderedNothing(line string, result renderResult) bool {
+	if !strings.Contains(line, "{{") {
+		return false
+	}
+	for _, part := range result.parts {
+		if part.Link != nil || strings.TrimSpace(part.Text) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // lineGate returns the showIf directive a line begins with, ignoring leading
@@ -658,8 +748,9 @@ func gateHasValue(gate callExpression, facts map[string]any) bool {
 
 // dropLine removes a line that rendered nothing. A line break between two
 // shown lines stays out of the output; a dropped final line must not leave the
-// previous line's break behind.
-func dropLine(builder *strings.Builder, final bool) {
+// previous line's break behind. The parts mirror the same trim so the flat text
+// and the inline body stay equal.
+func dropLine(builder *strings.Builder, parts *[]BodyPart, final bool) {
 	if !final {
 		return
 	}
@@ -667,6 +758,27 @@ func dropLine(builder *strings.Builder, final bool) {
 	plain = strings.TrimSuffix(plain, "\r")
 	builder.Reset()
 	builder.WriteString(plain)
+	trimTrailingBreak(parts)
+}
+
+func trimTrailingBreak(parts *[]BodyPart) {
+	for len(*parts) > 0 {
+		last := &(*parts)[len(*parts)-1]
+		if last.Link != nil {
+			return
+		}
+		text := strings.TrimSuffix(last.Text, "\n")
+		if text == last.Text {
+			return
+		}
+		text = strings.TrimSuffix(text, "\r")
+		last.Text = text
+		if text == "" {
+			*parts = (*parts)[:len(*parts)-1]
+			continue
+		}
+		return
+	}
 }
 
 // isAttachmentOnlyLine reports whether a line carries nothing but attachment
@@ -762,19 +874,56 @@ type expressionError struct {
 }
 
 func evaluateExpression(inner string, facts map[string]any, known map[string]bool) (string, []Warning, *expressionError) {
+	text, _, warnings, err := evaluateExpressionNode(inner, facts, known)
+	return text, warnings, err
+}
+
+// evaluateExpressionNode evaluates one expression. A link(...) call returns its
+// resolved link instead of text, so the caller keeps it at the template
+// position; every other expression is text.
+func evaluateExpressionNode(inner string, facts map[string]any, known map[string]bool) (string, *Link, []Warning, *expressionError) {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {
-		return "", nil, &expressionError{code: "empty_expression", message: "表达式不能为空。"}
+		return "", nil, nil, &expressionError{code: "empty_expression", message: "表达式不能为空。"}
 	}
 	expr, err := parseExpression(trimmed)
 	if err != nil {
-		return "", nil, &expressionError{code: "invalid_expression", message: err.Error()}
+		return "", nil, nil, &expressionError{code: "invalid_expression", message: err.Error()}
 	}
 	if err := validateExpression(expr, known); err != nil {
-		return "", nil, &expressionError{code: "invalid_expression", message: err.Error()}
+		return "", nil, nil, &expressionError{code: "invalid_expression", message: err.Error()}
+	}
+	if call, ok := expr.(callExpression); ok && call.name == "link" {
+		var warnings []Warning
+		if target, ok := call.args[0].(variableExpression); ok {
+			_, _, warnings = target.evaluate(facts)
+		}
+		return "", resolveLink(call, facts), warnings, nil
 	}
 	text, _, warnings := expr.evaluate(facts)
-	return text, warnings, nil
+	return text, nil, warnings, nil
+}
+
+// resolveLink turns a validated link(...) call into its channel-neutral link.
+// An unavailable target resolves to nil and emits no attachment, exactly as
+// the text renderer treats it.
+func resolveLink(node callExpression, facts map[string]any) *Link {
+	provider, target := "custom", ""
+	switch value := node.args[0].(type) {
+	case variableExpression:
+		provider = strings.TrimSuffix(value.name, ".link")
+		target = LinkValue(facts, value.name)
+	case literalExpression:
+		target = SafeExternalURL(value.value, false)
+	}
+	if target == "" {
+		return nil
+	}
+	label, ok := node.args[1].(literalExpression)
+	if !ok {
+		return nil
+	}
+	return &Link{Provider: provider, Label: strings.TrimSpace(label.value), URL: target}
 }
 
 func validateExpression(expr templateExpression, known map[string]bool) error {
