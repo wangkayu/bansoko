@@ -40,7 +40,7 @@ function offsetEntry(id: string, groupName: string, occurredAt: string, rekeyed:
   });
 }
 
-async function openLog(page: Page) {
+async function openLog(page: Page, extraRecords: ReturnType<typeof business>[] = []) {
   await mockSignedIn(page);
   await page.route("**/api/v1/anime", (route) =>
     route.request().method() === "GET"
@@ -57,6 +57,7 @@ async function openLog(page: Page) {
               offsetEntry("offset-en", englishGroup, "2026-11-04T06:02:00Z", 3, 3),
               offsetEntry("offset-zh", "Example", "2026-11-04T06:01:00Z", 1, 1),
               business("created", "subscription_created", "2026-11-04T06:00:00Z", { kind: "subscription_created" }),
+              ...extraRecords,
             ],
             next_cursor: null,
           }),
@@ -68,6 +69,31 @@ async function openLog(page: Page) {
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("已按新偏移整理", { exact: true }).first()).toBeVisible();
   return dialog;
+}
+
+async function assertFixedLogControls(dialog: Locator, rows: Locator, controls: Locator[]) {
+  const measureControls = async () => {
+    const boxes = await Promise.all(controls.map((control) => control.boundingBox()));
+    if (boxes.some((box) => !box)) throw new Error("log control geometry is unavailable");
+    return boxes.map((box) => box!.y);
+  };
+  const before = await measureControls();
+  // Drive every overflowing scroll container along the result list's path.
+  // This catches a second outer scrollbar even if scrolling the inner list works.
+  const moved = await rows.evaluate((element) => {
+    let count = 0;
+    for (let node = element as HTMLElement | null; node && node.getAttribute("role") !== "dialog"; node = node.parentElement) {
+      if (!/^(auto|scroll)$/.test(getComputedStyle(node).overflowY) || node.scrollHeight <= node.clientHeight + 1) continue;
+      const initial = node.scrollTop;
+      node.scrollTop = initial > 80 ? initial - 80 : initial + 80;
+      if (Math.abs(node.scrollTop - initial) > 1) count++;
+    }
+    return count;
+  });
+  const after = await measureControls();
+  expect(after.map((y, index) => Math.round(y - before[index]!)), "controls must not move when results scroll").toEqual(before.map(() => 0));
+  expect(moved, "only the result list should scroll").toBe(1);
+  expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
 }
 
 async function assertLongEvent(row: Locator, titleText: string, detailText: string) {
@@ -90,6 +116,25 @@ async function assertLongEvent(row: Locator, titleText: string, detailText: stri
 
 test.describe("日志长消息布局（fixture）", () => {
   test.skip(!fixtureOnly, "fixture-only spec");
+
+  test("滚动长事件列表时页签和筛选保持固定", async ({ page }, testInfo) => {
+    const dialog = await openLog(page, Array.from({ length: 24 }, (_, index) =>
+      business(`created-${index}`, "subscription_created", new Date(Date.UTC(2026, 10, 4, 5, index)).toISOString(), {
+        kind: "subscription_created",
+        managed_anime_id: `anime-${index + 2}`,
+      }),
+    ));
+    const list = dialog.getByRole("list", { name: "事件列表" });
+    await expect(list.locator(":scope > li")).toHaveCount(27);
+    await assertFixedLogControls(dialog, list, [
+      dialog.getByRole("tablist"),
+      dialog.getByRole("combobox", { name: "类型" }),
+      dialog.getByRole("combobox", { name: "状态" }),
+      dialog.getByRole("searchbox", { name: "搜索" }),
+      dialog.getByRole("button", { name: /时间范围/ }),
+    ]);
+    await dialog.screenshot({ path: testInfo.outputPath("event-fixed-filters.png") });
+  });
 
   test("长统计换行且标题不被挤压", async ({ page }, testInfo) => {
     const dialog = await openLog(page);
@@ -359,6 +404,40 @@ test.describe("原始日志搜索（fixture）", () => {
     expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
     await dialog.screenshot({ path: testInfo.outputPath(`raw-log-search-${testInfo.project.name}.png`) });
+  });
+
+  test("短屏滚动任务日志时筛选、历史按钮和底栏保持固定", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: page.viewportSize()!.width, height: 440 });
+    const feed = await installRuntimeLogFixture(page, [
+      { at: "2026-11-04T05:59:59Z", level: "info", message: "another task" },
+      ...Array.from({ length: 40 }, (_, index): RuntimeLogLine => ({
+        at: new Date(Date.UTC(2026, 10, 4, 6, 0, index)).toISOString(),
+        level: "warn",
+        message: `task log ${index}`,
+        work_item_id: "fixture-task",
+      })),
+    ]);
+    feed.setSource("memory");
+    const dialog = await openLog(page);
+    await dialog.getByRole("tab", { name: "日志" }).click();
+    const region = dialog.getByRole("region", { name: "运行日志" });
+    await expect(region.locator("[data-runtime-row]")).toHaveCount(41);
+    await region.getByRole("button", { name: "查看此任务" }).last().click();
+    const task = dialog.getByText("仅显示任务 fixture-task");
+    await expect(task).toBeVisible();
+    await expect(dialog.getByText("磁盘历史不可用，正在显示内存中的最近日志")).toBeVisible();
+    await expect(region.locator("[data-runtime-row]")).toHaveCount(40);
+    // Fixed controls must still leave enough space to read at least one complete two-line log entry.
+    expect(await region.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(64);
+    await assertFixedLogControls(dialog, region, [
+      dialog.getByRole("tablist"),
+      dialog.getByRole("combobox", { name: "级别" }),
+      dialog.getByRole("searchbox", { name: "搜索日志" }),
+      task,
+      dialog.locator("[data-runtime-action=load-older]"),
+      dialog.locator("footer"),
+    ]);
+    await dialog.screenshot({ path: testInfo.outputPath("runtime-fixed-filters.png") });
   });
 
   test("日志跟底，向上翻阅时刷新保持位置", async ({ page }, testInfo) => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Dialog } from "../ui/base/Dialog";
-import { Tabs } from "../ui/base/controls";
+import { TabsList, TabsPanel, TabsRoot } from "../ui/base/controls";
 import { HelpTip } from "../ui/base/HelpTip";
 import { DeliveryDetailDialog } from "@/features/settings/DeliveryDetailDialog";
 import { useLogDialogStore } from "./logDialogStore";
@@ -61,7 +61,10 @@ export function LogDialog({ open: controlledOpen, onOpenChange, view, onViewChan
     />
   );
 
-  const rawContent = <LogRawView active={open && tab === "raw"} />;
+  const items = [
+    { key: "records", label: t("log.tabRecords"), content: recordsContent },
+    { key: "raw", label: t("log.tabRaw"), content: <LogRawView active={open && tab === "raw"} /> },
+  ];
 
   const footer =
     tab === "raw" ? (
@@ -81,17 +84,18 @@ export function LogDialog({ open: controlledOpen, onOpenChange, view, onViewChan
       fixedHeight
       focusTitle
       title={t("log.title")}
-      bodyClassName="tw:pt-2"
+      bodyLayout="fill"
+      bodyClassName="tw:px-6 tw:pt-2 tw:pb-4 tw:phone:px-4 tw:[@media(max-height:500px)]:pb-2"
       footer={footer}
     >
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        items={[
-          { key: "records", label: t("log.tabRecords"), children: recordsContent },
-          { key: "raw", label: t("log.tabRaw"), children: rawContent },
-        ]}
-      />
+      <TabsRoot value={tab} onChange={setTab} className="tw:flex-1">
+        <TabsList items={items} />
+        {items.map(({ key, content }) => (
+          <TabsPanel key={key} value={key} className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:pt-3 tw:[@media(max-height:500px)]:pt-2 tw:[&[hidden]]:hidden">
+            {content}
+          </TabsPanel>
+        ))}
+      </TabsRoot>
       {/* Rendered inside the log dialog so they stack as the nested layer and Esc closes only them. */}
       {deliveryID ? <DeliveryDetailDialog deliveryID={deliveryID} onClose={() => setDeliveryID(undefined)} /> : null}
     </Dialog>

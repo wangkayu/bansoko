@@ -145,8 +145,8 @@ export function LogEvents({
   const eventView: EventView = "primary";
 
   return (
-    <div className="tw:grid tw:gap-3">
-      <div className="tw:grid tw:gap-2">
+    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3">
+      <div className="tw:grid tw:shrink-0 tw:gap-2">
         <div className="tw:grid tw:grid-cols-[7rem_7rem_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:phone:grid-cols-[6.5rem_5rem_minmax(0,1fr)_auto] tw:phone:gap-1">
           <div className="tw:min-w-0">
             <Select<TypeFilter> label={t("log.type")} value={filters.type} options={TYPE_OPTIONS()} onChange={(type) => patch({ type })} />
@@ -315,7 +315,12 @@ function EventsList({
   if (items.length === 0) return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
 
   return (
-    <div className="tw:grid tw:gap-2">
+    <div
+      role="region"
+      aria-label={t("log.recordsAria")}
+      tabIndex={0}
+      className="tw:grid tw:min-h-0 tw:auto-rows-max tw:gap-2 tw:overflow-y-auto tw:overscroll-contain tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
+    >
       <ul aria-label={t("log.recordsAria")} className={LIST}>
         {items.map((item) => {
           if (item.type === "run") {

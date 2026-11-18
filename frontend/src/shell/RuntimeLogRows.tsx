@@ -122,7 +122,7 @@ export function RuntimeLogRows({
         follows.current = node.scrollHeight - node.scrollTop - node.clientHeight < NEAR_BOTTOM_PX;
         if (metrics.current) metrics.current.scrollTop = node.scrollTop;
       }}
-      className="tw:max-h-[min(50dvh,26rem)] tw:min-w-0 tw:overflow-y-auto tw:rounded-[10px] tw:border tw:border-border tw:bg-card tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
+      className="tw:min-h-0 tw:min-w-0 tw:overflow-y-auto tw:overscroll-contain tw:rounded-[10px] tw:border tw:border-border tw:bg-card tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
     >
       <ol className="tw:m-0 tw:list-none tw:p-0">
         {entries.map(({ key, line }) => {

@@ -168,8 +168,8 @@ export function LogRawView({ active }: { active: boolean }) {
   }
 
   return (
-    <div className="tw:grid tw:gap-3">
-      <div className="tw:flex tw:items-center tw:gap-2 tw:phone:min-h-11 tw:phone:gap-1">
+    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3 tw:[@media(max-height:500px)]:gap-1.5">
+      <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-2 tw:phone:min-h-11 tw:phone:gap-1">
         <div className="tw:w-32 tw:shrink-0 tw:phone:w-28">
           <Select<Level>
             label={t("log.rawlog.level")}
@@ -218,7 +218,7 @@ export function LogRawView({ active }: { active: boolean }) {
       {workItemId !== "" && (
         <div
           data-runtime-task-filter=""
-          className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2 tw:rounded-[8px] tw:border tw:border-border tw:bg-muted/40 tw:px-2 tw:py-1 tw:text-xs"
+          className="tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:justify-between tw:gap-2 tw:rounded-[8px] tw:border tw:border-border tw:bg-muted/40 tw:px-2 tw:py-1 tw:text-xs"
         >
           <span className="tw:min-w-0 tw:wrap-anywhere">{t("log.rawlog.taskFilter", { id: workItemId })}</span>
           <Button size="sm" variant="link" className="tw:shrink-0" onClick={returnToFilters}>
@@ -228,7 +228,7 @@ export function LogRawView({ active }: { active: boolean }) {
       )}
 
       {(feed.state.gap || feed.state.sourceChanged || feed.state.source === "memory") && (
-        <div role="status" className="tw:grid tw:gap-1 tw:text-xs tw:text-muted-foreground">
+        <div role="status" className="tw:grid tw:shrink-0 tw:gap-1 tw:text-xs tw:text-muted-foreground">
           {feed.state.gap && <p className="tw:m-0">{t("log.rawlog.historyGap")}</p>}
           {feed.state.source === "memory" && <p className="tw:m-0">{t("log.rawlog.sourceMemory")}</p>}
           {feed.state.sourceChanged && feed.state.source !== "memory" && (
@@ -238,7 +238,7 @@ export function LogRawView({ active }: { active: boolean }) {
       )}
 
       {lines.length > 0 && (
-        <div className="tw:flex tw:items-center tw:justify-between tw:gap-2">
+        <div className="tw:flex tw:shrink-0 tw:items-center tw:justify-between tw:gap-2">
           <Button
             size="sm"
             variant="ghost"
@@ -257,7 +257,7 @@ export function LogRawView({ active }: { active: boolean }) {
       )}
 
       {feed.pollFailed && (
-        <p role="status" className="tw:m-0 tw:text-xs tw:text-muted-foreground">
+        <p role="status" className="tw:m-0 tw:shrink-0 tw:text-xs tw:text-muted-foreground">
           {t("log.rawlog.refreshFailed")}
         </p>
       )}
