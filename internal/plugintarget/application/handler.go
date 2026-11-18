@@ -221,7 +221,7 @@ type deliveryRow struct {
 	secretRef           sql.NullString
 	deliveryKind        string
 	triggerKind         string
-	managedAnimeID      sql.NullString
+	imageManagedAnimeID sql.NullString
 	state               string
 	version             int64
 	attemptCount        int
@@ -469,7 +469,22 @@ func (h *PluginDeliverHandler) notifyDiagnostic(row deliveryRow, variant observa
 
 func (h *PluginDeliverHandler) loadDelivery(ctx context.Context, id string) (deliveryRow, error) {
 	var row deliveryRow
-	err := h.db.QueryRowContext(ctx, `SELECT id, plugin_target_config_id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, managed_anime_id, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body, (SELECT t.name FROM plugin_target_configs t WHERE t.id = plugin_deliveries.plugin_target_config_id) FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.managedAnimeID, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
+	// File-operation notifications intentionally have no subscription lifecycle
+	// owner. Use the accepted acquisition's origin only to look up an image.
+	err := h.db.QueryRowContext(ctx, `
+SELECT d.id, d.plugin_target_config_id, d.adapter_kind, d.adapter_config_snapshot,
+       d.config_status, d.config_schema_version, d.secret_ref, d.delivery_kind, d.trigger_kind,
+       COALESCE(d.managed_anime_id, (
+           SELECT a.origin_managed_anime_ref
+           FROM file_operations f JOIN acquisitions a ON a.id = f.acquisition_id
+           WHERE d.delivery_kind = 'business' AND d.source_owner_type = 'file_operation'
+             AND d.trigger_kind IN ('file_operation_completed', 'file_operation_failed')
+             AND f.id = d.source_owner_id AND a.entry_kind IN ('automatic', 'subscription_add')
+       )), d.state, d.version, d.attempt_count, d.payload, d.payload_digest, d.target_display,
+       d.template_catalog_version, d.title_template_snapshot, d.body_template_snapshot,
+       d.rendered_title, d.rendered_body, t.name
+FROM plugin_deliveries d LEFT JOIN plugin_target_configs t ON t.id = d.plugin_target_config_id
+WHERE d.id = $1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.imageManagedAnimeID, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, errors.New("plugin delivery not found")
 	}

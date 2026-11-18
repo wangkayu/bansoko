@@ -110,11 +110,22 @@ VALUES ($1, $2, $3, 'facts-v1', $1)`, placementID, key, ordinal); err != nil {
 	}
 }
 
-// seedCompletedFileOp inserts the full release -> task -> artifact ->
+// SeedCompletedFileOp inserts the full release -> task -> artifact ->
 // artifact_file -> file_operation chain for one episode under sourceID. When
 // opState is "completed" the file_operation counts toward episode_progress;
 // otherwise (e.g. "failed") it must be excluded.
-func SeedCompletedFileOp(t *testing.T, db *sql.DB, sourceID string, episode int, special bool, opState string) {
+func SeedCompletedFileOp(t *testing.T, _ *sql.DB, sourceID string, episode int, special bool, opState string) {
+	t.Helper()
+	seedCompletedFileOp(t, sourceID, episode, special, opState, `{}`)
+}
+
+// SeedSubscriptionFileOp seeds a file operation from a subscription acquisition.
+func SeedSubscriptionFileOp(t *testing.T, sourceID string, episode int, opState, entryKind string) {
+	t.Helper()
+	seedCompletedFileOp(t, sourceID, episode, false, opState, fmt.Sprintf(`{"fixture_entry_kind":%q}`, entryKind))
+}
+
+func seedCompletedFileOp(t *testing.T, sourceID string, episode int, special bool, opState, policy string) {
 	t.Helper()
 	ctx := context.Background()
 	tag := "ep"
@@ -150,7 +161,7 @@ VALUES ($1, $2, $3, '{"title":"x"}', '{}', $4::jsonb, 'accepted_pending_download
 	if err != nil {
 		t.Fatal(err)
 	}
-	acquisitionfixture.SeedObservedDownloadManifest(t, tx, "acq-"+taskID, taskID, releaseID, "idem:"+releaseID, `{}`, `{}`, "completed", `null`, string(manifest))
+	acquisitionfixture.SeedObservedDownloadManifest(t, tx, "acq-"+taskID, taskID, releaseID, "idem:"+releaseID, `{}`, policy, "completed", `null`, string(manifest))
 	if _, err := tx.ExecContext(ctx, `UPDATE releases SET download_task_id = $1, verdict = 'submitted' WHERE id = $2`, taskID, releaseID); err != nil {
 		t.Fatalf("link release-task: %v", err)
 	}
