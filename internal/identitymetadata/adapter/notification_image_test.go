@@ -19,7 +19,7 @@ type fakeNotificationCoverStore struct {
 	err   error
 }
 
-func (f fakeNotificationCoverStore) NotificationCover(context.Context, string) (notificationCover, bool, error) {
+func (f fakeNotificationCoverStore) NotificationCover(context.Context, string, plugintargetport.NotificationCatalogEntry) (notificationCover, bool, error) {
 	return f.cover, f.found, f.err
 }
 
@@ -43,9 +43,14 @@ func TestNotificationImageResolverSelectsMikanAndAniBTProviderCovers(t *testing.
 					Store:       store, TTL: time.Hour,
 				},
 			}
-			image, err := resolver.ResolveNotificationImage(context.Background(), plugintargetport.NotificationImageRequest{ManagedAnimeID: "anime-1", BGMID: "123"})
-			if err != nil || image.Source != tc.provider || image.URL != tc.wantURL {
-				t.Fatalf("image=%+v err=%v", image, err)
+			for _, request := range []plugintargetport.NotificationImageRequest{
+				{ManagedAnimeID: "anime-1", BGMID: "123"},
+				{CatalogEntry: plugintargetport.NotificationCatalogEntry{Provider: tc.provider, EntryRef: "entry-1"}, BGMID: "123"},
+			} {
+				image, err := resolver.ResolveNotificationImage(context.Background(), request)
+				if err != nil || image.Source != tc.provider || image.URL != tc.wantURL {
+					t.Fatalf("request=%+v image=%+v err=%v", request, image, err)
+				}
 			}
 		})
 	}

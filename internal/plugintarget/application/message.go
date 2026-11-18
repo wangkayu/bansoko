@@ -75,6 +75,7 @@ func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row d
 
 	request := plugintargetport.NotificationImageRequest{
 		ManagedAnimeID:  row.imageManagedAnimeID.String,
+		CatalogEntry:    row.imageCatalogEntry,
 		ReleaseSource:   notificationFactString(facts, "release.src"),
 		BGMID:           notificationFactString(facts, "bgm.id"),
 		TMDBID:          notificationFactString(facts, "tmdb.id"),

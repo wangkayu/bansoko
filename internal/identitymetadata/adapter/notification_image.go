@@ -18,38 +18,38 @@ type notificationCover struct {
 }
 
 type notificationCoverStore interface {
-	NotificationCover(context.Context, string) (notificationCover, bool, error)
+	NotificationCover(context.Context, string, plugintargetport.NotificationCatalogEntry) (notificationCover, bool, error)
 }
 
 type sqlNotificationCoverStore struct{ db *sql.DB }
 
-func (s sqlNotificationCoverStore) NotificationCover(ctx context.Context, managedAnimeID string) (notificationCover, bool, error) {
-	var provider string
-	var entryRef sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT origin, origin_entry_ref FROM subscriptions WHERE managed_anime_id=$1`, managedAnimeID).Scan(&provider, &entryRef)
-	if errors.Is(err, sql.ErrNoRows) {
-		return notificationCover{}, false, nil
+func (s sqlNotificationCoverStore) NotificationCover(ctx context.Context, managedAnimeID string, entry plugintargetport.NotificationCatalogEntry) (notificationCover, bool, error) {
+	if entry == (plugintargetport.NotificationCatalogEntry{}) && managedAnimeID != "" {
+		err := s.db.QueryRowContext(ctx, `SELECT origin, COALESCE(origin_entry_ref, '') FROM subscriptions WHERE managed_anime_id=$1`, managedAnimeID).Scan(&entry.Provider, &entry.EntryRef)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notificationCover{}, false, nil
+		}
+		if err != nil {
+			return notificationCover{}, false, err
+		}
 	}
-	if err != nil {
-		return notificationCover{}, false, err
-	}
-	if (provider != CoverProviderMikan && provider != CoverProviderAniBT) || !entryRef.Valid || entryRef.String == "" {
+	if (entry.Provider != CoverProviderMikan && entry.Provider != CoverProviderAniBT) || entry.EntryRef == "" {
 		return notificationCover{}, false, nil
 	}
 	var rawCover sql.NullString
-	err = s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 SELECT NULLIF(source_hint->>'cover', '')
 FROM provider_catalog_entries
 WHERE provider=$1 AND provider_entry_ref=$2 AND state='present'
 ORDER BY observed_at DESC
-LIMIT 1`, provider, entryRef.String).Scan(&rawCover)
+LIMIT 1`, entry.Provider, entry.EntryRef).Scan(&rawCover)
 	if errors.Is(err, sql.ErrNoRows) {
 		return notificationCover{}, false, nil
 	}
 	if err != nil || !rawCover.Valid || strings.TrimSpace(rawCover.String) == "" {
 		return notificationCover{}, false, err
 	}
-	return notificationCover{provider: provider, rawURL: rawCover.String}, true, nil
+	return notificationCover{provider: entry.Provider, rawURL: rawCover.String}, true, nil
 }
 
 // NotificationImageResolver implements the shared subscription/one-shot image
@@ -79,9 +79,10 @@ var _ plugintargetport.NotificationImageResolver = (*NotificationImageResolver)(
 
 func (r *NotificationImageResolver) ResolveNotificationImage(ctx context.Context, request plugintargetport.NotificationImageRequest) (plugintargetport.NotificationImage, error) {
 	var lastErr error
-	if r != nil && r.coverStore != nil && r.covers != nil && request.ManagedAnimeID != "" &&
+	if r != nil && r.coverStore != nil && r.covers != nil &&
+		(request.ManagedAnimeID != "" || request.CatalogEntry.EntryRef != "") &&
 		(request.PreferredSource == "" || request.PreferredSource == "anibt" || request.PreferredSource == "mikan") {
-		image, found, err := r.providerCover(ctx, request.ManagedAnimeID)
+		image, found, err := r.providerCover(ctx, request.ManagedAnimeID, request.CatalogEntry)
 		if err != nil {
 			lastErr = err
 		} else if found && (request.PreferredSource == "" || image.Source == request.PreferredSource) {
@@ -108,8 +109,8 @@ func (r *NotificationImageResolver) ResolveNotificationImage(ctx context.Context
 	return plugintargetport.NotificationImage{}, nil
 }
 
-func (r *NotificationImageResolver) providerCover(ctx context.Context, managedAnimeID string) (plugintargetport.NotificationImage, bool, error) {
-	cover, found, err := r.coverStore.NotificationCover(ctx, managedAnimeID)
+func (r *NotificationImageResolver) providerCover(ctx context.Context, managedAnimeID string, entry plugintargetport.NotificationCatalogEntry) (plugintargetport.NotificationImage, bool, error) {
+	cover, found, err := r.coverStore.NotificationCover(ctx, managedAnimeID, entry)
 	if err != nil || !found {
 		return plugintargetport.NotificationImage{}, false, err
 	}

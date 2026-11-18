@@ -23,7 +23,7 @@
 ## Fixed
 
 - Tabs and filters stay visible while scrolling the event or runtime log list in the log dialog.
-- Automatic image selection for import completion and failure notifications now prefers the AniBT or Mikan subscription cover instead of skipping straight to metadata posters.
+- Import completion and failure notifications for AniBT and Mikan subscriptions now prefer the source cover. Download and import notifications for one-shots started from either catalog also prefer that entry's cover. If no source cover is available, notifications fall back to Bangumi, TMDB, then the built-in placeholder.
 - Files imported before the upgrade now retain their historical release evidence during library scans and file matching, instead of incorrectly reporting that the naming template lacks required information when newer snapshot fields are absent.
 - One-shot tasks from keyword search no longer render the internal search identity (search-query:…) into preview paths as the naming group fact; preview and actual import now agree, with anime.group empty in both.
 - Secret inputs in forms such as notification channels (Bot Token, webhook URL, signing secret) had lost their standard height and text size; they now match the other inputs.

@@ -116,16 +116,22 @@ VALUES ($1, $2, $3, 'facts-v1', $1)`, placementID, key, ordinal); err != nil {
 // otherwise (e.g. "failed") it must be excluded.
 func SeedCompletedFileOp(t *testing.T, _ *sql.DB, sourceID string, episode int, special bool, opState string) {
 	t.Helper()
-	seedCompletedFileOp(t, sourceID, episode, special, opState, `{}`)
+	seedCompletedFileOp(t, sourceID, episode, special, opState, `{}`, "")
 }
 
 // SeedSubscriptionFileOp seeds a file operation from a subscription acquisition.
 func SeedSubscriptionFileOp(t *testing.T, sourceID string, episode int, opState, entryKind string) {
 	t.Helper()
-	seedCompletedFileOp(t, sourceID, episode, false, opState, fmt.Sprintf(`{"fixture_entry_kind":%q}`, entryKind))
+	seedCompletedFileOp(t, sourceID, episode, false, opState, fmt.Sprintf(`{"fixture_entry_kind":%q}`, entryKind), "")
 }
 
-func seedCompletedFileOp(t *testing.T, sourceID string, episode int, special bool, opState, policy string) {
+// SeedCompletedFileOpWithChannel freezes the release channel during one-shot acceptance.
+func SeedCompletedFileOpWithChannel(t *testing.T, sourceID string, episode int, opState, channel string) {
+	t.Helper()
+	seedCompletedFileOp(t, sourceID, episode, false, opState, `{}`, channel)
+}
+
+func seedCompletedFileOp(t *testing.T, sourceID string, episode int, special bool, opState, policy, channel string) {
 	t.Helper()
 	ctx := context.Background()
 	tag := "ep"
@@ -152,9 +158,10 @@ func seedCompletedFileOp(t *testing.T, sourceID string, episode int, special boo
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, parsed_facts, verdict, reason_code)
-VALUES ($1, $2, $3, '{"title":"x"}', '{}', $4::jsonb, 'accepted_pending_download', 'accepted')`,
-		releaseID, sourceID, "guid:"+releaseID, parsedFacts); err != nil {
+INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, parsed_facts, verdict, reason_code, internal_facts)
+VALUES ($1, $2, $3, '{"title":"x"}', '{}', $4::jsonb, 'accepted_pending_download', 'accepted',
+        CASE WHEN $5='' THEN '{}'::jsonb ELSE jsonb_build_object('channel',$5::text) END)`,
+		releaseID, sourceID, "guid:"+releaseID, parsedFacts, channel); err != nil {
 		t.Fatalf("insert release: %v", err)
 	}
 	manifest, err := json.Marshal([]any{map[string]any{"file_ref": "primary", "ordinal": 0, "relative_path": relPath, "exact_size": 1, "media_kind": "video", "identity_evidence": map[string]any{}}})

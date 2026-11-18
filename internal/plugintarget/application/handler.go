@@ -222,6 +222,7 @@ type deliveryRow struct {
 	deliveryKind        string
 	triggerKind         string
 	imageManagedAnimeID sql.NullString
+	imageCatalogEntry   plugintargetport.NotificationCatalogEntry
 	state               string
 	version             int64
 	attemptCount        int
@@ -480,11 +481,22 @@ SELECT d.id, d.plugin_target_config_id, d.adapter_kind, d.adapter_config_snapsho
            WHERE d.delivery_kind = 'business' AND d.source_owner_type = 'file_operation'
              AND d.trigger_kind IN ('file_operation_completed', 'file_operation_failed')
              AND f.id = d.source_owner_id AND a.entry_kind IN ('automatic', 'subscription_add')
-       )), d.state, d.version, d.attempt_count, d.payload, d.payload_digest, d.target_display,
+       )), COALESCE(n.source_evidence #>> '{image_catalog_entry,provider}', ''),
+       COALESCE(n.source_evidence #>> '{image_catalog_entry,entry_ref}', ''),
+       d.state, d.version, d.attempt_count, d.payload, d.payload_digest, d.target_display,
        d.template_catalog_version, d.title_template_snapshot, d.body_template_snapshot,
        d.rendered_title, d.rendered_body, t.name
 FROM plugin_deliveries d LEFT JOIN plugin_target_configs t ON t.id = d.plugin_target_config_id
-WHERE d.id = $1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.imageManagedAnimeID, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
+LEFT JOIN notification_admissions n ON d.delivery_kind = 'business'
+    AND n.trigger_kind = d.trigger_kind AND n.source_owner_type = d.source_owner_type
+    AND n.source_owner_id = d.source_owner_id AND n.source_owner_version = d.source_owner_version
+    AND n.result_key = d.source_result_key
+WHERE d.id = $1`, id).Scan(
+		&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus,
+		&row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.imageManagedAnimeID,
+		&row.imageCatalogEntry.Provider, &row.imageCatalogEntry.EntryRef, &row.state, &row.version,
+		&row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog,
+		&row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, errors.New("plugin delivery not found")
 	}
