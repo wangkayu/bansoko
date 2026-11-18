@@ -68,15 +68,11 @@ export const automationKeys = {
 export const observabilityKeys = {
   all: ["observability"] as const,
   records: ["observability", "records"] as const,
-  diagnostics: ["observability", "diagnostics"] as const,
   businessLine: (eventView: string, state: string, animeId: string, q: string, from?: string, to?: string) =>
     ["observability", "records", "business-line", eventView, state, animeId, q, from, to] as const,
-  diagnosticsFiltered: (state: string) => ["observability", "diagnostics", "list", state] as const,
+  releaseBatches: ["observability", "release-batch"] as const,
   releaseBatch: (batchKey: string) => ["observability", "release-batch", batchKey] as const,
-  // The log-entry badge: hung under the records/diagnostics prefixes, following the same invalidation set.
-  badgeRecords: ["observability", "records", "badge"] as const,
-  badgeDiagnostics: ["observability", "diagnostics", "badge"] as const,
-  runtimeLog: (level: string) => ["observability", "runtime-log", level] as const,
+  runtimeLog: (level: string, q: string) => ["observability", "runtime-log", level, q] as const,
 };
 
 export const acquisitionRecordKeys = {

@@ -20,6 +20,20 @@ import (
 type circuitEffect struct {
 	paused    bool
 	recovered bool
+
+	// outcome carries the confirmed refresh result the owner writer applied.
+	// The after-commit log reads it only after the transaction commits.
+	outcome refreshLogOutcome
+}
+
+// refreshLogOutcome is the writer's confirmed business result. Zero values
+// mean the writer did not record a committed result.
+type refreshLogOutcome struct {
+	skipReason     string
+	notModified    bool
+	resumeBaseline bool
+	newCount       int
+	windowTotal    int
 }
 
 // circuitProvider is the provider whose circuit a source feeds; custom RSS
@@ -131,12 +145,68 @@ func siteTarget(snapshot sourceSnapshot, failure outbound.Failure) (id, name, ho
 	return "host:" + host, host, host
 }
 
+// refreshSkipNotSelected and refreshSkipInactive distinguish a pass that read
+// the feed but whose owner writer applied nothing.
+const (
+	refreshSkipNotSelected = "provider_group_not_selected"
+	refreshSkipInactive    = "subscription_inactive"
+)
+
+// logRefreshOutcome records the confirmed result after the owner transaction
+// committed. It never reports success for a writer that applied nothing, and
+// it carries only fixed text plus integer counts: no feed titles, URLs or raw
+// errors.
+func (s *Service) logRefreshOutcome(ctx context.Context, snapshot sourceSnapshot, effect *circuitEffect) {
+	if s == nil || s.logger == nil || effect == nil {
+		return
+	}
+	result := effect.outcome
+	event := observabilityport.RuntimeEvent{
+		Component: "rss",
+		Operation: "refresh",
+		OwnerType: string(workitems.OwnerRSSSourceRuntime),
+		OwnerID:   snapshot.sourceID,
+	}
+	switch {
+	case result.skipReason != "":
+		event.Outcome = "skipped"
+		event.ReasonCode = result.skipReason
+		if result.skipReason == refreshSkipNotSelected {
+			event.Message = "RSS refresh skipped: the provider group is no longer selected"
+		} else {
+			event.Message = "RSS refresh skipped: the subscription is no longer active"
+		}
+		s.logger.Info(ctx, event)
+	case result.notModified:
+		event.Message = "RSS refresh confirmed no feed change (HTTP 304)"
+		event.Outcome = "success"
+		event.ReasonCode = "rss_refresh_not_modified"
+		s.logger.Info(ctx, event)
+	case result.resumeBaseline:
+		event.Message = fmt.Sprintf("RSS refresh stored the resume baseline (window=%d, stored=%d); releases were not evaluated", result.windowTotal, result.newCount)
+		event.Outcome = "success"
+		event.ReasonCode = "rss_refresh_resume_baseline"
+		s.logger.Info(ctx, event)
+	case result.newCount > 0:
+		event.Message = fmt.Sprintf("RSS refresh stored %d new release(s) from a window of %d item(s)", result.newCount, result.windowTotal)
+		event.Outcome = "success"
+		event.ReasonCode = "rss_refresh_new_releases"
+		s.logger.Info(ctx, event)
+	case result.windowTotal > 0:
+		event.Message = fmt.Sprintf("RSS refresh found %d feed item(s) but no new releases", result.windowTotal)
+		event.Outcome = "success"
+		event.ReasonCode = "rss_refresh_no_new_releases"
+		s.logger.Info(ctx, event)
+	}
+}
+
 // circuitAfterCommit records the site diagnostic of one refresh outcome: a
 // failure opens (or merges into) the source's target, as site.paused when the
 // provider circuit just tripped; a success closes it. A nil note is a success.
 func (s *Service) circuitAfterCommit(snapshot sourceSnapshot, effect *circuitEffect, note *refreshFailureNote) func(context.Context) {
 	return func(ctx context.Context) {
 		if note == nil {
+			s.logRefreshOutcome(ctx, snapshot, effect)
 			if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger,
 				observabilityport.InternalSuccess(observabilityport.InternalRSSRefresh)); record != nil {
 				record(ctx)

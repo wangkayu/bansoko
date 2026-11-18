@@ -1,19 +1,25 @@
-import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Select } from "../ui/base/controls";
+import { useEffect, useRef, useState } from "react";
+import { Copy, Download, Search } from "lucide-react";
+import { Button, Input, Select } from "../ui/base/controls";
 import { StateBlock } from "../ui/StateBlock";
-import { getRuntimeLog, toUserMessage, type RuntimeLogLine } from "../lib/api/client";
-import { observabilityKeys } from "../lib/queryKeys";
+import { toUserMessage, type RuntimeLogLine } from "../lib/api/client";
 import { downloadTextFile } from "../features/settings/agentSetup";
 import { t } from "../lib/i18n";
+import { RuntimeLogRows } from "./RuntimeLogRows";
+import { RUNTIME_LOG_PAGE_LIMIT } from "./runtimeLogFeed";
+import { useRuntimeLogFeed, type RuntimeLogLevel } from "./useRuntimeLogFeed";
 
-// Raw log sub-view of the diagnostics tab: the server's in-memory runtime log (redacted,
-// cleared on restart), newest last. Copy and download build plain text from the lines shown.
+// The runtime log tab reads the retained on-disk history: the newest matching
+// page first, "load older" backwards, and a 5s cursor-based incremental read
+// while the tab is visible. Level, text and work-item filters are server
+// filters, so every loaded page holds matching lines. Copy and download build
+// plain text from the lines currently shown, not from the whole retained
+// history.
 
-const LINE_LIMIT = 500;
+export const RUNTIME_LOG_LINE_LIMIT = RUNTIME_LOG_PAGE_LIMIT;
+const SEARCH_DEBOUNCE_MS = 300;
 
-type Level = "all" | "warn" | "error";
+type Level = RuntimeLogLevel;
 
 /** One plain-text line: time, level, source, message, then the structured fields that are present. */
 export function rawLogText(lines: readonly RuntimeLogLine[]): string {
@@ -21,6 +27,16 @@ export function rawLogText(lines: readonly RuntimeLogLine[]): string {
     .map((line) => {
       const fields = (
         [
+          ["kind", line.kind],
+          ["work_item_id", line.work_item_id],
+          ["stage", line.stage],
+          ["state_before", line.state_before],
+          ["state_after", line.state_after],
+          ["disposition", line.disposition],
+          ["owner_type", line.owner_type],
+          ["attempt", line.attempt === undefined ? undefined : String(line.attempt)],
+          ["duration_ms", line.duration_ms === undefined ? undefined : String(line.duration_ms)],
+          ["retryable", line.retryable === undefined ? undefined : String(line.retryable)],
           ["outcome", line.outcome],
           ["reason_code", line.reason_code],
           ["error_class", line.error_class],
@@ -36,61 +52,125 @@ export function rawLogText(lines: readonly RuntimeLogLine[]): string {
     .join("\n");
 }
 
-export function LogRawView({ onBack }: { onBack: () => void }) {
+function useDebounced<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => setDebounced(value), delay);
+    return () => globalThis.clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
+export function LogRawView({ active }: { active: boolean }) {
   const [level, setLevel] = useState<Level>("all");
+  const [search, setSearch] = useState("");
+  const [workItemId, setWorkItemId] = useState("");
+  // The filter to restore when leaving a one-click task trace.
+  const savedFilters = useRef<{ level: Level; search: string } | null>(null);
   const [copied, setCopied] = useState(false);
-  const query = useQuery({
-    queryKey: observabilityKeys.runtimeLog(level),
-    queryFn: ({ signal }) => getRuntimeLog({ level, limit: LINE_LIMIT }, signal),
-  });
-  const lines = query.data?.lines ?? [];
+  const q = useDebounced(search.trim(), SEARCH_DEBOUNCE_MS);
+  // A task trace deliberately asks for all levels and no text filter; q may
+  // still be inside its debounce window, so ignore it while tracing.
+  const effectiveQ = workItemId === "" ? q : "";
+  const feed = useRuntimeLogFeed({ active, level, q: effectiveQ, workItemId });
+  const lines = feed.lines.map((entry) => entry.line);
   const text = rawLogText(lines);
+  // Until the debounce matches the input, `text` still belongs to the previous
+  // search; copy and download stay disabled so they can never save non-matching lines.
+  const pending = workItemId === "" && search.trim() !== q;
+  const filtered = level !== "all" || search.trim() !== "" || workItemId !== "";
+  const scopeKey = `${level}\u0000${effectiveQ}\u0000${workItemId}`;
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = globalThis.setTimeout(() => setCopied(false), 1500);
+    return () => globalThis.clearTimeout(timer);
+  }, [copied]);
+
+  const changeLevel = (next: Level) => {
+    if (workItemId !== "") {
+      savedFilters.current = null;
+      setWorkItemId("");
+    }
+    setLevel(next);
+  };
+
+  const changeSearch = (next: string) => {
+    if (workItemId !== "") {
+      savedFilters.current = null;
+      setWorkItemId("");
+    }
+    setSearch(next);
+  };
+
+  const viewTask = (id: string) => {
+    if (workItemId === "") savedFilters.current = { level, search };
+    setLevel("all");
+    setSearch("");
+    setWorkItemId(id);
+  };
+
+  const returnToFilters = () => {
+    const saved = savedFilters.current;
+    savedFilters.current = null;
+    setWorkItemId("");
+    setLevel(saved?.level ?? "all");
+    setSearch(saved?.search ?? "");
+  };
+
+  const clearFilters = () => {
+    savedFilters.current = null;
+    setWorkItemId("");
+    setLevel("all");
+    setSearch("");
+  };
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      globalThis.setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
     }
   };
 
   let body: React.ReactNode;
-  if (query.error) {
+  if (feed.status === "error" && lines.length === 0) {
     body = (
       <StateBlock
         kind="error"
-        title={toUserMessage(query.error, t("log.rawlog.loadFailed"))}
+        title={toUserMessage(feed.error, t("log.rawlog.loadFailed"))}
         action={
-          <Button size="sm" variant="link" onClick={() => void query.refetch()}>
+          <Button size="sm" variant="link" onClick={feed.retry}>
             {t("log.retry")}
           </Button>
         }
       />
     );
-  } else if (!query.data) {
+  } else if (feed.status === "loading" && lines.length === 0) {
     body = <StateBlock kind="busy" title={t("log.rawlog.loading")} />;
   } else if (lines.length === 0) {
-    body = <StateBlock kind="empty" title={t("log.rawlog.empty")} />;
-  } else {
     body = (
-      <pre className="tw:m-0 tw:max-h-[50vh] tw:overflow-auto tw:whitespace-pre-wrap tw:break-all tw:rounded-[10px] tw:border tw:border-border tw:bg-muted/30 tw:p-3 tw:font-mono tw:text-xs">
-        {text}
-      </pre>
+      <StateBlock
+        kind="empty"
+        title={t("log.rawlog.empty")}
+        action={
+          filtered ? (
+            <Button size="sm" variant="link" onClick={clearFilters}>
+              {t("log.rawlog.clearFilters")}
+            </Button>
+          ) : undefined
+        }
+      />
     );
+  } else {
+    body = <RuntimeLogRows entries={feed.lines} scopeKey={scopeKey} revision={feed.state.revision} onViewTask={viewTask} />;
   }
 
   return (
     <div className="tw:grid tw:gap-3">
-      <Button size="sm" variant="link" className="tw:justify-self-start" onClick={onBack}>
-        <ArrowLeft aria-hidden className="tw:size-3.5" />
-        {t("log.rawlog.back")}
-      </Button>
-      <h3 className="tw:m-0 tw:text-sm tw:font-medium">{t("log.rawlog.title")}</h3>
-      <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("log.rawlog.note", { n: LINE_LIMIT })}</p>
-      <div className="tw:flex tw:items-center tw:gap-2">
-        <div className="tw:min-w-0 tw:flex-1">
+      <div className="tw:flex tw:items-center tw:gap-2 tw:phone:min-h-11 tw:phone:gap-1">
+        <div className="tw:w-32 tw:shrink-0 tw:phone:w-28">
           <Select<Level>
             label={t("log.rawlog.level")}
             value={level}
@@ -99,16 +179,88 @@ export function LogRawView({ onBack }: { onBack: () => void }) {
               { value: "warn", label: t("log.rawlog.levelWarn") },
               { value: "error", label: t("log.rawlog.levelError") },
             ]}
-            onChange={setLevel}
+            onChange={changeLevel}
           />
         </div>
-        <Button disabled={lines.length === 0} onClick={() => void copy()}>
-          {copied ? t("log.rawlog.copied") : t("log.rawlog.copy")}
+        <div className="tw:min-w-0 tw:flex-1">
+          <Input
+            type="search"
+            aria-label={t("log.rawlog.search")}
+            placeholder={t("log.rawlog.searchPlaceholder")}
+            leadingIcon={<Search className="tw:size-3.5" />}
+            value={search}
+            maxLength={512}
+            onChange={(event) => changeSearch(event.target.value)}
+          />
+        </div>
+        <Button
+          aria-label={copied ? t("log.rawlog.copied") : t("log.rawlog.copy")}
+          title={copied ? t("log.rawlog.copied") : t("log.rawlog.copyHint", { n: lines.length })}
+          className="tw:phone:size-9 tw:phone:p-0"
+          disabled={lines.length === 0 || pending}
+          onClick={() => void copy()}
+        >
+          <Copy size={15} aria-hidden className="tw:hidden tw:phone:block" />
+          <span className="tw:phone:sr-only">{copied ? t("log.rawlog.copied") : t("log.rawlog.copy")}</span>
         </Button>
-        <Button disabled={lines.length === 0} onClick={() => downloadTextFile("bansoko-log.txt", text, "text/plain")}>
-          {t("log.rawlog.download")}
+        <Button
+          aria-label={t("log.rawlog.download")}
+          title={t("log.rawlog.downloadHint", { n: lines.length })}
+          className="tw:phone:size-9 tw:phone:p-0"
+          disabled={lines.length === 0 || pending}
+          onClick={() => downloadTextFile("bansoko-log.txt", text, "text/plain")}
+        >
+          <Download size={15} aria-hidden className="tw:hidden tw:phone:block" />
+          <span className="tw:phone:sr-only">{t("log.rawlog.download")}</span>
         </Button>
       </div>
+
+      {workItemId !== "" && (
+        <div
+          data-runtime-task-filter=""
+          className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2 tw:rounded-[8px] tw:border tw:border-border tw:bg-muted/40 tw:px-2 tw:py-1 tw:text-xs"
+        >
+          <span className="tw:min-w-0 tw:wrap-anywhere">{t("log.rawlog.taskFilter", { id: workItemId })}</span>
+          <Button size="sm" variant="link" className="tw:shrink-0" onClick={returnToFilters}>
+            {t("log.rawlog.backToFilters")}
+          </Button>
+        </div>
+      )}
+
+      {(feed.state.gap || feed.state.sourceChanged || feed.state.source === "memory") && (
+        <div role="status" className="tw:grid tw:gap-1 tw:text-xs tw:text-muted-foreground">
+          {feed.state.gap && <p className="tw:m-0">{t("log.rawlog.historyGap")}</p>}
+          {feed.state.source === "memory" && <p className="tw:m-0">{t("log.rawlog.sourceMemory")}</p>}
+          {feed.state.sourceChanged && feed.state.source !== "memory" && (
+            <p className="tw:m-0">{t("log.rawlog.sourceChanged")}</p>
+          )}
+        </div>
+      )}
+
+      {lines.length > 0 && (
+        <div className="tw:flex tw:items-center tw:justify-between tw:gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            data-runtime-action="load-older"
+            disabled={feed.older === "loading" || feed.older === "done"}
+            onClick={() => void feed.loadOlder()}
+          >
+            {feed.older === "loading"
+              ? t("log.rawlog.loadingOlder")
+              : feed.older === "done"
+                ? t("log.rawlog.noMoreOlder")
+                : t("log.rawlog.loadOlder")}
+          </Button>
+          <span className="tw:text-xs tw:text-muted-foreground">{t("log.rawlog.shownCount", { n: feed.lineCount })}</span>
+        </div>
+      )}
+
+      {feed.pollFailed && (
+        <p role="status" className="tw:m-0 tw:text-xs tw:text-muted-foreground">
+          {t("log.rawlog.refreshFailed")}
+        </p>
+      )}
       {body}
     </div>
   );

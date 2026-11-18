@@ -5023,12 +5023,16 @@ paths:
       operationId: getRuntimeLog
       x-scope: read
       description: >-
-        The most recent runtime log lines, for attaching to a bug report. The
-        lines are a bounded in-memory tail of what the process wrote to stdout
-        (at most 500 lines and a byte cap, oldest dropped first); nothing is
-        stored, and a restart empties it. Lines come oldest first. Only a
-        signed-in web session may read it: an API token (and so MCP or any
-        agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes.
+        Recent runtime log lines from the retained on-disk history, for
+        attaching to a bug report. Volumes live under the configuration root
+        (<config>/logs, UTC day plus sequence, bounded to about 30 MiB and 7
+        days) and are read newest first. The level, text and work_item_id
+        filters apply before the limit is taken and across volumes, so a page
+        holds matching lines rather than a newest-line page filtered
+        afterwards. When the on-disk history is unavailable the server answers
+        from a bounded in-memory tail and says so in source. Lines come oldest
+        first. Only a signed-in web session may read it: an API token (and so
+        MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes.
       parameters:
         - name: level
           in: query
@@ -5038,6 +5042,50 @@ paths:
             enum: [all, warn, error]
             default: all
           description: all lines, warnings and errors, or errors only.
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+          description: >-
+            Space-separated search terms. Every term must occur
+            case-insensitively in the line's allowlisted fields. The level and
+            text filters both apply before the limit is taken, so the page
+            holds matching lines, not one page of the newest lines filtered
+            afterwards. Empty or whitespace-only means no text filter.
+        - name: work_item_id
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+          description: >-
+            Exact work item ID. Only lines whose projected work_item_id equals
+            this value are returned, combined with level and q. Empty means no
+            work-item filter.
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+          description: >-
+            Opaque cursor from next_before. Returns matching lines older than
+            the cursor, oldest first. Omit it to start from the newest line.
+            Cannot be combined with after.
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+          description: >-
+            Opaque cursor from next_after, for incremental refresh. The cursor
+            names the next unread position, so a line at that position has not
+            been read yet and is included. Returns matching lines oldest first.
+            Use the next_after of every page, including an empty one, as the
+            next cursor. Cannot be combined with before.
         - name: limit
           in: query
           required: false
@@ -5048,7 +5096,7 @@ paths:
             default: 200
       responses:
         '200':
-          description: The runtime log tail.
+          description: A page of the retained runtime log.
           content:
             application/json:
               schema:
@@ -17658,16 +17706,71 @@ components:
         error_class:
           type: string
           maxLength: 512
+        owner_type:
+          type: string
+          maxLength: 512
+        kind:
+          type: string
+          maxLength: 512
+        work_item_id:
+          type: string
+          maxLength: 512
+        stage:
+          type: string
+          maxLength: 512
+        state_before:
+          type: string
+          maxLength: 512
+        state_after:
+          type: string
+          maxLength: 512
+        disposition:
+          type: string
+          maxLength: 512
+        attempt:
+          type: integer
+          minimum: 1
+        duration_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        retryable:
+          type: boolean
     RuntimeLogPage:
       type: object
       additionalProperties: false
-      required: [lines]
+      required: [lines, source]
       properties:
         lines:
           type: array
           maxItems: 500
           items:
             $ref: '#/components/schemas/RuntimeLogLine'
+        next_before:
+          type: string
+          description: >-
+            Opaque cursor for the next older page. Absent when the page is
+            empty.
+        next_after:
+          type: string
+          description: >-
+            Opaque cursor naming the next unread position; also the incremental
+            watermark. The server returns it even when the page is empty,
+            because a query with no matches still advanced to the end of what
+            it scanned. A client polling with after must store and use the new
+            value from every page.
+        gap:
+          type: boolean
+          description: >-
+            Present and true when the supplied cursor is no longer retained
+            (evicted history) or belongs to the other storage source, so lines
+            between the cursor and this page may be missing.
+        source:
+          type: string
+          enum: [file, memory]
+          description: >-
+            file means the retained on-disk history answered; memory means it
+            was unavailable and the bounded in-memory tail answered instead.
     DiagnosticInternalOperation:
       type: object
       additionalProperties: false

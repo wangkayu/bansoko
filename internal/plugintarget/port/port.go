@@ -171,11 +171,28 @@ const ReplacementAppliedResultKey = "replaced"
 // travelling as empty facts.
 type DisplacedTarget struct{ File, Group, Title string }
 
+// OriginalSource is the frozen download source of the two sides of one
+// replacement: the version that won and each old version it took over, each
+// described by the release title and group frozen in the accepted acquisition
+// input and the original file name inside its torrent. An empty field means
+// the source chain no longer records it; the presentation hides that line
+// instead of borrowing a library name, a planned target or a live Release row.
+// Old may contain empty entries: they still count as replaced versions.
+type OriginalSource struct {
+	New DisplacedTarget
+	Old []DisplacedTarget
+}
+
 // ReplacementAppliedRequest builds the replacement_applied admission of one
-// settled replace decision. animeTitle names the anime whose versions changed,
-// group and releaseTitle the release that won; replaced names the old versions
-// it took over, at least one. File names travel as base names, never paths.
-func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID, animeTitle, group, releaseTitle, releaseID string, replaced []DisplacedTarget) (BusinessDeliveryRequest, error) {
+// settled replace decision. animeTitle names the anime whose versions changed;
+// group and releaseTitle keep their original meaning for existing custom
+// templates (the winning Release's current group and title). replaced names the
+// old versions as existing custom templates read them: at least one, its file
+// name taken from where the version currently lives. source carries the frozen
+// original download source of both sides for the default presentation; its
+// facts are separate variables, so no existing variable changes meaning. File
+// names travel as base names, never paths.
+func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID, animeTitle, group, releaseTitle, releaseID string, replaced []DisplacedTarget, source OriginalSource) (BusinessDeliveryRequest, error) {
 	if len(replaced) == 0 {
 		return BusinessDeliveryRequest{}, errors.New("replacement_applied needs at least one replaced version")
 	}
@@ -199,6 +216,23 @@ func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID,
 	if len(targets) == 0 {
 		return BusinessDeliveryRequest{}, errors.New("replacement_applied needs at least one named replaced version")
 	}
+	originals := make([]map[string]any, 0, len(source.Old))
+	for _, original := range source.Old {
+		entry := map[string]any{}
+		if name := baseName(original.File); name != "" {
+			entry["path"] = name
+		}
+		if original.Group != "" {
+			entry["group"] = original.Group
+		}
+		if original.Title != "" {
+			entry["title"] = original.Title
+		}
+		if len(entry) == 0 {
+			continue
+		}
+		originals = append(originals, entry)
+	}
 	facts := map[string]any{
 		"anime.id": managedAnimeID, "anime.title": optionalText(animeTitle),
 		"replaced.count": len(targets), "replaced.targets": targets,
@@ -210,6 +244,16 @@ func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID,
 	if releaseTitle != "" {
 		facts["release.title"] = releaseTitle
 	}
+	if title := source.New.Title; title != "" {
+		facts["replaced.new.title"] = title
+	}
+	if group := source.New.Group; group != "" {
+		facts["replaced.new.group"] = group
+	}
+	if name := baseName(source.New.File); name != "" {
+		facts["replaced.new.file"] = name
+	}
+	facts["replaced.old_versions"] = originals
 	payload, err := json.Marshal(facts)
 	if err != nil {
 		return BusinessDeliveryRequest{}, err

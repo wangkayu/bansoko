@@ -125,6 +125,13 @@ func runServe(args []string) {
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")
 	}
+	// Once the configuration root is known, the same logger also writes the
+	// bounded on-disk history read by the owner-only log dialog. An unwritable
+	// directory degrades to the in-memory tail without blocking startup.
+	runtimeLogger = observabilityapplication.NewPersistentRuntimeLogger(os.Stderr, filepath.Join(cfg.ConfigDir, observabilityapplication.RuntimeLogDirName))
+	defer func() {
+		_ = runtimeLogger.Close()
+	}()
 	// The persistent session secret binds owner sessions to this instance.
 	// Development may run with skip-auth, but a real session secret is still
 	// required so bootstrap/login behave identically across environments.
@@ -830,7 +837,7 @@ func runServe(args []string) {
 			case <-ctx.Done():
 				return
 			case <-embeddedUpdateService.ExitRequested():
-				runtimeLogger.Warn(context.Background(), observabilityport.RuntimeEvent{Message: "embedded update marker published; draining and exiting for bootstrap", Component: "runtime", Operation: "embedded_update_exit", Outcome: "warning", ReasonCode: "embedded_update_handoff"})
+				runtimeLogger.Info(context.Background(), observabilityport.RuntimeEvent{Message: "embedded update marker published; draining and exiting for bootstrap", Component: "runtime", Operation: "embedded_update_exit", Outcome: "success", ReasonCode: "embedded_update_handoff"})
 				if localUpdateServer != nil {
 					_ = localUpdateServer.Close()
 				}
@@ -903,16 +910,50 @@ func runServe(args []string) {
 	}
 }
 
-func runQBSyncDispatcher(ctx context.Context, downloadService *downloadapplication.Service, logger observabilityport.RuntimeLogger) {
-	dispatch := func() {
-		result, err := downloadService.DispatchQBSync(ctx)
-		if err != nil {
-			if ctx.Err() == nil {
-				logger.Warn(ctx, observabilityport.RuntimeEvent{Component: "qb_sync", Operation: "dispatch", Outcome: "failure", ReasonCode: "qb_sync_failed", ErrorClass: "qb_sync"})
-			}
-			return
+// qbSyncDispatchEvent describes one dispatch pass. The pass only reads the
+// database and creates or merges WorkItems; it never contacts qBittorrent, so
+// an empty scan is an idle pass rather than a failed connection.
+func qbSyncDispatchEvent(result downloadapplication.QBSyncDispatchResult) observabilityport.RuntimeEvent {
+	if result.Scanned == 0 {
+		return observabilityport.RuntimeEvent{
+			Message:    "qB sync dispatch found no tasks; no qBittorrent check was scheduled and no connection was made",
+			Component:  "qb_sync",
+			Operation:  "dispatch",
+			Outcome:    "success",
+			ReasonCode: "qb_sync_idle",
 		}
-		logger.Info(ctx, observabilityport.RuntimeEvent{Message: fmt.Sprintf("qB sync dispatch completed (scanned=%d queued=%d merged=%d skipped=%d)", result.Scanned, result.Queued, result.Merged, result.Skipped), Component: "qb_sync", Operation: "dispatch", Outcome: "success", ReasonCode: "qb_sync_completed"})
+	}
+	return observabilityport.RuntimeEvent{
+		Message:    fmt.Sprintf("qB sync dispatch scanned download tasks (scanned=%d queued=%d merged=%d skipped=%d); qBittorrent was not contacted", result.Scanned, result.Queued, result.Merged, result.Skipped),
+		Component:  "qb_sync",
+		Operation:  "dispatch",
+		Outcome:    "success",
+		ReasonCode: "qb_sync_completed",
+	}
+}
+
+// qbSyncDispatchFailureEvent describes a pass that did not finish. It is not a
+// downloader result: no task may have been scanned and qBittorrent was not
+// contacted, so the body never claims a check or a task failure.
+func qbSyncDispatchFailureEvent() observabilityport.RuntimeEvent {
+	return observabilityport.RuntimeEvent{
+		Message:    "qB sync dispatch did not complete this round; no qBittorrent check was made",
+		Component:  "qb_sync",
+		Operation:  "dispatch",
+		Outcome:    "failure",
+		ReasonCode: "qb_sync_failed",
+		ErrorClass: "qb_sync",
+	}
+}
+
+// qbSyncDispatchService is the one bounded dispatch pass the loop needs.
+type qbSyncDispatchService interface {
+	DispatchQBSync(context.Context) (downloadapplication.QBSyncDispatchResult, error)
+}
+
+func runQBSyncDispatcher(ctx context.Context, dispatcher qbSyncDispatchService, logger observabilityport.RuntimeLogger) {
+	dispatch := func() {
+		dispatchQBSyncOnce(ctx, dispatcher, logger)
 	}
 	dispatch()
 	ticker := time.NewTicker(time.Minute)
@@ -925,6 +966,17 @@ func runQBSyncDispatcher(ctx context.Context, downloadService *downloadapplicati
 			dispatch()
 		}
 	}
+}
+
+func dispatchQBSyncOnce(ctx context.Context, dispatcher qbSyncDispatchService, logger observabilityport.RuntimeLogger) {
+	result, err := dispatcher.DispatchQBSync(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			logger.Warn(ctx, qbSyncDispatchFailureEvent())
+		}
+		return
+	}
+	logger.Info(ctx, qbSyncDispatchEvent(result))
 }
 
 func runAutomationDispatcher(ctx context.Context, dispatcher *automationapplication.Dispatcher, logger observabilityport.RuntimeLogger) {
@@ -1008,6 +1060,16 @@ func runStrandedFileWorkRevival(ctx context.Context, revive func(context.Context
 // it.
 const configWaitSweepInterval = 15 * time.Minute
 
+func configWaitSweepEvent(woken int) observabilityport.RuntimeEvent {
+	return observabilityport.RuntimeEvent{
+		Message:    fmt.Sprintf("configuration wait sweep woke %d import(s) waiting for configuration; the sweep performed no import", woken),
+		Component:  "fileoperation",
+		Operation:  "config_wait_sweep",
+		Outcome:    "success",
+		ReasonCode: "config_wait_sweep_woken",
+	}
+}
+
 // runConfigWaitSweep makes imports waiting for configuration due again on a
 // fixed cadence, for configuration a write path changed without a wake. A
 // pass that finds nothing new writes nothing; a woken plan that still waits
@@ -1020,7 +1082,8 @@ func runConfigWaitSweep(ctx context.Context, db *sql.DB, logger observabilitypor
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := animeapplication.SweepConfigWaitingPlans(ctx, db); err != nil && ctx.Err() == nil {
+			woken, err := animeapplication.SweepConfigWaitingPlans(ctx, db)
+			if err != nil && ctx.Err() == nil {
 				logger.Warn(ctx, observabilityport.RuntimeEvent{
 					Message:    "configuration wait sweep failed",
 					Component:  "fileoperation",
@@ -1029,6 +1092,10 @@ func runConfigWaitSweep(ctx context.Context, db *sql.DB, logger observabilitypor
 					ReasonCode: "config_wait_sweep_failed",
 					ErrorClass: "fileoperation",
 				})
+				continue
+			}
+			if woken > 0 {
+				logger.Info(ctx, configWaitSweepEvent(woken))
 			}
 		}
 	}
@@ -1135,21 +1202,49 @@ func runAcquisitionActivity(ctx context.Context, consumer *acquisitionactivity.C
 	}
 }
 
+// downloadCompletionFailureEvent reports a failed pass without claiming that
+// any completion action ran or did not run. A pass that already recorded rows
+// says so; the action results are carried by those rows and their own work.
+func downloadCompletionFailureEvent(created int) observabilityport.RuntimeEvent {
+	message := "download completion pass failed before recording a completion row; it retries on the next pass"
+	if created > 0 {
+		message = fmt.Sprintf("download completion pass recorded %d completion row(s) before failing; the pass does not confirm an action result", created)
+	}
+	return observabilityport.RuntimeEvent{
+		Message:    message,
+		Component:  "acquisition",
+		Operation:  "download_completion",
+		Outcome:    "failure",
+		ReasonCode: "download_completion_pass_failed",
+		ErrorClass: "acquisition",
+	}
+}
+
+func downloadCompletionSuccessEvent(created int) observabilityport.RuntimeEvent {
+	return observabilityport.RuntimeEvent{
+		Message:    fmt.Sprintf("download completion pass recorded %d completion row(s)", created),
+		Component:  "acquisition",
+		Operation:  "download_completion",
+		Outcome:    "success",
+		ReasonCode: "download_completion_completed",
+	}
+}
+
 // runDownloadCompletion writes the completion row (and, for an action with work
 // to do, its WorkItem) of every succeeded download acquisition on a short tick.
 // A failed pass is logged and retried on the next tick; the row is the marker,
 // so a pass never repeats an acquisition it already handled.
 func runDownloadCompletion(ctx context.Context, service *downloadcompletion.Service, logger observabilityport.RuntimeLogger) {
 	run := func() {
-		if _, err := service.RunPass(ctx); err != nil && ctx.Err() == nil {
-			logger.Error(ctx, observabilityport.RuntimeEvent{
-				Message:    "download completion pass failed",
-				Component:  "acquisition",
-				Operation:  "download_completion",
-				Outcome:    "failure",
-				ReasonCode: "download_completion_pass_failed",
-				ErrorClass: "acquisition",
-			})
+		result, err := service.RunPass(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				logger.Error(ctx, downloadCompletionFailureEvent(result.Created))
+			}
+			return
+		}
+		if result.Created > 0 {
+			logger.Info(ctx, downloadCompletionSuccessEvent(result.Created))
 		}
 	}
 	run()

@@ -178,8 +178,14 @@ func TestReplacementAndDisplacementDefaultsWordTheEvent(t *testing.T) {
 	if !strings.Contains(message.Title, "已替换旧版本：示例") && !strings.Contains(message.Title, "已替换旧版本") {
 		t.Fatalf("replacement title = %q", message.Title)
 	}
-	if !strings.Contains(message.Body, "替换了 1 个旧版本") || !strings.Contains(message.Body, " (示例字幕组 · ") {
-		t.Fatalf("replacement body = %q", message.Body)
+	sample := Sample(TriggerReplacementApplied)
+	newTitle := sample["replaced.new.title"].(string)
+	newGroup := sample["replaced.new.group"].(string)
+	newFile := sample["replaced.new.file"].(string)
+	wantNew := "新版本\n标题：" + newTitle + "\n字幕组：" + newGroup + "\n文件：" + newFile
+	wantOld := "旧版本\n标题：" + newTitle + "\n字幕组：" + newGroup + "\n文件：" + newFile
+	if !strings.Contains(message.Body, wantNew) || !strings.Contains(message.Body, wantOld) {
+		t.Fatalf("replacement body = %q, want blocks %q and %q", message.Body, wantNew, wantOld)
 	}
 
 	overwrite, ok := RenderMessage(TriggerFileDisplaced, "{{if(eq(event.cause, 'redownload'), '重新下载覆盖了旧文件', '新文件覆盖了旧文件')}}", "{{file.name}}|{{defaultIfEmpty(taker.title, taker.file)}}|{{defaultIfEmpty(taker.group, '未知')}}", Sample(TriggerFileDisplaced))
@@ -197,6 +203,125 @@ func TestReplacementAndDisplacementDefaultsWordTheEvent(t *testing.T) {
 	}
 }
 
+// The replacement default hides the whole line of a fact the frozen version
+// did not record: an old snapshot contributes no path-derived name, and an
+// all-empty notice has no block header at all.
+func TestReplacementDefaultBlocksHideMissingFacts(t *testing.T) {
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		labels := []string{"新版本", "旧版本", "标题：", "字幕组：", "文件：", "New version", "Old version", "Title: ", "Group: ", "File: "}
+		facts := Sample(TriggerReplacementApplied)
+		for _, key := range []string{"replaced.new.title", "replaced.new.group", "replaced.new.file", "replaced.old_versions"} {
+			delete(facts, key)
+		}
+		message := renderDefault(t, TriggerReplacementApplied, locale, facts)
+		for _, label := range labels {
+			if strings.Contains(message.Body, label) {
+				t.Fatalf("%s: empty notice presented %q: %q", locale, label, message.Body)
+			}
+		}
+		assertNoEmptyLabels(t, message.Body)
+
+		// Only an old version's group: its block exists with that one line.
+		partial := Sample(TriggerReplacementApplied)
+		for _, key := range []string{"replaced.new.title", "replaced.new.group", "replaced.new.file"} {
+			delete(partial, key)
+		}
+		partial["replaced.old_versions"] = []any{map[string]any{"group": "旧组"}}
+		message = renderDefault(t, TriggerReplacementApplied, locale, partial)
+		oldHeader, titleLabel, fileLabel := "旧版本\n字幕组：旧组", "标题：", "文件："
+		if locale == LocaleEN {
+			oldHeader, titleLabel, fileLabel = "Old version\nGroup: 旧组", "Title: ", "File: "
+		}
+		if !strings.Contains(message.Body, oldHeader) {
+			t.Fatalf("%s: partial old block = %q", locale, message.Body)
+		}
+		if strings.Contains(message.Body, titleLabel) || strings.Contains(message.Body, fileLabel) {
+			t.Fatalf("%s: partial old block invented a missing line: %q", locale, message.Body)
+		}
+		if strings.Contains(message.Body, "新版本") || strings.Contains(message.Body, "New version") {
+			t.Fatalf("%s: empty new version kept its header: %q", locale, message.Body)
+		}
+		assertNoEmptyLabels(t, message.Body)
+	}
+}
+
+// Multiple old versions are numbered, each block keeps the fixed title / group
+// / file order, and a title that looks like a file name stays a separate fact.
+func TestReplacementDefaultNumbersMultipleOldVersions(t *testing.T) {
+	facts := Sample(TriggerReplacementApplied)
+	facts["replaced.new.title"] = "新标题"
+	facts["replaced.new.group"] = "新组"
+	facts["replaced.new.file"] = "new.mkv"
+	facts["replaced.old_versions"] = []any{
+		map[string]any{"title": "标题一", "group": "组一", "path": "same.mkv"},
+		map[string]any{"title": "same.mkv", "group": "组二", "path": "same.mkv"},
+		// A version whose source chain is gone carries no source fact at all;
+		// it neither adds a block nor shifts the numbering of the others.
+		map[string]any{},
+	}
+	message := renderDefault(t, TriggerReplacementApplied, LocaleZH, facts)
+	want := "新版本\n标题：新标题\n字幕组：新组\n文件：new.mkv\n\n" +
+		"旧版本 1\n标题：标题一\n字幕组：组一\n文件：same.mkv\n\n" +
+		"旧版本 2\n标题：same.mkv\n字幕组：组二\n文件：same.mkv"
+	if !strings.Contains(message.Body, want) {
+		t.Fatalf("zh blocks = %q, want %q", message.Body, want)
+	}
+	message = renderDefault(t, TriggerReplacementApplied, LocaleEN, facts)
+	want = "New version\nTitle: 新标题\nGroup: 新组\nFile: new.mkv\n\n" +
+		"Old version 1\nTitle: 标题一\nGroup: 组一\nFile: same.mkv\n\n" +
+		"Old version 2\nTitle: same.mkv\nGroup: 组二\nFile: same.mkv"
+	if !strings.Contains(message.Body, want) {
+		t.Fatalf("en blocks = %q, want %q", message.Body, want)
+	}
+	assertNoEmptyLabels(t, message.Body)
+}
+
+// A custom template's existing {{replaced.targets}} line and every stored
+// template snapshot keep their previous sourcing: the current library names
+// and the winning Release's current group and title. The same admission also
+// carries the frozen original download source, which only the default
+// presentation reads; the default must not leak a library name.
+func TestReplacementCustomTargetsAndStoredTemplatesKeepTheirRendering(t *testing.T) {
+	facts := Sample(TriggerReplacementApplied)
+	facts["anime.group"] = "CurrentGroup"
+	facts["release.title"] = "CurrentTitle"
+	facts["replaced.count"] = 1
+	facts["replaced.targets"] = []any{map[string]any{"path": "Library Name.mkv", "group": "CurrentGroup", "title": "CurrentTitle"}}
+	facts["replaced.new.title"] = "Original New Title"
+	facts["replaced.new.group"] = "OriginalGroup"
+	facts["replaced.new.file"] = "Original New.mkv"
+	facts["replaced.old_versions"] = []any{map[string]any{"path": "Original Old.mkv", "group": "OriginalGroup", "title": "Original Old Title"}}
+
+	message, ok := RenderMessage(TriggerReplacementApplied, "{{anime.title}}", "{{replaced.targets}}", facts)
+	if !ok || !message.Valid() || message.Body != "Library Name.mkv (CurrentGroup · CurrentTitle)" {
+		t.Fatalf("custom list rendering = %q / %+v", message.Body, message)
+	}
+	legacy, ok := RenderMessage(TriggerReplacementApplied, "{{release.title}}", "{{release.title}}|{{anime.group}}", facts)
+	if !ok || !legacy.Valid() || legacy.Body != "CurrentTitle|CurrentGroup" {
+		t.Fatalf("custom legacy scalars = %q / %+v", legacy.Body, legacy)
+	}
+
+	const storedZH = "{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n替换了 {{replaced.count}} 个旧版本：\n{{replaced.targets}}"
+	message, ok = RenderMessage(TriggerReplacementApplied, "已替换旧版本：{{anime.title}}", storedZH, facts)
+	if !ok || !message.Valid() || !strings.Contains(message.Body, "替换了 1 个旧版本：\nLibrary Name.mkv (CurrentGroup · CurrentTitle)") {
+		t.Fatalf("stored zh template = %q / %+v", message.Body, message)
+	}
+
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		message = renderDefault(t, TriggerReplacementApplied, locale, facts)
+		for _, original := range []string{"Original New Title", "OriginalGroup", "Original New.mkv", "Original Old Title", "Original Old.mkv"} {
+			if !strings.Contains(message.Body, original) {
+				t.Fatalf("%s: default lost the frozen original %q: %q", locale, original, message.Body)
+			}
+		}
+		for _, legacyName := range []string{"Library Name.mkv", "CurrentTitle", "CurrentGroup"} {
+			if strings.Contains(message.Body, legacyName) {
+				t.Fatalf("%s: default borrowed the legacy value %q: %q", locale, legacyName, message.Body)
+			}
+		}
+	}
+}
+
 // The file outcome defaults name the original download file's parse only when
 // its frozen block recorded that field: the label and its line disappear
 // together, and the completed notice keeps its existing subtitle line.
@@ -207,10 +332,21 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 			groupLabel, subtitleLabel, fileLabel, reasonLabel = "Original file group", "Subtitles: ", "File: ", "Reason: "
 		}
 		for _, trigger := range []string{TriggerFileOperationCompleted, TriggerFileOperationFailed} {
+			label := groupLabel
+			if trigger == TriggerFileOperationFailed {
+				label = "字幕组"
+				if locale == LocaleEN {
+					label = "Group"
+				}
+			}
+			sep := "："
+			if locale == LocaleEN {
+				sep = ": "
+			}
 			facts := Sample(trigger)
 			facts["frt.group"] = "文件组A"
 			message := renderDefault(t, trigger, locale, facts)
-			if !strings.Contains(message.Body, groupLabel+"：文件组A") && !strings.Contains(message.Body, groupLabel+": 文件组A") {
+			if !strings.Contains("\n"+message.Body+"\n", "\n"+label+sep+"文件组A\n") {
 				t.Fatalf("%s/%s group line = %q", trigger, locale, message.Body)
 			}
 			assertNoEmptyLabels(t, message.Body)
@@ -227,7 +363,7 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 			delete(partial, "frt.group")
 			partial["frt.res"] = "1080p"
 			message = renderDefault(t, trigger, locale, partial)
-			if strings.Contains(message.Body, groupLabel) {
+			if strings.Contains(message.Body, label+sep) {
 				t.Fatalf("%s/%s kept an unvalued group label: %q", trigger, locale, message.Body)
 			}
 			if trigger == TriggerFileOperationCompleted && !strings.Contains(message.Body, subtitleLabel) {
@@ -237,7 +373,7 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 			empty := Sample(trigger)
 			empty["frt.group"] = ""
 			message = renderDefault(t, trigger, locale, empty)
-			if strings.Contains(message.Body, groupLabel) {
+			if strings.Contains(message.Body, label+sep) {
 				t.Fatalf("%s/%s kept the group label for an empty parse: %q", trigger, locale, message.Body)
 			}
 			assertNoEmptyLabels(t, message.Body)
@@ -245,7 +381,7 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 
 			missing := deleteFactsWithPrefix(Sample(trigger), "frt.")
 			message = renderDefault(t, trigger, locale, missing)
-			if strings.Contains(message.Body, groupLabel) {
+			if strings.Contains(message.Body, label+sep) {
 				t.Fatalf("%s/%s kept the group label without any frt: %q", trigger, locale, message.Body)
 			}
 			assertNoEmptyLabels(t, message.Body)

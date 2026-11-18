@@ -13,6 +13,7 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/batchplan"
 	"bansoko/internal/events"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/subscription/competition"
@@ -569,6 +570,106 @@ type competitionNext struct {
 	delay   time.Duration
 }
 
+// competitionConclusion is the confirmed result of one committed round. applied
+// counts only the decided results the owner writer actually wrote;
+// unprocessed counts releases left out of this round and is never an update
+// count.
+type competitionConclusion struct {
+	inactive    bool
+	gone        bool
+	applied     int
+	unprocessed int
+	next        *competitionNext
+}
+
+// competitionConclusionEvent builds the fixed post-commit conclusion of one
+// competition round. It carries integer counts and fixed text only: no release
+// IDs, reasons or candidate titles.
+func competitionConclusionEvent(claim workitems.Claim, conclusion competitionConclusion) observabilityport.RuntimeEvent {
+	event := observabilityport.RuntimeEvent{
+		Component:  "rss",
+		Operation:  "competition",
+		Outcome:    "success",
+		OwnerType:  claim.Owner.Type,
+		OwnerID:    claim.Owner.ID,
+		WorkItemID: claim.ID,
+		Kind:       claim.Kind,
+	}
+	switch {
+	case conclusion.inactive:
+		event.Outcome = "skipped"
+		event.ReasonCode = "competition_inactive"
+		event.Message = "competition round skipped: the subscription is inactive; its resume enqueues a comparison"
+	case conclusion.gone:
+		event.Outcome = "skipped"
+		event.ReasonCode = "competition_subscription_gone"
+		event.Message = "competition round skipped: the subscription no longer exists"
+	case conclusion.next == nil:
+		event.ReasonCode = "competition_waiting_for_trigger"
+		if conclusion.unprocessed > 0 {
+			event.Message = fmt.Sprintf("competition round committed: applied %d decision(s); %d release(s) are left unprocessed and wait for a new trigger", conclusion.applied, conclusion.unprocessed)
+		} else {
+			event.Message = fmt.Sprintf("competition round committed: applied %d decision(s); no next comparison is scheduled", conclusion.applied)
+		}
+	case conclusion.next.trigger == competition.TriggerRoundRetry:
+		event.ReasonCode = "competition_retry_scheduled"
+		event.Message = fmt.Sprintf("competition round committed: applied %d decision(s); %d release(s) are left unprocessed; comparison retry %d/%d is scheduled", conclusion.applied, conclusion.unprocessed, conclusion.next.retry, competition.MaxAttempts)
+	case conclusion.next.trigger == competition.TriggerGateWait:
+		event.ReasonCode = "competition_gate_wait"
+		event.Message = fmt.Sprintf("competition round committed: applied %d decision(s); %d release(s) are left unprocessed; the comparison waits for the evaluation gate", conclusion.applied, conclusion.unprocessed)
+	case conclusion.next.trigger == competition.TriggerRoundMoved:
+		event.ReasonCode = "competition_round_moved"
+		event.Message = fmt.Sprintf("competition round moved before commit: applied %d decision(s); %d release(s) are left unprocessed; another comparison is scheduled immediately", conclusion.applied, conclusion.unprocessed)
+	case conclusion.next.trigger == competition.TriggerFollowUp:
+		event.ReasonCode = "competition_follow_up_scheduled"
+		event.Message = fmt.Sprintf("competition round committed: applied %d decision(s); %d release(s) are left unprocessed; another comparison is scheduled immediately", conclusion.applied, conclusion.unprocessed)
+	default:
+		event.ReasonCode = "competition_next_round_scheduled"
+		event.Message = fmt.Sprintf("competition round committed: applied %d decision(s); %d release(s) are left unprocessed; another comparison is scheduled", conclusion.applied, conclusion.unprocessed)
+	}
+	return event
+}
+
+// competitionMovedEvent builds the conclusion of a commit that lost a lock
+// race and left a fresh round instead of deciding this one.
+func competitionMovedEvent(claim workitems.Claim, unprocessed int, found bool) observabilityport.RuntimeEvent {
+	event := observabilityport.RuntimeEvent{
+		Component:  "rss",
+		Operation:  "competition",
+		Outcome:    "success",
+		OwnerType:  claim.Owner.Type,
+		OwnerID:    claim.Owner.ID,
+		WorkItemID: claim.ID,
+		Kind:       claim.Kind,
+	}
+	if !found {
+		event.Outcome = "skipped"
+		event.ReasonCode = "competition_subscription_gone"
+		event.Message = "competition commit lost a lock race; the subscription no longer exists, so no comparison was scheduled"
+		return event
+	}
+	event.ReasonCode = "competition_round_moved"
+	event.Message = fmt.Sprintf("competition commit lost a lock race; %d release(s) are left unprocessed; a fresh comparison is scheduled immediately", unprocessed)
+	return event
+}
+
+// logCompetitionConclusion records the confirmed round result after the
+// owner transaction committed. It never reports a number of updates from the
+// unprocessed set.
+func (s *Service) logCompetitionConclusion(ctx context.Context, claim workitems.Claim, conclusion competitionConclusion) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	s.logger.Info(ctx, competitionConclusionEvent(claim, conclusion))
+}
+
+func (s *Service) logCompetitionMoved(ctx context.Context, claim workitems.Claim, unprocessed int, found bool) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	s.logger.Info(ctx, competitionMovedEvent(claim, unprocessed, found))
+}
+
 // commitCompetition commits a round in the handler's own transaction and
 // reports it as a committed outcome. Lock order: managed anime (key share),
 // subscription, the claimed item, then each release (the release owner
@@ -586,9 +687,11 @@ func (s *Service) commitCompetition(ctx context.Context, claim workitems.Claim, 
 		if !competitionContention(err) {
 			return worker.Outcome{}, err
 		}
-		if err := s.restartCompetition(ctx, claim); err != nil {
-			return worker.Outcome{}, err
+		found, restartErr := s.restartCompetition(ctx, claim)
+		if restartErr != nil {
+			return worker.Outcome{}, restartErr
 		}
+		s.logCompetitionMoved(ctx, claim, len(run.excluded), found)
 		result, written = workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved, Reason: safeReason(err.Error())}, nil
 	}
 	outcome := worker.Committed(claim, result)
@@ -604,7 +707,6 @@ func (s *Service) commitCompetition(ctx context.Context, claim workitems.Claim, 
 	}
 	return outcome, nil
 }
-
 func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim, run competitionRun) (workitems.OwnerResult, []decidedEvaluation, error) {
 	animeID := claim.Owner.ID
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -616,7 +718,7 @@ func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim
 	if err != nil {
 		return workitems.OwnerResult{}, nil, err
 	}
-	finish := func(result workitems.OwnerResult, written []decidedEvaluation, next *competitionNext) (workitems.OwnerResult, []decidedEvaluation, error) {
+	finish := func(result workitems.OwnerResult, written []decidedEvaluation, next *competitionNext, conclusion *competitionConclusion) (workitems.OwnerResult, []decidedEvaluation, error) {
 		if err := s.workItems.FinishLockedTx(ctx, tx, claim, workitems.StateSucceeded, version); err != nil {
 			return workitems.OwnerResult{}, nil, err
 		}
@@ -632,10 +734,13 @@ func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim
 		if err := tx.Commit(); err != nil {
 			return workitems.OwnerResult{}, nil, fmt.Errorf("commit competition: %w", err)
 		}
+		if conclusion != nil {
+			s.logCompetitionConclusion(ctx, claim, *conclusion)
+		}
 		return result, written, nil
 	}
 	if !found {
-		return finish(workitems.OwnerResult{State: "idle", ReasonCode: competitionInactive}, nil, nil)
+		return finish(workitems.OwnerResult{State: "idle", ReasonCode: competitionInactive}, nil, nil, &competitionConclusion{gone: true})
 	}
 	gate, err := competitionGate(ctx, tx, animeID)
 	if err != nil {
@@ -644,16 +749,20 @@ func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim
 	switch {
 	case gate == competitionInactive:
 		// A stopped subscription's resume enqueues the competition.
-		return finish(workitems.OwnerResult{State: "waiting", ReasonCode: gate}, nil, nil)
+		return finish(workitems.OwnerResult{State: "waiting", ReasonCode: gate}, nil, nil, &competitionConclusion{inactive: true})
 	case gate != "":
 		// A live evaluation or a first refresh enqueues the competition when
 		// it ends only while a release waits; the round looks again later so
 		// a fallback candidate's round is not lost.
-		return finish(workitems.OwnerResult{State: "waiting", ReasonCode: gate}, nil, &competitionNext{trigger: competition.TriggerGateWait, delay: competitionGateWaitDelay})
+		next := &competitionNext{trigger: competition.TriggerGateWait, delay: competitionGateWaitDelay}
+		return finish(workitems.OwnerResult{State: "waiting", ReasonCode: gate}, nil, next,
+			&competitionConclusion{unprocessed: len(run.excluded), next: next})
 	case run.gate != "" || run.moved:
 		// The gate opened after the unlocked read, or a decided release moved:
 		// decide again in a fresh round.
-		return finish(workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved}, nil, &competitionNext{trigger: competition.TriggerRoundMoved})
+		next := &competitionNext{trigger: competition.TriggerRoundMoved}
+		return finish(workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved}, nil, next,
+			&competitionConclusion{unprocessed: len(run.excluded), next: next})
 	}
 	excluded := run.excludedSet()
 	locked, err := s.competition.CompetitionDecisions(ctx, tx, animeID, excluded)
@@ -661,7 +770,9 @@ func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim
 		return workitems.OwnerResult{}, nil, err
 	}
 	if !locked.Equal(run.round) {
-		return finish(workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved}, nil, &competitionNext{trigger: competition.TriggerRoundMoved})
+		next := &competitionNext{trigger: competition.TriggerRoundMoved}
+		return finish(workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved}, nil, next,
+			&competitionConclusion{unprocessed: len(run.excluded), next: next})
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET competition_first_round_at = CURRENT_TIMESTAMP WHERE managed_anime_id = $1 AND competition_first_round_at IS NULL`, animeID); err != nil {
 		return workitems.OwnerResult{}, nil, fmt.Errorf("record the first competition round: %w", err)
@@ -701,7 +812,11 @@ func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim
 	if len(run.round.Decisions) == 0 && len(run.excluded) == 0 {
 		result = workitems.OwnerResult{State: "idle", ReasonCode: run.round.Reason}
 	}
-	return finish(result, written, next)
+	return finish(result, written, next, &competitionConclusion{
+		applied:     len(written),
+		unprocessed: len(run.excluded),
+		next:        next,
+	})
 }
 
 // markCompetitionStalledTx gives every waiting release a round left out the
@@ -794,28 +909,28 @@ func competitionRetryCount(input json.RawMessage) int {
 
 // restartCompetition ends a claim whose commit lost a lock race and leaves a
 // fresh item that runs at once, so contention spends no attempt.
-func (s *Service) restartCompetition(ctx context.Context, claim workitems.Claim) error {
+func (s *Service) restartCompetition(ctx context.Context, claim workitems.Claim) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin competition restart: %w", err)
+		return false, fmt.Errorf("begin competition restart: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	version, found, err := lockCompetitionOwnerTx(ctx, tx, s.workItems, claim)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := s.workItems.FinishLockedTx(ctx, tx, claim, workitems.StateSucceeded, version); err != nil {
-		return err
+		return false, err
 	}
 	if found {
 		if err := competition.MergeTx(ctx, tx, claim.Owner.ID, version, map[string]any{"trigger": competition.TriggerRoundMoved}, 0); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit competition restart: %w", err)
+		return false, fmt.Errorf("commit competition restart: %w", err)
 	}
-	return nil
+	return found, nil
 }
 
 // competitionContention reports a lock race or serialization failure of the

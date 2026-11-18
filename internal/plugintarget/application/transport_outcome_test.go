@@ -398,3 +398,113 @@ func TestSendRequestRedactsTransportErrorText(t *testing.T) {
 		})
 	}
 }
+
+// The attempt event states only what the durable attempt established: a
+// queued retry, a settled terminal result, or an outcome that may have been
+// sent but has no answer. Fixed text only; no error, address or payload.
+func TestDeliveryAttemptEvent(t *testing.T) {
+	claim := workitems.Claim{
+		ID:      "work-delivery-1",
+		Kind:    workitems.KindPluginDeliver,
+		Owner:   workitems.OwnerRef{Type: workitems.OwnerPluginDelivery, ID: "delivery-1"},
+		Attempt: 2,
+	}
+	status := 503
+	okStatus := 200
+	for _, test := range []struct {
+		name        string
+		result      attemptResult
+		retrying    bool
+		wantOutcome string
+		wantReason  string
+		wantRetry   bool
+		wantParts   []string
+	}{
+		{
+			name:        "delivered",
+			result:      attemptResult{state: "delivered", responseStatus: &okStatus},
+			wantOutcome: "success",
+			wantReason:  "notification_delivered",
+			wantParts:   []string{"notification delivered"},
+		},
+		{
+			name:        "queued retry with unknown outcome",
+			result:      attemptResult{state: "unknown", errorCode: "response_timeout", err: "dial tcp 10.0.0.5: connection reset"},
+			retrying:    true,
+			wantOutcome: "unconfirmed",
+			wantReason:  "notification_retry_scheduled_unknown",
+			wantRetry:   true,
+			wantParts:   []string{"may have been sent", "another attempt is queued"},
+		},
+		{
+			name:        "queued retry after a retryable status",
+			result:      attemptResult{state: "waiting_retry", responseStatus: &status},
+			retrying:    true,
+			wantOutcome: "failure",
+			wantReason:  "notification_retry_scheduled",
+			wantRetry:   true,
+			wantParts:   []string{"retryable status", "another attempt is queued"},
+		},
+		{
+			name:        "queued retry when the request was not written",
+			result:      attemptResult{state: "waiting_retry", errorCode: "connection_refused"},
+			retrying:    true,
+			wantOutcome: "failure",
+			wantReason:  "notification_retry_scheduled",
+			wantRetry:   true,
+			wantParts:   []string{"was not written", "another attempt is queued"},
+		},
+		{
+			name:        "terminal unknown",
+			result:      attemptResult{state: "unknown", errorCode: "response_timeout"},
+			wantOutcome: "unconfirmed",
+			wantReason:  "notification_outcome_unknown",
+			wantParts:   []string{"may have been sent", "no automatic attempt remains"},
+		},
+		{
+			name:        "terminal rejection",
+			result:      attemptResult{state: "failed", responseStatus: &status},
+			wantOutcome: "failure",
+			wantReason:  "notification_failed",
+			wantParts:   []string{"rejected by the receiver", "no automatic attempt remains"},
+		},
+		{
+			name:        "terminal pre-send failure",
+			result:      attemptResult{state: "failed", errorCode: "request_build_failed"},
+			wantOutcome: "failure",
+			wantReason:  "notification_failed",
+			wantParts:   []string{"could not be sent", "no automatic attempt remains"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			event := deliveryAttemptEvent(claim, test.result, test.retrying)
+			if event.Component != "notification" || event.Operation != "delivery" {
+				t.Fatalf("event identity = %s/%s", event.Component, event.Operation)
+			}
+			if event.OwnerID != "delivery-1" || event.WorkItemID != "work-delivery-1" || event.Attempt != 2 {
+				t.Fatalf("event owner/work = %+v", event)
+			}
+			if event.Outcome != test.wantOutcome || event.ReasonCode != test.wantReason {
+				t.Fatalf("event = %s/%s, want %s/%s", event.Outcome, event.ReasonCode, test.wantOutcome, test.wantReason)
+			}
+			if test.wantReason != "notification_delivered" {
+				if event.Retryable == nil || *event.Retryable != test.wantRetry {
+					t.Fatalf("retryable = %v, want %v", event.Retryable, test.wantRetry)
+				}
+			}
+			for _, want := range test.wantParts {
+				if !strings.Contains(event.Message, want) {
+					t.Fatalf("message %q lacks %q", event.Message, want)
+				}
+			}
+			if test.wantOutcome == "unconfirmed" && strings.Contains(strings.ToLower(event.Message), "failed") {
+				t.Fatalf("an unknown outcome was reported as a failure: %q", event.Message)
+			}
+			for _, forbidden := range []string{"10.0.0.5", "dial tcp", "534678", "hook.example", "response_timeout", "request_build_failed"} {
+				if strings.Contains(event.Message, forbidden) {
+					t.Fatalf("message leaked %q: %q", forbidden, event.Message)
+				}
+			}
+		})
+	}
+}

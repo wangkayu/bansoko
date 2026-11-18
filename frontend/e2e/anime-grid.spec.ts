@@ -2381,9 +2381,8 @@ test.describe("AnimeGrid", () => {
 
     await openShellTool(page, "日志");
     const recordsDialog = pageDialog(page);
-    await expect(recordsDialog.getByText("日志", { exact: true })).toBeVisible();
     await expect(recordsDialog.getByRole("tab", { name: "事件", exact: true })).toBeVisible();
-    await expect(recordsDialog.getByRole("tab", { name: "诊断", exact: true })).toBeVisible();
+    await expect(recordsDialog.getByRole("tab", { name: "日志", exact: true })).toBeVisible();
   });
 
   test("route-hosts the topbar tools and the log: deep link, refresh, Back", async ({ page }) => {
@@ -2405,7 +2404,7 @@ test.describe("AnimeGrid", () => {
 
     const cases: { query: string; name: string }[] = [
       { query: "tool=search", name: "搜索番剧" },
-      { query: "log=diagnostics", name: "日志" },
+      { query: "log=raw", name: "日志" },
     ];
     for (const { query, name } of cases) {
       await page.goto(`/#/?source=mikan&${query}`);
@@ -2413,8 +2412,8 @@ test.describe("AnimeGrid", () => {
       await expect(dialog).toBeVisible();
       await page.reload();
       await expect(dialog).toBeVisible();
-      if (query === "log=diagnostics") {
-        await expect(dialog.getByRole("tab", { name: "诊断", exact: true })).toHaveAttribute("aria-selected", "true");
+      if (query === "log=raw") {
+        await expect(dialog.getByRole("tab", { name: "日志", exact: true })).toHaveAttribute("aria-selected", "true");
         await dialog.getByRole("tab", { name: "事件", exact: true }).click();
         await expect(page).toHaveURL(/log=records/);
       }
@@ -2422,6 +2421,13 @@ test.describe("AnimeGrid", () => {
       await expect(pageDialog(page)).toHaveCount(0);
       await expect(page).toHaveURL(/#\/\?source=mikan$/);
     }
+
+    // 旧 build 写下的 ?log=diagnostics 仍打开日志，并原地改写为当前地址。
+    await page.goto("/#/?source=mikan&log=diagnostics");
+    const legacy = page.getByRole("dialog", { name: "日志" });
+    await expect(legacy).toBeVisible();
+    await expect(legacy.getByRole("tab", { name: "日志", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/#\/\?source=mikan&log=raw$/);
   });
 
   test("route-hosts the anime config and guards Back when it holds unsaved edits", async ({ page }) => {

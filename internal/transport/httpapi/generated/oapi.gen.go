@@ -2209,6 +2209,12 @@ const (
 	RuntimeLogLineLevelWarn  RuntimeLogLineLevel = "warn"
 )
 
+// Defines values for RuntimeLogPageSource.
+const (
+	RuntimeLogPageSourceFile   RuntimeLogPageSource = "file"
+	RuntimeLogPageSourceMemory RuntimeLogPageSource = "memory"
+)
+
 // Defines values for SOCKS5RouteKind.
 const (
 	SOCKS5RouteKindSocks5 SOCKS5RouteKind = "socks5"
@@ -8832,15 +8838,25 @@ type RulesSections struct {
 // RuntimeLogLine defines model for RuntimeLogLine.
 type RuntimeLogLine struct {
 	At            time.Time           `json:"at"`
+	Attempt       *int                `json:"attempt,omitempty"`
 	Component     *string             `json:"component,omitempty"`
 	CorrelationId *string             `json:"correlation_id,omitempty"`
+	Disposition   *string             `json:"disposition,omitempty"`
+	DurationMs    *int64              `json:"duration_ms,omitempty"`
 	ErrorClass    *string             `json:"error_class,omitempty"`
+	Kind          *string             `json:"kind,omitempty"`
 	Level         RuntimeLogLineLevel `json:"level"`
 	Message       string              `json:"message"`
 	Operation     *string             `json:"operation,omitempty"`
 	Outcome       *string             `json:"outcome,omitempty"`
+	OwnerType     *string             `json:"owner_type,omitempty"`
 	ReasonCode    *string             `json:"reason_code,omitempty"`
 	RequestId     *string             `json:"request_id,omitempty"`
+	Retryable     *bool               `json:"retryable,omitempty"`
+	Stage         *string             `json:"stage,omitempty"`
+	StateAfter    *string             `json:"state_after,omitempty"`
+	StateBefore   *string             `json:"state_before,omitempty"`
+	WorkItemId    *string             `json:"work_item_id,omitempty"`
 }
 
 // RuntimeLogLineLevel defines model for RuntimeLogLine.Level.
@@ -8848,8 +8864,22 @@ type RuntimeLogLineLevel string
 
 // RuntimeLogPage defines model for RuntimeLogPage.
 type RuntimeLogPage struct {
+	// Gap Present and true when the supplied cursor is no longer retained (evicted history) or belongs to the other storage source, so lines between the cursor and this page may be missing.
+	Gap   *bool            `json:"gap,omitempty"`
 	Lines []RuntimeLogLine `json:"lines"`
+
+	// NextAfter Opaque cursor naming the next unread position; also the incremental watermark. The server returns it even when the page is empty, because a query with no matches still advanced to the end of what it scanned. A client polling with after must store and use the new value from every page.
+	NextAfter *string `json:"next_after,omitempty"`
+
+	// NextBefore Opaque cursor for the next older page. Absent when the page is empty.
+	NextBefore *string `json:"next_before,omitempty"`
+
+	// Source file means the retained on-disk history answered; memory means it was unavailable and the bounded in-memory tail answered instead.
+	Source RuntimeLogPageSource `json:"source"`
 }
+
+// RuntimeLogPageSource file means the retained on-disk history answered; memory means it was unavailable and the bounded in-memory tail answered instead.
+type RuntimeLogPageSource string
 
 // SOCKS5Route defines model for SOCKS5Route.
 type SOCKS5Route struct {
@@ -10468,7 +10498,19 @@ type ListReleaseBatchEntriesParams struct {
 type GetRuntimeLogParams struct {
 	// Level all lines, warnings and errors, or errors only.
 	Level *GetRuntimeLogParamsLevel `form:"level,omitempty" json:"level,omitempty"`
-	Limit *int                      `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Q Space-separated search terms. Every term must occur case-insensitively in the line's allowlisted fields. The level and text filters both apply before the limit is taken, so the page holds matching lines, not one page of the newest lines filtered afterwards. Empty or whitespace-only means no text filter.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// WorkItemId Exact work item ID. Only lines whose projected work_item_id equals this value are returned, combined with level and q. Empty means no work-item filter.
+	WorkItemId *string `form:"work_item_id,omitempty" json:"work_item_id,omitempty"`
+
+	// Before Opaque cursor from next_before. Returns matching lines older than the cursor, oldest first. Omit it to start from the newest line. Cannot be combined with after.
+	Before *string `form:"before,omitempty" json:"before,omitempty"`
+
+	// After Opaque cursor from next_after, for incremental refresh. The cursor names the next unread position, so a line at that position has not been read yet and is included. Returns matching lines oldest first. Use the next_after of every page, including an empty one, as the next cursor. Cannot be combined with before.
+	After *string `form:"after,omitempty" json:"after,omitempty"`
+	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // GetRuntimeLogParamsLevel defines parameters for GetRuntimeLog.
@@ -19004,6 +19046,38 @@ func (siw *ServerInterfaceWrapper) GetRuntimeLog(w http.ResponseWriter, r *http.
 	err = runtime.BindQueryParameter("form", true, false, "level", r.URL.Query(), &params.Level)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "level", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "q", r.URL.Query(), &params.Q)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "work_item_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "work_item_id", r.URL.Query(), &params.WorkItemId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "work_item_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "before", r.URL.Query(), &params.Before)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "after", r.URL.Query(), &params.After)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
 		return
 	}
 

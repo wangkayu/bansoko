@@ -182,6 +182,62 @@ func placementFileNamesTx(ctx context.Context, tx *sql.Tx, ids []string) ([]stri
 	return names, nil
 }
 
+// placementSourceFacts is the frozen download source identity of one
+// placement: the release title and group of its accepted acquisition input and
+// the original file name inside its artifact manifest. Empty fields mean the
+// source chain is gone or never existed; callers hide the line rather than
+// borrowing a library path, a planned target or a live Release row.
+type placementSourceFacts struct {
+	Title string
+	Group string
+	File  string
+}
+
+// placementSourceFactsTx reads one placement's frozen source through the
+// chain the placement already records: source_owner_ref names the file
+// operation, whose acquisition input froze the release title and group and
+// whose artifact file froze the torrent-relative original file name. Nothing
+// is read from the current Release/RSS source rows. A placement admitted from
+// reconciliation/recovery has no download source; an operation compacted by
+// detail retention no longer resolves. Both yield zero facts and the caller
+// hides the missing lines. The boolean reports whether the placement row
+// exists.
+func placementSourceFactsTx(ctx context.Context, tx *sql.Tx, id string) (placementSourceFacts, bool, error) {
+	var evidenceType, ownerRef string
+	err := tx.QueryRowContext(ctx, `SELECT source_evidence_type, source_owner_ref FROM placements WHERE id = $1`, id).Scan(&evidenceType, &ownerRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return placementSourceFacts{}, false, nil
+	}
+	if err != nil {
+		return placementSourceFacts{}, false, fmt.Errorf("read placement source evidence: %w", err)
+	}
+	if evidenceType != "file_operation" || ownerRef == "" {
+		return placementSourceFacts{}, true, nil
+	}
+	var title, group, file sql.NullString
+	err = tx.QueryRowContext(ctx, `
+SELECT CASE WHEN i.input->'source'->'title'->>'state' = 'known'
+             AND btrim(i.input->'source'->'title'->>'value') <> ''
+            THEN i.input->'source'->'title'->>'value' END,
+       CASE WHEN i.input->'source'->'group'->>'state' = 'known'
+             AND btrim(i.input->'source'->'group'->>'value') <> ''
+            THEN i.input->'source'->'group'->>'value' END,
+       NULLIF(regexp_replace(rtrim(af.relative_path, '/'), '^.*/', ''), '')
+FROM public.file_operations o
+LEFT JOIN public.acquisitions i ON i.id = o.acquisition_id
+LEFT JOIN public.artifact_files af ON af.id = o.artifact_file_id
+WHERE o.id = $1`, ownerRef).Scan(&title, &group, &file)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The detail-expiry compaction deletes the operation (and its artifact
+		// file) while the placement stays: no fact is invented for it.
+		return placementSourceFacts{}, true, nil
+	}
+	if err != nil {
+		return placementSourceFacts{}, true, fmt.Errorf("read placement source facts: %w", err)
+	}
+	return placementSourceFacts{Title: title.String, Group: group.String, File: file.String}, true, nil
+}
+
 // placementTargetsTx names the versions behind the given placements, in the
 // given order: the file name plus, when the placement records the Release it
 // came from, that Release's subgroup and title. A placement without a Release

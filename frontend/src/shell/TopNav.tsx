@@ -40,17 +40,16 @@ import {
   type Connection,
   type ConnectionTestResult,
 } from "../lib/api/client";
-import { formatDateTime } from "../lib/labels";
+import { formatDateTime, formatShortDateTime } from "../lib/labels";
 import { reasonLabel } from "../lib/i18n/reasons";
 import { configKeys } from "../lib/queryKeys";
 import { useNextAutomationRun } from "../lib/automationSchedules";
 import { PHONE_MEDIA_QUERY, useMediaQuery } from "../lib/useMediaQuery";
 import { useLogDialogStore } from "./logDialogStore";
-import { isOneOf, ROUTE_DIALOG_STATE, ROUTE_LOG_VIEWS, ROUTE_QB_SEGMENTS, ROUTE_RECORD_LIST, ROUTE_RECORD_SEGMENTS, ROUTE_TOOLS, useRouteDialogs, type RouteLogView } from "./routeDialogs";
+import { isOneOf, normalizeLogView, ROUTE_DIALOG_STATE, ROUTE_LOG_VIEWS, ROUTE_QB_SEGMENTS, ROUTE_RECORD_LIST, ROUTE_RECORD_SEGMENTS, ROUTE_TOOLS, useRouteDialogs, type RouteLogView } from "./routeDialogs";
 import { CATALOG_TABS, readRememberedBrowseTab, useCatalogTab } from "./catalogTabs";
 import { MoreSheet } from "./MoreSheet";
 import { BrandMark, BrandWordmark } from "./BrandMark";
-import { badgeText, useLogFailureBadge, type LogFailureBadge } from "./logSeen";
 import { loadAnimeConfigDialog } from "../features/anime-config/loadAnimeConfigDialog";
 import { Popover } from "../ui/base";
 import { t } from "../lib/i18n";
@@ -111,7 +110,8 @@ export function TopNav({
   // are retired and make the link fall back.
   const pathParam = routeDialogs.get("path");
   const fileRouteParamPresent = routeDialogs.get("file") !== null || routeDialogs.get("op") !== null;
-  const logDialogOpen = isOneOf(ROUTE_LOG_VIEWS, logParam);
+  const logView = normalizeLogView(logParam);
+  const logDialogOpen = logView !== null;
   // Execution records: `?record=list` is the list, any other value is one record's id.
   const recordParam = routeDialogs.get("record");
   const recordAnimeParam = routeDialogs.get("record_anime") ?? undefined;
@@ -123,8 +123,12 @@ export function TopNav({
   if (recordParam && recordParam !== lastRecord) setLastRecord(recordParam);
   // Keep the last view while the dialog plays its close transition.
   const [lastLogView, setLastLogView] = useState<RouteLogView>("records");
-  if (logDialogOpen && logParam !== lastLogView) setLastLogView(logParam);
-  const { dismiss: dismissRouteDialog } = routeDialogs;
+  if (logDialogOpen && logView !== lastLogView) setLastLogView(logView);
+  // The retired diagnostics link opens the raw log and is normalized to the current spelling.
+  const { dismiss: dismissRouteDialog, update: updateRouteDialog } = routeDialogs;
+  useEffect(() => {
+    if (logParam === "diagnostics") updateRouteDialog({ log: "raw" });
+  }, [logParam, updateRouteDialog]);
   const invalidRouteDialog =
     (toolParam !== null && !isOneOf(ROUTE_TOOLS, toolParam)) ||
     (logParam !== null && !logDialogOpen) ||
@@ -158,9 +162,6 @@ export function TopNav({
     if (open) routeDialogs.open({ tool: "search" });
     else routeDialogs.close();
   };
-
-  // The badge = new failures since the log was last seen (events + unrecovered diagnostic errors), kept only in this browser.
-  const failureBadge = useLogFailureBadge();
 
   const { tab, setTab } = useCatalogTab();
   const navigate = useNavigate();
@@ -280,7 +281,6 @@ export function TopNav({
                 <span className="top-nav-btn-label" aria-hidden>
                   {t("nav.log")}
                 </span>
-                {failureBadge.count > 0 && <span className="top-nav-badge">{badgeText(failureBadge)}</span>}
               </button>
               <button
                 type="button"
@@ -345,7 +345,6 @@ export function TopNav({
         <PhoneTabBar
           tab={tab}
           onSelectTab={setTab}
-          failureBadge={failureBadge}
           onOpenQBManager={openQBManager}
           onOpenMore={() => setMoreSheetOpen(true)}
         />
@@ -357,7 +356,6 @@ export function TopNav({
           onClose={() => setMoreSheetOpen(false)}
           onLogout={onLogout}
           connections={connections}
-          failureBadge={failureBadge}
           onOpenSearch={openSearch}
           onOpenFiles={openFileManager}
           onOpenRecords={openRecords}
@@ -436,10 +434,6 @@ export function TopNav({
               useLogDialogStore.getState().closeDialog();
               routeDialogs.open({ anime: id, tab: "metadata" });
             }}
-            onOpenSettings={(path) => {
-              useLogDialogStore.getState().closeDialog();
-              navigate(path, { state: ROUTE_DIALOG_STATE });
-            }}
           />
         </Suspense>
       )}
@@ -458,13 +452,11 @@ function avatarInitial(username: string | null): string {
 function PhoneTabBar({
   tab,
   onSelectTab,
-  failureBadge,
   onOpenQBManager,
   onOpenMore,
 }: {
   tab: string;
   onSelectTab: (tab: "all" | "mikan" | "anibt" | "custom") => void;
-  failureBadge: LogFailureBadge;
   onOpenQBManager: () => void;
   onOpenMore: () => void;
 }) {
@@ -496,7 +488,6 @@ function PhoneTabBar({
       <button type="button" className="tabbar-item" onClick={onOpenMore}>
         <Menu width={20} height={20} aria-hidden />
         <span>{t("nav.more")}</span>
-        {failureBadge.count > 0 && <span className="tabbar-badge">{badgeText(failureBadge)}</span>}
       </button>
     </nav>
   );
@@ -631,7 +622,14 @@ function StatusPopover({ connections: allConnections, loading }: { connections: 
               <span aria-hidden className={cn("system-status-dot", dotTone)} />
               <span className="system-status-row-label">{CONNECTION_LABEL()[kind]}</span>
               <span className="system-status-row-state">{configText}</span>
-              {reachText && <span className="system-status-row-state">{reachText}</span>}
+              {reachText && (
+                <span className="system-status-row-state tw:text-right">
+                  {reachText}
+                  {typeof reach === "object" && (
+                    <small className="tw:block tw:text-muted-foreground">{t("nav.statusCheckedAt", { time: formatShortDateTime(reach.checked_at) })}</small>
+                  )}
+                </span>
+              )}
               {downloaderMissing && <span className="system-status-row-action">{t("nav.goSettings")}</span>}
             </button>
           );

@@ -8,6 +8,9 @@
 
 ## Improved
 
+- The log dialog separates business events from runtime logs. Search retained logs across restarts, or select “View this task” on a warning to see what happened before and after it. Files rotate at midnight UTC or 10 MiB, with about 30 MiB retained for up to seven days. If disk storage is unavailable, the dialog shows recent in-memory records.
+- The default version replacement notification lists the release title, group and original file name separately for each new and old version. Missing details are omitted. Import failure notifications now use “Group” instead of “Original file group.” Existing custom templates are unchanged.
+
 - Torrent structure summaries show names and sizes on separate lines without relying on monospace alignment. Long names and control characters no longer disrupt entry layout.
 - System-default import notifications include the original file group. File displacement notifications show each file's group and specifications separately. Missing-value lines are hidden in both English and Chinese templates.
 - Test deliveries mark the title with [TEST]; bodies and business notifications are unaffected.

@@ -184,7 +184,6 @@ function SchedulesCard() {
       else toast.info(t("settings.automation.triggered"));
       await invalidateSchedules();
       await queryClient.invalidateQueries({ queryKey: observabilityKeys.records });
-      await queryClient.invalidateQueries({ queryKey: observabilityKeys.diagnostics });
     } catch (cause) {
       toast.error(toUserMessage(cause, t("settings.automation.runNowFailed")));
     } finally {

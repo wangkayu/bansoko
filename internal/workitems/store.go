@@ -25,6 +25,165 @@ const (
 	MaxRetentionDays          = 30
 )
 
+// storeEvent is the bounded lifecycle evidence emitted by the WorkItem store.
+// Messages are fixed; dynamic facts travel in typed fields so a log message
+// never carries an owner reason, an idempotency hash, an error, or a payload.
+type storeEvent struct {
+	Message     string
+	Owner       OwnerRef
+	WorkItemID  string
+	Kind        string
+	Operation   string
+	ReasonCode  string
+	Outcome     string
+	StateBefore string
+	StateAfter  string
+	Disposition string
+	Attempt     int
+	warn        bool
+}
+
+func workItemCreatedEvent(owner OwnerRef, workItemID, kind string) storeEvent {
+	return storeEvent{
+		Message:    "work item created",
+		Owner:      owner,
+		WorkItemID: workItemID,
+		Kind:       kind,
+		Operation:  "create",
+		ReasonCode: "work_item_created",
+		Outcome:    "info",
+		StateAfter: StateAvailable,
+	}
+}
+
+func workItemMergedEvent(owner OwnerRef, workItemID, kind string, created bool) storeEvent {
+	if created {
+		return workItemCreatedEvent(owner, workItemID, kind)
+	}
+	return storeEvent{
+		Message:    "work item merged",
+		Owner:      owner,
+		WorkItemID: workItemID,
+		Kind:       kind,
+		Operation:  "merge",
+		ReasonCode: "work_item_merged",
+		Outcome:    "info",
+	}
+}
+
+func workItemClaimedEvent(claim Claim, stateBefore string) storeEvent {
+	operation := "claim"
+	message := "work item claimed"
+	if stateBefore == StateLeased {
+		operation = "reclaim"
+		message = "work item reclaimed"
+	}
+	return storeEvent{
+		Message:     message,
+		Owner:       claim.Owner,
+		WorkItemID:  claim.ID,
+		Kind:        claim.Kind,
+		Operation:   operation,
+		ReasonCode:  "work_item_claimed",
+		Outcome:     "info",
+		StateBefore: stateBefore,
+		StateAfter:  StateLeased,
+		Attempt:     claim.Attempt,
+	}
+}
+
+func workItemClaimRejectedEvent(claim Claim, reasonCode string) storeEvent {
+	return storeEvent{
+		Message:     "work item claim rejected invalid one-shot input",
+		Owner:       claim.Owner,
+		WorkItemID:  claim.ID,
+		Kind:        claim.Kind,
+		Operation:   "claim",
+		ReasonCode:  reasonCode,
+		Outcome:     "failure",
+		StateBefore: StateLeased,
+		StateAfter:  StateLeased,
+		Attempt:     claim.Attempt,
+		warn:        true,
+	}
+}
+
+func workItemFinishedEvent(claim Claim, terminalState string) storeEvent {
+	return storeEvent{
+		Message:     "work item finished",
+		Owner:       claim.Owner,
+		WorkItemID:  claim.ID,
+		Kind:        claim.Kind,
+		Operation:   "finish",
+		ReasonCode:  "work_item_finished",
+		Outcome:     "info",
+		StateBefore: StateLeased,
+		StateAfter:  terminalState,
+		Attempt:     claim.Attempt,
+	}
+}
+
+func workItemRetriedEvent(claim Claim, stateAfter string, terminal bool) storeEvent {
+	operation := "retry"
+	message := "work item retry scheduled"
+	if terminal {
+		operation = "retry_exhausted"
+		message = "work item retry exhausted"
+	}
+	return storeEvent{
+		Message:     message,
+		Owner:       claim.Owner,
+		WorkItemID:  claim.ID,
+		Kind:        claim.Kind,
+		Operation:   operation,
+		ReasonCode:  "work_item_retried",
+		Outcome:     "info",
+		StateBefore: StateLeased,
+		StateAfter:  stateAfter,
+		Attempt:     claim.Attempt,
+	}
+}
+
+func workItemHeartbeatEvent(claim Claim) storeEvent {
+	return storeEvent{
+		Message:     "work item lease renewed",
+		Owner:       claim.Owner,
+		WorkItemID:  claim.ID,
+		Kind:        claim.Kind,
+		Operation:   "heartbeat",
+		ReasonCode:  "lease_heartbeat_renewed",
+		Outcome:     "info",
+		StateBefore: StateLeased,
+		StateAfter:  StateLeased,
+		Attempt:     claim.Attempt,
+	}
+}
+
+func workItemCancelRequestedEvent(claim Claim) storeEvent {
+	return storeEvent{
+		Message:     "work item cancel requested",
+		Owner:       claim.Owner,
+		WorkItemID:  claim.ID,
+		Kind:        claim.Kind,
+		Operation:   "cancel",
+		ReasonCode:  "work_item_cancel_requested",
+		Outcome:     "info",
+		StateBefore: StateLeased,
+		StateAfter:  StateLeased,
+		Attempt:     claim.Attempt,
+	}
+}
+
+func workItemsCancelRequestedEvent() storeEvent {
+	return storeEvent{
+		Message:    "work item cancels requested",
+		Owner:      OwnerRef{Type: "batch", ID: "kinds"},
+		Operation:  "cancel_requests",
+		ReasonCode: "work_items_cancel_requested",
+		Outcome:    "info",
+	}
+}
+
 // Store owns WorkItem claim/lease/retry/fencing/retention mechanics. Typed
 // owner writes always flow through the handler-supplied OwnerWriter inside
 // the same transaction.
@@ -202,7 +361,7 @@ func (s *Store) Create(ctx context.Context, tx *sql.Tx, spec WorkItemSpec) (stri
 		}
 		return "", fmt.Errorf("create work item: %w", err)
 	}
-	s.logEvent(spec.Owner, returnedID, "create", "work_item_created", "idempotency_key_hash="+keyHash(spec.IdempotencyKey), 0)
+	s.logStoreEvent(workItemCreatedEvent(spec.Owner, returnedID, spec.Kind))
 	return returnedID, nil
 }
 
@@ -270,11 +429,7 @@ func (s *Store) CreateOrMerge(ctx context.Context, tx *sql.Tx, spec WorkItemSpec
 		return "", false, fmt.Errorf("create or merge work item: %w", err)
 	}
 	created = returnedID == candidateID
-	operation := "merge"
-	if created {
-		operation = "create"
-	}
-	s.logEvent(spec.Owner, returnedID, operation, "work_item_"+operation+"d", "idempotency_key_hash="+keyHash(spec.IdempotencyKey), 0)
+	s.logStoreEvent(workItemMergedEvent(spec.Owner, returnedID, spec.Kind, created))
 	return returnedID, created, nil
 }
 
@@ -326,15 +481,11 @@ func (s *Store) ClaimDue(ctx context.Context, workerID string, kinds []string, l
 	// dispatching an ungated handler.
 	ref, err := parseOneShotRef(claim.InputSnapshot)
 	if err != nil {
-		s.logEvent(claim.Owner, claim.ID, "claim", "one_shot_claim_invalid", "malformed one_shot input snapshot; claim left for lease expiry", claim.Attempt)
+		s.logStoreEvent(workItemClaimRejectedEvent(claim, "one_shot_claim_invalid"))
 		return Claim{}, err
 	}
 	claim.OneShot = ref
-	claimOperation := "claim"
-	if row.StateBefore == StateLeased {
-		claimOperation = "reclaim"
-	}
-	s.logEvent(claim.Owner, claim.ID, claimOperation, "work_item_claimed", fmt.Sprintf("state_before=%s attempt=%d max_attempts=%d fencing_token=%d worker_id=%s idempotency_key_hash=%s", row.StateBefore, claim.Attempt, claim.MaxAttempts, claim.FencingToken, workerID, keyHash(claim.IdempotencyKey)), claim.Attempt)
+	s.logStoreEvent(workItemClaimedEvent(claim, row.StateBefore))
 	return claim, nil
 }
 
@@ -366,6 +517,63 @@ func (s *Store) AdmitManagedAnimeEffect(ctx context.Context, claim Claim) error 
 		return fmt.Errorf("admit managed anime effect: %w", err)
 	}
 	return nil
+}
+
+// FinishStage names the bounded set of steps at which a finish transition may
+// fail. The stage is decided where the failure happens, never inferred later.
+type FinishStage string
+
+const (
+	FinishStageBegin          FinishStage = "begin"
+	FinishStageLock           FinishStage = "lock"
+	FinishStageLockMarker     FinishStage = "lock_marker"
+	FinishStageSettleLease    FinishStage = "settle_lease"
+	FinishStageFinish         FinishStage = "finish"
+	FinishStageWriteOwner     FinishStage = "write_owner"
+	FinishStageOwnerVersion   FinishStage = "owner_version"
+	FinishStagePostTransition FinishStage = "post_transition"
+	FinishStageCommit         FinishStage = "commit"
+)
+
+// IsValid reports whether the stage belongs to the bounded finish taxonomy.
+func (stage FinishStage) IsValid() bool {
+	switch stage {
+	case FinishStageBegin, FinishStageLock, FinishStageLockMarker, FinishStageSettleLease,
+		FinishStageFinish, FinishStageWriteOwner, FinishStageOwnerVersion,
+		FinishStagePostTransition, FinishStageCommit:
+		return true
+	default:
+		return false
+	}
+}
+
+// FinishStageError classifies a finish failure by the step that produced it.
+// It unwraps to the original error, so errors.Is and errors.As keep working
+// for ErrStaleClaim, ErrOwnerRetired, and any typed cause.
+type FinishStageError struct {
+	Stage FinishStage
+	Err   error
+}
+
+func (e *FinishStageError) Error() string {
+	if e == nil || e.Err == nil {
+		return "work item finish failed"
+	}
+	return fmt.Sprintf("work item finish at %s: %v", e.Stage, e.Err)
+}
+
+func (e *FinishStageError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func finishStageError(stage FinishStage, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &FinishStageError{Stage: stage, Err: err}
 }
 
 // Finish commits the owner result and terminal WorkItem state in one fenced
@@ -404,17 +612,17 @@ func (s *Store) finishWithResult(ctx context.Context, claim Claim, terminalState
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin finish transaction: %w", err)
+		return finishStageError(FinishStageBegin, fmt.Errorf("begin finish transaction: %w", err))
 	}
 	defer tx.Rollback()
 	if err := lockClaim(ctx, tx, claim); err != nil {
-		return err
+		return finishStageError(FinishStageLock, err)
 	}
 	ownerVersion := claim.ExpectedOwnerVersion
 	if writeOwner != nil {
 		ownerVersion, err = writeOwner(ctx, txscope.Wrap(tx), ownerResult)
 		if err != nil {
-			return fmt.Errorf("write owner result: %w", err)
+			return finishStageError(FinishStageWriteOwner, fmt.Errorf("write owner result: %w", err))
 		}
 	}
 	if err := persistence.New(tx).FinishWorkItem(ctx, persistence.FinishWorkItemParams{
@@ -422,17 +630,17 @@ func (s *Store) finishWithResult(ctx context.Context, claim Claim, terminalState
 		State:                terminalState,
 		ExpectedOwnerVersion: ownerVersion,
 	}); err != nil {
-		return fmt.Errorf("finish work item: %w", err)
+		return finishStageError(FinishStageFinish, fmt.Errorf("finish work item: %w", err))
 	}
 	if postTransition != nil {
 		if err := postTransition(ctx, txscope.Wrap(tx)); err != nil {
-			return fmt.Errorf("run finish post-transition: %w", err)
+			return finishStageError(FinishStagePostTransition, fmt.Errorf("run finish post-transition: %w", err))
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit finish transaction: %w", err)
+		return finishStageError(FinishStageCommit, fmt.Errorf("commit finish transaction: %w", err))
 	}
-	s.logEvent(claim.Owner, claim.ID, "finish", "work_item_finished", fmt.Sprintf("state_after=%s attempt=%d fencing_token=%d idempotency_key_hash=%s", terminalState, claim.Attempt, claim.FencingToken, keyHash(claim.IdempotencyKey)), claim.Attempt)
+	s.logStoreEvent(workItemFinishedEvent(claim, terminalState))
 	return nil
 }
 
@@ -460,9 +668,9 @@ func (s *Store) FinishLockedTx(ctx context.Context, tx *sql.Tx, claim Claim, ter
 		State:                terminalState,
 		ExpectedOwnerVersion: ownerVersion,
 	}); err != nil {
-		return fmt.Errorf("finish work item: %w", err)
+		return finishStageError(FinishStageFinish, fmt.Errorf("finish work item: %w", err))
 	}
-	s.logEvent(claim.Owner, claim.ID, "finish", "work_item_finished", fmt.Sprintf("state_after=%s attempt=%d fencing_token=%d idempotency_key_hash=%s", terminalState, claim.Attempt, claim.FencingToken, keyHash(claim.IdempotencyKey)), claim.Attempt)
+	s.logStoreEvent(workItemFinishedEvent(claim, terminalState))
 	return nil
 }
 
@@ -655,11 +863,7 @@ func (s *Store) retry(ctx context.Context, claim Claim, reasonCode, reason strin
 	if terminal {
 		stateAfter = StateFailed
 	}
-	retryOperation := "retry"
-	if terminal {
-		retryOperation = "retry_exhausted"
-	}
-	s.logEvent(claim.Owner, claim.ID, retryOperation, "work_item_retried", fmt.Sprintf("state_after=%s reason_code=%s attempt=%d max_attempts=%d fencing_token=%d retryable=%t idempotency_key_hash=%s", stateAfter, reasonCode, claim.Attempt, claim.MaxAttempts, claim.FencingToken, !terminal, keyHash(claim.IdempotencyKey)), claim.Attempt)
+	s.logStoreEvent(workItemRetriedEvent(claim, stateAfter, terminal))
 	return RetryOutcome{Terminal: terminal}, nil
 }
 
@@ -727,7 +931,7 @@ func (s *Store) RenewLease(ctx context.Context, claim Claim, extendTo time.Time)
 	if affected == 0 {
 		return fmt.Errorf("%w: claim %s lost lease, expired, cancelled, or token mismatch", ErrStaleClaim, claim.ID)
 	}
-	s.logEvent(claim.Owner, claim.ID, "heartbeat", "lease_heartbeat_renewed", fmt.Sprintf("fencing_token=%d lease_until=%s idempotency_key_hash=%s", claim.FencingToken, extendTo.UTC().Format(time.RFC3339), keyHash(claim.IdempotencyKey)), 0)
+	s.logStoreEvent(workItemHeartbeatEvent(claim))
 	return nil
 }
 
@@ -745,7 +949,7 @@ func (s *Store) RequestCancel(ctx context.Context, claim Claim, reason string) e
 	if affected == 0 {
 		return fmt.Errorf("%w: claim %s not active or token mismatch", ErrStaleClaim, claim.ID)
 	}
-	s.logEvent(claim.Owner, claim.ID, "cancel", "work_item_cancel_requested", "reason="+reason, 0)
+	s.logStoreEvent(workItemCancelRequestedEvent(claim))
 	return nil
 }
 
@@ -760,7 +964,7 @@ func (s *Store) CancelRequests(ctx context.Context, kinds []string, reason strin
 		return 0, fmt.Errorf("cancel work item requests: %w", err)
 	}
 	count := result
-	s.logEvent(OwnerRef{Type: "batch", ID: "kinds"}, "", "cancel_requests", "work_items_cancel_requested", fmt.Sprintf("kinds=%d count=%d reason=%s", len(kinds), count, reason), 0)
+	s.logStoreEvent(workItemsCancelRequestedEvent())
 	return count, nil
 }
 
@@ -811,6 +1015,36 @@ func isUniqueViolation(err error) bool {
 func keyHash(key string) string {
 	digest := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(digest[:6])
+}
+
+func (s *Store) logStoreEvent(event storeEvent) {
+	if s == nil || s.Logger == nil {
+		return
+	}
+	outcome := event.Outcome
+	if outcome == "" {
+		outcome = "info"
+	}
+	runtimeEvent := observabilityport.RuntimeEvent{
+		Message:     event.Message,
+		Component:   "workitems",
+		Operation:   event.Operation,
+		Outcome:     outcome,
+		ReasonCode:  event.ReasonCode,
+		OwnerType:   event.Owner.Type,
+		OwnerID:     event.Owner.ID,
+		WorkItemID:  event.WorkItemID,
+		Kind:        event.Kind,
+		StateBefore: event.StateBefore,
+		StateAfter:  event.StateAfter,
+		Disposition: event.Disposition,
+		Attempt:     event.Attempt,
+	}
+	if event.warn {
+		s.Logger.Warn(context.Background(), runtimeEvent)
+		return
+	}
+	s.Logger.Info(context.Background(), runtimeEvent)
 }
 
 func (s *Store) logEvent(owner OwnerRef, workItemID, operation, reasonCode, summary string, attempt int) {

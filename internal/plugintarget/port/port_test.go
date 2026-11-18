@@ -150,11 +150,19 @@ func indexOf(s, needle string) int {
 
 // The replacement notice names the decision as its source, the winning
 // release, and every old version by file name plus whatever identity that
-// version recorded.
+// version recorded. The legacy variables keep the versions' current library
+// names; the frozen original download source travels in separate
+// replaced.new.* / replaced.old_versions facts.
 func TestReplacementAppliedRequest(t *testing.T) {
 	request, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "GroupA", "[GroupA] Show - 01 [1080p]", "winning-release", []DisplacedTarget{
-		{File: "/library/Show/ep.mkv", Group: "GroupA", Title: "[GroupA] Show - 01 [720p]"},
+		{File: "/library/Show/EP01.mkv", Group: "GroupA", Title: "[GroupA] Show - 01 [720p]"},
 		{File: "/library/Show/extra.mkv"},
+	}, OriginalSource{
+		New: DisplacedTarget{File: "/downloads/[GroupA] Show - 01 [1080p].mkv", Group: "SourceGroup", Title: "[SourceGroup] Show - 01 [1080p]"},
+		Old: []DisplacedTarget{
+			{File: "/downloads/[GroupA] Show - 01 [720p].mkv", Group: "SourceGroup", Title: "[SourceGroup] Show - 01 [720p]"},
+			{},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +177,8 @@ func TestReplacementAppliedRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload["anime.title"] != "Show" || payload["anime.group"] != "GroupA" ||
-		payload["release.title"] != "[GroupA] Show - 01 [1080p]" || payload["replaced.count"] != float64(2) {
+		payload["release.title"] != "[GroupA] Show - 01 [1080p]" ||
+		payload["replaced.count"] != float64(2) {
 		t.Fatalf("payload = %v", payload)
 	}
 	targets, _ := payload["replaced.targets"].([]any)
@@ -177,7 +186,7 @@ func TestReplacementAppliedRequest(t *testing.T) {
 		t.Fatalf("replaced.targets = %v", payload["replaced.targets"])
 	}
 	first, _ := targets[0].(map[string]any)
-	if first["path"] != "ep.mkv" || first["group"] != "GroupA" || first["title"] != "[GroupA] Show - 01 [720p]" {
+	if first["path"] != "EP01.mkv" || first["group"] != "GroupA" || first["title"] != "[GroupA] Show - 01 [720p]" {
 		t.Fatalf("first target = %v", first)
 	}
 	// A version that records no release travels as its file name alone.
@@ -185,10 +194,25 @@ func TestReplacementAppliedRequest(t *testing.T) {
 	if len(second) != 1 || second["path"] != "extra.mkv" {
 		t.Fatalf("second target = %v", second)
 	}
-	if _, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "", "", "winning-release", nil); err == nil {
+	// The default presentation reads only the frozen original source, never the
+	// legacy current-name facts.
+	if payload["replaced.new.title"] != "[SourceGroup] Show - 01 [1080p]" ||
+		payload["replaced.new.group"] != "SourceGroup" ||
+		payload["replaced.new.file"] != "[GroupA] Show - 01 [1080p].mkv" {
+		t.Fatalf("new original source = %v", payload)
+	}
+	originals, _ := payload["replaced.old_versions"].([]any)
+	if len(originals) != 1 {
+		t.Fatalf("replaced.old_versions = %v, want the one version with a source", payload["replaced.old_versions"])
+	}
+	original, _ := originals[0].(map[string]any)
+	if original["path"] != "[GroupA] Show - 01 [720p].mkv" || original["group"] != "SourceGroup" || original["title"] != "[SourceGroup] Show - 01 [720p]" {
+		t.Fatalf("original old version = %v", original)
+	}
+	if _, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "Show", "", "", "winning-release", nil, OriginalSource{}); err == nil {
 		t.Fatal("a replacement that replaced nothing must not build a notice")
 	}
-	untitled, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "", "", "", "winning-release", []DisplacedTarget{{File: "ep.mkv"}})
+	untitled, err := ReplacementAppliedRequest("dec-1", 1, "anime-1", "", "", "", "winning-release", []DisplacedTarget{{File: "ep.mkv"}}, OriginalSource{})
 	if err != nil {
 		t.Fatal(err)
 	}

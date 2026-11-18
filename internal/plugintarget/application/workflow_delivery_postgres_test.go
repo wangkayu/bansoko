@@ -335,8 +335,9 @@ func TestBusinessDeliveryRetryStateSurvivesRestart(t *testing.T) {
 // capturingRuntimeLogger and capturingRecorder collect everything the
 // handler logs or records as a diagnostic, as text.
 type capturingRuntimeLogger struct {
-	mu    sync.Mutex
-	lines []string
+	mu     sync.Mutex
+	lines  []string
+	events []observabilityport.RuntimeEvent
 }
 
 func (l *capturingRuntimeLogger) record(event observabilityport.RuntimeEvent) {
@@ -344,6 +345,15 @@ func (l *capturingRuntimeLogger) record(event observabilityport.RuntimeEvent) {
 	defer l.mu.Unlock()
 	raw, _ := json.Marshal(event)
 	l.lines = append(l.lines, string(raw))
+	l.events = append(l.events, event)
+}
+
+// snapshot returns the events recorded so far (the hook may run off the test
+// goroutine).
+func (l *capturingRuntimeLogger) snapshot() []observabilityport.RuntimeEvent {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]observabilityport.RuntimeEvent(nil), l.events...)
 }
 func (l *capturingRuntimeLogger) Debug(_ context.Context, e observabilityport.RuntimeEvent) {
 	l.record(e)

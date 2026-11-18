@@ -24,7 +24,6 @@ function renderSheet(connections: Connection[], handlers: Partial<Record<"onOpen
         onClose={() => {}}
         onLogout={() => {}}
         connections={connections}
-        failureBadge={{ count: 0, truncated: false }}
         onOpenSearch={() => {}}
         onOpenRecords={() => {}}
         onOpenLog={() => {}}

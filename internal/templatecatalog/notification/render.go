@@ -272,6 +272,12 @@ func (e literalExpression) evaluate(map[string]any) (string, bool, []Warning) {
 type variableExpression struct{ name string }
 
 func (e variableExpression) evaluate(facts map[string]any) (string, bool, []Warning) {
+	if text, derived := replacementPresentation(e.name, facts); derived {
+		// The derived presentation is empty when the frozen list records no
+		// version; that is the case its line's visibility exists for, not a
+		// missing variable to warn about.
+		return text, true, nil
+	}
 	if e.name == ImageVariable || isImageVariable(e.name) {
 		return "", true, nil
 	}

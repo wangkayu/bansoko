@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 // route `/`, next to the catalog's own `?source=`:
 //
 //   ?anime=<catalog row key>&tab=<metadata|subgroups|rules|rss>   anime config
-//   ?log=<records|diagnostics>                                     global log
+//   ?log=<records|raw>                                             global log
 //   ?tool=<qbittorrent|search|files>[&qb_segment=<subscription|one_shot|other>]
 //                                                                  topbar tools; the downloader
 //                                                                  manager's segment
@@ -41,8 +41,20 @@ export type RouteDialogParam = (typeof ROUTE_DIALOG_PARAMS)[number];
 export const ROUTE_TOOLS = ["qbittorrent", "search", "files"] as const;
 export type RouteTool = (typeof ROUTE_TOOLS)[number];
 
-export const ROUTE_LOG_VIEWS = ["records", "diagnostics"] as const;
+export const ROUTE_LOG_VIEWS = ["records", "raw"] as const;
 export type RouteLogView = (typeof ROUTE_LOG_VIEWS)[number];
+
+/**
+ * `diagnostics` was its own tab before the raw log became the second tab.
+ * Links written by that build still open the raw log; TopNav rewrites them in place.
+ */
+export const LEGACY_ROUTE_LOG_VIEW = "diagnostics";
+
+/** A current log view, or the legacy diagnostics view mapped to the raw log. */
+export function normalizeLogView(value: string | null | undefined): RouteLogView | null {
+  if (isOneOf(ROUTE_LOG_VIEWS, value)) return value;
+  return value === LEGACY_ROUTE_LOG_VIEW ? "raw" : null;
+}
 
 export const ROUTE_ANIME_TABS = ["metadata", "subgroups", "rules", "rss"] as const;
 export type RouteAnimeTab = (typeof ROUTE_ANIME_TABS)[number];

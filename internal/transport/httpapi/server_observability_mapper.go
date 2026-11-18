@@ -194,23 +194,59 @@ func mapDiagnosticPage(value observabilityapplication.DiagnosticPage) generated.
 	return page
 }
 
-func mapRuntimeLogPage(entries []observabilityapplication.RuntimeLogEntry) generated.RuntimeLogPage {
-	lines := make([]generated.RuntimeLogLine, 0, len(entries))
-	for _, entry := range entries {
+func mapRuntimeLogPage(page observabilityapplication.RuntimeLogPage) generated.RuntimeLogPage {
+	lines := make([]generated.RuntimeLogLine, 0, len(page.Entries))
+	for _, entry := range page.Entries {
 		line := generated.RuntimeLogLine{
 			At: entry.At, Level: generated.RuntimeLogLineLevel(entry.Level), Message: entry.Message,
 			Component: optionalText(entry.Component), Operation: optionalText(entry.Operation),
 			Outcome: optionalText(entry.Outcome), ReasonCode: optionalText(entry.ReasonCode),
 			RequestId: optionalText(entry.RequestID), CorrelationId: optionalText(entry.CorrelationID),
-			ErrorClass: optionalText(entry.ErrorClass),
+			ErrorClass: optionalText(entry.ErrorClass), OwnerType: optionalText(entry.OwnerType),
+			Kind: optionalText(entry.Kind), WorkItemId: optionalText(entry.WorkItemID),
+			Stage: optionalText(entry.Stage), StateBefore: optionalText(entry.StateBefore),
+			StateAfter: optionalText(entry.StateAfter), Disposition: optionalText(entry.Disposition),
+			Attempt: optionalPositiveInt(entry.Attempt), DurationMs: optionalPositiveInt64(entry.DurationMS),
+			Retryable: entry.Retryable,
 		}
 		lines = append(lines, line)
 	}
-	return generated.RuntimeLogPage{Lines: lines}
+	source := page.Source
+	if source == "" {
+		source = observabilityapplication.RuntimeLogSourceMemory
+	}
+	result := generated.RuntimeLogPage{
+		Lines:  lines,
+		Source: generated.RuntimeLogPageSource(source),
+	}
+	if page.NextBefore != "" {
+		result.NextBefore = &page.NextBefore
+	}
+	if page.NextAfter != "" {
+		result.NextAfter = &page.NextAfter
+	}
+	if page.Gap {
+		result.Gap = &page.Gap
+	}
+	return result
 }
 
 func optionalText(value string) *string {
 	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func optionalPositiveInt(value int) *int {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+func optionalPositiveInt64(value int64) *int64 {
+	if value <= 0 {
 		return nil
 	}
 	return &value

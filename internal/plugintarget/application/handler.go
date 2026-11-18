@@ -60,6 +60,98 @@ func deliveryRetryDelay(attemptNumber int) (time.Duration, bool) {
 	return deliveryRetryDelays[attemptNumber-1], true
 }
 
+// chainAfterCommit keeps both post-commit hooks. Worker outcomes carry one
+// hook, so the delivery log and the existing diagnostic hook must be
+// composed rather than replacing each other.
+func chainAfterCommit(first, second func(context.Context)) func(context.Context) {
+	switch {
+	case first == nil:
+		return second
+	case second == nil:
+		return first
+	default:
+		return func(ctx context.Context) {
+			first(ctx)
+			second(ctx)
+		}
+	}
+}
+
+func retryablePtr(value bool) *bool {
+	return &value
+}
+
+// deliveryAttemptEvent is the delivered/scheduled-retry/unknown/terminal
+// result of one delivery attempt. It carries fixed text and no error, address,
+// payload or path; an unknown outcome is never reported as a failure because
+// the request may have been sent.
+func deliveryAttemptEvent(claim workitems.Claim, result attemptResult, retrying bool) observabilityport.RuntimeEvent {
+	event := observabilityport.RuntimeEvent{
+		Component:  "notification",
+		Operation:  "delivery",
+		OwnerType:  claim.Owner.Type,
+		OwnerID:    claim.Owner.ID,
+		WorkItemID: claim.ID,
+		Kind:       claim.Kind,
+		Attempt:    claim.Attempt,
+	}
+	switch {
+	case result.state == "delivered":
+		event.Outcome = "success"
+		event.ReasonCode = "notification_delivered"
+		event.Message = "notification delivered"
+	case retrying && result.state == "unknown":
+		event.Outcome = "unconfirmed"
+		event.ReasonCode = "notification_retry_scheduled_unknown"
+		event.Message = "notification attempt outcome unknown; the request may have been sent; another attempt is queued"
+		event.Retryable = retryablePtr(true)
+	case retrying:
+		event.Outcome = "failure"
+		event.ReasonCode = "notification_retry_scheduled"
+		if result.responseStatus != nil {
+			event.Message = "notification receiver answered with a retryable status; another attempt is queued"
+		} else {
+			event.Message = "notification request was not written; another attempt is queued"
+		}
+		event.Retryable = retryablePtr(true)
+	case result.state == "unknown":
+		event.Outcome = "unconfirmed"
+		event.ReasonCode = "notification_outcome_unknown"
+		event.Message = "notification attempt outcome unknown; the request may have been sent; no automatic attempt remains"
+		event.Retryable = retryablePtr(false)
+	default:
+		event.Outcome = "failure"
+		event.ReasonCode = "notification_failed"
+		if result.responseStatus != nil {
+			event.Message = "notification was rejected by the receiver; no automatic attempt remains"
+		} else {
+			event.Message = "notification could not be sent; no automatic attempt remains"
+		}
+		event.Retryable = retryablePtr(false)
+	}
+	return event
+}
+
+// deliveryAttemptAfterCommit logs the confirmed attempt result only after the
+// owner delivery row and the WorkItem transition committed.
+func (h *PluginDeliverHandler) deliveryAttemptAfterCommit(claim workitems.Claim, result attemptResult, retrying bool) func(context.Context) {
+	return func(ctx context.Context) {
+		if h == nil || h.logger == nil {
+			return
+		}
+		event := deliveryAttemptEvent(claim, result, retrying)
+		if event.Outcome == "success" {
+			h.logger.Info(ctx, event)
+			return
+		}
+		if event.Outcome == "unconfirmed" {
+			h.logger.Warn(ctx, event)
+			return
+		}
+		h.logger.Error(ctx, event)
+	}
+}
+
 type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
@@ -191,7 +283,7 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 			reason = "the frozen delivery payload is not a canonical delivery payload"
 		}
 		outcome := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: code, Reason: reason}, h.payloadFailureWriter(claim, code, reason))
-		return outcome, nil
+		return worker.WithAfterCommit(outcome, h.deliveryAttemptAfterCommit(claim, attemptResult{state: "failed", errorCode: code}, false)), nil
 	}
 	// Downstream builders use the validated canonical bytes, never the raw column.
 	row.payload = frozenPayload
@@ -207,7 +299,7 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 			reason = "the frozen adapter config is not a canonical allowlisted document"
 		}
 		outcome := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: code, Reason: reason}, h.payloadFailureWriter(claim, code, reason))
-		return outcome, nil
+		return worker.WithAfterCommit(outcome, h.deliveryAttemptAfterCommit(claim, attemptResult{state: "failed", errorCode: code}, false)), nil
 	}
 	row.adapterConfigJSON = canonicalConfig
 
@@ -227,7 +319,8 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		// attempt settles as unknown without dialling again; the retry policy
 		// then decides whether a new attempt follows.
 		result := attemptResult{state: "unknown", errorCode: "request_outcome_unknown", err: "the request may have been sent; no response was recorded"}
-		return h.settleAttempt(claim, row, attempt, result, newSecretRedactor("")), nil
+		outcome := h.settleAttempt(claim, row, attempt, result, newSecretRedactor(""))
+		return worker.WithAfterCommit(outcome, h.deliveryAttemptAfterCommit(claim, result, outcome.Kind == worker.OutcomeRetry)), nil
 	}
 
 	title, _, err := h.resolveMessage(row)
@@ -276,10 +369,14 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 	if result.state == "delivered" {
 		owner := workitems.OwnerResult{State: result.state, ReasonCode: "delivered", Reason: "notification delivered successfully"}
 		outcome := worker.Finish(workitems.StateSucceeded, owner, h.finalWriter(claim, attempt, result, redactor))
-		return worker.WithAfterCommit(outcome, h.targetRecoveryAfterCommit(row.targetID)), nil
+		return worker.WithAfterCommit(outcome, chainAfterCommit(
+			h.deliveryAttemptAfterCommit(claim, result, false),
+			h.targetRecoveryAfterCommit(row.targetID))), nil
 	}
 	outcome := h.settleAttempt(claim, row, attempt, result, redactor)
-	return worker.WithAfterCommit(outcome, h.sendDiagnosticAfterCommit(row, req, result, sendErr)), nil
+	return worker.WithAfterCommit(outcome, chainAfterCommit(
+		h.deliveryAttemptAfterCommit(claim, result, outcome.Kind == worker.OutcomeRetry),
+		h.sendDiagnosticAfterCommit(row, req, result, sendErr))), nil
 }
 
 // settleAttempt records a non-delivered attempt and decides what follows. An
@@ -331,7 +428,9 @@ func (h *PluginDeliverHandler) prepareFailure(claim workitems.Claim, row deliver
 		"secret_resolve_failed":         observabilityport.VariantSecret,
 		"request_build_failed":          observabilityport.VariantRequest,
 	}[code]
-	return worker.WithAfterCommit(outcome, h.notifyDiagnostic(row, variant, outbound.Failure{}))
+	return worker.WithAfterCommit(outcome, chainAfterCommit(
+		h.deliveryAttemptAfterCommit(claim, result, false),
+		h.notifyDiagnostic(row, variant, outbound.Failure{})))
 }
 
 // sendDiagnosticAfterCommit records the condition a failed send leaves on its

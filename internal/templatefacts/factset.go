@@ -232,6 +232,16 @@ type EventFacts struct {
 type ReplacedFacts struct {
 	Count   *int64
 	Targets []map[string]any
+	// NewTitle, NewGroup and NewFile are the winning version's frozen original
+	// download source (release title, group and the file name inside its
+	// torrent); empty when the source chain recorded none.
+	NewTitle string
+	NewGroup string
+	NewFile  string
+	// Originals is each replaced version's frozen original download source, in
+	// the order the versions lost; a version whose source chain is gone is
+	// absent from the list and its presentation lines are hidden.
+	Originals []map[string]any
 }
 
 // TakerFacts is the file that displaced another one: its file name and, when

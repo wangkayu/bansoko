@@ -1,14 +1,17 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/workitems"
 )
@@ -84,6 +87,7 @@ type fakeRuntimeStore struct {
 	reclaimCount         atomic.Int64
 	renewErr             error
 	retryErr             error
+	finishErr            error
 	retryOutcome         workitems.RetryOutcome
 	requests             []workitems.Claim
 	admissionErr         error
@@ -162,6 +166,9 @@ func (f *fakeRuntimeStore) Finish(ctx context.Context, claim workitems.Claim, te
 }
 
 func (f *fakeRuntimeStore) FinishWithResult(ctx context.Context, claim workitems.Claim, terminalState string, ownerResult workitems.OwnerResult, writeOwner workitems.OwnerWriter) error {
+	if f.finishErr != nil {
+		return f.finishErr
+	}
 	return f.Finish(ctx, claim, terminalState, writeOwner)
 }
 
@@ -754,6 +761,65 @@ func TestRuntimeApplyOutcomeUsesRetryOutcome(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyOutcomeRunsAfterCommitOnlyForACommittedNonTerminalRetry(t *testing.T) {
+	store := newFakeRuntimeStore()
+	store.items["item-retry-after"] = &fakeItem{state: "leased", fencingToken: 1}
+	capture := &runtimeEventCapture{}
+	rt, err := NewRuntime(store, testRegistry(), map[string]Handler{
+		"rss_refresh": HandlerFunc(func(context.Context, workitems.Claim) (Outcome, error) {
+			return Finish(workitems.StateSucceeded, workitems.OwnerResult{}, nil), nil
+		}),
+	}, "worker-retry-after", capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := workitems.Claim{ID: "item-retry-after", Kind: "rss_refresh", FencingToken: 1, Attempt: 1, MaxAttempts: 3}
+	committed := 0
+	withCallback := func(outcome Outcome) Outcome {
+		outcome.AfterCommit = func(context.Context) { committed++ }
+		return outcome
+	}
+
+	// A retry that committed with budget left is a committed transition.
+	rt.applyOutcome(context.Background(), claim, withCallback(Retry("handler_error", "private handler reason", time.Second, nil)), nil)
+	if committed != 1 {
+		t.Fatalf("after-commit calls after a scheduled retry = %d, want 1", committed)
+	}
+
+	// Failed persistence did not commit, so the callback must not run.
+	store.mu.Lock()
+	store.items["item-retry-after"].state = "leased"
+	store.retryErr = errors.New("database unavailable")
+	store.mu.Unlock()
+	rt.applyOutcome(context.Background(), claim, withCallback(Retry("handler_error", "private handler reason", time.Second, nil)), nil)
+	if committed != 1 {
+		t.Fatalf("after-commit calls after a failed retry write = %d, want 1", committed)
+	}
+
+	// An exhausted budget commits a terminal failure, not a retry with
+	// effects; reporting after-commit work here would overstate the outcome.
+	store.mu.Lock()
+	store.items["item-retry-after"].state = "leased"
+	store.retryErr = nil
+	store.retryOutcome = workitems.RetryOutcome{Terminal: true}
+	store.mu.Unlock()
+	claim.Attempt = claim.MaxAttempts
+	rt.applyOutcome(context.Background(), claim, withCallback(Retry("handler_error", "private handler reason", time.Second, nil)), nil)
+	if committed != 1 {
+		t.Fatalf("after-commit calls after an exhausted retry = %d, want 1", committed)
+	}
+
+	// A budgetless retry is still non-terminal and keeps its callback.
+	store.mu.Lock()
+	store.items["item-retry-after"].state = "leased"
+	store.retryOutcome = workitems.RetryOutcome{}
+	store.mu.Unlock()
+	rt.applyOutcome(context.Background(), claim, withCallback(RetryUntilResolved("recovery_pending", "recovery is still required", time.Second, nil)), nil)
+	if committed != 2 {
+		t.Fatalf("after-commit calls after a budgetless retry = %d, want 2", committed)
+	}
+}
+
 func TestRuntimeDrainWaitsForActiveHandlers(t *testing.T) {
 	store := newFakeRuntimeStore()
 	store.add("rss_refresh", "item-drain")
@@ -823,3 +889,99 @@ func TestRuntimeRejectsIncompleteWiring(t *testing.T) {
 }
 
 var _ = errors.Is
+
+func decodeSingleRuntimeRecord(t *testing.T, output *bytes.Buffer) map[string]any {
+	t.Helper()
+	line := strings.TrimSpace(output.String())
+	if line == "" {
+		t.Fatal("runtime logger emitted no record")
+	}
+	var record map[string]any
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatalf("decode runtime record: %v; line=%q", err, line)
+	}
+	return record
+}
+
+func TestRuntimeFinishFailureIsUnconfirmedWithBoundedStage(t *testing.T) {
+	store := newFakeRuntimeStore()
+	store.finishErr = &workitems.FinishStageError{
+		Stage: workitems.FinishStageCommit,
+		Err:   errors.New("commit failed for postgres://owner:password@db.example/app"),
+	}
+	var output bytes.Buffer
+	logger := observabilityapplication.NewJSONRuntimeLogger(&output)
+	rt, err := NewRuntime(store, testRegistry(), map[string]Handler{
+		"rss_refresh": HandlerFunc(func(context.Context, workitems.Claim) (Outcome, error) {
+			return Outcome{}, nil
+		}),
+	}, "worker-finish-unconfirmed", logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := workitems.Claim{
+		ID: "item-finish", Kind: "rss_refresh", FencingToken: 1, Attempt: 2, MaxAttempts: 5,
+		Owner: workitems.OwnerRef{Type: "rss_source_runtime", ID: "source-1"},
+	}
+	rt.applyOutcome(context.Background(), claim, Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ok"}, nil), nil)
+
+	record := decodeSingleRuntimeRecord(t, &output)
+	for key, want := range map[string]any{
+		"level":        "error",
+		"message":      "work item final state unconfirmed",
+		"outcome":      "unconfirmed",
+		"reason_code":  "finish_unconfirmed",
+		"stage":        "commit",
+		"error_class":  "finish_error",
+		"kind":         "rss_refresh",
+		"work_item_id": "item-finish",
+		"attempt":      float64(2),
+		"owner_type":   "rss_source_runtime",
+		"owner_id":     "source-1",
+	} {
+		if got := record[key]; got != want {
+			t.Fatalf("%s = %v, want %v; record=%v", key, got, want, record)
+		}
+	}
+	if _, ok := record["retryable"]; ok {
+		t.Fatalf("unconfirmed finish must not assert retryability: %v", record)
+	}
+	if strings.Contains(output.String(), "postgres://") || strings.Contains(output.String(), "password") || strings.Contains(output.String(), "commit failed") {
+		t.Fatalf("runtime log leaked the raw finish error: %q", output.String())
+	}
+}
+
+func TestRuntimeDoesNotSubstituteOwnerIDForWorkItemID(t *testing.T) {
+	var output bytes.Buffer
+	rt, err := NewRuntime(newFakeRuntimeStore(), testRegistry(), map[string]Handler{
+		"rss_refresh": HandlerFunc(func(context.Context, workitems.Claim) (Outcome, error) {
+			return Outcome{}, nil
+		}),
+	}, "worker-no-fallback", observabilityapplication.NewJSONRuntimeLogger(&output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.logEvent(context.Background(), runtimeInfo, observabilityport.RuntimeEvent{
+		Message:   "runtime state changed",
+		OwnerType: "subscription",
+		OwnerID:   "sub-1",
+		Outcome:   "info",
+	})
+	record := decodeSingleRuntimeRecord(t, &output)
+	if _, ok := record["work_item_id"]; ok {
+		t.Fatalf("owner id must not be reported as a work item id: %v", record)
+	}
+	if _, ok := record["kind"]; ok {
+		t.Fatalf("an event without a claim must not invent a kind: %v", record)
+	}
+}
+
+func TestFinishFailureStageIgnoresUnclassifiedErrors(t *testing.T) {
+	if got := finishFailureStage(errors.New("plain error")); got != "" {
+		t.Fatalf("unclassified error stage = %q, want empty", got)
+	}
+	classified := &workitems.FinishStageError{Stage: workitems.FinishStagePostTransition, Err: errors.New("hook failed")}
+	if got, want := finishFailureStage(classified), "post_transition"; got != want {
+		t.Fatalf("classified error stage = %q, want %q", got, want)
+	}
+}

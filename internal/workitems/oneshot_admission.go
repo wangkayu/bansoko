@@ -716,7 +716,7 @@ func (s *Store) finishOneShotWithResult(ctx context.Context, claim Claim, lease 
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin one-shot finish transaction: %w", err)
+		return finishStageError(FinishStageBegin, fmt.Errorf("begin one-shot finish transaction: %w", err))
 	}
 	defer tx.Rollback()
 
@@ -725,26 +725,26 @@ func (s *Store) finishOneShotWithResult(ctx context.Context, claim Claim, lease 
 	// the lease, but never permits reclaiming, cleaned, or invalid states.
 	marker, found, err := lockOneShotSettlementTx(ctx, tx, claim, lease)
 	if err != nil {
-		return err
+		return finishStageError(FinishStageLockMarker, err)
 	}
 	if !found {
 		// Missing marker or already-consumed lease: typed idempotent no-op without
 		// any owner or WorkItem mutation.
-		return tx.Commit()
+		return finishStageError(FinishStageCommit, tx.Commit())
 	}
 	consumes := dispositionConsumesLease(disposition)
 	if consumes {
 		if _, err := settleOneShotLeaseLockedTx(ctx, tx, claim.OneShot.MarkerID, marker, lease.AdmissionID); err != nil {
-			return err
+			return finishStageError(FinishStageSettleLease, err)
 		}
 	}
 	if err := lockClaim(ctx, tx, claim); err != nil {
 		if errors.Is(err, ErrStaleClaim) && consumes {
 			if commitErr := tx.Commit(); commitErr != nil {
-				return fmt.Errorf("commit one-shot marker-only settlement: %w", commitErr)
+				return finishStageError(FinishStageCommit, fmt.Errorf("commit one-shot marker-only settlement: %w", commitErr))
 			}
 		}
-		return err
+		return finishStageError(FinishStageLock, err)
 	}
 	// Terminalize before the owner write: a same-owner same-kind continuation
 	// created by the writer must not merge into this dying leased item.
@@ -752,31 +752,32 @@ func (s *Store) finishOneShotWithResult(ctx context.Context, claim Claim, lease 
 		State: terminalState,
 		ID:    claim.ID,
 	}); err != nil {
-		return fmt.Errorf("finish one-shot work item: %w", err)
+		return finishStageError(FinishStageFinish, fmt.Errorf("finish one-shot work item: %w", err))
 	}
 	ownerVersion := claim.ExpectedOwnerVersion
 	if writeOwner != nil {
 		ownerVersion, err = writeOwner(ctx, txscope.Wrap(tx), ownerResult)
 		if err != nil {
-			return fmt.Errorf("write one-shot owner result: %w", err)
+			return finishStageError(FinishStageWriteOwner, fmt.Errorf("write one-shot owner result: %w", err))
 		}
 	}
 	if err := persistence.New(tx).PatchOneShotWorkItemOwnerVersion(ctx, persistence.PatchOneShotWorkItemOwnerVersionParams{
 		ExpectedOwnerVersion: ownerVersion,
 		ID:                   claim.ID,
 	}); err != nil {
-		return fmt.Errorf("fence one-shot work item owner version: %w", err)
+		return finishStageError(FinishStageOwnerVersion, fmt.Errorf("fence one-shot work item owner version: %w", err))
 	}
 	if postTransition != nil {
 		if err := postTransition(ctx, txscope.Wrap(tx)); err != nil {
-			return fmt.Errorf("run one-shot finish post-transition: %w", err)
+			return finishStageError(FinishStagePostTransition, fmt.Errorf("run one-shot finish post-transition: %w", err))
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit one-shot finish transaction: %w", err)
+		return finishStageError(FinishStageCommit, fmt.Errorf("commit one-shot finish transaction: %w", err))
 	}
-	s.logEvent(claim.Owner, claim.ID, "finish", "work_item_finished",
-		fmt.Sprintf("state_after=%s disposition=%s attempt=%d fencing_token=%d", terminalState, disposition, claim.Attempt, claim.FencingToken), claim.Attempt)
+	event := workItemFinishedEvent(claim, terminalState)
+	event.Disposition = string(disposition)
+	s.logStoreEvent(event)
 	return nil
 }
 
@@ -894,14 +895,12 @@ func (s *Store) RetryOneShot(ctx context.Context, claim Claim, lease AdmissionLe
 		return RetryOutcome{}, fmt.Errorf("commit one-shot retry transaction: %w", err)
 	}
 	stateAfter := StateAvailable
-	operation := "retry"
 	if terminal {
 		stateAfter = StateFailed
-		operation = "retry_exhausted"
 	}
-	s.logEvent(claim.Owner, claim.ID, operation, "work_item_retried",
-		fmt.Sprintf("state_after=%s disposition=%s reason_code=%s attempt=%d max_attempts=%d fencing_token=%d",
-			stateAfter, disposition, reasonCode, claim.Attempt, claim.MaxAttempts, claim.FencingToken), claim.Attempt)
+	event := workItemRetriedEvent(claim, stateAfter, terminal)
+	event.Disposition = string(disposition)
+	s.logStoreEvent(event)
 	return RetryOutcome{Terminal: terminal}, nil
 }
 

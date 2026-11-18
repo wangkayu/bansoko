@@ -87,7 +87,6 @@ describe("query key contracts", () => {
 
     expect(observabilityKeys.all).toEqual(["observability"]);
     expect(observabilityKeys.records).toEqual(["observability", "records"]);
-    expect(observabilityKeys.diagnostics).toEqual(["observability", "diagnostics"]);
     expect(observabilityKeys.businessLine("primary", "success", "anime-42", "")).toEqual([
       "observability",
       "records",
@@ -110,8 +109,8 @@ describe("query key contracts", () => {
       "2025-01-01",
       "2025-01-31",
     ]);
-    expect(observabilityKeys.diagnosticsFiltered("open")).toEqual(["observability", "diagnostics", "list", "open"]);
-    expect(observabilityKeys.runtimeLog("warn")).toEqual(["observability", "runtime-log", "warn"]);
+    expect(observabilityKeys.releaseBatches).toEqual(["observability", "release-batch"]);
+    expect(observabilityKeys.runtimeLog("warn", "provider search")).toEqual(["observability", "runtime-log", "warn", "provider search"]);
   });
 
   it("emits the exact file-maintenance and reconciliation tuples", () => {
@@ -163,9 +162,8 @@ describe("query key contracts", () => {
     expectPrefix(animeKeys.workspacePrefix, animeKeys.workspace("anime-42"));
 
     expectPrefix(observabilityKeys.all, observabilityKeys.records);
-    expectPrefix(observabilityKeys.all, observabilityKeys.diagnostics);
     expectPrefix(observabilityKeys.records, observabilityKeys.businessLine("primary", "success", "anime-42", ""));
-    expectPrefix(observabilityKeys.diagnostics, observabilityKeys.diagnosticsFiltered("open"));
+    expectPrefix(observabilityKeys.releaseBatches, observabilityKeys.releaseBatch("batch-1"));
   });
 
   it("preserves the shared prefixes for grouped query refreshes", () => {

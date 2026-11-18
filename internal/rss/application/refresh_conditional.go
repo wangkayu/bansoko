@@ -62,6 +62,9 @@ RETURNING version`, snapshot.sourceID, claim.ExpectedOwnerVersion).Scan(&version
 		if err := resetRefreshFailuresTx(ctx, tx, snapshot, effect); err != nil {
 			return 0, err
 		}
+		if effect != nil {
+			effect.outcome = refreshLogOutcome{notModified: true}
+		}
 		return version, nil
 	}
 }

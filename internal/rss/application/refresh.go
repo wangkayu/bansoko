@@ -239,6 +239,12 @@ func (s *Service) refreshSuccessWriter(claim workitems.Claim, snapshot sourceSna
 			return 0, err
 		}
 		if !selected || (state != "active" && !refreshTriggerIsManual(claim.InputSnapshot)) {
+			if effect != nil {
+				effect.outcome.skipReason = refreshSkipInactive
+				if !selected {
+					effect.outcome.skipReason = refreshSkipNotSelected
+				}
+			}
 			return snapshot.runtimeVersion, nil
 		}
 		// Releases first seen after the source's baseline scan, while the
@@ -369,6 +375,13 @@ RETURNING version`, snapshot.sourceID, cursorJSON, lastGoodJSON, claim.ExpectedO
 				Details:         details,
 			}); err != nil {
 				return 0, err
+			}
+		}
+		if effect != nil {
+			effect.outcome = refreshLogOutcome{
+				resumeBaseline: resumeBaseline,
+				newCount:       len(newKeys),
+				windowTotal:    len(feed),
 			}
 		}
 		return newVersion, nil

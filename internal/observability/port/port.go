@@ -211,6 +211,8 @@ type ActivityWriter interface {
 
 // RuntimeEvent is the stable, redacted envelope for process diagnostics.
 // Optional fields are omitted by runtime logger adapters when they are absent.
+// Dynamic lifecycle facts (kind, before/after state, failure stage) are typed
+// fields, never appended to Message.
 type RuntimeEvent struct {
 	Message             string
 	Component           string
@@ -222,6 +224,11 @@ type RuntimeEvent struct {
 	OwnerType           string
 	OwnerID             string
 	WorkItemID          string
+	Kind                string
+	StateBefore         string
+	StateAfter          string
+	Disposition         string
+	Stage               string
 	Generation          int64
 	Attempt             int
 	Retryable           *bool

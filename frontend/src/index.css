@@ -1346,28 +1346,6 @@ h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
     white-space: nowrap;
   }
-
-  /* With text present the badge follows the text instead of sitting on top of it. */
-  .top-nav-labeled-btn .top-nav-badge {
-    position: static;
-  }
-}
-
-.top-nav-badge {
-  position: absolute;
-  top: -0.125rem;
-  right: -0.125rem;
-  display: grid;
-  place-items: center;
-  min-width: 1rem;
-  height: 1rem;
-  padding: 0 0.25rem;
-  border-radius: 999px;
-  background: hsl(var(--status-offline));
-  color: hsl(var(--destructive-foreground));
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1;
 }
 
 .top-nav-menu-icon {
@@ -1418,23 +1396,6 @@ h1, h2, h3, h4, h5, h6 {
 .tabbar-item-active {
   background: hsl(var(--accent));
   color: hsl(var(--accent-foreground));
-}
-
-.tabbar-badge {
-  position: absolute;
-  top: 2px;
-  right: 0.625rem;
-  display: grid;
-  place-items: center;
-  min-width: 1rem;
-  height: 1rem;
-  padding: 0 0.25rem;
-  border-radius: 999px;
-  background: hsl(var(--status-offline));
-  color: hsl(var(--destructive-foreground));
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1;
 }
 
 /* ===== Phone "More" panel ===== */

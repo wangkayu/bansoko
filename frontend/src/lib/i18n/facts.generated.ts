@@ -507,9 +507,27 @@ export const factsCopy = {
       label: "被替换的版本数",
       description: "派生值：这次替换顶掉的旧版本数量。",
     },
+    new: {
+      file: {
+        label: "新版本文件",
+        description: "派生值：顶替旧版本的种子内原始文件名，不含路径；来源链已压缩时为空。",
+      },
+      group: {
+        label: "新版本字幕组",
+        description: "派生值：顶替旧版本的版本在入库前冻结的字幕组显示名；来源链已压缩时为空。",
+      },
+      title: {
+        label: "新版本发布标题",
+        description: "派生值：顶替旧版本的版本在入库前冻结的原始发布标题；来源链已压缩时为空。",
+      },
+    },
+    old_versions: {
+      label: "被替换版本的原始来源",
+      description: "派生值：每个被顶掉的旧版本在入库前冻结的原始来源，每项依次是种子内原始文件名（path）、字幕组（group）与发布标题（title）；来源链已压缩的版本没有这一项。",
+    },
     targets: {
       label: "被替换的版本",
-      description: "派生值：被顶掉的旧版本，每行一个：文件名（path），以及记录了来源发布时才有字幕组（group）与发布标题（title）。",
+      description: "派生值：被顶掉的旧版本，每行一个：该版本当前的文件名（path），以及记录了来源发布时才有字幕组（group）与发布标题（title）。",
     },
   },
   result: {
@@ -1232,9 +1250,27 @@ export const enFactsCopy = {
       label: "Replaced version count",
       description: "Derived: How many old versions this replacement took over.",
     },
+    new: {
+      file: {
+        label: "New version file",
+        description: "Derived: Original file name inside the torrent of the version that won, without a path; empty when the source chain is gone.",
+      },
+      group: {
+        label: "New version group",
+        description: "Derived: Fansub group display name frozen before import for the version that won; empty when the source chain is gone.",
+      },
+      title: {
+        label: "New version release title",
+        description: "Derived: Original release title frozen before import for the version that won; empty when the source chain is gone.",
+      },
+    },
+    old_versions: {
+      label: "Replaced version sources",
+      description: "Derived: The frozen pre-import source of each old version that lost its place, each with the original file name inside its torrent (path), group (group) and release title (title); a version whose source chain is gone has no entry.",
+    },
     targets: {
       label: "Replaced versions",
-      description: "Derived: The old versions that lost their place, one per line: the file name (path) plus, when the version records its source release, the group (group) and release title (title).",
+      description: "Derived: The old versions that lost their place, one per line: the version's current file name (path) plus, when the version records its source release, the group (group) and release title (title).",
     },
   },
   result: {

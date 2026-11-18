@@ -14,9 +14,8 @@ import type { ReactNode } from "react";
 import type { AutomationKind, Connection } from "../lib/api/client";
 import { useNextAutomationRun } from "../lib/automationSchedules";
 import { formatDateTime } from "../lib/labels";
-import { badgeText, type LogFailureBadge } from "./logSeen";
 import { cn } from "@/lib/utils";
-import { Dialog, Segmented, StatePill } from "../ui/base";
+import { Dialog, Segmented } from "../ui/base";
 import { isLocale, LOCALE_NAMES, LOCALES, setLocale, t, useLocale } from "../lib/i18n";
 
 // The phone "More" bottom sheet: tool entries (with ↗, opening sheets/dialogs;
@@ -51,7 +50,6 @@ type MoreSheetProps = {
   onClose: () => void;
   onLogout: () => void;
   connections: Connection[];
-  failureBadge: LogFailureBadge;
   onOpenSearch: () => void;
   onOpenFiles: () => void;
   onOpenRecords: () => void;
@@ -69,7 +67,6 @@ export function MoreSheet({
   onClose,
   onLogout,
   connections,
-  failureBadge,
   onOpenSearch,
   onOpenFiles,
   onOpenRecords,
@@ -98,7 +95,6 @@ export function MoreSheet({
         <MoreRow
           icon={<ClipboardList width={18} height={18} />}
           label={t("nav.log")}
-          badge={failureBadge.count > 0 ? failureBadge : undefined}
           onSelect={launch(onOpenLog)}
         />
 
@@ -167,13 +163,11 @@ export function MoreSheet({
 function MoreRow({
   icon,
   label,
-  badge,
   onSelect,
   external = true,
 }: {
   icon: React.ReactNode;
   label: string;
-  badge?: LogFailureBadge;
   onSelect: () => void;
   external?: boolean;
 }) {
@@ -183,11 +177,6 @@ function MoreRow({
         {icon}
       </span>
       <span className="more-sheet-row-label">{label}</span>
-      {badge !== undefined && (
-        <StatePill tone="offline">
-          {badgeText(badge)}
-        </StatePill>
-      )}
       {external && <ArrowUpRight className="more-sheet-row-opn" aria-hidden />}
     </button>
   );

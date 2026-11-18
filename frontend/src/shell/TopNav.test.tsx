@@ -6,6 +6,7 @@ import type { Connection, ObservabilityRecord } from "../lib/api/client";
 import { useLogDialogStore } from "./logDialogStore";
 import { TopNav } from "./TopNav";
 import { t } from "../lib/i18n";
+import { formatShortDateTime } from "../lib/labels";
 
 vi.mock("../features/qb-manager/QBManagerDialogEntry", () => ({
   QBManagerDialogEntry: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) =>
@@ -61,8 +62,8 @@ vi.mock("./LogDialogEntry", () => ({
           <button type="button" aria-label="关闭日志" onClick={() => onOpenChange(false)}>
             关闭
           </button>
-          <button type="button" onClick={() => onViewChange?.("diagnostics")}>
-            切到诊断
+          <button type="button" onClick={() => onViewChange?.("raw")}>
+            切到日志
           </button>
         </div>
       ) : null}
@@ -318,9 +319,9 @@ describe("顶栏弹窗由路由承载", () => {
     expect(entry).toHaveAttribute("data-view", "records");
     expect(new URLSearchParams(router.state.location.search).get("log")).toBe("records");
 
-    fireEvent.click(screen.getByRole("button", { name: "切到诊断" }));
-    await waitFor(() => expect(screen.getByTestId("mock-log-entry")).toHaveAttribute("data-view", "diagnostics"));
-    expect(new URLSearchParams(router.state.location.search).get("log")).toBe("diagnostics");
+    fireEvent.click(screen.getByRole("button", { name: "切到日志" }));
+    await waitFor(() => expect(screen.getByTestId("mock-log-entry")).toHaveAttribute("data-view", "raw"));
+    expect(new URLSearchParams(router.state.location.search).get("log")).toBe("raw");
     expect(router.state.historyAction).toBe("REPLACE");
 
     fireEvent.click(screen.getByRole("button", { name: "关闭日志" }));
@@ -329,12 +330,13 @@ describe("顶栏弹窗由路由承载", () => {
     expect(router.state.location.search).toBe("?source=mikan");
   });
 
-  it("深链 ?log=diagnostics 直接落在诊断视图", async () => {
+  it("旧深链 ?log=diagnostics 打开日志视图并改写为当前地址", async () => {
     stubFetch();
-    renderTopNav(["/?log=diagnostics"]);
+    const { router } = renderTopNav(["/?log=diagnostics"]);
     const entry = await screen.findByTestId("mock-log-entry");
     expect(entry).toHaveAttribute("data-open", "true");
-    expect(entry).toHaveAttribute("data-view", "diagnostics");
+    expect(entry).toHaveAttribute("data-view", "raw");
+    await waitFor(() => expect(new URLSearchParams(router.state.location.search).get("log")).toBe("raw"));
   });
 
   it("未知工具、未知日志视图的深链被去掉；没有 qB 连接时 ?tool=qbittorrent 仍打开", async () => {
@@ -430,8 +432,9 @@ describe("顶栏状态条用语", () => {
       .find((el) => el.className.includes("system-status-row"))!;
     expect(qbRow).toHaveTextContent(t("nav.goSettings"));
     expect(qbRow.querySelector(".system-status-dot-warning")).not.toBeNull();
-    // TMDB is enabled: a ready test result shows as reachable.
+    // TMDB is enabled: a ready test result shows as reachable, with its check time.
     expect(await screen.findByText(t("nav.statusReachable"))).toBeInTheDocument();
+    expect(screen.getByText(t("nav.statusCheckedAt", { time: formatShortDateTime("2026-07-21T08:00:00Z") }))).toBeInTheDocument();
     // Disabled or unconfigured services get no reachability test.
     expect(screen.queryByText(t("nav.statusUnreachable"))).not.toBeInTheDocument();
     expect(screen.getByText(new RegExp(`^${t("nav.automationKind.group_discovery")} · `))).toBeInTheDocument();

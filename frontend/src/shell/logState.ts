@@ -4,8 +4,8 @@ import { tryT } from "../lib/i18n";
 import { joinList } from "../lib/i18n/format";
 import { subscriptionLogKindLabel } from "../lib/labels";
 
-// One predicate set for the events tab: the row marker, the state filter and the log badge all
-// read the states below, so a record the badge counts is always a record the 失败 filter lists.
+// One predicate set for the events tab: the row marker and the state filter read the
+// states below.
 
 export type BusinessEntry = Extract<ObservabilityRecord, { record_type: "business" }>["entry"];
 export type DeliveryRecord = Extract<ObservabilityRecord, { record_type: "plugin" }>["delivery"];
@@ -31,15 +31,6 @@ export function deliveryState(delivery: Pick<DeliveryRecord, "state">): LogState
 
 export function isUnconfirmedDelivery(delivery: Pick<DeliveryRecord, "state">): boolean {
   return delivery.state === "unknown";
-}
-
-/** The badge counts one record per seed: a failed acquisition result, or a failed / unconfirmed notification. */
-export function isBadgeRecord(record: ObservabilityRecord): boolean {
-  if (record.record_type === "business") {
-    return record.entry?.kind === "acquisition_settled" && record.entry.outcome === "failure";
-  }
-  if (record.record_type === "plugin") return deliveryState(record.delivery) === "failure";
-  return false;
 }
 
 type MessageParams = Record<string, string | number | null | undefined>;

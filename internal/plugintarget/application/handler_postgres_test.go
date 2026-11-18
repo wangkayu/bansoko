@@ -980,3 +980,165 @@ func TestPluginPrepareDiagnosticRealWriterClosesSameEpisode(t *testing.T) {
 		t.Fatalf("recovery did not close same episode: id=%q/%q succeeded_after=%v", id, closedID, succeededAfter)
 	}
 }
+
+// The delivered event is emitted only after the delivery row and the WorkItem
+// transition committed.
+func TestHandlerDeliveredAttemptLogAfterCommitPostgres(t *testing.T) {
+	service, _, claim := seedHandlerDelivery(t)
+	logger := &capturingRuntimeLogger{}
+	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems,
+		&countingHTTPClient{status: http.StatusNoContent}, &fakeTemplateRenderer{title: "title", body: "body"})
+	handler.SetDiagnosticRecorder(nil, logger)
+
+	out, err := handler.Handle(context.Background(), claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := logger.snapshot(); len(got) != 0 {
+		t.Fatalf("delivery result was logged before commit: %+v", got)
+	}
+	finishHandlerOutcome(t, service, claim, out)
+	if out.AfterCommit == nil {
+		t.Fatal("delivered outcome lacks its post-commit hook")
+	}
+	out.AfterCommit(context.Background())
+
+	events := logger.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("delivery events = %+v", events)
+	}
+	event := events[0]
+	if event.Component != "notification" || event.Operation != "delivery" || event.Outcome != "success" ||
+		event.ReasonCode != "notification_delivered" || event.Message != "notification delivered" {
+		t.Fatalf("delivered event = %+v", event)
+	}
+	if event.OwnerID == "" || event.WorkItemID != claim.ID || event.Attempt != claim.Attempt {
+		t.Fatalf("delivered event identity = %+v", event)
+	}
+}
+
+// A retryable receiver status leaves a queued attempt; the event says the
+// receiver answered and another attempt is waiting, not that delivery failed
+// for good.
+func TestHandlerRetryScheduledAttemptLogAfterCommitPostgres(t *testing.T) {
+	service, _, claim := seedHandlerDelivery(t)
+	logger := &capturingRuntimeLogger{}
+	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems,
+		&countingHTTPClient{status: http.StatusServiceUnavailable}, &fakeTemplateRenderer{title: "title", body: "body"})
+	handler.SetDiagnosticRecorder(nil, logger)
+
+	out, err := handler.Handle(context.Background(), claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Kind != runtimeworker.OutcomeRetry {
+		t.Fatalf("503 outcome = %+v, want a queued retry", out)
+	}
+	finishHandlerOutcome(t, service, claim, out)
+	out.AfterCommit(context.Background())
+
+	events := logger.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("delivery events = %+v", events)
+	}
+	event := events[0]
+	if event.Outcome != "failure" || event.ReasonCode != "notification_retry_scheduled" {
+		t.Fatalf("queued retry event = %+v", event)
+	}
+	if event.Retryable == nil || !*event.Retryable {
+		t.Fatalf("queued retry must be marked retryable: %+v", event)
+	}
+	for _, want := range []string{"retryable status", "another attempt is queued"} {
+		if !strings.Contains(event.Message, want) {
+			t.Fatalf("message %q lacks %q", event.Message, want)
+		}
+	}
+}
+
+// A request written by a claim that was then lost has no recorded response.
+// The reclaimed attempt settles as unknown without dialling again, and its
+// event says the request may have been sent rather than that it failed.
+func TestHandlerRequestStartReclaimAttemptLogAfterCommitPostgres(t *testing.T) {
+	service, id, claim := seedHandlerDelivery(t)
+	client := &countingHTTPClient{status: http.StatusNoContent}
+	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems, client,
+		&fakeTemplateRenderer{title: "title", body: "body"})
+	handler.hooks.afterRequestStartCommit = func() error { return errors.New("crash before dial") }
+	if _, err := handler.Handle(context.Background(), claim); err == nil {
+		t.Fatal("expected injected crash")
+	}
+
+	logger := &capturingRuntimeLogger{}
+	handler.SetDiagnosticRecorder(nil, logger)
+	handler.hooks = deliveryHooks{}
+	reclaim := expireAndReclaimDelivery(t, service, id)
+	out, err := handler.Handle(context.Background(), reclaim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 0 {
+		t.Fatal("request-start evidence must suppress resend")
+	}
+	if got := logger.snapshot(); len(got) != 0 {
+		t.Fatalf("reclaimed result was logged before commit: %+v", got)
+	}
+	finishHandlerOutcome(t, service, reclaim, out)
+	out.AfterCommit(context.Background())
+
+	events := logger.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("delivery events = %+v", events)
+	}
+	event := events[0]
+	if event.Outcome != "unconfirmed" || event.ReasonCode != "notification_outcome_unknown" {
+		t.Fatalf("reclaimed unknown event = %+v", event)
+	}
+	if event.Retryable == nil || *event.Retryable {
+		t.Fatalf("terminal unknown must not claim a queued retry: %+v", event)
+	}
+	for _, want := range []string{"may have been sent", "no automatic attempt remains"} {
+		if !strings.Contains(event.Message, want) {
+			t.Fatalf("message %q lacks %q", event.Message, want)
+		}
+	}
+	if strings.Contains(strings.ToLower(event.Message), "failed") {
+		t.Fatalf("unknown outcome was reported as a failure: %q", event.Message)
+	}
+}
+
+// A send-preparation failure never wrote a request. It is terminal and its
+// event says so without carrying the builder error.
+func TestHandlerPreSendFailureAttemptLogAfterCommitPostgres(t *testing.T) {
+	service, _, claim := seedHandlerDelivery(t)
+	logger := &capturingRuntimeLogger{}
+	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems,
+		&countingHTTPClient{status: http.StatusNoContent}, &fakeTemplateRenderer{err: errors.New("invalid template https://private.example")})
+	handler.SetDiagnosticRecorder(nil, logger)
+
+	out, err := handler.Handle(context.Background(), claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishHandlerOutcome(t, service, claim, out)
+	out.AfterCommit(context.Background())
+
+	events := logger.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("delivery events = %+v", events)
+	}
+	event := events[0]
+	if event.Outcome != "failure" || event.ReasonCode != "notification_failed" {
+		t.Fatalf("pre-send event = %+v", event)
+	}
+	if event.Retryable == nil || *event.Retryable {
+		t.Fatalf("pre-send failure must not claim a retry: %+v", event)
+	}
+	for _, want := range []string{"could not be sent", "no automatic attempt remains"} {
+		if !strings.Contains(event.Message, want) {
+			t.Fatalf("message %q lacks %q", event.Message, want)
+		}
+	}
+	if strings.Contains(event.Message, "private.example") || strings.Contains(event.Message, "template") {
+		t.Fatalf("message carried the builder error: %q", event.Message)
+	}
+}

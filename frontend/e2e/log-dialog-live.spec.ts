@@ -17,12 +17,12 @@ import {
   waitForRecordState,
 } from "./live-ops-chain";
 
-// 日志（事件 + 诊断）的真实链路：日志在下载进行时就打开并按番剧筛选，不重新加载，
+// 日志（事件 + 日志页签）的真实链路：日志在下载进行时就打开并按番剧筛选，不重新加载，
 // 订阅、元数据、种子依次出现，一次下载（下载、校验、入库、入库位置、替换版本、获取
 // 结果）合成一行「字幕组 · 第 N 集 · 结果」，展开按时间列出各步（日志可读性 10-21）；
 // 条目文案可读（筛选到单番时不重复番剧名、无内部词与原始代码，成功条目不重复原因），
 // 行数与 API 条目按同一分组规则对应。入库失败的订阅显示失败行，展开后的入库步骤带
-// 原因。诊断页签可读。每个状态截 1280 与 400 两种宽度。
+// 原因。日志页签可读。每个状态截 1280 与 400 两种宽度。
 
 type BusinessEntry = {
   kind: string;
@@ -70,9 +70,11 @@ function runRows(page: Page): Locator {
   return logRows(page).filter({ has: page.getByText("下载", { exact: true }) });
 }
 
-async function filterAnime(page: Page, title: string) {
-  await logDialog(page).getByRole("combobox", { name: "番剧" }).click();
-  await page.getByRole("option", { name: title, exact: true }).click();
+async function filterSearch(page: Page, title: string) {
+  const search = logDialog(page).getByRole("searchbox", { name: "搜索" });
+  await search.fill(title);
+  await expect(search).toHaveValue(title);
+  await page.waitForTimeout(350);
 }
 
 async function businessEntries(page: Page, managedID: string): Promise<BusinessEntry[]> {
@@ -90,7 +92,7 @@ test.describe("日志（真实链路）", () => {
   test.skip(Boolean(prerequisite), prerequisite ?? "");
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  test("订阅下载与入库失败的事件，以及诊断", async ({ page, isMobile }, testInfo) => {
+  test("订阅下载与入库失败的事件，以及日志", async ({ page, isMobile }, testInfo) => {
     test.skip(isMobile, "the desktop project captures both widths");
     test.setTimeout(15 * 60_000);
     await page.goto("/");
@@ -105,7 +107,7 @@ test.describe("日志（真实链路）", () => {
     const managedID = await subscribeOpsPreset(page, title);
     await page.goto("/#/?log=records");
     await expect(logDialog(page)).toBeVisible();
-    await filterAnime(page, title);
+    await filterSearch(page, title);
     await expect(logRows(page).filter({ hasText: "订阅已创建" })).toHaveCount(1, { timeout: 30000 });
     // No reload from here: entries arrive through realtime invalidation.
     const runRow = runRows(page);
@@ -122,8 +124,7 @@ test.describe("日志（真实链路）", () => {
       "the settled and replacement entries",
     );
     await expect(runRow.getByText("已入库", { exact: true })).toBeVisible({ timeout: 30000 });
-    // Filtered to this anime: the run title names the subgroup and episode, not the anime.
-    await expect(runRow.getByRole("button", { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) })).toHaveCount(0);
+    // The run row expands to its subgroup and episode steps below.
 
     // Rows follow the API entries under the same grouping: one row per download, singles in order.
     await expect(logRows(page)).toHaveCount(expectedRowCount(entries), { timeout: 30000 });
@@ -164,13 +165,13 @@ test.describe("日志（真实链路）", () => {
     const failedID = await subscribeOpsPreset(page, failTitle);
     await page.goto("/#/?log=records");
     await expect(logDialog(page)).toBeVisible();
-    await filterAnime(page, failTitle);
+    await filterSearch(page, failTitle);
     const failedRow = runRows(page);
     await expect(failedRow).toHaveCount(1, { timeout: 6 * 60_000 });
     const [failedRecord] = await waitForRecords(page, failedID, 1);
     await waitForRecordState(page, failedRecord.acquisition_id, ["failed"]);
     // 失败事件的状态与原因合并在同一段文本里（「获取失败 · 原因：目标目录无效」），
-    // 不能按整字匹配单个词；行首状态徽标同理（「失败」可能带「新」角标）。
+    // 不能按整字匹配单个词；行首状态徽标同理。
     await expect(failedRow.getByText(/获取失败/)).toBeVisible({ timeout: 60000 });
     await expect(failedRow.getByText(/^失败/).first()).toBeVisible();
     await failedRow.getByRole("button", { expanded: false }).click();
@@ -194,12 +195,12 @@ test.describe("日志（真实链路）", () => {
     await expect(logDialog(page).getByText(/未知原因/)).toHaveCount(0);
     await captureWidths(page, testInfo, "log-records-failure");
 
-    // --- 诊断 ------------------------------------------------------------------
-    await logDialog(page).getByRole("tab", { name: "诊断", exact: true }).click();
+    // --- 日志 ------------------------------------------------------------------
+    await logDialog(page).getByRole("tab", { name: "日志", exact: true }).click();
     await expect(
-      logDialog(page).getByRole("list", { name: "诊断列表" }).or(logDialog(page).getByText("暂无诊断记录", { exact: true })),
+      logDialog(page).getByRole("region", { name: "运行日志" }).or(logDialog(page).getByText("没有符合条件的日志", { exact: true })),
     ).toBeVisible({ timeout: 30000 });
     await expect(logDialog(page).getByText(/undefined|NaN/)).toHaveCount(0);
-    await captureWidths(page, testInfo, "log-diagnostics");
+    await captureWidths(page, testInfo, "log-runtime");
   });
 });

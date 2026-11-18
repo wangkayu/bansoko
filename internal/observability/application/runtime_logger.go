@@ -19,6 +19,7 @@ type JSONRuntimeLogger struct {
 	mu     sync.Mutex
 	logger *slog.Logger
 	tail   *RuntimeLogTail
+	store  *RuntimeLogStore
 }
 
 const maxRuntimeMessageBytes = 1024
@@ -38,6 +39,37 @@ func NewJSONRuntimeLogger(w io.Writer) *JSONRuntimeLogger {
 }
 
 var _ observabilityport.RuntimeLogger = (*JSONRuntimeLogger)(nil)
+
+// RuntimeLogs answers one owner-only page from the retained on-disk history. It
+// falls back to the bounded in-memory tail only when the store cannot answer
+// (unwritable or unreadable). A cursor minted by the tail while the disk was
+// unavailable is answered from the files after recovery, with a gap.
+func (l *JSONRuntimeLogger) RuntimeLogs(query RuntimeLogQuery) (RuntimeLogPage, error) {
+	if l == nil {
+		return RuntimeLogPage{Source: RuntimeLogSourceMemory}, nil
+	}
+	if l.store != nil {
+		page, ok, err := l.store.Read(query)
+		if err != nil {
+			return RuntimeLogPage{}, err
+		}
+		if ok {
+			return page, nil
+		}
+	}
+	if l.tail != nil {
+		return l.tail.Query(query)
+	}
+	return RuntimeLogPage{Source: RuntimeLogSourceMemory}, nil
+}
+
+// Close stops and flushes the on-disk store. A logger without one is a no-op.
+func (l *JSONRuntimeLogger) Close() error {
+	if l == nil || l.store == nil {
+		return nil
+	}
+	return l.store.Close()
+}
 
 func (l *JSONRuntimeLogger) Debug(ctx context.Context, event observabilityport.RuntimeEvent) {
 	l.log(ctx, slog.LevelDebug, event)
@@ -63,7 +95,7 @@ func (l *JSONRuntimeLogger) log(ctx context.Context, level slog.Level, event obs
 		ctx = context.Background()
 	}
 
-	attrs := make([]slog.Attr, 0, 13)
+	attrs := make([]slog.Attr, 0, 18)
 	if value := safeRuntimeField(event.Component); value != "" {
 		attrs = append(attrs, slog.String("component", value))
 	}
@@ -90,6 +122,21 @@ func (l *JSONRuntimeLogger) log(ctx context.Context, level slog.Level, event obs
 	}
 	if value := safeRuntimeField(event.WorkItemID); value != "" {
 		attrs = append(attrs, slog.String("work_item_id", value))
+	}
+	if value := safeRuntimeField(event.Kind); value != "" {
+		attrs = append(attrs, slog.String("kind", value))
+	}
+	if value := safeRuntimeField(event.StateBefore); value != "" {
+		attrs = append(attrs, slog.String("state_before", value))
+	}
+	if value := safeRuntimeField(event.StateAfter); value != "" {
+		attrs = append(attrs, slog.String("state_after", value))
+	}
+	if value := safeRuntimeField(event.Disposition); value != "" {
+		attrs = append(attrs, slog.String("disposition", value))
+	}
+	if value := safeRuntimeField(event.Stage); value != "" {
+		attrs = append(attrs, slog.String("stage", value))
 	}
 	if event.Attempt > 0 {
 		attrs = append(attrs, slog.Int("attempt", event.Attempt))

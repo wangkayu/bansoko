@@ -292,9 +292,6 @@ func (r *Runtime) logEvent(ctx context.Context, severity runtimeSeverity, event 
 	if event.Operation == "" {
 		event.Operation = "runtime"
 	}
-	if event.WorkItemID == "" {
-		event.WorkItemID = event.OwnerID
-	}
 	switch severity {
 	case runtimeDebug:
 		r.logger.Debug(ctx, event)
@@ -318,7 +315,7 @@ func severityForAttempt(claim workitems.Claim) runtimeSeverity {
 	return runtimeError
 }
 
-func workerEvent(claim workitems.Claim, message, operation, reasonCode, errorClass string, retryable bool) observabilityport.RuntimeEvent {
+func workerEvent(claim workitems.Claim, message, operation, reasonCode, errorClass string, retryable *bool) observabilityport.RuntimeEvent {
 	return observabilityport.RuntimeEvent{
 		Message:    message,
 		Component:  "worker",
@@ -328,10 +325,31 @@ func workerEvent(claim workitems.Claim, message, operation, reasonCode, errorCla
 		OwnerType:  claim.Owner.Type,
 		OwnerID:    claim.Owner.ID,
 		WorkItemID: claim.ID,
+		Kind:       claim.Kind,
 		Attempt:    claim.Attempt,
-		Retryable:  &retryable,
+		Retryable:  retryable,
 		ErrorClass: errorClass,
 	}
+}
+
+// unconfirmedWorkerEvent reports an outcome whose durable final state could
+// not be confirmed. It is neither a business failure nor a proven retry.
+func unconfirmedWorkerEvent(claim workitems.Claim, message, operation, reasonCode, errorClass, stage string) observabilityport.RuntimeEvent {
+	event := workerEvent(claim, message, operation, reasonCode, errorClass, nil)
+	event.Outcome = "unconfirmed"
+	event.Stage = stage
+	return event
+}
+
+// finishFailureStage returns the bounded stage carried by a store finish
+// failure, or an empty string when the error was produced outside the finish
+// transition. Raw error text never reaches the event.
+func finishFailureStage(err error) string {
+	var staged *workitems.FinishStageError
+	if !errors.As(err, &staged) || staged == nil || !staged.Stage.IsValid() {
+		return ""
+	}
+	return string(staged.Stage)
 }
 
 func (r *Runtime) logClaimFailed(ctx context.Context) {
@@ -519,7 +537,7 @@ func (r *Runtime) blockRecovery(claim workitems.Claim, reason string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := store.BlockRecovery(ctx, claim, reason); err != nil && !errors.Is(err, workitems.ErrStaleClaim) {
-		r.logEvent(ctx, runtimeError, workerEvent(claim, "worker recovery quarantine failed", "recovery", "recovery_block_failed", "recovery_block", false))
+		r.logEvent(ctx, runtimeError, workerEvent(claim, "worker recovery quarantine failed", "recovery", "recovery_block_failed", "recovery_block", nil))
 	}
 }
 
@@ -567,7 +585,7 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 		if recover() != nil {
 			// Admission/store panics cannot prove an effect disposition. Cleanup
 			// admission bookkeeping locally, but leave persistent leases for reclaim.
-			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "worker execution boundary panicked; lease left for reclaim", "handler", "execution_panic", "execution_panic", false))
+			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "worker execution boundary panicked; lease left for reclaim", "handler", "execution_panic", "execution_panic", nil))
 		}
 	}()
 
@@ -590,7 +608,7 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 			case <-ticker.C:
 				extend := time.Now().UTC().Add(policy.Lease)
 				if err := r.store.RenewLease(handlerCtx, claim, extend); err != nil {
-					r.logEvent(handlerCtx, severityForAttempt(claim), workerEvent(claim, "worker lease heartbeat failed", "lease_heartbeat", "lease_heartbeat_failed", "lease_heartbeat_error", retryableAttempt(claim)))
+					r.logEvent(handlerCtx, severityForAttempt(claim), workerEvent(claim, "worker lease heartbeat failed", "lease_heartbeat", "lease_heartbeat_failed", "lease_heartbeat_error", boolPtr(retryableAttempt(claim))))
 					cancel()
 					if claim.Attempt >= claim.MaxAttempts {
 						r.blockRecovery(claim, "attempt_exhausted")
@@ -612,7 +630,7 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 		}()
 		select {
 		case <-deadlineTimer.C:
-			r.logEvent(handlerCtx, severityForAttempt(claim), workerEvent(claim, "worker handler deadline exceeded", "deadline", "deadline_exceeded", "handler_deadline", retryableAttempt(claim)))
+			r.logEvent(handlerCtx, severityForAttempt(claim), workerEvent(claim, "worker handler deadline exceeded", "deadline", "deadline_exceeded", "handler_deadline", boolPtr(retryableAttempt(claim))))
 			cancel()
 			if claim.Attempt >= claim.MaxAttempts {
 				r.blockRecovery(claim, "attempt_exhausted")
@@ -639,7 +657,7 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 		// same gate and none can bypass it.
 		admissionStore, ok := r.store.(OneShotAdmissionStore)
 		if !ok {
-			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot claim cannot be admitted; store lacks the admission gate", "oneshot_gate", "oneshot_gate_unsupported", "oneshot_gate_error", false))
+			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot claim cannot be admitted; store lacks the admission gate", "oneshot_gate", "oneshot_gate_unsupported", "oneshot_gate_error", nil))
 			return
 		}
 		lease, gateErr := admissionStore.AdmitOneShotEffect(handlerCtx, claim)
@@ -650,13 +668,12 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 				if resumer, ok := r.store.(OneShotResumeStore); ok {
 					resumed, resumeErr := resumer.ResumeRefusedOneShotClaim(handlerCtx, claim)
 					if resumeErr != nil {
-						r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot blocked-chain resume failed; claim left for normal recovery", "oneshot_gate", "one_shot_resume_failed", "one_shot_resume_error", true))
+						r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot blocked-chain resume failed; claim left for normal recovery", "oneshot_gate", "one_shot_resume_failed", "one_shot_resume_error", nil))
 						return
 					}
 					if resumed {
-						event := workerEvent(claim, "one-shot acquisition resumed; claim returned without using an attempt", "oneshot_gate", "one_shot_resumed", "", true)
+						event := workerEvent(claim, "one-shot acquisition resumed; claim returned without using an attempt", "oneshot_gate", "one_shot_resumed", "", nil)
 						event.Outcome = "info"
-						event.Retryable = nil
 						r.logEvent(handlerCtx, runtimeInfo, event)
 						return
 					}
@@ -665,13 +682,13 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 				// the claim — no Retry (ordinary Retry mutates the WorkItem
 				// row), no owner write, no external effect. The item stays
 				// leased for normal lease expiry/reclaim.
-				r.logEvent(handlerCtx, runtimeWarn, workerEvent(claim, "one-shot acquisition is reclaiming; effect aborted without mutation", "oneshot_gate", "one_shot_reclaiming", "one_shot_reclaiming", false))
+				r.logEvent(handlerCtx, runtimeWarn, workerEvent(claim, "one-shot acquisition is reclaiming; effect aborted without mutation", "oneshot_gate", "one_shot_reclaiming", "one_shot_reclaiming", nil))
 				return
 			}
 			// Any other gate failure is fail-closed: no external effect, no
 			// owner/WorkItem mutation; the lease expires and the item becomes
 			// reclaimable.
-			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot admission gate failed; claim abandoned before any effect", "oneshot_gate", "oneshot_gate_failed", "oneshot_gate_error", false))
+			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot admission gate failed; claim abandoned before any effect", "oneshot_gate", "oneshot_gate_failed", "oneshot_gate_error", nil))
 			return
 		}
 		r.handleWithRecoveryGated(handlerCtx, claim, lease)
@@ -680,7 +697,7 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 	if claim.ManagedAnimeID != "" {
 		admissionStore, ok := r.store.(ManagedAnimeAdmissionStore)
 		if !ok {
-			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "managed anime claim cannot be admitted; store lacks the lifecycle gate", "retirement_gate", "retirement_gate_unsupported", "retirement_gate_error", false))
+			r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "managed anime claim cannot be admitted; store lacks the lifecycle gate", "retirement_gate", "retirement_gate_unsupported", "retirement_gate_error", nil))
 			return
 		}
 		if gateErr := admissionStore.AdmitManagedAnimeEffect(handlerCtx, claim); gateErr != nil {
@@ -688,7 +705,7 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 			if errors.Is(gateErr, workitems.ErrOwnerRetired) {
 				reason = "managed_anime_retired"
 			}
-			r.logEvent(handlerCtx, runtimeWarn, workerEvent(claim, "managed anime lifecycle fence rejected the claim before its effect", "retirement_gate", reason, reason, false))
+			r.logEvent(handlerCtx, runtimeWarn, workerEvent(claim, "managed anime lifecycle fence rejected the claim before its effect", "retirement_gate", reason, reason, nil))
 			return
 		}
 	}
@@ -702,12 +719,12 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim, lease *workitems.AdmissionLease) {
 	handler, ok := r.handlers[claim.Kind]
 	if !ok {
-		r.logEvent(ctx, runtimeError, workerEvent(claim, "worker handler is missing", "handler", "missing_handler", "handler_missing", false))
+		r.logEvent(ctx, runtimeError, workerEvent(claim, "worker handler is missing", "handler", "missing_handler", "handler_missing", nil))
 		return
 	}
 	fallback := func(err error, reasonCode string) {
 		if ctx.Err() != nil {
-			r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled before recovery fallback", "handler", "cancelled", "handler_cancelled", retryableAttempt(claim)))
+			r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled before recovery fallback", "handler", "cancelled", "handler_cancelled", boolPtr(retryableAttempt(claim))))
 			return
 		}
 		if recovery, ok := handler.(RecoveryFallbackHandler); ok {
@@ -721,13 +738,13 @@ func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim,
 			if fallbackPanic != nil {
 				// A fallback panic cannot establish whether the external effect
 				// happened. Do not transition the item; lease reclaim is safer.
-				r.logEvent(ctx, runtimeError, workerEvent(claim, "worker recovery fallback panicked; lease left for reclaim", "handler", "recovery_fallback_panic", "recovery_fallback_panic", false))
+				r.logEvent(ctx, runtimeError, workerEvent(claim, "worker recovery fallback panicked; lease left for reclaim", "handler", "recovery_fallback_panic", "recovery_fallback_panic", nil))
 				return
 			}
 			if handled {
-				r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler recovery fallback", "handler", reasonCode, reasonCode, true))
+				r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler recovery fallback", "handler", reasonCode, reasonCode, boolPtr(true)))
 				if ctx.Err() != nil {
-					r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled after recovery fallback", "handler", "cancelled", "handler_cancelled", retryableAttempt(claim)))
+					r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled after recovery fallback", "handler", "cancelled", "handler_cancelled", boolPtr(retryableAttempt(claim))))
 					return
 				}
 				r.applyOutcome(ctx, claim, outcome, lease)
@@ -735,7 +752,7 @@ func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim,
 			}
 		}
 		if claim.Kind == workitems.KindFileExecute && claim.Owner.Type == workitems.OwnerFileOperation {
-			r.logEvent(ctx, runtimeError, workerEvent(claim, "file recovery mode could not be confirmed", "handler", "recovery_mode_unknown", "recovery_mode_unknown", false))
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "file recovery mode could not be confirmed", "handler", "recovery_mode_unknown", "recovery_mode_unknown", nil))
 			return
 		}
 		if _, ok := handler.(RecoveryObserver); ok && claim.Attempt >= claim.MaxAttempts {
@@ -744,12 +761,12 @@ func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim,
 			// work that no longer exists. Like a deadline on the last attempt,
 			// the claim goes to the kind's recovery observer, which writes the
 			// owner's exhausted result.
-			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker handler failed on its last attempt; claim held for recovery", "handler", reasonCode, reasonCode, false))
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker handler failed on its last attempt; claim held for recovery", "handler", reasonCode, reasonCode, nil))
 			r.blockRecovery(claim, "attempt_exhausted")
 			return
 		}
 		retryable := retryableAttempt(claim)
-		r.logEvent(ctx, severityForAttempt(claim), workerEvent(claim, "worker handler recovery fallback used ordinary retry", "handler", reasonCode, reasonCode, retryable))
+		r.logEvent(ctx, severityForAttempt(claim), workerEvent(claim, "worker handler recovery fallback used ordinary retry", "handler", reasonCode, reasonCode, boolPtr(retryable)))
 		r.applyOutcome(ctx, claim, Retry(reasonCode, "handler recovery fallback", time.Second, nil), lease)
 	}
 	defer func() {
@@ -761,7 +778,7 @@ func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim,
 	outcome, err := handler.Handle(ctx, claim)
 	if err != nil {
 		if ctx.Err() != nil {
-			r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled before recovery fallback", "handler", "cancelled", "handler_cancelled", retryableAttempt(claim)))
+			r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled before recovery fallback", "handler", "cancelled", "handler_cancelled", boolPtr(retryableAttempt(claim))))
 			return
 		}
 		fallback(err, "handler_error")
@@ -770,7 +787,7 @@ func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim,
 	if ctx.Err() != nil {
 		// Cancelled (lost lease / deadline / drain): do not write terminal or
 		// retry state; the item becomes reclaimable through the normal path.
-		r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled before transition", "handler", "cancelled", "handler_cancelled", retryableAttempt(claim)))
+		r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker handler cancelled before transition", "handler", "cancelled", "handler_cancelled", boolPtr(retryableAttempt(claim))))
 		return
 	}
 	r.applyOutcome(ctx, claim, outcome, lease)
@@ -785,7 +802,7 @@ func (r *Runtime) handleWithRecoveryGated(ctx context.Context, claim workitems.C
 
 func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outcome Outcome, lease *workitems.AdmissionLease) {
 	if ctx == nil || ctx.Err() != nil {
-		r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker outcome discarded after cancellation", "outcome", "cancelled", "handler_cancelled", retryableAttempt(claim)))
+		r.logEvent(ctx, runtimeWarn, workerEvent(claim, "worker outcome discarded after cancellation", "outcome", "cancelled", "handler_cancelled", boolPtr(retryableAttempt(claim))))
 		return
 	}
 	if outcome.awaitsRecovery() {
@@ -793,13 +810,13 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 		if reason == "" {
 			reason = "effect_unknown"
 		}
-		r.logEvent(ctx, runtimeWarn, workerEvent(claim, "external effect outcome unknown; the claim is left for ticketed recovery", "outcome", reason, "await_recovery", true))
+		r.logEvent(ctx, runtimeWarn, unconfirmedWorkerEvent(claim, "external effect outcome unknown; the claim is left for ticketed recovery", "outcome", reason, "await_recovery", ""))
 		return
 	}
 	switch outcome.Kind {
 	case OutcomeCommitted:
 		if err := validateCommittedOutcome(claim, outcome); err != nil {
-			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker committed receipt is invalid", "outcome", "invalid_committed_receipt", "invalid_outcome", false))
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker committed receipt is invalid", "outcome", "invalid_committed_receipt", "invalid_outcome", nil))
 			return
 		}
 		if outcome.AfterCommit != nil {
@@ -807,14 +824,14 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 		}
 	case OutcomeFinish:
 		if outcome.TerminalState != workitems.StateSucceeded && outcome.TerminalState != workitems.StateFailed {
-			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker outcome has an invalid terminal state", "finish", "invalid_terminal", "invalid_terminal_state", false))
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker outcome has an invalid terminal state", "finish", "invalid_terminal", "invalid_terminal_state", nil))
 			return
 		}
 		var finishErr error
 		if claim.OneShot != nil && lease != nil {
 			transitionStore, ok := r.store.(OneShotTransitionStore)
 			if !ok {
-				r.logEvent(ctx, runtimeError, workerEvent(claim, "one-shot finish is unsupported; store lacks marker-first transitions", "finish", "oneshot_transition_unsupported", "oneshot_transition_error", false))
+				r.logEvent(ctx, runtimeError, workerEvent(claim, "one-shot finish is unsupported; store lacks marker-first transitions", "finish", "oneshot_transition_unsupported", "oneshot_transition_error", nil))
 				return
 			}
 			if outcome.PostTransition != nil {
@@ -823,7 +840,7 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 				// reclaimable instead of silently dropping the durable follow-up.
 				postStore, ok := r.store.(oneShotPostTransitionFinisher)
 				if !ok {
-					r.logEvent(ctx, runtimeError, workerEvent(claim, "one-shot finish cannot run the post-transition hook; claim left for reclaim", "finish", "oneshot_post_transition_unsupported", "post_transition_error", false))
+					r.logEvent(ctx, runtimeError, workerEvent(claim, "one-shot finish cannot run the post-transition hook; claim left for reclaim", "finish", "oneshot_post_transition_unsupported", "post_transition_error", nil))
 					return
 				}
 				finishErr = postStore.FinishOneShotWithResultPostTransition(ctx, claim, *lease, effectiveDisposition(outcome), outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner, outcome.PostTransition)
@@ -837,7 +854,7 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 			// plain finish.
 			postFinisher, ok := r.store.(postTransitionFinisher)
 			if !ok {
-				r.logEvent(ctx, runtimeError, workerEvent(claim, "worker finish cannot run the post-transition hook; claim left for reclaim", "finish", "post_transition_unsupported", "post_transition_error", false))
+				r.logEvent(ctx, runtimeError, workerEvent(claim, "worker finish cannot run the post-transition hook; claim left for reclaim", "finish", "post_transition_unsupported", "post_transition_error", nil))
 				return
 			}
 			finishErr = postFinisher.FinishWithResultPostTransition(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner, outcome.PostTransition)
@@ -849,11 +866,13 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 		if errors.Is(finishErr, workitems.ErrStaleClaim) && claim.OneShot != nil {
 			// Marker-only settlement may have committed; the fenced half was
 			// lost to a newer claim. Nothing further to do.
-			r.logEvent(ctx, runtimeWarn, workerEvent(claim, "one-shot finish lost the fencing race; disposition settled marker-only", "finish", "stale_claim", "stale_claim", false))
+			event := workerEvent(claim, "one-shot finish lost the fencing race; disposition settled marker-only", "finish", "stale_claim", "stale_claim", nil)
+			event.Outcome = "unconfirmed"
+			r.logEvent(ctx, runtimeWarn, event)
 			return
 		}
 		if finishErr != nil {
-			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker finish transition failed", "finish", "finish_failed", "finish_error", false))
+			r.logEvent(ctx, runtimeError, unconfirmedWorkerEvent(claim, "work item final state unconfirmed", "finish", "finish_unconfirmed", "finish_error", finishFailureStage(finishErr)))
 			return
 		}
 		// Best-effort after-commit work (diagnostics, sinks, event
@@ -878,14 +897,14 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 		if claim.OneShot != nil && lease != nil {
 			transitionStore, ok := r.store.(OneShotTransitionStore)
 			if !ok {
-				r.logEvent(ctx, runtimeError, workerEvent(claim, "one-shot retry is unsupported; store lacks marker-first transitions", "retry", "oneshot_transition_unsupported", "oneshot_transition_error", false))
+				r.logEvent(ctx, runtimeError, workerEvent(claim, "one-shot retry is unsupported; store lacks marker-first transitions", "retry", "oneshot_transition_unsupported", "oneshot_transition_error", nil))
 				return
 			}
 			retryOutcome, err = transitionStore.RetryOneShot(ctx, claim, *lease, effectiveDisposition(outcome), outcome.ReasonCode, outcome.Reason, delay, outcome.WriteOwner)
 		} else if outcome.RetryUntilResolved {
 			retryStore, ok := r.store.(retryUntilResolvedStore)
 			if !ok {
-				r.logEvent(ctx, runtimeError, workerEvent(claim, "worker recovery retry is unsupported", "retry", "retry_until_resolved_unsupported", "retry_persistence_error", false))
+				r.logEvent(ctx, runtimeError, workerEvent(claim, "worker recovery retry is unsupported", "retry", "retry_until_resolved_unsupported", "retry_persistence_error", nil))
 				return
 			}
 			retryOutcome, err = retryStore.RetryWithoutAttemptBudget(ctx, claim, outcome.ReasonCode, outcome.Reason, delay, outcome.WriteOwner)
@@ -893,11 +912,13 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 			retryOutcome, err = r.store.Retry(ctx, claim, outcome.ReasonCode, outcome.Reason, delay, outcome.WriteOwner)
 		}
 		if errors.Is(err, workitems.ErrStaleClaim) && claim.OneShot != nil {
-			r.logEvent(ctx, runtimeWarn, workerEvent(claim, "one-shot retry lost the fencing race; disposition settled marker-only", "retry", "stale_claim", "stale_claim", false))
+			event := workerEvent(claim, "one-shot retry lost the fencing race; disposition settled marker-only", "retry", "stale_claim", "stale_claim", nil)
+			event.Outcome = "unconfirmed"
+			r.logEvent(ctx, runtimeWarn, event)
 			return
 		}
 		if err != nil {
-			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker retry persistence failed", "retry", "retry_persist_failed", "retry_persistence_error", true))
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker retry persistence failed", "retry", "retry_persist_failed", "retry_persistence_error", nil))
 			return
 		}
 		reasonCode := "retry_scheduled"
@@ -910,8 +931,14 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 			retryable = false
 			severity = runtimeError
 		}
-		r.logEvent(ctx, severity, workerEvent(claim, message, "retry", reasonCode, "retry_outcome", retryable))
+		r.logEvent(ctx, severity, workerEvent(claim, message, "retry", reasonCode, "retry_outcome", boolPtr(retryable)))
+		// A retry that durably committed and still has budget is a committed
+		// transition, so the existing after-commit work runs. A failed
+		// persistence or an exhausted budget must not report committed effects.
+		if !retryOutcome.Terminal && outcome.AfterCommit != nil {
+			outcome.AfterCommit(ctx)
+		}
 	default:
-		r.logEvent(ctx, runtimeError, workerEvent(claim, "worker produced an unknown outcome", "outcome", "unknown_outcome", "unknown_outcome", false))
+		r.logEvent(ctx, runtimeError, workerEvent(claim, "worker produced an unknown outcome", "outcome", "unknown_outcome", "unknown_outcome", nil))
 	}
 }

@@ -58,7 +58,7 @@ func TestNotificationSourceEvidenceFrozenAtOwnerBoundary(t *testing.T) {
 					SourceEvidence: json.RawMessage(`{"provider":"custom"}`), // Never trusted from the caller.
 				}
 				if trigger == "replacement_applied" {
-					request, err = plugintargetport.ReplacementAppliedRequest("decision-source", 1, animeID, "Sample", "Sample Group", "Sample Release", releaseID, []plugintargetport.DisplacedTarget{{File: "old.mkv"}})
+					request, err = plugintargetport.ReplacementAppliedRequest("decision-source", 1, animeID, "Sample", "Sample Group", "Sample Release", releaseID, []plugintargetport.DisplacedTarget{{File: "old.mkv"}}, plugintargetport.OriginalSource{New: plugintargetport.DisplacedTarget{File: "Sample.mkv"}})
 					if err != nil {
 						t.Fatal(err)
 					}

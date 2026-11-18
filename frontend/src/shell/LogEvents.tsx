@@ -3,14 +3,13 @@ import { ChevronRight, Clock, Search } from "lucide-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button, Field, Input, Select } from "../ui/base/controls";
-import { HelpTip } from "../ui/base/HelpTip";
 import { StatePill, type StatePillTone } from "../ui/StatePill";
 import { Popover } from "../ui/base/overlays";
-import { SegmentedControl } from "../ui/SegmentedControl";
 import { StateBlock } from "../ui/StateBlock";
 import {
   listAnime,
   listObservabilityRecords,
+  listPluginTargets,
   listReleaseBatchEntries,
   toUserMessage,
   type ObservabilityRecord,
@@ -24,7 +23,7 @@ import {
   subscriptionLogKindLabel,
 } from "../lib/labels";
 import { reasonView } from "../lib/i18n/reasons";
-import { animeKeys, observabilityKeys } from "../lib/queryKeys";
+import { animeKeys, configKeys, observabilityKeys } from "../lib/queryKeys";
 import { t } from "../lib/i18n";
 import { labelValue } from "../lib/i18n/format";
 import {
@@ -37,8 +36,7 @@ import {
   stepText,
   type BusinessEntry,
 } from "./logRuns";
-import { isBadgeRecord, messageText, type LogState } from "./logState";
-import { isNewer, latestTime, markLogSeen, recordSeenTime } from "./logSeen";
+import { messageText, type LogState } from "./logState";
 
 // Events tab. Each row has three layers: the title ("anime · episode · group") with the result
 // fixed on its right, a second line of facts (files, size, replacement), and a third line with
@@ -50,12 +48,14 @@ const PAGE_LIMIT = 50;
 const SEARCH_DEBOUNCE_MS = 300;
 
 export type StateFilter = "" | LogState;
+export type TypeFilter = "" | "business" | "plugin";
 
 /** The events read projection: primary hides the repeated release filtering process; all is the full history. */
 type EventView = "primary" | "all";
 
 export type EventFilters = {
   state: StateFilter;
+  type: TypeFilter;
   animeId: string;
   q: string;
   /** datetime-local values; converted to ISO before entering the query. */
@@ -63,11 +63,12 @@ export type EventFilters = {
   toLocal: string;
 };
 
-export const EMPTY_FILTERS: EventFilters = { state: "", animeId: "", q: "", fromLocal: "", toLocal: "" };
+export const EMPTY_FILTERS: EventFilters = { state: "", type: "", animeId: "", q: "", fromLocal: "", toLocal: "" };
 
-const EVENT_VIEW_OPTIONS = (): { value: EventView; label: string }[] => [
-  { value: "primary", label: t("log.view.primary") },
-  { value: "all", label: t("log.view.all") },
+const TYPE_OPTIONS = (): { value: TypeFilter; label: string }[] => [
+  { value: "", label: t("log.allTypes") },
+  { value: "business", label: t("log.typeBusiness") },
+  { value: "plugin", label: t("log.typePlugin") },
 ];
 
 const STATE_OPTIONS = (): { value: StateFilter; label: string }[] => [
@@ -80,11 +81,8 @@ const STATE_OPTIONS = (): { value: StateFilter; label: string }[] => [
 
 const LIST = "tw:m-0 tw:list-none tw:p-0 tw:rounded-[10px] tw:border tw:border-border tw:bg-card tw:overflow-hidden";
 const ITEM = "tw:border-b tw:border-border tw:last:border-b-0";
-const HEAD = "tw:grid tw:w-full tw:min-w-0 tw:gap-0.5 tw:px-3 tw:pt-2 tw:text-left tw:text-sm";
-const TITLE_LINE = "tw:flex tw:min-w-0 tw:flex-wrap tw:items-baseline tw:gap-x-2.5 tw:gap-y-0.5";
-const TITLE = "tw:min-w-48 tw:flex-1 tw:wrap-anywhere tw:font-medium tw:phone:min-w-0 tw:phone:basis-full";
-const RESULT = "tw:min-w-0 tw:max-w-full tw:flex-none tw:whitespace-normal tw:text-xs";
-const TIME = "tw:flex-none tw:tabular-nums tw:text-xs tw:text-muted-foreground";
+const HEAD = "tw:grid tw:w-full tw:min-w-0 tw:gap-0.5 tw:px-3 tw:py-2 tw:text-left tw:text-sm";
+const TITLE_LINE = "tw:flex tw:min-w-0 tw:items-center tw:gap-2";
 const META = "tw:m-0 tw:min-w-0 tw:max-w-full tw:wrap-anywhere tw:text-xs tw:text-muted-foreground";
 const EXPANDED = "tw:grid tw:gap-2 tw:border-t tw:border-border tw:bg-muted/30 tw:px-3 tw:py-2.5";
 const SECTION_TITLE = "tw:m-0 tw:text-xs tw:font-medium tw:text-muted-foreground";
@@ -126,19 +124,11 @@ type AnimeNames = ReadonlyMap<string, string>;
 export function LogEvents({
   filters,
   onFiltersChange,
-  presetAnime,
-  active,
-  newSince,
   onOpenDelivery,
   onOpenAnimeMetadata,
 }: {
   filters: EventFilters;
   onFiltersChange: (next: EventFilters) => void;
-  /** The card entry preselected an anime: the mark stays put, like with any filter. */
-  presetAnime: boolean;
-  /** The dialog is open on this tab: an unfiltered list moves the events seen-mark. */
-  active: boolean;
-  newSince: string | null;
   onOpenDelivery: (deliveryID: string) => void;
   onOpenAnimeMetadata?: (managedAnimeId: string) => void;
 }) {
@@ -150,59 +140,50 @@ export function LogEvents({
   const q = useDebounced(filters.q.trim(), SEARCH_DEBOUNCE_MS);
   const from = localToIso(filters.fromLocal);
   const to = localToIso(filters.toLocal);
-  const unfiltered = filters.state === "" && filters.animeId === "" && q === "" && from === undefined && to === undefined && !presetAnime;
   const patch = (next: Partial<EventFilters>) => onFiltersChange({ ...filters, ...next });
-  // Every opening starts on the primary view (LogEvents remounts with the dialog); switching views keeps the filters.
-  const [eventView, setEventView] = useState<EventView>("primary");
+  // The event list keeps the primary projection; the type filter narrows records before grouping.
+  const eventView: EventView = "primary";
 
   return (
     <div className="tw:grid tw:gap-3">
       <div className="tw:grid tw:gap-2">
-        <div className="tw:flex tw:items-center tw:gap-1.5">
-          <SegmentedControl<EventView> ariaLabel={t("log.view.aria")} value={eventView} options={EVENT_VIEW_OPTIONS()} onChange={setEventView} />
-          <HelpTip label={t("log.view.helpLabel")}>{t("log.view.help")}</HelpTip>
-        </div>
-        <div className="tw:flex tw:items-center tw:gap-2">
-          <div className="tw:w-28 tw:flex-none">
+        <div className="tw:grid tw:grid-cols-[7rem_7rem_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:phone:grid-cols-[6.5rem_5rem_minmax(0,1fr)_auto] tw:phone:gap-1">
+          <div className="tw:min-w-0">
+            <Select<TypeFilter> label={t("log.type")} value={filters.type} options={TYPE_OPTIONS()} onChange={(type) => patch({ type })} />
+          </div>
+          <div className="tw:min-w-0">
             <Select<StateFilter> label={t("log.status")} value={filters.state} options={STATE_OPTIONS()} onChange={(state) => patch({ state })} />
           </div>
-          <div className="tw:min-w-0 tw:flex-1">
-            <Select
-              label={t("log.anime")}
-              value={filters.animeId}
-              options={[
-                { value: "", label: t("log.allAnime") },
-                ...(animeList.data ?? []).map((item) => ({
-                  value: item.managed_anime.id,
-                  label: item.managed_anime.title_override ?? item.managed_anime.title,
-                })),
-              ]}
-              onChange={(animeId) => patch({ animeId })}
+          <div className="tw:min-w-0">
+            <Input
+              type="search"
+              aria-label={t("log.search")}
+              placeholder={t("log.searchPlaceholder")}
+              title={t("log.searchHint")}
+              leadingIcon={<Search className="tw:size-3.5" />}
+              value={filters.q}
+              maxLength={100}
+              onChange={(event) => patch({ q: event.target.value })}
             />
           </div>
           <TimeRangePopover from={filters.fromLocal} to={filters.toLocal} onChange={(fromLocal, toLocal) => patch({ fromLocal, toLocal })} />
         </div>
-        <Input
-          aria-label={t("log.search")}
-          placeholder={t("log.searchPlaceholder")}
-          leadingIcon={<Search className="tw:size-3.5" />}
-          value={filters.q}
-          maxLength={100}
-          onChange={(event) => patch({ q: event.target.value })}
-        />
+        {filters.animeId && (
+          <small className="tw:text-muted-foreground">
+            {t("log.currentSubscription", { title: animeNames.get(filters.animeId) ?? t("log.thisSubscription") })}
+          </small>
+        )}
       </div>
       <EventsList
-        key={eventView}
+        key={filters.type}
         eventView={eventView}
-        onShowAll={() => setEventView("all")}
+        type={filters.type}
         state={filters.state}
         animeId={filters.animeId}
         q={q}
         from={from}
         to={to}
         animeNames={animeNames}
-        markSeen={active && unfiltered}
-        newSince={newSince}
         onOpenDelivery={onOpenDelivery}
         onOpenAnimeMetadata={onOpenAnimeMetadata}
       />
@@ -230,9 +211,17 @@ function TimeRangePopover({ from, to, onChange }: { from: string; to: string; on
       align="end"
       title={t("log.timeRange")}
       trigger={
-        <Button aria-label={labelValue(t("log.timeRange"), summary)} className="tw:min-w-0 tw:max-w-[40%] tw:flex-none">
+        <Button
+          aria-label={labelValue(t("log.timeRange"), summary)}
+          title={labelValue(t("log.timeRange"), summary)}
+          data-range-active={Boolean(from || to)}
+          className={cn(
+            "tw:relative tw:size-9 tw:min-w-0 tw:shrink-0 tw:justify-self-end tw:p-0 tw:phone:size-11",
+            (from || to) && "tw:border-primary tw:text-primary",
+          )}
+        >
           <Clock className="tw:size-3.5 tw:flex-none" aria-hidden />
-          <span className="tw:min-w-0 tw:truncate">{summary}</span>
+          {(from || to) && <span aria-hidden className="tw:absolute tw:right-1.5 tw:top-1.5 tw:size-1.5 tw:rounded-full tw:bg-primary" />}
         </Button>
       }
     >
@@ -253,36 +242,38 @@ function TimeRangePopover({ from, to, onChange }: { from: string; to: string; on
 
 function EventsList({
   eventView,
-  onShowAll,
+  type,
   state,
   animeId,
   q,
   from,
   to,
   animeNames,
-  markSeen,
-  newSince,
   onOpenDelivery,
   onOpenAnimeMetadata,
 }: {
   eventView: EventView;
-  onShowAll: () => void;
+  type: TypeFilter;
   state: StateFilter;
   animeId: string;
   q: string;
   from?: string;
   to?: string;
   animeNames: AnimeNames;
-  markSeen: boolean;
-  newSince: string | null;
   onOpenDelivery: (deliveryID: string) => void;
   onOpenAnimeMetadata?: (managedAnimeId: string) => void;
 }) {
+  const targets = useQuery({
+    queryKey: configKeys.pluginTargets,
+    queryFn: listPluginTargets,
+    enabled: type === "" || type === "plugin",
+    staleTime: 60_000,
+  });
   const query = useInfiniteQuery({
-    queryKey: observabilityKeys.businessLine(eventView, state, animeId, q, from, to),
+    queryKey: [...observabilityKeys.businessLine(eventView, state, animeId, q, from, to), type],
     queryFn: ({ pageParam, signal }) =>
       listObservabilityRecords({
-        kind: ["business", "plugin"],
+        kind: type ? [type] : ["business", "plugin"],
         event_view: eventView,
         state: state === "" ? undefined : state,
         q: q === "" ? undefined : q,
@@ -297,11 +288,6 @@ function EventsList({
   });
   const items = useMemo(() => groupEvents(query.data?.pages.flatMap((page) => page.records) ?? []), [query.data]);
   const hideAnime = animeId !== "";
-  const firstPage = query.data?.pages[0];
-  useEffect(() => {
-    if (markSeen && firstPage) markLogSeen("records", latestTime(firstPage.records.map(recordSeenTime)));
-  }, [markSeen, firstPage]);
-  const isNew = (record: ObservabilityRecord) => newSince !== null && isBadgeRecord(record) && isNewer(recordSeenTime(record), newSince);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const toggle = (key: string) =>
     setExpanded((current) => {
@@ -326,24 +312,7 @@ function EventsList({
     );
   }
   if (!query.data) return <StateBlock kind="busy" title={t("log.loadingRecords")} />;
-  if (items.length === 0) {
-    // An empty primary view says no main event matches the filters and offers the
-    // full history; it never claims the instance has no logs at all.
-    if (eventView === "primary") {
-      return (
-        <StateBlock
-          kind="empty"
-          title={t("log.emptyPrimary")}
-          action={
-            <Button size="sm" variant="link" onClick={onShowAll}>
-              {t("log.showAll")}
-            </Button>
-          }
-        />
-      );
-    }
-    return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
-  }
+  if (items.length === 0) return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
 
   return (
     <div className="tw:grid tw:gap-2">
@@ -357,7 +326,6 @@ function EventsList({
                 anime={animeOf(item.steps[item.steps.length - 1]!)}
                 expanded={expanded.has(item.key)}
                 onToggle={() => toggle(item.key)}
-                isNew={item.steps.some((entry) => isNew({ record_type: "business", entry }))}
               />
             );
           }
@@ -390,7 +358,6 @@ function EventsList({
                 key={item.key}
                 entry={record.entry}
                 anime={animeOf(record.entry)}
-                isNew={isNew(record)}
                 onOpenAnimeMetadata={onOpenAnimeMetadata}
               />
             );
@@ -400,8 +367,8 @@ function EventsList({
               <DeliveryItem
                 key={item.key}
                 delivery={record.delivery}
+                targetName={targets.data?.targets.find((target) => target.id === record.delivery.plugin_target_config_id)?.name}
                 anime={hideAnime || !record.delivery.managed_anime_id ? undefined : animeNames.get(record.delivery.managed_anime_id)}
-                isNew={isNew(record)}
                 onOpen={() => onOpenDelivery(record.delivery.id)}
               />
             );
@@ -452,57 +419,55 @@ function Row({
   activateLabel?: string;
   children?: React.ReactNode;
 }) {
+  const summary = joinMeta(reason, meta);
   const head = (
     <>
-      <span className={TITLE_LINE}>
-        <span className={TITLE} title={titleHint ?? title}>
-          {onToggle ? (
-            <ChevronRight aria-hidden className={cn("tw:mr-1 tw:inline tw:size-3.5 tw:align-[-2px] tw:transition-transform", expanded && "tw:rotate-90")} />
-          ) : null}
+      <span data-event-line="title" className={TITLE_LINE}>
+        {onToggle ? (
+          <ChevronRight
+            aria-hidden
+            className={cn("tw:size-3.5 tw:shrink-0 tw:transition-transform", expanded && "tw:rotate-90")}
+          />
+        ) : null}
+        <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:font-medium" title={titleHint ?? title}>
           {title}
           {tags}
         </span>
-        <span className={RESULT}>
+        <span className="tw:min-w-0 tw:max-w-[48%] tw:truncate tw:text-xs" title={result}>
           <StatePill tone={tone} busy={busy}>
             {result}
           </StatePill>
         </span>
-        <time className={TIME} dateTime={time} title={formatDateTime(time)}>
+      </span>
+      <span data-event-line="context" className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:text-xs tw:text-muted-foreground">
+        <span className="tw:min-w-0 tw:flex-1 tw:truncate" title={summary || undefined}>
+          {summary}
+        </span>
+        {reasonAction}
+        <time className="tw:shrink-0 tw:whitespace-nowrap tw:tabular-nums" dateTime={time} title={formatDateTime(time)}>
           {formatShortDateTime(time)}
         </time>
       </span>
-      {meta ? <span className={cn(META, onToggle && "tw:pl-[18px]")}>{meta}</span> : null}
     </>
   );
-  const pad = "tw:pb-2";
   return (
-    <li className={ITEM}>
+    <li className={ITEM} data-event-row="">
       {onToggle || onActivate ? (
         <button
           type="button"
           aria-expanded={onToggle ? expanded : undefined}
           aria-label={activateLabel}
           onClick={onToggle ?? onActivate}
-          className={cn(HEAD, "tw:cursor-pointer tw:hover:bg-muted/50", reason ? "tw:pb-0.5" : pad, FOCUS)}
+          className={cn(HEAD, "tw:cursor-pointer tw:hover:bg-muted/50", FOCUS)}
         >
           {head}
         </button>
       ) : (
-        <div className={cn(HEAD, reason ? "tw:pb-0.5" : pad)}>{head}</div>
+        <div className={HEAD}>{head}</div>
       )}
-      {reason ? (
-        <div className={cn("tw:flex tw:flex-wrap tw:items-center tw:gap-x-2 tw:px-3 tw:pb-2", onToggle && "tw:pl-[30px]")}>
-          <p className={cn(META, "tw:min-w-0 tw:break-words")}>{t("log.reason.line", { reason })}</p>
-          {reasonAction}
-        </div>
-      ) : null}
       {expanded ? children : null}
     </li>
   );
-}
-
-function NewMark() {
-  return <span className="tw:ml-1.5 tw:text-xs tw:font-medium tw:text-primary">{t("log.new")}</span>;
 }
 
 function OneShotTag() {
@@ -519,13 +484,11 @@ function RunItem({
   anime,
   expanded,
   onToggle,
-  isNew,
 }: {
   steps: BusinessEntry[];
   anime?: string;
   expanded: boolean;
   onToggle: () => void;
-  isNew: boolean;
 }) {
   const view = runView(steps);
   const named = Boolean(view.groupName || view.episodes);
@@ -537,7 +500,6 @@ function RunItem({
       tags={
         <>
           {view.oneShot && <OneShotTag />}
-          {isNew && <NewMark />}
         </>
       }
       result={view.result}
@@ -759,12 +721,10 @@ function BatchDialog({
 function EntryItem({
   entry,
   anime,
-  isNew,
   onOpenAnimeMetadata,
 }: {
   entry: BusinessEntry;
   anime?: string;
-  isNew: boolean;
   onOpenAnimeMetadata?: (managedAnimeId: string) => void;
 }) {
   const view = entryView(entry, anime);
@@ -774,7 +734,6 @@ function EntryItem({
   return (
     <Row
       title={view.title}
-      tags={isNew ? <NewMark /> : undefined}
       result={view.result}
       tone={stateTone(view.state)}
       time={entry.occurred_at}
@@ -791,27 +750,46 @@ function EntryItem({
   );
 }
 
+function adapterLabel(kind: Extract<ObservabilityRecord, { record_type: "plugin" }>["delivery"]["adapter_kind"]): string {
+  switch (kind) {
+    case "telegram":
+      return t("settings.notifications.adapter.telegram");
+    case "feishu":
+      return t("settings.notifications.adapter.feishu");
+    default:
+      return t("settings.notifications.adapter.webhook");
+  }
+}
+
 function DeliveryItem({
   delivery,
+  targetName,
   anime,
-  isNew,
   onOpen,
 }: {
   delivery: Extract<ObservabilityRecord, { record_type: "plugin" }>["delivery"];
+  targetName?: string;
   anime?: string;
-  isNew: boolean;
   onOpen: () => void;
 }) {
   const view = deliveryView(delivery);
   const trigger = notificationTriggerKindLabel(delivery.trigger_kind);
+  const facts = delivery.payload_status === "available" ? delivery.payload?.facts : undefined;
+  const factTitle = facts?.["anime.title"];
+  const subject = typeof factTitle === "string" && factTitle.trim() !== "" ? factTitle : anime;
+  const rawEpisode = facts?.["ep.number"];
+  const episode = typeof rawEpisode === "number" ? rawEpisode : typeof rawEpisode === "string" && /^\d+$/.test(rawEpisode) ? Number(rawEpisode) : undefined;
+  const episodeText = typeof episode === "number" && episode > 0 ? t("records.episode", { n: episode }) : undefined;
+  const adapter = adapterLabel(delivery.adapter_kind);
+  const target = targetName ? t("log.delivery.targetWithAdapter", { name: targetName, adapter }) : adapter;
   return (
     <Row
-      title={joinMeta(delivery.target_display, trigger, anime)}
-      tags={isNew ? <NewMark /> : undefined}
+      title={delivery.delivery_kind === "test" ? t("log.delivery.test") : joinMeta(subject, episodeText, trigger)}
       result={view.result}
       tone={stateTone(view.state, view.unconfirmed)}
       busy={view.state === "in_progress"}
       time={delivery.updated_at ?? delivery.created_at}
+      meta={t("log.delivery.toTarget", { target })}
       reason={view.reason}
       onActivate={onOpen}
       activateLabel={t("log.openDelivery", { kind: trigger })}

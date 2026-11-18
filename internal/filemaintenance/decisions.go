@@ -1438,6 +1438,10 @@ func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Conte
 	if len(replacedIDs) == 0 {
 		return nil
 	}
+	// Existing custom templates keep their variables exactly as before: the old
+	// versions' current file locations and the winning Release's current group
+	// and title. The frozen original download source is a separate fact block
+	// for the default presentation, so no existing variable changes meaning.
 	targets, err := placementTargetsTx(ctx, tx, replacedIDs)
 	if err != nil {
 		return err
@@ -1461,11 +1465,31 @@ func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Conte
 	}
 	group, _ := winner["group_name"].(string)
 	releaseTitle, _ := winner["release_title"].(string)
+	// The frozen download source of both sides: the accepted acquisition input
+	// and artifact manifest of each placement. A source chain gone by detail
+	// retention stays empty (its line is hidden), never the renamed library
+	// path or a current Release row.
+	source := plugintargetport.OriginalSource{}
+	candidateSource, _, err := placementSourceFactsTx(ctx, tx, decision.CandidatePlacementID)
+	if err != nil {
+		return err
+	}
+	source.New = plugintargetport.DisplacedTarget{File: candidateSource.File, Group: candidateSource.Group, Title: candidateSource.Title}
+	for _, id := range replacedIDs {
+		facts, found, err := placementSourceFactsTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		source.Old = append(source.Old, plugintargetport.DisplacedTarget{File: facts.File, Group: facts.Group, Title: facts.Title})
+	}
 	animeTitle, found, err := managedAnimeTitleTx(ctx, tx, decision.AnimeID)
 	if err != nil || !found {
 		return err
 	}
-	request, err := plugintargetport.ReplacementAppliedRequest(decision.ID, 1, decision.AnimeID, animeTitle, group, releaseTitle, releaseID, replaced)
+	request, err := plugintargetport.ReplacementAppliedRequest(decision.ID, 1, decision.AnimeID, animeTitle, group, releaseTitle, releaseID, replaced, source)
 	if err != nil {
 		return fmt.Errorf("encode replacement notice: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/workitems"
 )
@@ -49,6 +50,7 @@ func (r *Runtime) observeRecovery(parent context.Context, claim workitems.Claim,
 			r.deferRecovery(claim, "invalid_committed_receipt")
 			return
 		}
+		r.logEvent(ctx, runtimeInfo, recoveryCommittedEvent(claim))
 		if outcome.AfterCommit != nil {
 			outcome.AfterCommit(ctx)
 		}
@@ -73,16 +75,49 @@ func (r *Runtime) observeRecovery(parent context.Context, claim workitems.Claim,
 		}
 		return
 	}
+	r.logEvent(ctx, runtimeInfo, recoverySettledEvent(claim, outcome))
 	if outcome.AfterCommit != nil {
 		outcome.AfterCommit(ctx)
 	}
+}
+
+// recoverySettledEvent reports a recovery observation that durably settled
+// the work item. The disposition is the observer's evidence; the event never
+// claims a new external effect succeeded.
+func recoverySettledEvent(claim workitems.Claim, outcome Outcome) observabilityport.RuntimeEvent {
+	event := workerEvent(claim, "worker recovery settled the work item from observation", "recovery", "recovery_settled", "", nil)
+	event.Outcome = "success"
+	event.StateAfter = outcome.TerminalState
+	event.Disposition = string(outcome.Disposition)
+	return event
+}
+
+// recoveryCommittedEvent reports a recovery observation that found the owner
+// result already committed. The observation sent no new effect.
+func recoveryCommittedEvent(claim workitems.Claim) observabilityport.RuntimeEvent {
+	event := workerEvent(claim, "worker recovery confirmed the owner result was already committed; the observation sent no new effect", "recovery", "recovery_committed", "", nil)
+	event.Outcome = "success"
+	return event
 }
 
 func (r *Runtime) deferRecovery(claim workitems.Claim, reason string) {
 	if store, ok := r.store.(recoveryClaimer); ok {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = store.DeferRecovery(ctx, claim, reason, 30*time.Second)
+		if err := store.DeferRecovery(ctx, claim, reason, 30*time.Second); err != nil {
+			// The write failed, so this pass cannot tell whether the store
+			// queued a deferral before losing the connection.
+			event := workerEvent(claim, "worker recovery deferral write failed; whether a retry was scheduled is unknown", "recovery", "recovery_defer_failed", "recovery_observation", nil)
+			event.Outcome = "unconfirmed"
+			r.logEvent(context.Background(), runtimeWarn, event)
+			return
+		}
+		r.logEvent(context.Background(), runtimeWarn, workerEvent(claim, "worker recovery remains blocked; observation will retry", "recovery", reason, "recovery_observation", boolPtr(true)))
+		return
 	}
-	r.logEvent(context.Background(), runtimeWarn, workerEvent(claim, "worker recovery remains blocked; observation will retry", "recovery", reason, "recovery_observation", true))
+	// Without the deferral port no observation retry was scheduled; the
+	// blocked claim remains visible without that promise.
+	event := workerEvent(claim, "worker recovery is blocked; the store cannot defer observation", "recovery", reason, "recovery_observation", nil)
+	event.Outcome = "unconfirmed"
+	r.logEvent(context.Background(), runtimeWarn, event)
 }

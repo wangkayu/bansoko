@@ -248,6 +248,20 @@ func Variables(trigger string) ([]Variable, bool) {
 	for _, variable := range derivedImageVariables(available) {
 		variables = append(variables, variable)
 	}
+	if trigger == TriggerReplacementApplied {
+		variables = append(variables,
+			Variable{
+				Name: replacedOldVersionsZH, Type: TypeString, Label: "旧版本列表（中文）",
+				Description: "把被替换版本的冻结原始来源（replaced.old_versions）按中文默认通知的“旧版本”块排出：每块依次是标题、字幕组、文件，缺值行隐藏。",
+				Source:      "derived", Nullable: true,
+			},
+			Variable{
+				Name: replacedOldVersionsEN, Type: TypeString, Label: "旧版本列表（英文）",
+				Description: "把被替换版本的冻结原始来源（replaced.old_versions）按英文默认通知的“Old version”块排出：每块依次是 Title、Group、File，缺值行隐藏。",
+				Source:      "derived", Nullable: true,
+			},
+		)
+	}
 	return variables, true
 }
 
@@ -334,7 +348,7 @@ var defaultsZH = map[string][2]string{
 	TriggerFileOperationCompleted: {"入库完成：{{anime.title}}",
 		"{{release.title}}\n文件：{{out.name}}\n字幕：{{out.subtitles}}\n{{showIf(frt.group)}}原文件字幕组：{{frt.group}}"},
 	TriggerFileOperationFailed: {"入库失败：{{anime.title}}",
-		"{{release.title}}\n文件：{{file.name}}\n{{showIf(frt.group)}}原文件字幕组：{{frt.group}}\n原因：{{defaultIfEmpty(result.reason, '未知错误')}}"},
+		"{{release.title}}\n文件：{{file.name}}\n{{showIf(frt.group)}}字幕组：{{frt.group}}\n原因：{{defaultIfEmpty(result.reason, '未知错误')}}"},
 	TriggerReleaseDiscovered: {"发现新发布：{{anime.title}}",
 		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{coalesce(release.episodes, ep.display, '未识别')}}"},
 	TriggerDownloadFailed: {"下载失败：{{anime.title}}",
@@ -346,7 +360,7 @@ var defaultsZH = map[string][2]string{
 	TriggerReplacementDeletionFailed: {"旧版本未删除：{{anime.title}}",
 		"{{file.name}}\n{{if(eq(result.category, 'read_only'), '文件所在位置只读，未能删除', if(eq(result.category, 'not_restored'), '旧文件已移到同一文件夹的隐藏目录，未能放回原位置', if(eq(result.category, 'path_occupied'), '旧文件已移到同一文件夹的隐藏目录，原位置已有同名文件', '文件可能被占用或没有权限')))}}"},
 	TriggerReplacementApplied: {"已替换旧版本：{{anime.title}}",
-		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n替换了 {{replaced.count}} 个旧版本：\n{{replaced.targets}}"},
+		"{{showIf(replaced.new.title, replaced.new.group, replaced.new.file)}}新版本\n{{showIf(replaced.new.title)}}标题：{{replaced.new.title}}\n{{showIf(replaced.new.group)}}字幕组：{{replaced.new.group}}\n{{showIf(replaced.new.file)}}文件：{{replaced.new.file}}\n{{replaced.old_versions_zh}}"},
 	TriggerFileDisplaced: {"{{if(eq(event.cause, 'redownload'), '重新下载覆盖了旧文件', '新文件覆盖了旧文件')}}：{{anime.title}}",
 		"{{showIf(taker.title)}}{{taker.title}}\n旧文件：{{file.name}}\n{{showIf(taker.file)}}新文件：{{taker.file}}\n{{showIf(frt.group)}}旧文件字幕组：{{frt.group}}\n{{showIf(taker.frt.group)}}新文件字幕组：{{taker.frt.group}}\n{{showIf(frt.res)}}旧文件分辨率：{{frt.res}}\n{{showIf(taker.frt.res)}}新文件分辨率：{{taker.frt.res}}\n{{showIf(frt.vc)}}旧文件视频编码：{{frt.vc}}\n{{showIf(taker.frt.vc)}}新文件视频编码：{{taker.frt.vc}}\n{{showIf(frt.ac)}}旧文件音频编码：{{frt.ac}}\n{{showIf(taker.frt.ac)}}新文件音频编码：{{taker.frt.ac}}"},
 }
@@ -357,7 +371,7 @@ var defaultsEN = map[string][2]string{
 	TriggerFileOperationCompleted: {"Added to library: {{anime.title}}",
 		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\n{{showIf(frt.group)}}Original file group: {{frt.group}}"},
 	TriggerFileOperationFailed: {"Library import failed: {{anime.title}}",
-		"{{release.title}}\nFile: {{file.name}}\n{{showIf(frt.group)}}Original file group: {{frt.group}}\nReason: {{defaultIfEmpty(result.reason, 'unknown error')}}"},
+		"{{release.title}}\nFile: {{file.name}}\n{{showIf(frt.group)}}Group: {{frt.group}}\nReason: {{defaultIfEmpty(result.reason, 'unknown error')}}"},
 	TriggerReleaseDiscovered: {"New release: {{anime.title}}",
 		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}"},
 	TriggerDownloadFailed: {"Download failed: {{anime.title}}",
@@ -369,7 +383,7 @@ var defaultsEN = map[string][2]string{
 	TriggerReplacementDeletionFailed: {"Old version not deleted: {{anime.title}}",
 		"{{file.name}}\n{{if(eq(result.category, 'read_only'), 'The file is on a read-only location and was not deleted', if(eq(result.category, 'not_restored'), 'The old file was moved to a hidden folder next to it and could not be moved back', if(eq(result.category, 'path_occupied'), 'The old file was moved to a hidden folder next to it; another file now has its name', 'The file may be in use or not permitted to change')))}}"},
 	TriggerReplacementApplied: {"Replaced an old version: {{anime.title}}",
-		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nReplaced {{replaced.count}} old version(s):\n{{replaced.targets}}"},
+		"{{showIf(replaced.new.title, replaced.new.group, replaced.new.file)}}New version\n{{showIf(replaced.new.title)}}Title: {{replaced.new.title}}\n{{showIf(replaced.new.group)}}Group: {{replaced.new.group}}\n{{showIf(replaced.new.file)}}File: {{replaced.new.file}}\n{{replaced.old_versions_en}}"},
 	TriggerFileDisplaced: {"{{if(eq(event.cause, 'redownload'), 'A redownload replaced the old file', 'A new file replaced the old file')}}: {{anime.title}}",
 		"{{showIf(taker.title)}}{{taker.title}}\nOld file: {{file.name}}\n{{showIf(taker.file)}}New file: {{taker.file}}\n{{showIf(frt.group)}}Old file group: {{frt.group}}\n{{showIf(taker.frt.group)}}New file group: {{taker.frt.group}}\n{{showIf(frt.res)}}Old file resolution: {{frt.res}}\n{{showIf(taker.frt.res)}}New file resolution: {{taker.frt.res}}\n{{showIf(frt.vc)}}Old file video codec: {{frt.vc}}\n{{showIf(taker.frt.vc)}}New file video codec: {{taker.frt.vc}}\n{{showIf(frt.ac)}}Old file audio codec: {{frt.ac}}\n{{showIf(taker.frt.ac)}}New file audio codec: {{taker.frt.ac}}"},
 }

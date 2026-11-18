@@ -65,6 +65,12 @@ function stubFetch() {
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (url.includes("/plugin-targets")) {
+      return new Response(JSON.stringify({ targets: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { "Content-Type": "application/json" },

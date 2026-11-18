@@ -66,7 +66,7 @@ func TestJSONRuntimeLoggerOmitsAbsentOptionalFields(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
 		t.Fatalf("decode runtime JSON: %v", err)
 	}
-	for _, key := range []string{"component", "operation", "outcome", "reason_code", "request_id", "correlation_id", "owner_type", "owner_id", "work_item_id", "generation", "attempt", "retryable", "duration_ms", "error_class", "exclude_reason_counts"} {
+	for _, key := range []string{"component", "operation", "outcome", "reason_code", "request_id", "correlation_id", "owner_type", "owner_id", "work_item_id", "kind", "state_before", "state_after", "disposition", "stage", "generation", "attempt", "retryable", "duration_ms", "error_class", "exclude_reason_counts"} {
 		if _, ok := record[key]; ok {
 			t.Fatalf("runtime JSON unexpectedly included absent %q: %v", key, record)
 		}
@@ -84,6 +84,72 @@ func TestJSONRuntimeLoggerWritesGeneration(t *testing.T) {
 	}
 	if got, want := record["generation"], float64(7); got != want {
 		t.Fatalf("generation = %v, want %v", got, want)
+	}
+}
+
+func TestJSONRuntimeLoggerWritesWorkItemLifecycleFields(t *testing.T) {
+	var output bytes.Buffer
+	logger := NewJSONRuntimeLogger(&output)
+	logger.Info(context.Background(), observabilityport.RuntimeEvent{
+		Message:     "work item reclaimed",
+		Component:   "workitems",
+		Operation:   "reclaim",
+		Outcome:     "info",
+		ReasonCode:  "work_item_claimed",
+		OwnerType:   "rss_source_runtime",
+		OwnerID:     "source-1",
+		WorkItemID:  "work-1",
+		Kind:        "rss_refresh",
+		StateBefore: "leased",
+		StateAfter:  "leased",
+		Disposition: "confirmed",
+		Attempt:     2,
+	})
+
+	var record map[string]any
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("decode runtime JSON: %v; output=%q", err, output.String())
+	}
+	for key, want := range map[string]any{
+		"message":      "work item reclaimed",
+		"work_item_id": "work-1",
+		"kind":         "rss_refresh",
+		"state_before": "leased",
+		"state_after":  "leased",
+		"disposition":  "confirmed",
+		"attempt":      float64(2),
+	} {
+		if got := record[key]; got != want {
+			t.Fatalf("%s = %v, want %v; record=%v", key, got, want, record)
+		}
+	}
+}
+
+func TestJSONRuntimeLoggerWritesBoundedFailureStage(t *testing.T) {
+	var output bytes.Buffer
+	logger := NewJSONRuntimeLogger(&output)
+	logger.Error(context.Background(), observabilityport.RuntimeEvent{
+		Message:    "work item final state unconfirmed",
+		Component:  "worker",
+		Operation:  "finish",
+		Outcome:    "unconfirmed",
+		ReasonCode: "finish_unconfirmed",
+		Stage:      "commit",
+		ErrorClass: "finish_error",
+	})
+
+	var record map[string]any
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("decode runtime JSON: %v; output=%q", err, output.String())
+	}
+	if got, want := record["stage"], "commit"; got != want {
+		t.Fatalf("stage = %v, want %v", got, want)
+	}
+	if got, want := record["outcome"], "unconfirmed"; got != want {
+		t.Fatalf("outcome = %v, want %v", got, want)
+	}
+	if _, ok := record["retryable"]; ok {
+		t.Fatalf("unconfirmed outcome must not assert retryability: %v", record)
 	}
 }
 

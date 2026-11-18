@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/transport/httpapi/generated"
@@ -17,15 +19,15 @@ func (s *Server) ListObservabilityDiagnostics(w http.ResponseWriter, r *http.Req
 	writeJSON(w, r.Context(), http.StatusOK, mapDiagnosticPage(result))
 }
 
-// runtimeLogReader is implemented by the runtime logger when it keeps an
-// in-memory tail.
-type runtimeLogReader interface {
-	Tail() *observabilityapplication.RuntimeLogTail
+// runtimeLogSource is implemented by the runtime logger when it keeps either
+// the on-disk history or the bounded in-memory tail.
+type runtimeLogSource interface {
+	RuntimeLogs(observabilityapplication.RuntimeLogQuery) (observabilityapplication.RuntimeLogPage, error)
 }
 
-// GetRuntimeLog returns the bounded in-memory tail of the runtime log. It is
-// for the owner at the keyboard only: an API token (and so MCP or any agent)
-// is refused whatever its scopes.
+// GetRuntimeLog returns a page of the retained runtime log history. It is for
+// the owner at the keyboard only: an API token (and so MCP or any agent) is
+// refused whatever its scopes.
 func (s *Server) GetRuntimeLog(w http.ResponseWriter, r *http.Request, params generated.GetRuntimeLogParams) {
 	if account, ok := AccountFrom(r.Context()); !ok || !account.WebSession {
 		writeError(w, r, webSessionRequired())
@@ -39,13 +41,47 @@ func (s *Server) GetRuntimeLog(w http.ResponseWriter, r *http.Request, params ge
 	if params.Limit != nil {
 		limit = *params.Limit
 	}
-	var entries []observabilityapplication.RuntimeLogEntry
-	if reader, ok := s.deps.RuntimeLogger.(runtimeLogReader); ok {
-		if tail := reader.Tail(); tail != nil {
-			entries = tail.Entries(level, limit)
-		}
+	query := ""
+	if params.Q != nil {
+		query = strings.TrimSpace(*params.Q)
 	}
-	writeJSON(w, r.Context(), http.StatusOK, mapRuntimeLogPage(entries))
+	workItemID := ""
+	if params.WorkItemId != nil {
+		workItemID = strings.TrimSpace(*params.WorkItemId)
+	}
+	before := ""
+	if params.Before != nil {
+		before = strings.TrimSpace(*params.Before)
+	}
+	after := ""
+	if params.After != nil {
+		after = strings.TrimSpace(*params.After)
+	}
+	if before != "" && after != "" {
+		writeError(w, r, unprocessable("RUNTIME_LOG_CURSOR_CONFLICT", "Use either before or after, not both.", nil))
+		return
+	}
+	page := observabilityapplication.RuntimeLogPage{Source: observabilityapplication.RuntimeLogSourceMemory}
+	if source, ok := s.deps.RuntimeLogger.(runtimeLogSource); ok {
+		result, err := source.RuntimeLogs(observabilityapplication.RuntimeLogQuery{
+			Level:      level,
+			Query:      query,
+			WorkItemID: workItemID,
+			Limit:      limit,
+			Before:     before,
+			After:      after,
+		})
+		if err != nil {
+			if errors.Is(err, observabilityapplication.ErrRuntimeLogCursorInvalid) {
+				writeError(w, r, unprocessable("RUNTIME_LOG_CURSOR_INVALID", "The log cursor is not valid.", nil))
+				return
+			}
+			writeError(w, r, err)
+			return
+		}
+		page = result
+	}
+	writeJSON(w, r.Context(), http.StatusOK, mapRuntimeLogPage(page))
 }
 
 // ListObservabilityRecords returns the union record stream from the read service.

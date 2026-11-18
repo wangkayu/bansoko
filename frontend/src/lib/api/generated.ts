@@ -1977,7 +1977,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description The most recent runtime log lines, for attaching to a bug report. The lines are a bounded in-memory tail of what the process wrote to stdout (at most 500 lines and a byte cap, oldest dropped first); nothing is stored, and a restart empties it. Lines come oldest first. Only a signed-in web session may read it: an API token (and so MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes. */
+        /** @description Recent runtime log lines from the retained on-disk history, for attaching to a bug report. Volumes live under the configuration root (<config>/logs, UTC day plus sequence, bounded to about 30 MiB and 7 days) and are read newest first. The level, text and work_item_id filters apply before the limit is taken and across volumes, so a page holds matching lines rather than a newest-line page filtered afterwards. When the on-disk history is unavailable the server answers from a bounded in-memory tail and says so in source. Lines come oldest first. Only a signed-in web session may read it: an API token (and so MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes. */
         get: operations["getRuntimeLog"];
         put?: never;
         post?: never;
@@ -7067,9 +7067,31 @@ export interface components {
             request_id?: string;
             correlation_id?: string;
             error_class?: string;
+            owner_type?: string;
+            kind?: string;
+            work_item_id?: string;
+            stage?: string;
+            state_before?: string;
+            state_after?: string;
+            disposition?: string;
+            attempt?: number;
+            /** Format: int64 */
+            duration_ms?: number;
+            retryable?: boolean;
         };
         RuntimeLogPage: {
             lines: components["schemas"]["RuntimeLogLine"][];
+            /** @description Opaque cursor for the next older page. Absent when the page is empty. */
+            next_before?: string;
+            /** @description Opaque cursor naming the next unread position; also the incremental watermark. The server returns it even when the page is empty, because a query with no matches still advanced to the end of what it scanned. A client polling with after must store and use the new value from every page. */
+            next_after?: string;
+            /** @description Present and true when the supplied cursor is no longer retained (evicted history) or belongs to the other storage source, so lines between the cursor and this page may be missing. */
+            gap?: boolean;
+            /**
+             * @description file means the retained on-disk history answered; memory means it was unavailable and the bounded in-memory tail answered instead.
+             * @enum {string}
+             */
+            source: "file" | "memory";
         };
         /** @description Cumulative internal HTTP failures for one fixed OpenAPI operationId. The operation value request is the legacy or unrouted bucket. */
         DiagnosticInternalOperation: {
@@ -12500,6 +12522,14 @@ export interface operations {
             query?: {
                 /** @description all lines, warnings and errors, or errors only. */
                 level?: "all" | "warn" | "error";
+                /** @description Space-separated search terms. Every term must occur case-insensitively in the line's allowlisted fields. The level and text filters both apply before the limit is taken, so the page holds matching lines, not one page of the newest lines filtered afterwards. Empty or whitespace-only means no text filter. */
+                q?: string;
+                /** @description Exact work item ID. Only lines whose projected work_item_id equals this value are returned, combined with level and q. Empty means no work-item filter. */
+                work_item_id?: string;
+                /** @description Opaque cursor from next_before. Returns matching lines older than the cursor, oldest first. Omit it to start from the newest line. Cannot be combined with after. */
+                before?: string;
+                /** @description Opaque cursor from next_after, for incremental refresh. The cursor names the next unread position, so a line at that position has not been read yet and is included. Returns matching lines oldest first. Use the next_after of every page, including an empty one, as the next cursor. Cannot be combined with before. */
+                after?: string;
                 limit?: number;
             };
             header?: never;
@@ -12508,7 +12538,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The runtime log tail. */
+            /** @description A page of the retained runtime log. */
             200: {
                 headers: {
                     [name: string]: unknown;
