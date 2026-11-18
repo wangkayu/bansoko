@@ -327,34 +327,25 @@ func DefaultsFor(trigger, locale string) (title, body string) {
 	if !ok {
 		return "", ""
 	}
-	variables, _ := Variables(trigger)
-	available := make(map[string]bool, len(variables))
-	for _, variable := range variables {
-		available[variable.Name] = true
-	}
-	body = "{{image}}\n" + pair[1]
-	if available[BGMLinkVariable] {
-		body += "\n{{link(bgm.link, 'Bangumi')}}"
-	}
-	if available[TMDBLinkVariable] {
-		body += "\n{{link(tmdb.link, 'TMDB')}}"
-	}
-	return pair[0], body
+	return pair[0], "{{image}}\n" + pair[1]
 }
+
+const subscriptionChangedBody = "{{showIf(if(eq(event.action, 'started'), bgm.link, ''))}}{{link(bgm.link, 'Bangumi')}}\n" +
+	"{{showIf(if(eq(event.action, 'started'), tmdb.link, ''))}}{{link(tmdb.link, 'TMDB')}}"
 
 var defaultsZH = map[string][2]string{
 	TriggerDownloadSubmitted: {"已加入下载：{{anime.title}}",
 		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{defaultIfEmpty(ep.display, '未识别')}}"},
+	TriggerSubscriptionChanged: {"{{if(eq(event.action, 'started'), '开始订阅', if(eq(event.action, 'stopped'), '已停止订阅', if(eq(event.action, 'resumed'), '已恢复订阅', '已退订')))}}：{{anime.title}}",
+		subscriptionChangedBody},
 	TriggerFileOperationCompleted: {"入库完成：{{anime.title}}",
-		"{{release.title}}\n文件：{{out.name}}\n字幕：{{out.subtitles}}\n{{showIf(frt.group)}}原文件字幕组：{{frt.group}}"},
+		"{{release.title}}\n文件：{{out.name}}\n字幕：{{out.subtitles}}\n{{showIf(frt.group)}}字幕组：{{frt.group}}"},
 	TriggerFileOperationFailed: {"入库失败：{{anime.title}}",
 		"{{release.title}}\n文件：{{file.name}}\n{{showIf(frt.group)}}字幕组：{{frt.group}}\n原因：{{defaultIfEmpty(result.reason, '未知错误')}}"},
-	TriggerReleaseDiscovered: {"发现新发布：{{anime.title}}",
-		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{coalesce(release.episodes, ep.display, '未识别')}}"},
 	TriggerDownloadFailed: {"下载失败：{{anime.title}}",
-		"{{release.title}}\n原因：{{if(eq(result.category, 'stalled'), '下载停滞', if(eq(result.category, 'timeout'), '等待超时', if(eq(result.category, 'client'), '下载客户端报错', if(eq(result.category, 'unobservable'), '无法读取下载状态', if(eq(result.category, 'occupied'), '下载器中已有同一种子的任务', '提交失败')))))}}{{if(result.retryable, '\n可在 RSS 页面重试。', '')}}"},
-	TriggerSubscriptionChanged: {"{{if(eq(event.action, 'started'), '开始订阅', if(eq(event.action, 'stopped'), '已停止订阅', if(eq(event.action, 'resumed'), '已恢复订阅', '已退订')))}}：{{anime.title}}",
-		"{{anime.title}}"},
+		"原因：{{if(eq(result.category, 'stalled'), '下载停滞', if(eq(result.category, 'timeout'), '等待超时', if(eq(result.category, 'client'), '下载客户端报错', if(eq(result.category, 'unobservable'), '无法读取下载状态', if(eq(result.category, 'occupied'), '下载器中已有同一种子的任务', '提交失败')))))}}{{if(result.retryable, '\n可在 RSS 页面重试。', '')}}\n{{showIf(release.title)}}{{release.title}}\n{{showIf(release.link)}}{{link(release.link, '查看发布页')}}"},
+	TriggerReleaseDiscovered: {"发现新发布：{{anime.title}}",
+		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{coalesce(release.episodes, ep.display, '未识别')}}\n{{showIf(if(eq(release.src, 'anibt'), coalesce(anibt.res, anibt.lang, anibt.subtitle, anibt.format, anibt.tag), ''))}}站点标签：{{anibt.res}} {{anibt.lang}} {{anibt.subtitle}} {{anibt.format}} {{anibt.tag}}\n{{showIf(if(eq(release.src, 'anibt'), '', coalesce(rt.res, rt.source, rt.vc, rt.lang)))}}标题解析：{{rt.res}} {{rt.source}} {{rt.vc}} {{rt.lang}}\n{{showIf(release.site)}}来源：{{release.site}}\n{{showIf(release.link)}}{{link(release.link, '查看发布页')}}"},
 	TriggerUnknownFilesImported: {"有未识别的文件入库：{{anime.title}}",
 		"{{release.title}}\n{{out.count}} 个文件需要手动匹配：\n{{out.files}}"},
 	TriggerReplacementDeletionFailed: {"旧版本未删除：{{anime.title}}",
@@ -366,18 +357,18 @@ var defaultsZH = map[string][2]string{
 }
 
 var defaultsEN = map[string][2]string{
-	TriggerDownloadSubmitted: {"Download started: {{anime.title}}",
+	TriggerDownloadSubmitted: {"Added to download queue: {{anime.title}}",
 		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisode: {{defaultIfEmpty(ep.display, 'not recognized')}}"},
+	TriggerSubscriptionChanged: {"{{if(eq(event.action, 'started'), 'Subscribed', if(eq(event.action, 'stopped'), 'Subscription stopped', if(eq(event.action, 'resumed'), 'Subscription resumed', 'Unsubscribed')))}}: {{anime.title}}",
+		subscriptionChangedBody},
+	TriggerReleaseDiscovered: {"New release: {{anime.title}}",
+		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}\n{{showIf(if(eq(release.src, 'anibt'), coalesce(anibt.res, anibt.lang, anibt.subtitle, anibt.format, anibt.tag), ''))}}Site tags: {{anibt.res}} {{anibt.lang}} {{anibt.subtitle}} {{anibt.format}} {{anibt.tag}}\n{{showIf(if(eq(release.src, 'anibt'), '', coalesce(rt.res, rt.source, rt.vc, rt.lang)))}}Title parse: {{rt.res}} {{rt.source}} {{rt.vc}} {{rt.lang}}\n{{showIf(release.site)}}Source: {{release.site}}\n{{showIf(release.link)}}{{link(release.link, 'View release')}}"},
 	TriggerFileOperationCompleted: {"Added to library: {{anime.title}}",
-		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\n{{showIf(frt.group)}}Original file group: {{frt.group}}"},
+		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\n{{showIf(frt.group)}}Group: {{frt.group}}"},
 	TriggerFileOperationFailed: {"Library import failed: {{anime.title}}",
 		"{{release.title}}\nFile: {{file.name}}\n{{showIf(frt.group)}}Group: {{frt.group}}\nReason: {{defaultIfEmpty(result.reason, 'unknown error')}}"},
-	TriggerReleaseDiscovered: {"New release: {{anime.title}}",
-		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}"},
 	TriggerDownloadFailed: {"Download failed: {{anime.title}}",
-		"{{release.title}}\nReason: {{if(eq(result.category, 'stalled'), 'download stalled', if(eq(result.category, 'timeout'), 'timed out', if(eq(result.category, 'client'), 'download client error', if(eq(result.category, 'unobservable'), 'status unavailable', if(eq(result.category, 'occupied'), 'the download client already has a task for this torrent', 'submission failed')))))}}{{if(result.retryable, '\nYou can retry it from the RSS page.', '')}}"},
-	TriggerSubscriptionChanged: {"{{if(eq(event.action, 'started'), 'Subscribed', if(eq(event.action, 'stopped'), 'Subscription stopped', if(eq(event.action, 'resumed'), 'Subscription resumed', 'Unsubscribed')))}}: {{anime.title}}",
-		"{{anime.title}}"},
+		"Reason: {{if(eq(result.category, 'stalled'), 'download stalled', if(eq(result.category, 'timeout'), 'timed out', if(eq(result.category, 'client'), 'download client error', if(eq(result.category, 'unobservable'), 'status unavailable', if(eq(result.category, 'occupied'), 'the download client already has a task for this torrent', 'submission failed')))))}}{{if(result.retryable, '\nYou can retry it from the RSS page.', '')}}\n{{showIf(release.title)}}{{release.title}}\n{{showIf(release.link)}}{{link(release.link, 'View release')}}"},
 	TriggerUnknownFilesImported: {"Unrecognized files added: {{anime.title}}",
 		"{{release.title}}\n{{out.count}} file(s) need a manual match:\n{{out.files}}"},
 	TriggerReplacementDeletionFailed: {"Old version not deleted: {{anime.title}}",

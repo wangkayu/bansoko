@@ -493,7 +493,7 @@ var systemFacts = []Fact{
 		"示例字幕组", func(f *FactSet) any { return f.Anime.Group }),
 
 	// metadata bindings
-	fact("bgm.id", TypeString, PhaseRelease, scenarioAll, scenarioAll,
+	fact("bgm.id", TypeString, PhaseRelease, scenarioAll|ScenarioSubscriptionChanged, scenarioAll|ScenarioSubscriptionChanged,
 		Text{"BGM ID", "BGM ID"}, Text{"绑定的 Bangumi 条目 ID。", "Bound Bangumi subject ID."},
 		"400602", func(f *FactSet) any { return f.Bgm.ID }),
 	fact("bgm.title", TypeString, PhaseRelease, scenarioAll, scenarioAll,
@@ -502,7 +502,7 @@ var systemFacts = []Fact{
 	fact("bgm.title_cn", TypeString, PhaseRelease, scenarioAll, scenarioAll,
 		Text{"BGM 中文标题", "BGM Chinese title"}, Text{"绑定条目在 Bangumi 的中文名，接受发布时冻结。", "Chinese name of the bound Bangumi subject, frozen at accept."},
 		"葬送的芙莉莲", func(f *FactSet) any { return f.Bgm.TitleCN }),
-	fact("tmdb.id", TypeString, PhaseRelease, scenarioAll, scenarioAll,
+	fact("tmdb.id", TypeString, PhaseRelease, scenarioAll|ScenarioSubscriptionChanged, scenarioAll|ScenarioSubscriptionChanged,
 		Text{"TMDB ID", "TMDB ID"}, Text{"绑定的 TMDB 作品 ID。", "Bound TMDB work ID."},
 		"209867", func(f *FactSet) any { return f.Tmdb.ID }),
 	fact("tmdb.title_cn", TypeString, PhaseRelease, scenarioAll, scenarioAll,
@@ -516,7 +516,7 @@ var systemFacts = []Fact{
 	fact("tmdb.summary", TypeString, PhaseRelease, scenarioMedia, scenarioMedia,
 		Text{"TMDB 简介", "TMDB summary"}, Text{"绑定作品在 TMDB 的作品简介，匹配时记录、接受发布时冻结；通知发送时读取冻结值。未绑定 TMDB 或从未观察到简介时为空；之后匹配刷新记录只影响后续接受。", "The TMDB overview of the bound work, recorded at match time and frozen at accept; notifications read the frozen value. Empty when TMDB is not bound or the overview was never observed; a later match refreshes the record and only subsequent acceptances freeze the new value."},
 		"魔王讨伐结束后，精灵魔法使芙莉莲与新的同伴重走冒险之路，逐渐了解人类。", func(f *FactSet) any { return f.Tmdb.Summary }),
-	fact("tmdb.kind", TypeString, PhaseRelease, scenarioAll, scenarioAll,
+	fact("tmdb.kind", TypeString, PhaseRelease, scenarioAll|ScenarioSubscriptionChanged, scenarioAll|ScenarioSubscriptionChanged,
 		Text{"TMDB 类型", "TMDB kind"}, Text{"tv 或 movie。", "tv or movie."},
 		"tv", func(f *FactSet) any { return f.Tmdb.Kind }).hideIn(ScenarioNaming),
 	fact("tmdb.season", TypeInteger, PhaseRelease, scenarioAll, scenarioAll,

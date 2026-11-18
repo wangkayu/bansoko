@@ -82,7 +82,7 @@ func seedWorkflowWebhookDelivery(t *testing.T, secret string) (*Service, string)
 	if _, err := service.CreateTarget(ctx, input, "workflow-webhook-create-key"); err != nil {
 		t.Fatal(err)
 	}
-	request, err := plugintargetport.SubscriptionChangedRequest("sub-workflow", 2, "anime-workflow", "Workflow Show", plugintargetport.SubscriptionRetired)
+	request, err := plugintargetport.SubscriptionChangedRequest("sub-workflow", 2, "anime-workflow", "Workflow Show", plugintargetport.SubscriptionRetired, plugintargetport.SubscriptionBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -535,42 +535,8 @@ func renderTextSegment(source string, segment templateSourceSegment, facts map[s
 	remaining := segment.text
 	cursor := segment.originalStart
 	for len(remaining) > 0 {
-		consumed := strings.IndexByte(remaining, '\n')
-		if consumed < 0 {
-			consumed = len(remaining)
-		} else {
-			consumed++
-		}
+		consumed := templateLineLength(remaining)
 		line := remaining[:consumed]
-		// A string literal may contain a newline. Keep a multiline expression
-		// in one scanner chunk; standalone-list detection still requires its
-		// expression to begin and end on the same physical line.
-		for search := 0; search < consumed; {
-			start := strings.Index(remaining[search:], "{{")
-			if start < 0 {
-				break
-			}
-			start += search
-			if start >= consumed {
-				break
-			}
-			end := strings.Index(remaining[start+2:], "}}")
-			if end < 0 {
-				break
-			}
-			expressionEnd := start + 2 + end + 2
-			if expressionEnd > consumed {
-				consumed = expressionEnd
-				if next := strings.IndexByte(remaining[consumed:], '\n'); next >= 0 {
-					consumed += next + 1
-				} else {
-					consumed = len(remaining)
-				}
-				line = remaining[:consumed]
-				break
-			}
-			search = expressionEnd
-		}
 		final := consumed == len(remaining)
 		if gate, restOffset, gated := lineGate(line); gated {
 			// A showIf line's directive renders no text: either the gate passes
@@ -594,6 +560,46 @@ func renderTextSegment(source string, segment templateSourceSegment, facts map[s
 		cursor += consumed
 	}
 	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
+}
+
+// templateLineLength returns one render chunk, including any multiline expression
+// that starts on its first physical line.
+func templateLineLength(remaining string) int {
+	consumed := strings.IndexByte(remaining, '\n')
+	if consumed < 0 {
+		consumed = len(remaining)
+	} else {
+		consumed++
+	}
+	// A string literal may contain a newline. Keep a multiline expression
+	// in one scanner chunk; standalone-list detection still requires its
+	// expression to begin and end on the same physical line.
+	for search := 0; search < consumed; {
+		start := strings.Index(remaining[search:], "{{")
+		if start < 0 {
+			break
+		}
+		start += search
+		if start >= consumed {
+			break
+		}
+		end := strings.Index(remaining[start+2:], "}}")
+		if end < 0 {
+			break
+		}
+		expressionEnd := start + 2 + end + 2
+		if expressionEnd > consumed {
+			consumed = expressionEnd
+			if next := strings.IndexByte(remaining[consumed:], '\n'); next >= 0 {
+				consumed += next + 1
+			} else {
+				consumed = len(remaining)
+			}
+			break
+		}
+		search = expressionEnd
+	}
+	return consumed
 }
 
 // appendLine writes one rendered line, or drops it without leaving its line

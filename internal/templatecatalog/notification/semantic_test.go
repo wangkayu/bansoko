@@ -33,6 +33,31 @@ func TestSemanticAttachmentsStayAtTheirTemplatePosition(t *testing.T) {
 	}
 }
 
+func TestMultilineSemanticLinkFollowsLineGate(t *testing.T) {
+	const body = "{{showIf(anime.group)}}{{link(\n  bgm.link, 'Bangumi'\n)}}\n{{link(\n  tmdb.link, 'TMDB'\n)}}"
+	facts := map[string]any{"bgm.id": "123", "tmdb.id": "456", "tmdb.kind": "tv"}
+	for _, group := range []string{"", "Example Group"} {
+		facts["anime.group"] = group
+		message, ok := RenderMessage(TriggerDownloadSubmitted, "Title", body, facts)
+		if !ok || !message.Valid() {
+			t.Fatalf("group %q: invalid custom template: %+v", group, message.Errors)
+		}
+		attachments, ok := SemanticAttachments(TriggerDownloadSubmitted, "Title", body, facts)
+		want := []string{"TMDB"}
+		if group != "" {
+			want = []string{"Bangumi", "TMDB"}
+		}
+		if !ok || message.Body != strings.Join(want, "\n") || len(attachments.Links) != len(want) {
+			t.Fatalf("group %q: body %q, attachments %+v", group, message.Body, attachments)
+		}
+		for i, label := range want {
+			if attachments.Links[i].Label != label {
+				t.Fatalf("group %q: links = %+v", group, attachments.Links)
+			}
+		}
+	}
+}
+
 func TestImageDirectiveLinesKeepSourceOffsetsAndDisappear(t *testing.T) {
 	source := "{{ image }}\n{{anime.title}}\n{{unknown}}\n{{ link(bgm.link, 'Bangumi') }}"
 	errors, ok := Compile(TriggerDownloadSubmitted, "title", source)

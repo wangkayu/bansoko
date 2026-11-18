@@ -173,52 +173,64 @@ func mustLookupFact(facts map[string]any, name string) any {
 }
 
 // SemanticAttachments returns attachments in template source order, title then
-// body. An unavailable target simply emits no attachment; text rendering still
-// reports the same empty-variable warning where appropriate.
+// body. It applies standalone showIf gates before collecting links, matching the
+// rendered body so a hidden link is not exposed as a channel attachment. An
+// unavailable target emits no attachment; text rendering keeps its own warnings.
 func SemanticAttachments(trigger, titleTemplate, bodyTemplate string, facts map[string]any) (Attachments, bool) {
 	if _, ok := knownVariables(trigger); !ok {
 		return Attachments{}, false
 	}
 	var attachments Attachments
 	for _, source := range []string{titleTemplate, bodyTemplate} {
-		for _, expression := range sourceExpressions(source) {
-			switch node := expression.(type) {
-			case variableExpression:
-				if node.name == ImageVariable && !attachments.Image {
-					attachments.Image = true
+		for source != "" {
+			length := templateLineLength(source)
+			line := source[:length]
+			source = source[length:]
+			if gate, offset, gated := lineGate(line); gated {
+				if !gateHasValue(gate, facts) {
+					continue
 				}
-			case callExpression:
-				switch node.name {
-				case ImageVariable:
-					if attachments.Image || len(node.args) != 1 {
-						continue
+				line = line[offset:]
+			}
+			for _, expression := range sourceExpressions(line) {
+				switch node := expression.(type) {
+				case variableExpression:
+					if node.name == ImageVariable && !attachments.Image {
+						attachments.Image = true
 					}
-					attachments.Image = true
-					switch target := node.args[0].(type) {
-					case variableExpression:
-						attachments.ImageSource = strings.TrimSuffix(target.name, ".image")
-					case literalExpression:
-						attachments.ImageSource = "custom"
-						attachments.ImageURL = SafeExternalImageURL(target.value)
-					}
-				case "link":
-					if len(node.args) != 2 {
-						continue
-					}
-					label, ok := node.args[1].(literalExpression)
-					if !ok || !validLinkLabel(label.value) {
-						continue
-					}
-					provider, target := "custom", ""
-					switch value := node.args[0].(type) {
-					case variableExpression:
-						provider = strings.TrimSuffix(value.name, ".link")
-						target = LinkValue(facts, value.name)
-					case literalExpression:
-						target = SafeExternalURL(value.value, false)
-					}
-					if target != "" {
-						attachments.Links = append(attachments.Links, Link{Provider: provider, Label: strings.TrimSpace(label.value), URL: target})
+				case callExpression:
+					switch node.name {
+					case ImageVariable:
+						if attachments.Image || len(node.args) != 1 {
+							continue
+						}
+						attachments.Image = true
+						switch target := node.args[0].(type) {
+						case variableExpression:
+							attachments.ImageSource = strings.TrimSuffix(target.name, ".image")
+						case literalExpression:
+							attachments.ImageSource = "custom"
+							attachments.ImageURL = SafeExternalImageURL(target.value)
+						}
+					case "link":
+						if len(node.args) != 2 {
+							continue
+						}
+						label, ok := node.args[1].(literalExpression)
+						if !ok || !validLinkLabel(label.value) {
+							continue
+						}
+						provider, target := "custom", ""
+						switch value := node.args[0].(type) {
+						case variableExpression:
+							provider = strings.TrimSuffix(value.name, ".link")
+							target = LinkValue(facts, value.name)
+						case literalExpression:
+							target = SafeExternalURL(value.value, false)
+						}
+						if target != "" {
+							attachments.Links = append(attachments.Links, Link{Provider: provider, Label: strings.TrimSpace(label.value), URL: target})
+						}
 					}
 				}
 			}

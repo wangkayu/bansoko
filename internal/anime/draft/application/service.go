@@ -797,7 +797,18 @@ VALUES ('subscribe', $1, $2, $3, $4)`, key, requestHash, animeID, snapshot); err
 		if fixedTitle != nil {
 			noticeTitle = *fixedTitle
 		}
-		request, err := plugintargetport.SubscriptionChangedRequest(subscriptionID, 1, animeID, noticeTitle, plugintargetport.SubscriptionStarted)
+		// The started notice freezes the binding this subscription was created
+		// with, so its resource links name the work the owner subscribed to;
+		// a subscription without a binding carries none.
+		binding := plugintargetport.SubscriptionBinding{}
+		if metadata.BGM != nil {
+			binding.BGMID = metadata.BGM.WorkID
+		}
+		if metadata.TMDB != nil {
+			binding.TMDBID = metadata.TMDB.WorkID
+			binding.TMDBKind = metadata.TMDB.MediaKind
+		}
+		request, err := plugintargetport.SubscriptionChangedRequest(subscriptionID, 1, animeID, noticeTitle, plugintargetport.SubscriptionStarted, binding)
 		if err != nil {
 			return SubscribeResult{}, fmt.Errorf("encode subscription notice: %w", err)
 		}

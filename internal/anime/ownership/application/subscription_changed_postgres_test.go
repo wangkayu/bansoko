@@ -10,6 +10,7 @@ import (
 	plugintargetport "bansoko/internal/plugintarget/port"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/testutil/animetest"
+	"bansoko/internal/transport/httpapi/generated"
 )
 
 // recordingNotices records the business notices a producer admits inside its
@@ -92,6 +93,20 @@ func TestSubscriptionChangedNoticePerTransition(t *testing.T) {
 		if facts["event.action"] != want[i].action || facts["anime.id"] != animeID || facts["anime.title"] != "Test Show" {
 			t.Fatalf("notice %d facts=%v", i, facts)
 		}
+		// Only the started notice freezes the work binding; every later
+		// transition carries no ids, so a stopped/resumed/retired message can
+		// never attach resource links.
+		if want[i].action == plugintargetport.SubscriptionStarted {
+			if facts["bgm.id"] != "bgm-123" || facts["tmdb.id"] != "tmdb-456" || facts["tmdb.kind"] != "tv" {
+				t.Fatalf("started notice binding facts=%v", facts)
+			}
+		} else {
+			for _, key := range []string{"bgm.id", "tmdb.id", "tmdb.kind"} {
+				if _, exists := facts[key]; exists {
+					t.Fatalf("%s notice carries %s: %v", want[i].action, key, facts)
+				}
+			}
+		}
 	}
 
 	// Retiring again is a no-op and admits nothing.
@@ -104,5 +119,39 @@ func TestSubscriptionChangedNoticePerTransition(t *testing.T) {
 	}
 	if again := notices.list(); len(again) != len(want) {
 		t.Fatalf("a repeated retirement admitted another notice: %+v", again[len(want):])
+	}
+}
+
+// A subscription that starts without a metadata binding still admits its
+// started notice, and that notice carries no id facts: the presentation shows
+// the title alone instead of inventing a work link.
+func TestStartedNoticeWithoutBindingCarriesNoWorkFacts(t *testing.T) {
+	db := animetest.OpenTestDB(t)
+	service := ownershipNewTestService(t, db, &ownershipFakeFetcher{})
+	notices := &recordingNotices{}
+	service.SetBusinessDeliveryEnqueuer(notices)
+	service.Draft.SetBusinessDeliveryEnqueuer(notices)
+
+	draft := ownershipTestDraft(t)
+	draft.Metadata = generated.AnimeMetadataDraft{}
+	subscribed, err := service.SubscribeAnime(context.Background(), generated.SubscribeAnimeInput{Draft: draft, Start: new(true)}, "subscribe-key-unbound-notice")
+	if err != nil {
+		t.Fatalf("subscribe without metadata: %v", err)
+	}
+	got := notices.list()
+	if len(got) != 1 || got[0].ResultKey != plugintargetport.SubscriptionStarted {
+		t.Fatalf("notices = %+v, want one started notice", got)
+	}
+	var facts map[string]any
+	if err := json.Unmarshal(got[0].Payload, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if facts["anime.id"] != subscribed.ManagedAnime.Id || facts["anime.title"] != "Test Show" {
+		t.Fatalf("started facts = %v", facts)
+	}
+	for _, key := range []string{"bgm.id", "tmdb.id", "tmdb.kind"} {
+		if _, exists := facts[key]; exists {
+			t.Fatalf("unbound started notice carries %s: %v", key, facts)
+		}
 	}
 }

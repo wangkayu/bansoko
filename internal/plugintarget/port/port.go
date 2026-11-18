@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path"
+	"strings"
 
 	"bansoko/internal/persistence/txscope"
 )
@@ -108,18 +109,44 @@ const (
 	SubscriptionRetired = "retired"
 )
 
+// SubscriptionBinding is the work metadata bound to a subscription at the
+// moment it starts: the Bangumi subject id, the TMDB work id and that work's
+// kind (tv or movie). Every field is empty when the subscription has no such
+// binding. Only the started notice freezes them; a later transition carries no
+// binding, exactly as it cannot change the work the subscription started on.
+type SubscriptionBinding struct {
+	BGMID    string
+	TMDBID   string
+	TMDBKind string
+}
+
 // SubscriptionChangedRequest builds the subscription_changed admission of one
 // lifecycle transition. version is the subscription version the transition
 // commits, so each transition admits once. A retired anime is fenced from new
 // rows that name it, so its notice carries the anime in the payload only.
-func SubscriptionChangedRequest(subscriptionID string, version int64, managedAnimeID, animeTitle, action string) (BusinessDeliveryRequest, error) {
+// binding is read by the started action only: when a binding exists its ids
+// and TMDB kind travel as frozen facts, and the presentation can attach the
+// work's resource links; stopped, resumed and retired notices carry none.
+func SubscriptionChangedRequest(subscriptionID string, version int64, managedAnimeID, animeTitle, action string, binding SubscriptionBinding) (BusinessDeliveryRequest, error) {
 	title := any(nil)
 	if animeTitle != "" {
 		title = animeTitle
 	}
-	payload, err := json.Marshal(map[string]any{
+	facts := map[string]any{
 		"anime.id": managedAnimeID, "anime.title": title, "event.action": action,
-	})
+	}
+	if action == SubscriptionStarted {
+		if id := strings.TrimSpace(binding.BGMID); id != "" {
+			facts["bgm.id"] = id
+		}
+		if id := strings.TrimSpace(binding.TMDBID); id != "" {
+			facts["tmdb.id"] = id
+			if kind := strings.TrimSpace(binding.TMDBKind); kind != "" {
+				facts["tmdb.kind"] = kind
+			}
+		}
+	}
+	payload, err := json.Marshal(facts)
 	if err != nil {
 		return BusinessDeliveryRequest{}, err
 	}

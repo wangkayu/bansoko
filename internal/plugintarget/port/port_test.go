@@ -45,6 +45,58 @@ func TestReplacementDeletionFailedRequest(t *testing.T) {
 	}
 }
 
+// The started notice freezes the work binding the subscription began with;
+// every other transition carries no binding, so a later presentation can only
+// link the work on the message that introduces it.
+func TestSubscriptionChangedRequestFreezesBindingsOnlyForStarted(t *testing.T) {
+	binding := SubscriptionBinding{BGMID: "400602", TMDBID: "209867", TMDBKind: "tv"}
+	started, err := SubscriptionChangedRequest("sub-1", 1, "anime-1", "Show", SubscriptionStarted, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var facts map[string]any
+	if err := json.Unmarshal(started.Payload, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if facts["event.action"] != SubscriptionStarted || facts["bgm.id"] != "400602" ||
+		facts["tmdb.id"] != "209867" || facts["tmdb.kind"] != "tv" {
+		t.Fatalf("started facts = %v", facts)
+	}
+	for _, action := range []string{SubscriptionStopped, SubscriptionResumed, SubscriptionRetired} {
+		request, err := SubscriptionChangedRequest("sub-1", 2, "anime-1", "Show", action, binding)
+		if err != nil {
+			t.Fatal(err)
+		}
+		facts = nil
+		if err := json.Unmarshal(request.Payload, &facts); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"bgm.id", "tmdb.id", "tmdb.kind"} {
+			if _, exists := facts[key]; exists {
+				t.Fatalf("%s carries %s: %v", action, key, facts)
+			}
+		}
+	}
+	// A started subscription without a binding carries no id facts at all.
+	without, err := SubscriptionChangedRequest("sub-1", 1, "anime-1", "Show", SubscriptionStarted, SubscriptionBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts = nil
+	if err := json.Unmarshal(without.Payload, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := facts["bgm.id"]; exists {
+		t.Fatalf("unbound started facts = %v", facts)
+	}
+	if _, exists := facts["tmdb.id"]; exists {
+		t.Fatalf("unbound started facts = %v", facts)
+	}
+	if _, exists := facts["tmdb.kind"]; exists {
+		t.Fatalf("unbound started facts = %v", facts)
+	}
+}
+
 func TestTriggerKindsAreStable(t *testing.T) {
 	if TriggerDownloadSubmitted != "download_submitted" ||
 		TriggerFileOperationCompleted != "file_operation_completed" ||

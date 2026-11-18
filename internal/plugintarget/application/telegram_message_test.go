@@ -113,6 +113,51 @@ func TestTelegramRichMessageUsesEscapedHTMLPhotoAndMetadataLinks(t *testing.T) {
 	}
 }
 
+func TestTelegramSystemDefaultSubscriptionCaption(t *testing.T) {
+	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
+	handler.SetNotificationImageResolver(&fakeNotificationImageResolver{
+		image: plugintargetport.NotificationImage{Source: "mikan", URL: "https://mikanani.me/images/1.jpg"},
+	})
+	const trigger = notification.TriggerSubscriptionChanged
+	title, body := notification.DefaultsFor(trigger, notification.LocaleZH)
+	for _, tc := range []struct {
+		action, title, extra string
+	}{
+		{"started", "开始订阅：示例作品", "\n\n" + `<a href="https://bgm.tv/subject/123">Bangumi</a>`},
+		{"resumed", "已恢复订阅：示例作品", ""},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			payload, err := deliverypayload.Encode(trigger, map[string]any{
+				"event.action": tc.action, "anime.title": "示例作品", "bgm.id": "123",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			row := deliveryRow{
+				adapterKind: "telegram", adapterConfigJSON: []byte(`{"adapter_kind":"telegram","chat_id":"999"}`),
+				deliveryKind: "business", triggerKind: trigger, payload: payload,
+				titleTemplate: title, bodyTemplate: body,
+			}
+			message, err := handler.resolveOutboundMessage(context.Background(), row, tc.title)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, mode, err := handler.buildTelegramMessageRequest(context.Background(), row, message, `{"bot_token":"123:abc"}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var outgoing map[string]string
+			if err := json.NewDecoder(req.Body).Decode(&outgoing); err != nil {
+				t.Fatal(err)
+			}
+			want := "<b>" + tc.title + "</b>" + tc.extra
+			if mode.String() != "sendPhoto:url" || outgoing["caption"] != want {
+				t.Fatalf("mode = %s, caption = %q, want photo caption %q", mode.String(), outgoing["caption"], want)
+			}
+		})
+	}
+}
+
 func TestTelegramEscapedHTMLLeavesSlashesUnchanged(t *testing.T) {
 	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
 	row := richDeliveryRow(t, map[string]any{"anime.title": "Show", "release.title": "Episode"})

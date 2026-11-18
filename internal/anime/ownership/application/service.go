@@ -107,12 +107,28 @@ func (s *Service) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.Business
 
 // admitSubscriptionChangeTx admits one subscription_changed notice inside the
 // transition's transaction. version is the subscription version the
-// transition commits.
+// transition commits. Only a first start reads the work binding: the ids and
+// TMDB kind frozen now let the started notice link to the bound work, while
+// every later transition carries no binding.
 func (s *Service) admitSubscriptionChangeTx(ctx context.Context, tx *sql.Tx, subscriptionID string, version int64, managedAnimeID, animeTitle, action string) error {
 	if s.notifications == nil {
 		return nil
 	}
-	request, err := plugintargetport.SubscriptionChangedRequest(subscriptionID, version, managedAnimeID, animeTitle, action)
+	binding := plugintargetport.SubscriptionBinding{}
+	if action == plugintargetport.SubscriptionStarted {
+		var bgmID, tmdbID, tmdbKind sql.NullString
+		err := tx.QueryRowContext(ctx, `
+SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind
+FROM anime_metadata
+WHERE managed_anime_id = $1`, managedAnimeID).Scan(&bgmID, &tmdbID, &tmdbKind)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read subscription binding: %w", err)
+		}
+		binding = plugintargetport.SubscriptionBinding{
+			BGMID: bgmID.String, TMDBID: tmdbID.String, TMDBKind: tmdbKind.String,
+		}
+	}
+	request, err := plugintargetport.SubscriptionChangedRequest(subscriptionID, version, managedAnimeID, animeTitle, action, binding)
 	if err != nil {
 		return fmt.Errorf("encode subscription notice: %w", err)
 	}

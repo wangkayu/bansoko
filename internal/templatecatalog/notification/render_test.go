@@ -155,13 +155,112 @@ func TestEveryDefaultRendersWithItsSampleFacts(t *testing.T) {
 			if !refs[ImageVariable] || refs["link"] {
 				t.Fatalf("%s/%s default has invalid semantic attachments: %v", trigger, locale, refs)
 			}
-			sample := Sample(trigger)
-			if _, exists := sample["bgm.id"]; exists && !refs[BGMLinkVariable] {
-				t.Fatalf("%s/%s default lost its Bangumi link: %v", trigger, locale, refs)
+			links, ok := SemanticAttachments(trigger, title, body, Sample(trigger))
+			wantLinks := 0
+			switch trigger {
+			case TriggerSubscriptionChanged:
+				wantLinks = 2 // the sample represents a started subscription
+			case TriggerReleaseDiscovered, TriggerDownloadFailed:
+				wantLinks = 1 // only the safe release-details page
 			}
-			if _, exists := sample["tmdb.id"]; exists && !refs[TMDBLinkVariable] {
-				t.Fatalf("%s/%s default lost its TMDB link: %v", trigger, locale, refs)
+			if !ok || len(links.Links) != wantLinks {
+				t.Fatalf("%s/%s default semantic links = %+v, valid=%v; want %d", trigger, locale, links.Links, ok, wantLinks)
 			}
+		}
+	}
+}
+
+func TestSubscriptionDefaultsOnlyLinkStartedAndDoNotRepeatTitle(t *testing.T) {
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		title, body := DefaultsFor(TriggerSubscriptionChanged, locale)
+		if strings.Contains(body, "{{anime.title}}") {
+			t.Fatalf("%s body repeats anime title: %q", locale, body)
+		}
+		facts := Sample(TriggerSubscriptionChanged)
+		facts["anime.title"] = "示例作品"
+		for _, action := range []string{"started", "stopped", "resumed", "retired"} {
+			facts["event.action"] = action
+			message, ok := RenderMessage(TriggerSubscriptionChanged, title, body, facts)
+			if !ok || !message.Valid() {
+				t.Fatalf("%s/%s render = %+v", locale, action, message)
+			}
+			links, ok := SemanticAttachments(TriggerSubscriptionChanged, title, body, facts)
+			wantLinks := 0
+			if action == "started" {
+				wantLinks = 2
+			}
+			if !ok || !links.Image || len(links.Links) != wantLinks {
+				t.Fatalf("%s/%s attachments = %+v, valid=%v; want cover and %d links", locale, action, links, ok, wantLinks)
+			}
+			wantBody := ""
+			if action == "started" {
+				wantBody = "Bangumi\nTMDB"
+			}
+			if !strings.Contains(message.Title, "示例作品") || message.Body != wantBody {
+				t.Fatalf("%s/%s title = %q, body = %q, want body %q", locale, action, message.Title, message.Body, wantBody)
+			}
+		}
+		message := renderDefault(t, TriggerSubscriptionChanged, locale, map[string]any{"event.action": "started", "anime.title": "示例作品"})
+		if message.Body != "" {
+			t.Fatalf("%s started without work bindings: body = %q", locale, message.Body)
+		}
+	}
+}
+
+func TestReleaseDefaultsUseSourceSpecificTagsAndSafeDetailsLink(t *testing.T) {
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		title, body := DefaultsFor(TriggerReleaseDiscovered, locale)
+		facts := Sample(TriggerReleaseDiscovered)
+		facts["release.src"] = "anibt"
+		facts["anibt.res"], facts["anibt.lang"] = "1080p", "CHS"
+		facts["rt.res"], facts["rt.source"] = "720p", "WEB"
+		facts[ReleaseLinkVariable] = "https://anibt.net/release/123"
+		message, ok := RenderMessage(TriggerReleaseDiscovered, title, body, facts)
+		if !ok || !message.Valid() || !strings.Contains(message.Body, "1080p CHS") || strings.Contains(message.Body, "720p WEB") {
+			t.Fatalf("%s AniBT render = %+v", locale, message)
+		}
+		attachments, ok := SemanticAttachments(TriggerReleaseDiscovered, title, body, facts)
+		if !ok || len(attachments.Links) != 1 || attachments.Links[0].URL != facts[ReleaseLinkVariable] {
+			t.Fatalf("%s release attachment = %+v", locale, attachments.Links)
+		}
+		facts["release.src"] = "mikan"
+		message, ok = RenderMessage(TriggerReleaseDiscovered, title, body, facts)
+		if !ok || !message.Valid() || !strings.Contains(message.Body, "720p WEB") || strings.Contains(message.Body, "1080p CHS") {
+			t.Fatalf("%s non-AniBT render = %+v", locale, message)
+		}
+		facts[ReleaseLinkVariable] = nil
+		facts[DownloadLinkVariable] = "https://anibt.net/download/secret.torrent"
+		attachments, _ = SemanticAttachments(TriggerReleaseDiscovered, title, body, facts)
+		if len(attachments.Links) != 0 {
+			t.Fatalf("%s exposed a download URL as a release link: %+v", locale, attachments.Links)
+		}
+		if TemplateReferences(title, body)[DownloadLinkVariable] {
+			t.Fatalf("%s release template references a download URL", locale)
+		}
+	}
+}
+
+func TestDownloadFailedDefaultShowsReasonBeforeSafeReleaseLink(t *testing.T) {
+	for _, locale := range []string{LocaleZH, LocaleEN} {
+		title, body := DefaultsFor(TriggerDownloadFailed, locale)
+		facts := Sample(TriggerDownloadFailed)
+		facts["result.category"] = "timeout"
+		facts["release.title"] = "发布标题"
+		facts[ReleaseLinkVariable] = "https://tracker.example.test/details/123"
+		message, ok := RenderMessage(TriggerDownloadFailed, title, body, facts)
+		if !ok || !message.Valid() {
+			t.Fatalf("%s failed render = %+v", locale, message)
+		}
+		reason := "原因：等待超时"
+		if locale == LocaleEN {
+			reason = "Reason: timed out"
+		}
+		if strings.Index(message.Body, reason) < 0 || strings.Index(message.Body, reason) > strings.Index(message.Body, "发布标题") {
+			t.Fatalf("%s reason/title order = %q", locale, message.Body)
+		}
+		attachments, ok := SemanticAttachments(TriggerDownloadFailed, title, body, facts)
+		if !ok || len(attachments.Links) != 1 || attachments.Links[0].URL != facts[ReleaseLinkVariable] {
+			t.Fatalf("%s failed release link = %+v", locale, attachments.Links)
 		}
 	}
 }
@@ -322,31 +421,19 @@ func TestReplacementCustomTargetsAndStoredTemplatesKeepTheirRendering(t *testing
 	}
 }
 
-// The file outcome defaults name the original download file's parse only when
-// its frozen block recorded that field: the label and its line disappear
-// together, and the completed notice keeps its existing subtitle line.
-func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
+// Both file outcome defaults display the frozen file parse as Group. The
+// whole line disappears when that fact is missing.
+func TestFileOutcomeDefaultsShowTheFileGroup(t *testing.T) {
 	for _, locale := range []string{LocaleZH, LocaleEN} {
-		groupLabel, subtitleLabel, fileLabel, reasonLabel := "原文件字幕组", "字幕：", "文件：", "原因："
+		groupLabel, subtitleLabel, fileLabel, reasonLabel := "字幕组：", "字幕：", "文件：", "原因："
 		if locale == LocaleEN {
-			groupLabel, subtitleLabel, fileLabel, reasonLabel = "Original file group", "Subtitles: ", "File: ", "Reason: "
+			groupLabel, subtitleLabel, fileLabel, reasonLabel = "Group: ", "Subtitles: ", "File: ", "Reason: "
 		}
 		for _, trigger := range []string{TriggerFileOperationCompleted, TriggerFileOperationFailed} {
-			label := groupLabel
-			if trigger == TriggerFileOperationFailed {
-				label = "字幕组"
-				if locale == LocaleEN {
-					label = "Group"
-				}
-			}
-			sep := "："
-			if locale == LocaleEN {
-				sep = ": "
-			}
 			facts := Sample(trigger)
 			facts["frt.group"] = "文件组A"
 			message := renderDefault(t, trigger, locale, facts)
-			if !strings.Contains("\n"+message.Body+"\n", "\n"+label+sep+"文件组A\n") {
+			if !strings.Contains("\n"+message.Body+"\n", "\n"+groupLabel+"文件组A\n") {
 				t.Fatalf("%s/%s group line = %q", trigger, locale, message.Body)
 			}
 			assertNoEmptyLabels(t, message.Body)
@@ -363,7 +450,7 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 			delete(partial, "frt.group")
 			partial["frt.res"] = "1080p"
 			message = renderDefault(t, trigger, locale, partial)
-			if strings.Contains(message.Body, label+sep) {
+			if strings.Contains(message.Body, groupLabel) {
 				t.Fatalf("%s/%s kept an unvalued group label: %q", trigger, locale, message.Body)
 			}
 			if trigger == TriggerFileOperationCompleted && !strings.Contains(message.Body, subtitleLabel) {
@@ -373,7 +460,7 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 			empty := Sample(trigger)
 			empty["frt.group"] = ""
 			message = renderDefault(t, trigger, locale, empty)
-			if strings.Contains(message.Body, label+sep) {
+			if strings.Contains(message.Body, groupLabel) {
 				t.Fatalf("%s/%s kept the group label for an empty parse: %q", trigger, locale, message.Body)
 			}
 			assertNoEmptyLabels(t, message.Body)
@@ -381,7 +468,7 @@ func TestFileOutcomeDefaultsShowTheOriginalFileGroup(t *testing.T) {
 
 			missing := deleteFactsWithPrefix(Sample(trigger), "frt.")
 			message = renderDefault(t, trigger, locale, missing)
-			if strings.Contains(message.Body, label+sep) {
+			if strings.Contains(message.Body, groupLabel) {
 				t.Fatalf("%s/%s kept the group label without any frt: %q", trigger, locale, message.Body)
 			}
 			assertNoEmptyLabels(t, message.Body)

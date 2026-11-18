@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -96,6 +97,15 @@ func TestPendingSubscriptionStartsOnlyByStart(t *testing.T) {
 	got := notices.list()
 	if len(got) != 1 || got[0].ResultKey != plugintargetport.SubscriptionStarted || got[0].SourceOwnerVersion != 2 {
 		t.Fatalf("notices after start = %+v, want one started at version 2", got)
+	}
+	// The first start reads the binding persisted at subscribe and freezes it
+	// into the started notice.
+	var facts map[string]any
+	if err := json.Unmarshal(got[0].Payload, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if facts["bgm.id"] != "bgm-123" || facts["tmdb.id"] != "tmdb-456" || facts["tmdb.kind"] != "tv" {
+		t.Fatalf("started binding facts = %v", facts)
 	}
 
 	// Stop -> resume is unchanged: the resume stamps the baseline.
