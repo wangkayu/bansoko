@@ -767,7 +767,7 @@ func (s *Service) handleSubmit(ctx context.Context, claim workitems.Claim) (work
 			outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, "")))
 		}
 	case "submitting", "downloading", "completed":
-		outcome = worker.WithAfterCommit(outcome, func(ctx context.Context) {
+		outcome = worker.AppendAfterCommit(outcome, func(ctx context.Context) {
 			target := s.downloaderTarget(ctx)
 			for _, request := range []observabilityport.DiagnosticSuccessRequest{
 				{Kind: observabilityport.KindDownloader, TargetID: target},

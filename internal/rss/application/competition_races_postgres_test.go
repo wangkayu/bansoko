@@ -449,7 +449,7 @@ func TestCompetitionMovedRoundSpendsNoBudgetPostgres(t *testing.T) {
 	if run.round, err = f.service.decideCompetition(ctx, "anime-rss-test", nil); err != nil {
 		t.Fatal(err)
 	}
-	f.service.runDecidedStages(ctx, "anime-rss-test", &run)
+	f.service.runDecidedStages(ctx, claim, &run)
 	// A better release lands before the commit; its evaluation merges into
 	// the running round.
 	f.addRelease("b-1080", "source-beta", "[Beta] Test Show - 01 [1080p]", 1)

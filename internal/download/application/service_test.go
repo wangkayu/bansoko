@@ -974,7 +974,8 @@ func TestQBSubmitFailureOpensAndSuccessClosesDiagnosticEpisode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.SetDiagnosticRecorder(recorder, nil)
+	log := &downloadResultLog{}
+	service.SetDiagnosticRecorder(recorder, log)
 
 	// A terminal submit failure opens one folded diagnostic episode.
 	claim := createClaimedQBWorkItem(t, db, store, "task-qb-diag", workitems.KindQBSubmit)
@@ -985,10 +986,14 @@ func TestQBSubmitFailureOpensAndSuccessClosesDiagnosticEpisode(t *testing.T) {
 	if outcome.Kind != worker.OutcomeCommitted || outcome.OwnerResult.State != "failed" {
 		t.Fatalf("expected terminal submit failure: %+v", outcome)
 	}
-	if outcome.AfterCommit == nil {
-		t.Fatal("terminal submit failure must carry the diagnostic episode after-commit work")
+	if outcome.AfterCommit == nil || len(log.warnings) != 0 {
+		t.Fatal("terminal submit failure must defer logging and diagnostics to after commit")
 	}
 	outcome.AfterCommit(ctx)
+	if len(log.warnings) != 1 || log.warnings[0].Operation != "submit_download" || log.warnings[0].WorkItemID != claim.ID ||
+		log.warnings[0].ReasonCode != "torrent_payload_missing" || !strings.Contains(log.warnings[0].Message, "torrent data was unavailable") {
+		t.Fatalf("missing terminal submit failure log: %+v", log.warnings)
+	}
 
 	var kind, targetID string
 	var succeededAfter sql.NullTime
@@ -1067,10 +1072,14 @@ VALUES ('torrent-input-qb-test', 'release-qb-test', $1, $2, 'sha256:test', 'QB T
 	if retryOutcome.Kind != worker.OutcomeCommitted || retryOutcome.OwnerResult.State != "submitting" {
 		t.Fatalf("expected successful retry submit: %+v", retryOutcome)
 	}
-	if retryOutcome.AfterCommit == nil {
-		t.Fatal("successful submit must carry the diagnostic close after-commit work")
+	if retryOutcome.AfterCommit == nil || len(log.infos) != 0 {
+		t.Fatal("successful submit must defer logging and diagnostic close to after commit")
 	}
 	retryOutcome.AfterCommit(ctx)
+	if len(log.infos) != 1 || log.infos[0].Operation != "submit_download" || log.infos[0].WorkItemID != retryClaim.ID ||
+		!strings.Contains(log.infos[0].Message, "confirmed in qBittorrent") {
+		t.Fatalf("missing confirmed submit log: %+v", log.infos)
+	}
 
 	if err := db.QueryRowContext(ctx, `SELECT succeeded_after_at FROM diagnostic_episodes WHERE kind='internal' AND target_id='download.submit'`).Scan(&succeededAfter); err != nil {
 		t.Fatal(err)

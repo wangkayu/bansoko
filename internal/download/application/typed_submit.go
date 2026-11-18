@@ -45,7 +45,7 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 		return worker.Outcome{}, err
 	}
 	if cancelled.Applied {
-		return cancelledSubmission(c, cancelled), nil
+		return s.cancelledSubmission(c, cancelled), nil
 	}
 	if !gate.Granted {
 		if gate.Reason == "SUBMIT_RECONCILE_REQUIRED" {
@@ -175,7 +175,7 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 		return worker.Outcome{}, err
 	}
 	if cancelled.Applied {
-		return cancelledSubmission(c, cancelled), nil
+		return s.cancelledSubmission(c, cancelled), nil
 	}
 	if !dispatch.Granted {
 		return worker.Committed(c, workitems.OwnerResult{ReasonCode: dispatch.Reason}), nil
@@ -308,9 +308,21 @@ func (s *Service) finishUnstartedSubmission(ctx context.Context, c workitems.Cla
 	if err != nil {
 		return worker.Outcome{}, err
 	}
-	outcome := worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: code, Reason: reason})
+	outcome := worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode, Reason: reason})
 	if reply.State == "waiting_retry" || reply.State == "failed" {
 		outcome = worker.WithAfterCommit(outcome, s.submitFailureDiagnostic(task.id, code, cause))
+	}
+	if reply.Applied && reply.State == "failed" {
+		message := "Could not submit the download to qBittorrent."
+		switch reply.ReasonCode {
+		case ReasonDownloaderHashOccupied:
+			message = "Download was not submitted because qBittorrent already holds this torrent under another task."
+		case "torrent_payload_missing":
+			message = "Download was not submitted because the torrent data was unavailable."
+		case "qb_connection_unavailable":
+			message = "Download was not submitted because the qBittorrent connection was unavailable."
+		}
+		outcome = s.withDownloadResultLog(c, outcome, "submit_download", "failure", message)
 	}
 	return outcome, nil
 }
@@ -330,7 +342,8 @@ func cancelUnsentSubmission(ctx context.Context, scope txscope.Tx, c workitems.C
 	return reply.Applied, nil
 }
 
-func cancelledSubmission(c workitems.Claim, reply stageReply) worker.Outcome {
-	return worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode,
+func (s *Service) cancelledSubmission(c workitems.Claim, reply stageReply) worker.Outcome {
+	out := worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode,
 		Reason: safeReason(reply.CommittedReason)})
+	return s.withDownloadTerminalLog(c, out, "submit_download")
 }

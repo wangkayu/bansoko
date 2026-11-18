@@ -279,6 +279,7 @@ export const enErrorCopy = {
 
   // --- Updates ---
   UPDATE_LOCKED: "An update is in progress. Check its progress later.",
+  RESTART_IN_PROGRESS: "A restore or update is in progress. Try again later.",
 
   // --- Backups ---
   BACKUP_UNAVAILABLE: "The database backup tools are missing on this deployment.",

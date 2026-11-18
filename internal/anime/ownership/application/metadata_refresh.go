@@ -17,7 +17,7 @@ import (
 // title store (metadata_work_titles) and the persistent episode title store
 // (episode_title_cache). The rename and alignment renders stay cache-first.
 type MetadataWorkRefresher interface {
-	RefreshWork(ctx context.Context, provider, mediaKind, workID string, season int) error
+	RefreshWork(ctx context.Context, provider, mediaKind, workID string, season int) (bool, error)
 }
 
 // SetMetadataWorkRefresher wires the re-pull port. Nil means the refresh
@@ -34,11 +34,8 @@ func (s *Service) SetMetadataWorkRefresher(refresher MetadataWorkRefresher) {
 // the match flow's job — and it never touches subscription or work-item state,
 // so it is read-only for the owner rows and write-only for the caches.
 //
-// Failure semantics: an anime with no binding at all is METADATA_NOT_BOUND; a
-// re-pull that cannot reach its provider is a typed METADATA_REFRESH_FAILED
-// (or TMDB_CREDENTIAL_NOT_CONFIGURED) and the cache rows stay as they were.
-// The answer is the unchanged metadata owner view. Only a complete success
-// publishes the scoped RSS invalidation that refreshes cache-dependent views.
+// Partial refreshes return the provider error and invalidate dependent views
+// when any cache write was confirmed. The metadata owner view remains unchanged.
 func (s *Service) RefreshAnimeMetadataApplication(ctx context.Context, managedAnimeID string) (animeapplication.AnimeMetadata, error) {
 	if s == nil || s.db == nil {
 		return animeapplication.AnimeMetadata{}, fmt.Errorf("ownership service is not configured")
@@ -66,11 +63,21 @@ WHERE ma.id = $1`, managedAnimeID).Scan(&titleOverride, &bgmWorkID, &tmdbWorkID,
 	if bgmWorkID.String == "" && tmdbWorkID.String == "" {
 		return animeapplication.AnimeMetadata{}, &apperrors.Business{Status: 409, Code: "METADATA_NOT_BOUND", Message: "The anime has no metadata binding to refresh."}
 	}
+	// Owner versions stay unchanged. Notify dependent views once whenever any
+	// cache write succeeds, even if the next provider fails.
+	refreshed := false
+	defer func() {
+		if refreshed {
+			s.invalidator.PublishFor(events.TargetRSS, managedAnimeID)
+		}
+	}()
 	// The bound Bangumi subject is the whole scope (season 0); the TMDB
 	// episode list is re-pulled for its bound season, defaulting to season 1
 	// when the binding records none.
 	if bgmWorkID.String != "" {
-		if err := s.metadataRefresher.RefreshWork(ctx, "bgm", "subject", bgmWorkID.String, 0); err != nil {
+		written, err := s.metadataRefresher.RefreshWork(ctx, "bgm", "subject", bgmWorkID.String, 0)
+		refreshed = refreshed || written
+		if err != nil {
 			return animeapplication.AnimeMetadata{}, err
 		}
 	}
@@ -79,14 +86,12 @@ WHERE ma.id = $1`, managedAnimeID).Scan(&titleOverride, &bgmWorkID, &tmdbWorkID,
 		if tmdbSeason.Valid && tmdbSeason.Int64 > 0 {
 			refreshSeason = int(tmdbSeason.Int64)
 		}
-		if err := s.metadataRefresher.RefreshWork(ctx, "tmdb", tmdbKind.String, tmdbWorkID.String, refreshSeason); err != nil {
+		written, err := s.metadataRefresher.RefreshWork(ctx, "tmdb", tmdbKind.String, tmdbWorkID.String, refreshSeason)
+		refreshed = refreshed || written
+		if err != nil {
 			return animeapplication.AnimeMetadata{}, err
 		}
 	}
-	// Owner versions deliberately stay unchanged, so this scoped signal is the
-	// only prompt for title suggestions, RSS renders and file previews to reread.
-	// The periodic sweep reaches the same boundary through this method.
-	s.invalidator.PublishFor(events.TargetRSS, managedAnimeID)
 	return animeapplication.AnimeMetadata{
 		ManagedAnimeID: managedAnimeID,
 		BGM:            animeApplicationBGM(bgmWorkID.String),

@@ -20,13 +20,18 @@ import (
 
 // countingMetadataRefresher records every re-pull request and optionally fails.
 type countingMetadataRefresher struct {
-	requests []string
-	err      error
+	requests     []string
+	err          error
+	failProvider string
+	partial      bool
 }
 
-func (r *countingMetadataRefresher) RefreshWork(ctx context.Context, provider, mediaKind, workID string, season int) error {
+func (r *countingMetadataRefresher) RefreshWork(ctx context.Context, provider, mediaKind, workID string, season int) (bool, error) {
 	r.requests = append(r.requests, provider+"/"+mediaKind+"/"+workID+"/"+strings.TrimSpace(intToString(season)))
-	return r.err
+	if r.failProvider == "" || r.failProvider == provider {
+		return r.err == nil || r.partial, r.err
+	}
+	return true, nil
 }
 
 func intToString(value int) string {

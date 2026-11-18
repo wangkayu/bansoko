@@ -39,15 +39,6 @@ type targetAcquisition struct {
 	// replacements: one approval per overwrite target observed present (a
 	// batch replaces per file).
 	replacements []*terminal.ReplacementCapture
-	// overwriteTargetAbsent: an overwrite target was observed missing. When
-	// no target is present, acceptance freezes an ensure_present delivery
-	// with no approval; otherwise the file plan downgrades only that target.
-	overwriteTargetAbsent bool
-	// overwriteDirectPresent: an overwrite target holds a file no approved
-	// quality replacement names (unmanaged, or managed and displaced when the
-	// successor activates). It needs no approval; the delivery keeps
-	// collision overwrite so the file plan replaces it.
-	overwriteDirectPresent bool
 	// batchPlan is the final per-file plan conclusion the owner writer
 	// freezes into the release media fact snapshot (nil when admission failed
 	// before classification).
@@ -259,14 +250,7 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 				covered[spec.TargetPath] = true
 				continue
 			}
-			if spec.CollisionPolicy == library.CollisionOverwrite {
-				// Overwrite only authorizes replacing an existing file. An
-				// absent target needs no replacement approval: acceptance
-				// freezes it as an ordinary ensure_present delivery.
-				if targetObservedMissing(admitted.Observations, spec.ID) {
-					result.overwriteTargetAbsent = true
-					continue
-				}
+			if spec.CollisionPolicy == library.CollisionOverwrite && !targetObservedMissing(admitted.Observations, spec.ID) {
 				// Only a managed incumbent can carry a quality replacement
 				// approval. Any present file no approval names is replaced
 				// under the global setting; a managed one's placement becomes
@@ -278,12 +262,10 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 					return result
 				}
 				if !managed {
-					result.overwriteDirectPresent = true
 					continue
 				}
 				capture, err := terminal.CaptureReplacement(ctx, s.db, snapshot.releaseID, spec.TargetPath)
 				if errors.Is(err, terminal.ErrReplacementApprovalUnavailable) {
-					result.overwriteDirectPresent = true
 					continue
 				}
 				if err != nil {

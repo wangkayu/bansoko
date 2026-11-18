@@ -225,6 +225,9 @@ type Snapshot struct {
 	Version         int64
 	RefreshID       string
 	TraceID         string
+	// RefreshInProgress indicates that this call returned the previous snapshot
+	// in lieu of starting a second refresh.
+	RefreshInProgress bool
 	// LastSuccessAt is the observation time of the latest successful refresh
 	// (fresh, withdrawn or zero_result); nil when none succeeded yet.
 	LastSuccessAt *time.Time

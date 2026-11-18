@@ -59,7 +59,7 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 	material.release.id = "release"
 	material.config.business.Sections["file_effect"] = json.RawMessage(`{"operation":"copy","collision_policy":"overwrite"}`)
 	c := admissionCapture{material: material}
-	projected, err := productionIntent(ctx, tx, c, "automatic_source", "", false, capture)
+	projected, err := productionIntent(ctx, tx, c, "automatic_source", "", capture)
 	if err != nil {
 		tx.Rollback()
 		t.Fatal(err)
@@ -68,34 +68,21 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 		tx.Rollback()
 		t.Fatal("approved replacement not frozen")
 	}
-	// A present target without an approval is an unmanaged file (acceptance
-	// captures every managed one): the delivery stays ensure_present/overwrite
-	// with no approval, and the file plan and prepare proof refuse a managed
-	// target again.
-	unmanaged, err := productionIntent(ctx, tx, c, "automatic_source", "", false)
+	// Without a quality approval, the frozen global policy still governs
+	// every target, including one not present until after acceptance.
+	absent, err := productionIntent(ctx, tx, c, "automatic_source", "")
 	if err != nil {
 		tx.Rollback()
 		t.Fatal(err)
 	}
-	if unmanaged.delivery.Object["intent"].String != "ensure_present" || unmanaged.delivery.Object["collision"].String != "overwrite" || len(unmanaged.delivery.Object["replacements"].Array) != 0 {
-		tx.Rollback()
-		t.Fatalf("unmanaged overwrite delivery = intent %q collision %q replacements %d", unmanaged.delivery.Object["intent"].String, unmanaged.delivery.Object["collision"].String, len(unmanaged.delivery.Object["replacements"].Array))
-	}
-	// Overwrite only authorizes replacing an existing file: an absent target
-	// freezes an ordinary ensure_present delivery that blocks a late arrival.
-	absent, err := productionIntent(ctx, tx, c, "automatic_source", "", true)
-	if err != nil {
-		tx.Rollback()
-		t.Fatal(err)
-	}
-	if absent.delivery.Object["intent"].String != "ensure_present" || absent.delivery.Object["collision"].String != "block" || len(absent.delivery.Object["replacements"].Array) != 0 {
+	if absent.delivery.Object["intent"].String != "ensure_present" || absent.delivery.Object["collision"].String != "overwrite" || len(absent.delivery.Object["replacements"].Array) != 0 {
 		tx.Rollback()
 		t.Fatalf("absent overwrite target delivery = intent %q collision %q replacements %d", absent.delivery.Object["intent"].String, absent.delivery.Object["collision"].String, len(absent.delivery.Object["replacements"].Array))
 	}
 	// A batch with one present approved target and one absent target keeps
-	// the overwrite delivery with the one approval; the file plan downgrades
-	// the absent target alone.
-	mixed, err := productionIntent(ctx, tx, c, "automatic_source", "", true, capture)
+	// the overwrite delivery with the one approval; unapproved targets still
+	// follow the frozen global collision policy.
+	mixed, err := productionIntent(ctx, tx, c, "automatic_source", "", capture)
 	if err != nil {
 		tx.Rollback()
 		t.Fatal(err)
@@ -111,7 +98,7 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 	for policy, want := range map[string]string{"fail": "block", "versioned": "version"} {
 		material.config.business.Sections["file_effect"] = json.RawMessage(`{"operation":"copy","collision_policy":"` + policy + `"}`)
 		c := admissionCapture{material: material}
-		approved, err := productionIntent(ctx, tx, c, "automatic_source", "", false, capture)
+		approved, err := productionIntent(ctx, tx, c, "automatic_source", "", capture)
 		if err != nil {
 			tx.Rollback()
 			t.Fatalf("%s: %v", policy, err)
@@ -120,7 +107,7 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 			tx.Rollback()
 			t.Fatalf("%s approved delivery = intent %q collision %q replacements %d", policy, approved.delivery.Object["intent"].String, approved.delivery.Object["collision"].String, len(approved.delivery.Object["replacements"].Array))
 		}
-		plain, err := productionIntent(ctx, tx, c, "automatic_source", "", false)
+		plain, err := productionIntent(ctx, tx, c, "automatic_source", "")
 		if err != nil {
 			tx.Rollback()
 			t.Fatalf("%s: %v", policy, err)
@@ -132,7 +119,7 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 	}
 	material.config.business.Sections["file_effect"] = json.RawMessage(`{"operation":"copy","collision_policy":"overwrite"}`)
 	// One target captured twice is not two approvals.
-	if _, err := productionIntent(ctx, tx, c, "automatic_source", "", false, capture, capture); err == nil {
+	if _, err := productionIntent(ctx, tx, c, "automatic_source", "", capture, capture); err == nil {
 		tx.Rollback()
 		t.Fatal("duplicate approval path accepted")
 	}

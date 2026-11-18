@@ -14,6 +14,7 @@ import (
 
 	"bansoko/internal/apperrors"
 	"bansoko/internal/events"
+	observabilityport "bansoko/internal/observability/port"
 )
 
 // CleanupAnimeLocalData deletes the complete local business/config/runtime
@@ -67,8 +68,21 @@ SELECT cleanup_managed_anime_local_data($1, $2, $3, $4)`,
 		managedAnimeID, idempotencyKey, requestHash, input.ExpectedLifecycleEpoch).Scan(&result); err != nil {
 		return mapLocalCleanupDBError(err, managedAnimeID)
 	}
+	var receipt struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(result, &receipt); err != nil {
+		return fmt.Errorf("decode local cleanup result: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit local cleanup: %w", err)
+	}
+	if receipt.Status == "performed" {
+		s.logger.Info(ctx, observabilityport.RuntimeEvent{
+			Message:   "Cleaned up local subscription records; download data and media files were not touched.",
+			Component: "anime_ownership", Operation: "local_cleanup", Outcome: "success", ReasonCode: "local_cleanup_performed",
+			OwnerType: "managed_anime", OwnerID: managedAnimeID,
+		})
 	}
 	s.publishInvalidations(events.TargetSubscribed, events.TargetCatalog, events.TargetRSS)
 	return nil

@@ -82,6 +82,12 @@ func TestStoreOwnsOpenStateTransitions(t *testing.T) {
 	if err := store.ReconcileExact(ctx, "direct-active", AdmittedByEmbedded, "digest-active", 100, "active", "succeeded"); !errors.Is(err, ErrStateConflict) {
 		t.Fatalf("strict re-close = %v, want ErrStateConflict", err)
 	}
+	if err := store.ReconcileExactCurrentStateOrProveClosed(ctx, "direct-active", AdmittedByEmbedded, "digest-active", 100, "succeeded"); err != nil {
+		t.Fatalf("prove already settled fence: %v", err)
+	}
+	if err := store.ReconcileExactCurrentStateOrProveClosed(ctx, "direct-active", AdmittedByEmbedded, "digest-active", 100, "failed"); !errors.Is(err, ErrStateConflict) {
+		t.Fatalf("prove contradictory terminal state = %v, want ErrStateConflict", err)
+	}
 	if err := store.Acquire(ctx, "direct-next", AdmittedByEmbedded, 101, "digest-next"); err != nil {
 		t.Fatalf("Acquire after release: %v", err)
 	}

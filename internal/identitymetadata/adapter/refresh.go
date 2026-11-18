@@ -41,84 +41,70 @@ type EpisodeTitleCacheRefresher interface {
 // list straight from the provider, overwriting the cached rows. provider is
 // "bgm" (mediaKind "subject") or "tmdb" (mediaKind "tv"|"movie"); season is
 // the TMDB season whose episode list is re-pulled (BGM has one implicit
-// season and ignores it). Failures are typed Business errors: the refresh
-// fails closed, never with a partial silent answer.
-func (r ConfiguredWorkRefresher) RefreshWork(ctx context.Context, provider, mediaKind, workID string, season int) error {
+// season and ignores it). The boolean reports a confirmed cache write even
+// when a later step fails.
+func (r ConfiguredWorkRefresher) RefreshWork(ctx context.Context, provider, mediaKind, workID string, season int) (bool, error) {
 	provider, mediaKind, workID = strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(mediaKind)), strings.TrimSpace(workID)
 	if workID == "" {
-		return &apperrors.Business{Status: 409, Code: "METADATA_NOT_BOUND", Message: "The anime has no metadata binding to refresh."}
+		return false, &apperrors.Business{Status: 409, Code: "METADATA_NOT_BOUND", Message: "The anime has no metadata binding to refresh."}
 	}
 	switch provider {
 	case "bgm":
 		if mediaKind != "subject" {
-			return fmt.Errorf("BGM refresh requires the subject media kind, got %q", mediaKind)
+			return false, fmt.Errorf("BGM refresh requires the subject media kind, got %q", mediaKind)
 		}
-		return r.refreshBGM(ctx, workID)
+		endpoint, client, err := r.bgmRequest(ctx)
+		if err != nil {
+			return false, err
+		}
+		native, err := fetchBGMSubject(ctx, client, endpoint, workID)
+		if err != nil {
+			return false, err
+		}
+		return r.storeRefreshedTitles(ctx, "Bangumi", native, episodetitle.SourceBGM, 0)
 	case "tmdb":
 		if mediaKind != "tv" && mediaKind != "movie" {
-			return fmt.Errorf("TMDB refresh requires the tv or movie media kind, got %q", mediaKind)
+			return false, fmt.Errorf("TMDB refresh requires the tv or movie media kind, got %q", mediaKind)
 		}
-		return r.refreshTMDB(ctx, mediaKind, workID, season)
+		endpoint, client, apiKey, err := r.tmdbRequest(ctx)
+		if err != nil {
+			return false, err
+		}
+		native, err := fetchTMDBWork(ctx, client, endpoint, apiKey, mediaKind, workID)
+		if err != nil {
+			return false, err
+		}
+		if mediaKind == "movie" {
+			return r.storeRefreshedTitles(ctx, "TMDB", native, "", 0)
+		}
+		return r.storeRefreshedTitles(ctx, "TMDB", native, episodetitle.SourceTMDB, max(1, season))
 	default:
-		return fmt.Errorf("unsupported metadata refresh provider %q", provider)
+		return false, fmt.Errorf("unsupported metadata refresh provider %q", provider)
 	}
 }
 
-// refreshBGM re-pulls the subject (GET /v0/subjects/{id}) and its episode
-// list (season 0: one subject is the whole scope).
-func (r ConfiguredWorkRefresher) refreshBGM(ctx context.Context, workID string) error {
-	endpoint, client, err := r.bgmRequest(ctx)
-	if err != nil {
-		return err
-	}
-	native, err := fetchBGMSubject(ctx, client, endpoint, workID)
-	if err != nil {
-		return err
-	}
+func (r ConfiguredWorkRefresher) storeRefreshedTitles(ctx context.Context, provider string, native identitymetadatadomain.WorkTitles, source episodetitle.Source, season int) (bool, error) {
+	written := false
 	if r.Titles != nil {
 		if err := r.Titles.RecordWorkTitles(ctx, []identitymetadatadomain.WorkTitles{native}); err != nil {
-			return &apperrors.Business{Status: 409, Code: "METADATA_REFRESH_FAILED", Message: "The re-pulled Bangumi titles could not be stored; nothing was changed."}
+			return false, refreshFailed("Could not confirm that the " + provider + " work titles were saved.")
 		}
+		written = true
 	}
-	if r.EpisodeTitles != nil {
-		if err := r.EpisodeTitles.RefreshWork(ctx, episodetitle.SourceBGM, workID, 0); err != nil {
-			return refreshFailed("Bangumi", err)
+	if source != "" && r.EpisodeTitles != nil {
+		if err := r.EpisodeTitles.RefreshWork(ctx, source, native.WorkID, season); err != nil {
+			message := "Could not refresh the " + provider + " episode titles."
+			if written {
+				message = "The " + provider + " work titles were saved, but the episode titles could not be refreshed."
+			}
+			return written, refreshFailed(message)
 		}
+		written = true
 	}
-	return nil
+	return written, nil
 }
 
-// refreshTMDB re-pulls the tv/movie work and, for a tv binding, the episode
-// list of its bound season (season <= 0 with no bound season reads season 1,
-// the same default the matcher's season resolution starts from).
-func (r ConfiguredWorkRefresher) refreshTMDB(ctx context.Context, mediaKind, workID string, season int) error {
-	endpoint, client, apiKey, err := r.tmdbRequest(ctx)
-	if err != nil {
-		return err
-	}
-	native, err := fetchTMDBWork(ctx, client, endpoint, apiKey, mediaKind, workID)
-	if err != nil {
-		return err
-	}
-	if r.Titles != nil {
-		if err := r.Titles.RecordWorkTitles(ctx, []identitymetadatadomain.WorkTitles{native}); err != nil {
-			return &apperrors.Business{Status: 409, Code: "METADATA_REFRESH_FAILED", Message: "The re-pulled TMDB titles could not be stored; nothing was changed."}
-		}
-	}
-	if mediaKind == "tv" && r.EpisodeTitles != nil {
-		if season < 1 {
-			season = 1
-		}
-		if err := r.EpisodeTitles.RefreshWork(ctx, episodetitle.SourceTMDB, workID, season); err != nil {
-			return refreshFailed("TMDB", err)
-		}
-	}
-	return nil
-}
-
-// refreshFailed is the typed offline answer of a failed re-pull.
-func refreshFailed(provider string, err error) error {
-	message := provider + " could not be reached for the re-pull; the cached rows are unchanged (" + err.Error() + ")."
+func refreshFailed(message string) error {
 	return &apperrors.Business{Status: 409, Code: "METADATA_REFRESH_FAILED", Message: message}
 }
 
@@ -132,7 +118,7 @@ func (r ConfiguredWorkRefresher) bgmRequest(ctx context.Context) (*url.URL, *htt
 	}
 	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, configurationdomain.ConnectionBGM)
 	if err != nil {
-		return nil, nil, refreshFailed("Bangumi", err)
+		return nil, nil, refreshFailed("Could not read the Bangumi work metadata.")
 	}
 	endpoint := strings.TrimSpace(connection.Endpoint)
 	if endpoint == "" {
@@ -140,13 +126,13 @@ func (r ConfiguredWorkRefresher) bgmRequest(ctx context.Context) (*url.URL, *htt
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, nil, refreshFailed("Bangumi", errors.New("the BGM endpoint is invalid"))
+		return nil, nil, refreshFailed("Could not read the Bangumi work metadata.")
 	}
 	client := r.Client
 	if r.ClientResolver != nil {
 		resolved, resolveErr := r.ClientResolver.ClientForConnection(ctx, connection)
 		if resolveErr != nil {
-			return nil, nil, refreshFailed("Bangumi", resolveErr)
+			return nil, nil, refreshFailed("Could not read the Bangumi work metadata.")
 		}
 		if resolved != nil {
 			client = resolved
@@ -165,7 +151,7 @@ func (r ConfiguredWorkRefresher) tmdbRequest(ctx context.Context) (*url.URL, *ht
 	}
 	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, configurationdomain.ConnectionTMDB)
 	if err != nil {
-		return nil, nil, "", refreshFailed("TMDB", err)
+		return nil, nil, "", refreshFailed("Could not read the TMDB work metadata.")
 	}
 	apiKey := ""
 	if r.Secrets != nil && strings.TrimSpace(connection.SecretRef) != "" {
@@ -176,13 +162,13 @@ func (r ConfiguredWorkRefresher) tmdbRequest(ctx context.Context) (*url.URL, *ht
 	}
 	parsed, err := url.Parse(strings.TrimSpace(connection.Endpoint))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, nil, "", refreshFailed("TMDB", errors.New("the TMDB endpoint is invalid"))
+		return nil, nil, "", refreshFailed("Could not read the TMDB work metadata.")
 	}
 	client := r.Client
 	if r.ClientResolver != nil {
 		resolved, resolveErr := r.ClientResolver.ClientForConnection(ctx, connection)
 		if resolveErr != nil {
-			return nil, nil, "", refreshFailed("TMDB", resolveErr)
+			return nil, nil, "", refreshFailed("Could not read the TMDB work metadata.")
 		}
 		if resolved != nil {
 			client = resolved
@@ -194,7 +180,7 @@ func (r ConfiguredWorkRefresher) tmdbRequest(ctx context.Context) (*url.URL, *ht
 // fetchBGMSubject reads one subject's native titles.
 func fetchBGMSubject(ctx context.Context, client *http.Client, endpoint *url.URL, workID string) (identitymetadatadomain.WorkTitles, error) {
 	if !isDigits(workID) {
-		return identitymetadatadomain.WorkTitles{}, refreshFailed("Bangumi", errors.New("the BGM binding is not a numeric subject id"))
+		return identitymetadatadomain.WorkTitles{}, refreshFailed("Could not read the Bangumi work metadata.")
 	}
 	subject := *endpoint
 	subject.Path = strings.TrimRight(subject.Path, "/") + "/v0/subjects/" + workID
@@ -204,7 +190,7 @@ func fetchBGMSubject(ctx context.Context, client *http.Client, endpoint *url.URL
 		Date   string `json:"date"`
 	}
 	if err := (ConfiguredCandidateSearcher{}).getJSON(ctx, client, &subject, "", &payload); err != nil {
-		return identitymetadatadomain.WorkTitles{}, refreshFailed("Bangumi", err)
+		return identitymetadatadomain.WorkTitles{}, refreshFailed("Could not read the Bangumi work metadata.")
 	}
 	return identitymetadatadomain.WorkTitles{
 		Provider: "bgm", MediaKind: "subject", WorkID: workID,
@@ -217,7 +203,7 @@ func fetchBGMSubject(ctx context.Context, client *http.Client, endpoint *url.URL
 // overview the work summary fact freezes from.
 func fetchTMDBWork(ctx context.Context, client *http.Client, endpoint *url.URL, apiKey, mediaKind, workID string) (identitymetadatadomain.WorkTitles, error) {
 	if !isDigits(workID) {
-		return identitymetadatadomain.WorkTitles{}, refreshFailed("TMDB", errors.New("the TMDB binding is not a numeric work id"))
+		return identitymetadatadomain.WorkTitles{}, refreshFailed("Could not read the TMDB work metadata.")
 	}
 	work := *endpoint
 	work.Path = strings.TrimRight(work.Path, "/") + "/" + mediaKind + "/" + workID
@@ -237,7 +223,7 @@ func fetchTMDBWork(ctx context.Context, client *http.Client, endpoint *url.URL, 
 		ReleaseDate   string `json:"release_date"`
 	}
 	if err := (ConfiguredCandidateSearcher{}).getJSON(ctx, client, &work, apiKey, &payload); err != nil {
-		return identitymetadatadomain.WorkTitles{}, refreshFailed("TMDB", err)
+		return identitymetadatadomain.WorkTitles{}, refreshFailed("Could not read the TMDB work metadata.")
 	}
 	titleCN, original, date := payload.Name, payload.OriginalName, payload.FirstAirDate
 	if mediaKind == "movie" {

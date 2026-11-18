@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"bansoko/internal/library/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
@@ -56,16 +57,38 @@ func (s *Service) finishTypedFailure(ctx context.Context, c workitems.Claim, cod
 	if err != nil {
 		// Commit outcome unknown: the operation and its work failed together
 		// or not at all; re-read independently before reporting.
-		if committed, confirmErr := s.confirmTypedFailureCommitted(ctx, c); confirmErr == nil && committed {
-			out := worker.Committed(c, workitems.OwnerResult{State: ownerStateFailed, ReasonCode: code, Reason: reason})
-			out.Disposition = workitems.DispositionAmbiguous
-			return out, nil
+		if committed, confirmErr := s.confirmTypedFailureCommitted(ctx, c, code); confirmErr != nil || !committed {
+			return worker.Outcome{}, fmt.Errorf("typed file failure %s not committed: %w", code, err)
 		}
-		return worker.Outcome{}, fmt.Errorf("typed file failure %s not committed: %w", code, err)
+		disposition = workitems.DispositionAmbiguous
 	}
 	out := worker.Committed(c, workitems.OwnerResult{State: ownerStateFailed, ReasonCode: code, Reason: reason})
 	out.Disposition = disposition
-	return worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, fileFailureRequest(cause, c.Owner.ID))), nil
+	out = worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, fileFailureRequest(cause, c.Owner.ID)))
+	if s.logger != nil {
+		message := "File import failed."
+		switch code {
+		case domain.FileErrorCodeTargetOccupied:
+			message = "File import failed because the destination could not be used under the selected collision policy."
+		case domain.CodeTargetSizeMismatch:
+			message = "File import failed because the destination did not match the expected size."
+		case domain.CodeSourceChanged:
+			message = "File import failed because the source file changed."
+		case "SOURCE_MISSING":
+			message = "File import failed because the source file was missing."
+		case "FILE_EXECUTION_INTERRUPTED":
+			message = "File import was interrupted."
+		case "FILE_EXECUTION_CANCELLED":
+			message = "File import was cancelled before publication."
+		}
+		event := observabilityport.RuntimeEvent{
+			Message: message, Component: "fileoperation", Operation: "execute_file",
+			Outcome: "failure", ReasonCode: code, OwnerType: c.Owner.Type, OwnerID: c.Owner.ID,
+			WorkItemID: c.ID, Kind: c.Kind, StateAfter: ownerStateFailed, Attempt: c.Attempt,
+		}
+		out = worker.AppendAfterCommit(out, func(ctx context.Context) { s.logger.Warn(ctx, event) })
+	}
+	return out, nil
 }
 
 // libraryTarget is the single diagnostic target of every placement write.
@@ -77,7 +100,7 @@ const libraryTarget = "library"
 // fileSuccessAfterCommit closes the library episode and the internal
 // file-operation source once an operation committed its placement: the library
 // accepted a write, so earlier library faults no longer hold.
-func (s *Service) fileSuccessAfterCommit() func(context.Context) {
+func (s *Service) fileSuccessAfterCommit(c workitems.Claim, replacedExisting bool) func(context.Context) {
 	closes := []func(context.Context){
 		observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindLibrary, TargetID: libraryTarget}),
 		observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.InternalSuccess(observabilityport.InternalFileOperation)),
@@ -87,6 +110,17 @@ func (s *Service) fileSuccessAfterCommit() func(context.Context) {
 			if closeEpisode != nil {
 				closeEpisode(ctx)
 			}
+		}
+		if s.logger != nil {
+			message := "File was published to the library."
+			if replacedExisting {
+				message = "File was published to the library and replaced the existing file."
+			}
+			s.logger.Info(ctx, observabilityport.RuntimeEvent{
+				Message: message, Component: "fileoperation", Operation: "execute_file",
+				Outcome: "success", OwnerType: c.Owner.Type, OwnerID: c.Owner.ID,
+				WorkItemID: c.ID, Kind: c.Kind, StateAfter: ownerStateCompleted, Attempt: c.Attempt,
+			})
 		}
 	}
 }
@@ -125,12 +159,12 @@ func isLostMount(err error) bool {
 	return false
 }
 
-func (s *Service) confirmTypedFailureCommitted(ctx context.Context, c workitems.Claim) (bool, error) {
+func (s *Service) confirmTypedFailureCommitted(ctx context.Context, c workitems.Claim, code string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	var ok bool
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.file_operations WHERE id=$1 AND state='failed')
-	 AND EXISTS(SELECT 1 FROM public.work_item_outcomes WHERE id=$2 AND owner_id=$1 AND state='failed')`, c.Owner.ID, c.ID).Scan(&ok)
+	 AND EXISTS(SELECT 1 FROM public.work_item_outcomes WHERE id=$2 AND owner_id=$1 AND state='failed' AND last_error_code=$3 AND fencing_token=$4)`, c.Owner.ID, c.ID, code, c.FencingToken).Scan(&ok)
 	return ok, err
 }
 

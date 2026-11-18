@@ -262,10 +262,21 @@ func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
 // Merge semantics: one live item, latest unexecuted input
 // ---------------------------------------------------------------------------
 
+type triggerResultLogger struct {
+	port.NopRuntimeLogger
+	events []port.RuntimeEvent
+}
+
+func (l *triggerResultLogger) Info(_ context.Context, event port.RuntimeEvent) {
+	l.events = append(l.events, event)
+}
+
 func TestTriggerMergesLatestInputAcrossTriggers(t *testing.T) {
 	db, _, trigger := newTriggerTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
+	log := &triggerResultLogger{}
+	trigger.SetDiagnostics(nil, log)
 	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r2", []string{"tv:e1"},
@@ -297,6 +308,15 @@ func TestTriggerMergesLatestInputAcrossTriggers(t *testing.T) {
 	item = loadLiveEvaluateItem(t, db, "anime-1")
 	if item.InputSnapshot["candidate_release_id"] != "release-r2" || item.Trigger != TriggerGenerationCompleted {
 		t.Fatalf("a merged item must carry the latest input and trigger: %+v trigger=%s", item.InputSnapshot, item.Trigger)
+	}
+	if len(log.events) != 3 {
+		t.Fatalf("expected one event per trigger: %+v", log.events)
+	}
+	for i, want := range []string{"enqueued", "merged", "merged"} {
+		got := log.events[i]
+		if got.Outcome != want || got.ReasonCode != "trigger_"+want || got.WorkItemID != item.ID {
+			t.Fatalf("trigger %d: want %s for work item %s, got %+v", i, want, item.ID, got)
+		}
 	}
 }
 

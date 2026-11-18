@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
@@ -193,9 +194,30 @@ func TestReleaseEvaluateAcceptedWithoutTorrentPayloadFailsAtTaskBoundary(t *test
 		t.Fatal(err)
 	}
 	claim := createRSSClaim(t, db, store, workitems.OwnerRef{Type: workitems.OwnerRelease, ID: "release-no-torrent"}, workitems.KindReleaseEvaluate, currentReleaseVersion(t, db, "release-no-torrent"))
-	finishReleaseClaim(t, store, service, claim)
-
+	logger := &refreshCaptureLogger{}
+	service.logger = logger
+	ctx := context.Background()
+	outcome, err := service.Handle(ctx, claim)
+	if err != nil || outcome.Kind != worker.OutcomeFinish || outcome.OwnerResult.State != "accepted_pending_download" {
+		t.Fatalf("expected preflight to accept and leave the final decision to the owner: %+v %v", outcome, err)
+	}
+	if len(logger.events) != 0 || outcome.AfterCommit == nil {
+		t.Fatalf("evaluation logged before commit or lacks a commit hook: %+v", logger.events)
+	}
+	if err := store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
+		t.Fatal(err)
+	}
 	assertReleaseState(t, db, "release-no-torrent", "parse_failed", "torrent_payload_missing", false)
+	outcome.AfterCommit(ctx)
+	if len(logger.events) != 1 {
+		t.Fatalf("expected one committed release result: %+v", logger.events)
+	}
+	event := logger.events[0]
+	if event.WorkItemID != claim.ID || event.Attempt != claim.Attempt || event.Kind != claim.Kind || event.OwnerID != claim.Owner.ID ||
+		event.StateAfter != "parse_failed" || event.Outcome != "failure" || event.ReasonCode != "torrent_payload_missing" ||
+		!strings.Contains(event.Message, "usable torrent information was not available") || strings.Contains(event.Message, "https://") {
+		t.Fatalf("log does not describe the committed result: %+v", event)
+	}
 }
 
 // Without a torrent file list (no URL, nothing fetched) the batch plan has

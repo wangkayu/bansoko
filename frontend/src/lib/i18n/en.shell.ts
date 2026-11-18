@@ -160,7 +160,6 @@ export const enLogCopy = {
     filtered: "{n} filtered",
     filteredWithReasons: "{n} filtered ({reasons})",
     parseFailed: "{n} unreadable titles",
-    othersUnchanged: "{n} other releases unchanged",
   },
   // A release batch head row's second line: how the batch's releases ended, joined
   // in a fixed order; labels follow the release verdict vocabulary.
@@ -220,11 +219,11 @@ export const enLogCopy = {
     release_adopted_existing: "Used the file already in the library",
     release_acquisition_failed: "Not accepted",
     release_submitted: "Sent to the download client",
-    release_awaiting_competition: "Waiting for other versions of the episode",
+    release_awaiting_competition: "Awaiting episode comparison",
     release_resume_baseline: "Released before the subscription resumed; skipped",
     release_start_baseline: "Released before the subscription; skipped",
-    release_batch_first: "First evaluation of {count} releases",
-    release_batch_reevaluated: "Re-evaluated {count} releases",
+    release_batch_first: "Scheduled first evaluation for {count} releases",
+    release_batch_reevaluated: "Scheduled evaluation for {count} releases",
     download_submitted: "Sent to the download client: {name}",
     download_completed: "Download complete",
     download_removed: "Deleted in the download client",

@@ -117,11 +117,26 @@ func validateCommittedOutcome(claim workitems.Claim, outcome Outcome) error {
 	return nil
 }
 
-// WithAfterCommit attaches best-effort work that may run only after the owner
-// and current WorkItem business transaction has committed successfully.
+// WithAfterCommit replaces the best-effort callback that may run only after
+// the owner and current WorkItem business transaction has committed.
 func WithAfterCommit(outcome Outcome, afterCommit func(context.Context)) Outcome {
 	outcome.AfterCommit = afterCommit
 	return outcome
+}
+
+// AppendAfterCommit adds best-effort work after the existing callback, if any.
+func AppendAfterCommit(outcome Outcome, afterCommit func(context.Context)) Outcome {
+	if afterCommit == nil {
+		return outcome
+	}
+	previous := outcome.AfterCommit
+	if previous == nil {
+		return WithAfterCommit(outcome, afterCommit)
+	}
+	return WithAfterCommit(outcome, func(ctx context.Context) {
+		previous(ctx)
+		afterCommit(ctx)
+	})
 }
 
 // Finish returns a terminal outcome. TerminalState belongs to the WorkItem;

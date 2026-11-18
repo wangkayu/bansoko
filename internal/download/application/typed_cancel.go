@@ -102,8 +102,16 @@ func (s *Service) typedCancel(ctx context.Context, claim workitems.Claim, sessio
 	if err != nil {
 		return worker.Outcome{}, fmt.Errorf("finish download cancel: %w", err)
 	}
-	return worker.Committed(claim, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode,
-		Reason: safeReason(reply.CommittedReason)}), nil
+	out := worker.Committed(claim, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode,
+		Reason: safeReason(reply.CommittedReason)})
+	if reply.Applied {
+		if reply.State == "failed" && reply.ReasonCode == "SYNC_ERROR_BUDGET_EXHAUSTED" {
+			out = s.withDownloadResultLog(claim, out, "cancel_download", "failure", "Could not remove the cancelled task from qBittorrent; retries were exhausted.")
+		} else {
+			out = s.withDownloadTerminalLog(claim, out, "cancel_download")
+		}
+	}
+	return out, nil
 }
 
 // cancelRemoval decides the qB side of one cancel attempt. An adopted task

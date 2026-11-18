@@ -22,7 +22,7 @@ func publicationStepProof(base map[string]any, objects protocol.Value, dependenc
 		location := objects.Object["target"]
 		method := "no_replace"
 		var displaced any = map[string]any{"state": "absent", "value": nil, "reason_code": nil}
-		if op.CollisionPolicy == domain.CollisionVersion || op.CollisionPolicy == domain.CollisionOverwrite {
+		if publicationReplaces(string(op.CollisionPolicy), objects) {
 			loc, err := publicationLocation(r.TargetPath)
 			if err != nil {
 				return nil, err

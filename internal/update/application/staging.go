@@ -72,8 +72,11 @@ func extractPayloadToTemp(payloadPath, tempDir string) (map[string]string, error
 		return nil, fmt.Errorf("open staged payload: %w", err)
 	}
 	defer file.Close()
+	return extractPayload(file, tempDir)
+}
 
-	gz, err := gzip.NewReader(file)
+func extractPayload(payload io.Reader, tempDir string) (map[string]string, error) {
+	gz, err := gzip.NewReader(payload)
 	if err != nil {
 		return nil, fmt.Errorf("staged payload is not a gzip stream: %w", err)
 	}
@@ -310,7 +313,10 @@ func VerifyStagedReleaseTree(releaseDir string) error {
 }
 
 func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
-	manifestBytes, err := os.ReadFile(filepath.Join(releaseDir, SignedManifestEntryPath))
+	if releaseInfo, statErr := os.Lstat(releaseDir); statErr != nil || !releaseInfo.IsDir() {
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release path is not a directory")
+	}
+	manifestBytes, err := readFileBounded(filepath.Join(releaseDir, SignedManifestEntryPath), maxManifestBytes)
 	if err != nil {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("release manifest unreadable: %w", err)
 	}
@@ -330,28 +336,21 @@ func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker
 	if manifest.ReleaseID == "" || (requireReleasePath && filepath.Base(filepath.Clean(releaseDir)) != manifest.ReleaseID) {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release manifest does not match its release directory")
 	}
-	if releaseInfo, statErr := os.Lstat(releaseDir); statErr != nil || !releaseInfo.IsDir() {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release path is not a directory")
+	if manifest.EmbeddedUpdate == nil {
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release manifest has no embedded update segment")
 	}
 
-	payloadPath := filepath.Join(releaseDir, PayloadArchiveEntryPath)
-	payloadInfo, err := os.Lstat(payloadPath)
-	if err != nil || !payloadInfo.Mode().IsRegular() {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive is not a regular file")
+	target := manifest.EmbeddedUpdate
+	if target.PayloadSize <= 0 || target.PayloadSize > maxTotalStagedBytes {
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive size is outside the supported range")
 	}
-	if payloadInfo.Size() > maxTotalStagedBytes {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive exceeds the bounded size")
-	}
-	payloadBytes, err := os.ReadFile(payloadPath)
+	payload, err := os.OpenFile(filepath.Join(releaseDir, PayloadArchiveEntryPath), os.O_RDONLY|oNoFollow|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("retained payload archive unreadable: %w", err)
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("open retained payload archive: %w", err)
 	}
-	if int64(len(payloadBytes)) != manifest.EmbeddedUpdate.PayloadSize {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive size does not match the release manifest")
-	}
-	payloadSum := sha256.Sum256(payloadBytes)
-	if digest := hex.EncodeToString(payloadSum[:]); digest != manifest.EmbeddedUpdate.PayloadDigest {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive digest does not match the release manifest")
+	defer payload.Close()
+	if info, err := payload.Stat(); err != nil || !info.Mode().IsRegular() || info.Size() != target.PayloadSize {
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive is not a regular file of the expected size")
 	}
 
 	tempDir, err := os.MkdirTemp("", "bansoko-release-verify-")
@@ -359,8 +358,16 @@ func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("create release verification directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
-	if _, err := extractPayloadToTemp(payloadPath, tempDir); err != nil {
+	limit := &io.LimitedReader{R: payload, N: target.PayloadSize + 1}
+	digest := sha256.New()
+	archive := io.TeeReader(limit, digest)
+	if _, err := extractPayload(archive, tempDir); err != nil {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("verify retained payload archive contents: %w", err)
+	}
+	// The tar reader may stop before the compressed stream's end. Include all
+	// remaining bytes from the same file descriptor in the digest.
+	if _, err := io.Copy(io.Discard, archive); err != nil || limit.N != 1 || hex.EncodeToString(digest.Sum(nil)) != target.PayloadDigest {
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive does not match the release manifest")
 	}
 	archiveMeta, err := verifyStagedTree(tempDir)
 	if err != nil {

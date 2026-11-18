@@ -158,5 +158,27 @@ func (s *Service) finishTypedSubmissionCorrelation(ctx context.Context, c workit
 	if err != nil {
 		return worker.Outcome{}, err
 	}
-	return worker.Committed(c, workitems.OwnerResult{State: state, ReasonCode: reply.Reason}), nil
+	if reply.State != "" {
+		state = reply.State
+	}
+	reason := reply.ReasonCode
+	if reason == "" {
+		reason = reply.Reason
+	}
+	out := worker.Committed(c, workitems.OwnerResult{State: state, ReasonCode: reason})
+	if !reply.Applied {
+		return out, nil
+	}
+	if reason == "qb_provider_failed" {
+		out = worker.WithAfterCommit(out, s.submitFailureDiagnostic(task.id, reason, nil))
+		return s.withDownloadTerminalLog(c, out, "submit_download"), nil
+	}
+	if reply.FirstConfirmation {
+		message := "Download task was confirmed in qBittorrent."
+		if state == "completed" {
+			message = "Download task was confirmed in qBittorrent and is already complete."
+		}
+		out = s.withDownloadResultLog(c, out, "submit_download", "success", message)
+	}
+	return out, nil
 }

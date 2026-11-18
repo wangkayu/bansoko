@@ -12,8 +12,20 @@ import (
 	"bansoko/internal/metadata/backfill"
 	"bansoko/internal/metadata/matcher"
 	observabilityapplication "bansoko/internal/observability/application"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/workitems"
 )
+
+type metadataResultLogger struct {
+	observabilityport.NopRuntimeLogger
+	results []observabilityport.RuntimeEvent
+}
+
+func (l *metadataResultLogger) Info(_ context.Context, event observabilityport.RuntimeEvent) {
+	if event.Operation == "metadata_match" {
+		l.results = append(l.results, event)
+	}
+}
 
 func TestMetadataMatchCompletesOnceAndReleasesWaitingRelease(t *testing.T) {
 	db := openDispatcherTestDB(t)
@@ -44,11 +56,13 @@ VALUES ('release-meta-complete', 'source-meta-complete', 'item-1', '{}'::jsonb, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeLog := &metadataResultLogger{}
 	dispatcher := &Dispatcher{
 		DB:              db,
 		WorkItems:       store,
 		MetadataMatcher: matcher.NewMatcher(metadataIndex, nil, nil, nil),
 		ActivityWriter:  activityWriter,
+		Logger:          runtimeLog,
 	}
 
 	counts, err := dispatcher.dispatchMetadataMatch(ctx)
@@ -113,6 +127,11 @@ WHERE subscription_id = 'sub-meta-complete' AND kind = 'metadata_applied'`).Scan
 	}
 	if appliedLogs != 1 {
 		t.Fatalf("second metadata cycle must not duplicate metadata_applied log, got %d", appliedLogs)
+	}
+	if len(runtimeLog.results) != 1 || runtimeLog.results[0].OwnerID != "anime-meta-complete" ||
+		runtimeLog.results[0].Outcome != "success" || runtimeLog.results[0].ReasonCode != "metadata_match_completed" ||
+		runtimeLog.results[0].Message != "Automatic matching saved metadata; both Bangumi and TMDB are linked." {
+		t.Fatalf("complete apply must emit one result, got %+v", runtimeLog.results)
 	}
 }
 
@@ -225,11 +244,13 @@ func TestMetadataMatchPartialResultPersistsBGMAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeLog := &metadataResultLogger{}
 	dispatcher := &Dispatcher{
 		DB:              db,
 		WorkItems:       store,
 		MetadataMatcher: matcher.NewMatcher(matcher.NewBangumiDataIndex([]matcher.DataItem{{BgmID: "bgm-only", Titles: []string{"Only BGM"}}}), nil, nil, nil),
 		ActivityWriter:  activityWriter,
+		Logger:          runtimeLog,
 	}
 
 	counts, err := dispatcher.dispatchMetadataMatch(ctx)
@@ -260,6 +281,11 @@ FROM anime_metadata WHERE managed_anime_id = 'anime-meta-partial'`).Scan(&bgm, &
 	}
 	if bgm.String != "bgm-only" || version != 2 {
 		t.Fatalf("second cycle must not rewrite: bgm=%v version=%d", bgm, version)
+	}
+	if len(runtimeLog.results) != 1 || runtimeLog.results[0].OwnerID != "anime-meta-partial" ||
+		runtimeLog.results[0].Outcome != "partial" || runtimeLog.results[0].ReasonCode != "metadata_match_partial" ||
+		runtimeLog.results[0].Message != "Automatic matching saved metadata, but a Bangumi or TMDB binding is still missing." {
+		t.Fatalf("partial apply must emit one result even without queued releases, got %+v", runtimeLog.results)
 	}
 }
 

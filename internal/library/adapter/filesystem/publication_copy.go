@@ -85,8 +85,8 @@ func (i *PublicationInvocation) ExecuteCopy(ctx context.Context, op domain.FileO
 	if (op.Operation != domain.OperationCopy && op.Operation != domain.OperationMove && op.Operation != domain.OperationHardlink) || (op.CollisionPolicy != domain.CollisionBlock && op.CollisionPolicy != domain.CollisionVersion && op.CollisionPolicy != domain.CollisionOverwrite) || op.SourcePath == op.TargetPath {
 		return errors.New("typed publication operation or collision invalid")
 	}
-	if op.CollisionPolicy == domain.CollisionOverwrite && p.ExpectedTarget == nil {
-		return errors.New("overwrite requires frozen expected target")
+	if op.CollisionPolicy == domain.CollisionOverwrite && op.Intent == domain.IntentReplace && p.ExpectedTarget == nil {
+		return errors.New("approved replacement requires frozen expected target")
 	}
 	granted, err := cb.StartDispatch(ctx, i.session)
 	if err != nil {
@@ -175,6 +175,9 @@ func (i *PublicationInvocation) ExecuteCopy(ctx context.Context, op domain.FileO
 			displaced, err = i.sys.publishReplace(temp, final, staged, reservation, true)
 			return err
 		case domain.CollisionOverwrite:
+			if p.ExpectedTarget == nil {
+				return i.sys.publishAbsent(temp, final, staged)
+			}
 			// The frozen target came from preparation: path and size only.
 			var err error
 			displaced, err = i.sys.publishReplace(temp, final, staged, *p.ExpectedTarget, false)

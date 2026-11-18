@@ -2,6 +2,7 @@ package application
 
 import (
 	protocol "bansoko/internal/acquisition/terminal/domain"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -10,6 +11,34 @@ import (
 	"fmt"
 	"strings"
 )
+
+func (s *Service) withPlanRuntimeLog(c workitems.Claim, outcome worker.Outcome) worker.Outcome {
+	if s.logger == nil || outcome.Kind != worker.OutcomeCommitted || c.Owner.ID == "" {
+		return outcome
+	}
+	state, reason := outcome.OwnerResult.State, outcome.OwnerResult.ReasonCode
+	var message, result string
+	switch state {
+	case "succeeded":
+		message, result = "File plan was prepared.", "success"
+	case "failed":
+		message, result = "File plan could not be prepared.", "failure"
+	default:
+		return outcome
+	}
+	event := observabilityport.RuntimeEvent{
+		Message: message, Component: "fileoperation", Operation: "plan_files", Outcome: result,
+		ReasonCode: reason, OwnerType: c.Owner.Type, OwnerID: c.Owner.ID,
+		WorkItemID: c.ID, Kind: c.Kind, StateAfter: state, Attempt: c.Attempt,
+	}
+	return worker.AppendAfterCommit(outcome, func(ctx context.Context) {
+		if result == "failure" {
+			s.logger.Warn(ctx, event)
+		} else {
+			s.logger.Info(ctx, event)
+		}
+	})
+}
 
 func (s *Service) commitTypedPlan(ctx context.Context, c workitems.Claim, b *artifactPreparedBatch) (worker.Outcome, error) {
 	declarations, err := buildTypedPlanDeclarations(ctx, b)
@@ -90,13 +119,13 @@ func (s *Service) commitTypedPlan(ctx context.Context, c workitems.Claim, b *art
 	})
 	if err != nil {
 		if confirmed, ok, observeErr := s.confirmTypedPlanCommit(ctx, c); observeErr == nil && ok {
-			return confirmed, nil
+			return s.withPlanRuntimeLog(c, confirmed), nil
 		}
 		return worker.Outcome{}, err
 	}
 	out := worker.Committed(c, result)
 	out.Disposition = workitems.DispositionNoExternalEffect
-	return out, nil
+	return s.withPlanRuntimeLog(c, out), nil
 }
 
 func (s *Service) typedPlanError(ctx context.Context, c workitems.Claim, cause error, terminal bool) (worker.Outcome, error) {
@@ -125,11 +154,11 @@ func (s *Service) typedPlanError(ctx context.Context, c workitems.Claim, cause e
 	})
 	if err != nil {
 		if confirmed, ok, observeErr := s.confirmTypedPlanCommit(ctx, c); observeErr == nil && ok {
-			return confirmed, nil
+			return s.withPlanRuntimeLog(c, confirmed), nil
 		}
 		return worker.Outcome{}, err
 	}
 	out := worker.Committed(c, result)
 	out.Disposition = workitems.DispositionNoExternalEffect
-	return out, nil
+	return s.withPlanRuntimeLog(c, out), nil
 }

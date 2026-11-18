@@ -274,6 +274,31 @@ func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
 	}
 }
 
+func TestUpdateAdmissionSharesRestartGateAndReleasesOnRefusal(t *testing.T) {
+	source := newRouteSourceRig(t, routeSourceHost)
+	route := &stubUpdateConnection{fallback: connectionAnswer{err: errors.New("stored route is not usable")}}
+	service := source.service(t, route)
+	gate := &sync.Mutex{}
+	service.restartGate = gate
+	ctx := context.Background()
+
+	gate.Lock()
+	_, _, err := service.Admit(ctx, "", "locked")
+	gate.Unlock()
+	var business *apperrors.Business
+	if !errors.As(err, &business) || business.Code != "RESTART_IN_PROGRESS" || route.callCount() != 0 {
+		t.Fatalf("blocked admission error = %v, route resolutions = %d", err, route.callCount())
+	}
+	_, _, err = service.Admit(ctx, "", "refused")
+	if !errors.As(err, &business) || business.Code != "UPDATE_CONNECTION_INVALID" || service.Running() {
+		t.Fatalf("refused admission error = %v, running = %v", err, service.Running())
+	}
+	if !gate.TryLock() {
+		t.Fatal("refused admission did not release the restart gate")
+	}
+	gate.Unlock()
+}
+
 // TestSelectedRouteFailureFailsClosed proves a route that cannot be built
 // stops the operation instead of silently going direct.
 func TestSelectedRouteFailureFailsClosed(t *testing.T) {

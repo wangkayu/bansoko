@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -36,7 +37,9 @@ WHERE kind = 'internal' AND target_id = 'fileoperation.execute'`).Scan(&open, &t
 	}
 	t.Run("failure", func(t *testing.T) {
 		x := newTypedRuntimeFixture(t, nil, false)
-		wireRealDiagnostics(t, x.db, x.s)
+		recorder := wireRealDiagnostics(t, x.db, x.s)
+		log := &fileResultLog{}
+		x.s.SetDiagnosticRecorder(recorder, log)
 		if err := os.Remove(x.source); err != nil {
 			t.Fatal(err)
 		}
@@ -48,6 +51,11 @@ WHERE kind = 'internal' AND target_id = 'fileoperation.execute'`).Scan(&open, &t
 		}
 		if open, total := episodes(t, x.db); open != 1 || total != 1 {
 			t.Fatalf("typed failure diagnostic episodes open=%d total=%d, want 1/1", open, total)
+		}
+		if len(log.events) != 1 || log.events[0].OwnerID != x.opID || log.events[0].Outcome != "failure" ||
+			log.events[0].ReasonCode != "SOURCE_MISSING" || !strings.Contains(log.events[0].Message, "source file was missing") ||
+			strings.Contains(log.events[0].Message, x.source) {
+			t.Fatalf("typed import failure log does not match the committed outcome: %+v", log.events)
 		}
 	})
 	t.Run("success", func(t *testing.T) {

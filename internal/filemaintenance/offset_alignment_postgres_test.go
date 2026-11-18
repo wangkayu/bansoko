@@ -392,6 +392,15 @@ func TestPGOffsetChangeCompetesThenTheWinnerMoves(t *testing.T) {
 	assertFileContent(t, incumbent.path, mover.content)
 	assertGone(t, mover.path)
 
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO replacement_deletions(id, idempotency_key, placement_id, managed_anime_id, coverage_keys,
+    replacement_ref, admission_mode, source_path, source_fingerprint, state, created_at)
+SELECT 'cleanup-still-pending', 'cleanup-still-pending', $1, 'anime-1',
+       COALESCE(jsonb_agg(k.observation_key), '[]'::jsonb), 'pending-test', 'single_copy', $2, $3, 'admitted', CURRENT_TIMESTAMP
+FROM alignment_requests r JOIN placement_coverage k ON k.placement_id = r.placement_id
+WHERE r.offset_change_id = $4`, mover.placementID, mover.path, mover.fingerprint, changeID); err != nil {
+		t.Fatalf("seed pending cleanup admission: %v", err)
+	}
 	if err := f.scheduler.recordOffsetChanges(ctx); err != nil {
 		t.Fatal(err)
 	}

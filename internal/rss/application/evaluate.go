@@ -50,12 +50,19 @@ func releaseProcessedDedupeKey(releaseID, previousVerdict, verdict, reasonCode s
 // evaluated, never acquired, by any automatic or manual path.
 const ReleaseVerdictResumeBaseline = "resume_baseline"
 
-func (s *Service) handleReleaseEvaluate(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
+func (s *Service) handleReleaseEvaluate(ctx context.Context, claim workitems.Claim) (outcome worker.Outcome, resultErr error) {
 	if claim.Owner.Type != workitems.OwnerRelease || strings.TrimSpace(claim.Owner.ID) == "" {
 		return worker.Outcome{}, fmt.Errorf("release evaluation claim must target release")
 	}
 	snapshot, err := s.loadReleaseSnapshot(ctx, claim.Owner.ID)
+	effect := &releaseLogEffect{}
+	defer func() {
+		if resultErr == nil {
+			outcome = s.releaseEvaluationWithLog(claim, snapshot, effect, outcome)
+		}
+	}()
 	if err != nil {
+		snapshot.releaseID = claim.Owner.ID
 		// Mirror the refresh handler: when the release snapshot JOIN can no
 		// longer resolve its owner chain (release → source → subscription →
 		// metadata), the item is orphaned and can never succeed. Terminate it
@@ -91,6 +98,7 @@ func (s *Service) handleReleaseEvaluate(ctx context.Context, claim workitems.Cla
 	if err != nil {
 		return worker.Outcome{}, err
 	}
+	snapshot.evaluationLog = effect
 	return s.evaluateRelease(ctx, claim, snapshot)
 }
 
@@ -949,6 +957,7 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 		if err := s.writeClaimNotReplacedTx(ctx, tx, snapshot, claimStaled, correlationID); err != nil {
 			return 0, err
 		}
+		snapshot.evaluationLog.record(verdict, reasonCode, correlationID)
 		return updatedVersion, nil
 	}
 }
@@ -1090,6 +1099,7 @@ WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 		}); err != nil {
 			return 0, err
 		}
+		snapshot.evaluationLog.record("parse_failed", reasonCode, "")
 		return version, nil
 	}
 }
@@ -1204,10 +1214,8 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 		return "", "", err
 	}
 	var replacements []*terminal.ReplacementCapture
-	overwriteTargetAbsent := false
 	if len(acquisitions) > 0 && acquisitions[0] != nil {
 		replacements = acquisitions[0].replacements
-		overwriteTargetAbsent = acquisitions[0].overwriteTargetAbsent && len(replacements) == 0 && !acquisitions[0].overwriteDirectPresent
 	}
 	// A stored size bound the database enforces (terminal.IsTorrentTooLarge)
 	// aborts the statement that reached it; rolling back to this savepoint
@@ -1217,7 +1225,7 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 	if _, err := tx.ExecContext(ctx, `SAVEPOINT `+acceptanceSavepoint); err != nil {
 		return "", "", err
 	}
-	taskID, err := acceptReleaseTask(ctx, tx, acceptor, snapshot.releaseID, terminal.EntryTask{ReleaseID: snapshot.releaseID, ExpectedVersion: snapshot.releaseVersion, Attempt: snapshot.downloadAttempt(), FrozenInput: inputJSON, FrozenPolicy: policyJSON, CorrelationID: correlation, MaxAttempts: defaultMaxAttempts, ParserEvidence: &evidence.ParserEvidence, Resolution: resolution, Replacements: replacements, OverwriteTargetAbsent: overwriteTargetAbsent})
+	taskID, err := acceptReleaseTask(ctx, tx, acceptor, snapshot.releaseID, terminal.EntryTask{ReleaseID: snapshot.releaseID, ExpectedVersion: snapshot.releaseVersion, Attempt: snapshot.downloadAttempt(), FrozenInput: inputJSON, FrozenPolicy: policyJSON, CorrelationID: correlation, MaxAttempts: defaultMaxAttempts, ParserEvidence: &evidence.ParserEvidence, Resolution: resolution, Replacements: replacements})
 	if err != nil {
 		if terminal.IsTorrentTooLarge(err) {
 			if _, rollbackErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT `+acceptanceSavepoint); rollbackErr != nil {

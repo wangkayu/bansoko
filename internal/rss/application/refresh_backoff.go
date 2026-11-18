@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
+	"bansoko/internal/redact"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
 )
@@ -29,6 +32,7 @@ type circuitEffect struct {
 // refreshLogOutcome is the writer's confirmed business result. Zero values
 // mean the writer did not record a committed result.
 type refreshLogOutcome struct {
+	committed      bool
 	skipReason     string
 	notModified    bool
 	resumeBaseline bool
@@ -152,61 +156,153 @@ const (
 	refreshSkipInactive    = "subscription_inactive"
 )
 
-// logRefreshOutcome records the confirmed result after the owner transaction
-// committed. It never reports success for a writer that applied nothing, and
-// it carries only fixed text plus integer counts: no feed titles, URLs or raw
-// errors.
-func (s *Service) logRefreshOutcome(ctx context.Context, snapshot sourceSnapshot, effect *circuitEffect) {
+func refreshRuntimeEvent(claim workitems.Claim) observabilityport.RuntimeEvent {
+	return observabilityport.RuntimeEvent{
+		Component:  "rss",
+		Operation:  "refresh",
+		OwnerType:  claim.Owner.Type,
+		OwnerID:    claim.Owner.ID,
+		WorkItemID: claim.ID,
+		Kind:       claim.Kind,
+		Attempt:    claim.Attempt,
+	}
+}
+
+// refreshLogSubject uses only the source's display labels, never its locator.
+// Drop an unsafe label separately so it cannot mask the actual result line.
+func refreshLogSubject(snapshot sourceSnapshot) string {
+	return rssLogSubject("RSS refresh", snapshot.title, snapshot.groupName)
+}
+
+func rssLogSubject(subject, title, group string) string {
+	label := func(raw string) string {
+		text, sensitive := redact.Apply(raw, 96, redact.Reject, "")
+		if sensitive {
+			return ""
+		}
+		return text
+	}
+	title, group = label(title), label(group)
+	switch {
+	case title != "" && group != "" && !strings.EqualFold(title, group):
+		return fmt.Sprintf("%s for %q (%q)", subject, title, group)
+	case title != "":
+		return fmt.Sprintf("%s for %q", subject, title)
+	case group != "":
+		return fmt.Sprintf("%s for group %q", subject, group)
+	default:
+		return subject
+	}
+}
+
+func (s *Service) logRefreshSkipped(ctx context.Context, claim workitems.Claim, snapshot sourceSnapshot, reason, message string) {
+	if s == nil || s.logger == nil || ctx.Err() != nil {
+		return
+	}
+	event := refreshRuntimeEvent(claim)
+	event.Outcome = "skipped"
+	event.ReasonCode = reason
+	event.Message = refreshLogSubject(snapshot) + ": " + message
+	s.logger.Info(ctx, event)
+}
+
+func refreshReadFailureMessage(code string, err error) string {
+	switch code {
+	case acquisitiondomain.FeedFailureNoUsableItems:
+		return "the feed contained no usable release entries"
+	case acquisitiondomain.FeedFailureSiteFormatChanged:
+		return "the feed did not match the expected format for this site"
+	}
+	failure, _ := outbound.FailureOf(err)
+	switch failure.Class {
+	case outbound.ClassHTTPStatus:
+		if failure.Status >= 100 && failure.Status <= 599 {
+			return fmt.Sprintf("the feed request returned HTTP %d", failure.Status)
+		}
+	case outbound.ClassTimeout:
+		return "the feed request timed out"
+	case outbound.ClassDNS:
+		return "could not resolve the feed host"
+	case outbound.ClassTLS:
+		return "could not establish a secure connection to the feed"
+	case outbound.ClassConnectionRefused:
+		return "the feed connection was refused"
+	case outbound.ClassConnectionReset:
+		return "the feed connection was reset"
+	}
+	return "could not read the feed"
+}
+
+// logRefreshFailure reports the failed stage of this attempt, not the result
+// of writing back its state or scheduling a retry. The latter can still fail.
+func (s *Service) logRefreshFailure(ctx context.Context, claim workitems.Claim, snapshot sourceSnapshot, stage, code, message string) {
+	if s.logger == nil || ctx.Err() != nil {
+		return
+	}
+	event := refreshRuntimeEvent(claim)
+	event.Outcome = "failure"
+	event.Stage = stage
+	event.ReasonCode = code
+	event.Message = refreshLogSubject(snapshot) + ": " + message
+	s.logger.Warn(ctx, event)
+}
+
+// logRefreshOutcome records only what committed. Source display labels are
+// screened separately; the result never includes a URL or raw error.
+func (s *Service) logRefreshOutcome(ctx context.Context, claim workitems.Claim, snapshot sourceSnapshot, effect *circuitEffect) {
 	if s == nil || s.logger == nil || effect == nil {
 		return
 	}
 	result := effect.outcome
-	event := observabilityport.RuntimeEvent{
-		Component: "rss",
-		Operation: "refresh",
-		OwnerType: string(workitems.OwnerRSSSourceRuntime),
-		OwnerID:   snapshot.sourceID,
+	if !result.committed && result.skipReason == "" {
+		return
 	}
+	event := refreshRuntimeEvent(claim)
 	switch {
 	case result.skipReason != "":
 		event.Outcome = "skipped"
 		event.ReasonCode = result.skipReason
 		if result.skipReason == refreshSkipNotSelected {
-			event.Message = "RSS refresh skipped: the provider group is no longer selected"
+			event.Message = "skipped because the provider group is no longer selected"
 		} else {
-			event.Message = "RSS refresh skipped: the subscription is no longer active"
+			event.Message = "skipped because the subscription is no longer active"
 		}
-		s.logger.Info(ctx, event)
 	case result.notModified:
-		event.Message = "RSS refresh confirmed no feed change (HTTP 304)"
+		event.Message = "the feed did not change (HTTP 304)"
 		event.Outcome = "success"
 		event.ReasonCode = "rss_refresh_not_modified"
-		s.logger.Info(ctx, event)
 	case result.resumeBaseline:
-		event.Message = fmt.Sprintf("RSS refresh stored the resume baseline (window=%d, stored=%d); releases were not evaluated", result.windowTotal, result.newCount)
+		event.Message = fmt.Sprintf("saved the resume baseline with %d new entries out of %d checked; no releases were evaluated", result.newCount, result.windowTotal)
 		event.Outcome = "success"
 		event.ReasonCode = "rss_refresh_resume_baseline"
-		s.logger.Info(ctx, event)
 	case result.newCount > 0:
-		event.Message = fmt.Sprintf("RSS refresh stored %d new release(s) from a window of %d item(s)", result.newCount, result.windowTotal)
+		event.Message = fmt.Sprintf("checked %d entries and saved %d new releases", result.windowTotal, result.newCount)
 		event.Outcome = "success"
 		event.ReasonCode = "rss_refresh_new_releases"
-		s.logger.Info(ctx, event)
 	case result.windowTotal > 0:
-		event.Message = fmt.Sprintf("RSS refresh found %d feed item(s) but no new releases", result.windowTotal)
+		event.Message = fmt.Sprintf("checked %d entries and found no new releases", result.windowTotal)
 		event.Outcome = "success"
 		event.ReasonCode = "rss_refresh_no_new_releases"
-		s.logger.Info(ctx, event)
+	default:
+		if result.committed {
+			event.Outcome = "success"
+			event.ReasonCode = "rss_refresh_empty_feed"
+			event.Message = "the feed contained no release entries"
+		} else {
+			return
+		}
 	}
+	event.Message = refreshLogSubject(snapshot) + ": " + event.Message
+	s.logger.Info(ctx, event)
 }
 
 // circuitAfterCommit records the site diagnostic of one refresh outcome: a
 // failure opens (or merges into) the source's target, as site.paused when the
 // provider circuit just tripped; a success closes it. A nil note is a success.
-func (s *Service) circuitAfterCommit(snapshot sourceSnapshot, effect *circuitEffect, note *refreshFailureNote) func(context.Context) {
+func (s *Service) circuitAfterCommit(claim workitems.Claim, snapshot sourceSnapshot, effect *circuitEffect, note *refreshFailureNote) func(context.Context) {
 	return func(ctx context.Context) {
 		if note == nil {
-			s.logRefreshOutcome(ctx, snapshot, effect)
+			s.logRefreshOutcome(ctx, claim, snapshot, effect)
 			if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger,
 				observabilityport.InternalSuccess(observabilityport.InternalRSSRefresh)); record != nil {
 				record(ctx)

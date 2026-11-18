@@ -29,6 +29,7 @@ export const enSettingsBackupCopy = {
       database_unsupported: "This deployment's database connection doesn't support restoring from the web page",
       privileges_insufficient: "The database account may not create databases, so restoring from the web page is off",
       restore_in_progress: "Restoring",
+      restart_in_progress: "An update is in progress",
     },
     fileInvalid: "The file isn't a valid backup",
     versionMismatch: "The backup's data version ({backup}) doesn't match the current version ({current}), so it can't be restored",

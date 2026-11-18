@@ -411,11 +411,8 @@ const DISCOVERY_ORDER = [
   { key: "parse_failed", label: "log.discovery.parseFailed" },
 ] as const;
 
-/** A discovery batch writes what became of its items at feed level: handed to
- * evaluation, waiting on metadata, or filtered with why. Older records without
- * the counts keep the single-line form. When the feed window held other
- * releases whose outcome did not change, the line says so — the counts beside
- * it are new items only, never a comparison. */
+/** Report only newly discovered items. The feed window also contains known
+ * entries, but does not tell us whether their evaluation results changed. */
 export function discoveryOutcomeText(entry: BusinessEntry): string | undefined {
   if (entry.kind !== "rss_new_content") return undefined;
   const counts = entry.details?.outcome_counts;
@@ -433,10 +430,6 @@ export function discoveryOutcomeText(entry: BusinessEntry): string | undefined {
       parts.push(t(label, { n: count }));
     }
   }
-  const discovered = typeof entry.message_params.count === "number" ? entry.message_params.count : undefined;
-  const windowTotal = entry.details?.window_total;
-  const others = typeof windowTotal === "number" && discovered !== undefined ? windowTotal - discovered : 0;
-  if (others > 0) parts.push(t("log.discovery.othersUnchanged", { n: others }));
   return parts.length > 0 ? joinList(parts) : undefined;
 }
 

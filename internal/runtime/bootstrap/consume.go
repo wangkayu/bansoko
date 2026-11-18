@@ -1315,15 +1315,13 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 		SettleExactOp: func(operationID, manifestDigest string, expectedSequence int64) error {
 			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
 			defer cancel()
-			// Bootstrap owns this fence from acquisition to terminal outcome, so
-			// the row is still 'active' here; the current-state CAS proves the
-			// exact identity before settling it.
-			return updatefence.New(db).ReconcileExactCurrentState(ctx, operationID, updatefence.AdmittedByEmbedded, manifestDigest, expectedSequence, "succeeded")
+			// A previous close can have committed before its journal checkpoint.
+			return updatefence.New(db).ReconcileExactCurrentStateOrProveClosed(ctx, operationID, updatefence.AdmittedByEmbedded, manifestDigest, expectedSequence, "succeeded")
 		},
 		ReleaseExactOp: func(operationID, manifestDigest string, expectedSequence int64, terminalState string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
 			defer cancel()
-			return updatefence.New(db).ReconcileExactCurrentState(ctx, operationID, updatefence.AdmittedByEmbedded, manifestDigest, expectedSequence, terminalState)
+			return updatefence.New(db).ReconcileExactCurrentStateOrProveClosed(ctx, operationID, updatefence.AdmittedByEmbedded, manifestDigest, expectedSequence, terminalState)
 		},
 		StopMaintenance:  responder.Stop,
 		StartMaintenance: responder.Start,

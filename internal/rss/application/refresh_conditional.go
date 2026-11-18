@@ -63,7 +63,7 @@ RETURNING version`, snapshot.sourceID, claim.ExpectedOwnerVersion).Scan(&version
 			return 0, err
 		}
 		if effect != nil {
-			effect.outcome = refreshLogOutcome{notModified: true}
+			effect.outcome = refreshLogOutcome{committed: true, notModified: true}
 		}
 		return version, nil
 	}

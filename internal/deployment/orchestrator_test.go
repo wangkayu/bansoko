@@ -283,6 +283,36 @@ func TestOrchestratorSmokeNotAssertedFailsClosed(t *testing.T) {
 	}
 }
 
+func TestOrchestratorReplaysTerminalFailureWithoutChangingIt(t *testing.T) {
+	var calls atomic.Int32
+	failed := handlerFunc(func(context.Context, ReconcileRequest) (ReconcileResult, error) {
+		calls.Add(1)
+		return ReconcileResult{}, errors.New("handler failed")
+	})
+	registry, err := NewRegistry(DefaultRequiredKeys,
+		fakeRegistration("qb_download_task", failed),
+		fakeRegistration("artifact", failed),
+		fakeRegistration("file_operation", failed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orchestrator := NewOrchestrator(registry, &memStore{})
+	ctx := context.Background()
+	first, err := orchestrator.Run(ctx, testPlan())
+	if err != nil || first.Run.State != "failed" || !first.Failed || first.Gate.Passed {
+		t.Fatalf("first run = %+v, %v", first, err)
+	}
+	version := first.Run.Version
+	before := calls.Load()
+	second, err := orchestrator.Run(ctx, testPlan())
+	if err != nil || second.Run.State != "failed" || !second.Failed || second.Gate.Passed {
+		t.Fatalf("replay = %+v, %v", second, err)
+	}
+	if before != 1 || calls.Load() != before || second.Run.Version != version {
+		t.Fatalf("replay changed run: calls=%d, version=%d (was %d)", calls.Load(), second.Run.Version, version)
+	}
+}
+
 func TestOrchestratorRetryableThenCompletedOnReplay(t *testing.T) {
 	var calls atomic.Int32
 	flaky := handlerFunc(func(ctx context.Context, req ReconcileRequest) (ReconcileResult, error) {

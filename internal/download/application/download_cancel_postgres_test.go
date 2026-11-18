@@ -342,6 +342,8 @@ func TestCancelDeleteRetriesWithinTheSyncErrorBudget(t *testing.T) {
 		}
 		provider := &fakeProvider{syncTask: downloadingProviderTask()}
 		service, store := newDownloadService(t, db, provider, &fakeRuntimeConfig{})
+		log := &downloadResultLog{}
+		service.SetDiagnosticRecorder(nil, log)
 		remover := &scriptedCancelRemover{effects: []string{CancelEffectRetry}}
 		service.SetCancelRemover(remover)
 		cancelNow(t, db, "acq-"+taskID, "cancel-key-exhausted")
@@ -349,6 +351,15 @@ func TestCancelDeleteRetriesWithinTheSyncErrorBudget(t *testing.T) {
 		outcome := handleSync(t, service, createClaimedQBWorkItem(t, db, store, taskID, workitems.KindQBSync))
 		if outcome.OwnerResult.State != "failed" || outcome.OwnerResult.ReasonCode != "SYNC_ERROR_BUDGET_EXHAUSTED" {
 			t.Fatalf("exhausted attempt = %+v", outcome)
+		}
+		if outcome.AfterCommit == nil || len(log.warnings) != 0 {
+			t.Fatal("cancel cleanup failure log must wait for commit")
+		}
+		outcome.AfterCommit(context.Background())
+		if len(log.warnings) != 1 || log.warnings[0].ReasonCode != "SYNC_ERROR_BUDGET_EXHAUSTED" ||
+			log.warnings[0].Outcome != "failure" || !strings.Contains(log.warnings[0].Message, "Could not remove the cancelled task") ||
+			strings.Contains(log.warnings[0].Message, "download failed") {
+			t.Fatalf("cancel cleanup exhaustion must not be called a download failure: %+v", log.warnings)
 		}
 		if n := countAvailableQBSyncItems(t, db, taskID); n != 0 {
 			t.Fatalf("an exhausted cancel left %d retries", n)

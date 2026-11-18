@@ -98,8 +98,8 @@ func TestMaintenanceDirectoryPurgeRejectsReplacedObject(t *testing.T) {
 	if _, err := e.MoveMaintenance(context.Background(), source, target, expected, i); err != nil {
 		t.Fatal(err)
 	}
-	// Replace the captured object with a fresh directory.
-	if err := os.RemoveAll(target); err != nil {
+	// Keep the captured inode alive so the replacement cannot reuse it.
+	if err := os.Rename(target, filepath.Join(root, "original")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(target, 0o755); err != nil {

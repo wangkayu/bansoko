@@ -9,7 +9,7 @@ import (
 // it to a receipt. Canonical bytes alone cannot establish a usable observation.
 func validatePublicationObjects(objects protocol.Value, operation, collision string) error {
 	keys := map[string]string{"source": "PathObjectV1", "source_parent": "PathIdentityV1", "target": "LocationV1", "target_parent": "PathIdentityV1", "temp": "LocationV1"}
-	if collision == "overwrite" {
+	if _, observed := objects.Object["expected_target"]; collision == "overwrite" && observed {
 		keys["expected_target"] = "PathObjectV1"
 	}
 	if objects.Kind != protocol.KindObject || len(objects.Object) != len(keys) {
@@ -47,6 +47,12 @@ func validatePublicationObjects(objects protocol.Value, operation, collision str
 	}
 	_ = operation
 	return nil
+}
+
+// publicationReplaces reports the method fixed by the committed permit.
+func publicationReplaces(collision string, objects protocol.Value) bool {
+	_, observed := objects.Object["expected_target"]
+	return collision == "version" || collision == "overwrite" && observed
 }
 
 // validatePublicationObservation checks one PathObjectV1 carried by a step

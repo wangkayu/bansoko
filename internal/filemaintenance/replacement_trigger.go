@@ -206,7 +206,7 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 		s.recordFailure(ctx, animeID, err)
 		return err
 	}
-	_, _, err = s.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
+	workID, created, err := s.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
 		Owner:          workitems.OwnerRef{Type: workitems.OwnerFileMaintenance, ID: animeID},
 		Kind:           workitems.KindReplacementEvaluate,
 		IdempotencyKey: "replacement_evaluate:" + animeID,
@@ -226,15 +226,22 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 		s.recordFailure(ctx, animeID, err)
 		return err
 	}
-	s.logEvent(ctx, port.RuntimeEvent{
-		Message:    "replacement trigger " + reason + " merged",
+	event := port.RuntimeEvent{
+		Message:    "Updated the pending replacement check for trigger " + reason + ".",
 		Component:  "replacement",
 		Operation:  "evaluate_trigger",
 		Outcome:    "merged",
 		ReasonCode: "trigger_merged",
 		OwnerType:  "managed_anime",
 		OwnerID:    animeID,
-	})
+		WorkItemID: workID,
+		Kind:       workitems.KindReplacementEvaluate,
+	}
+	if created {
+		event.Message = "Scheduled a replacement check for trigger " + reason + "."
+		event.Outcome, event.ReasonCode = "enqueued", "trigger_enqueued"
+	}
+	s.logEvent(ctx, event)
 	if s.recorder != nil {
 		if err := s.recorder.RecordDiagnosticSuccess(ctx, port.InternalSuccess(port.InternalReplacementTrigger)); err != nil {
 			port.RecordDiagnosticError(s.logger, "internal", "", port.InternalReplacementTrigger, "diagnostic_write_failed")

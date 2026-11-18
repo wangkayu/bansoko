@@ -305,10 +305,13 @@ func (s *Service) evaluateReleaseRetryOnce(ctx context.Context, releaseID, idemp
 		Owner: workitems.OwnerRef{Type: workitems.OwnerRelease, ID: releaseID}, Kind: workitems.KindReleaseEvaluate,
 		ExpectedOwnerVersion: snapshot.releaseVersion, ManagedAnimeID: snapshot.managedAnimeID,
 	}
+	effect := &releaseLogEffect{}
+	snapshot.evaluationLog = effect
 	outcome, err := s.evaluateRelease(ctx, claim, snapshot)
 	if err != nil {
 		return ReleaseRetryResult{}, err
 	}
+	outcome = s.releaseEvaluationWithLog(claim, snapshot, effect, outcome)
 	switch outcome.Kind {
 	case worker.OutcomeFinish:
 	case worker.OutcomeRetry:

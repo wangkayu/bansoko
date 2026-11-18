@@ -29,6 +29,7 @@ const (
 	ReasonDatabaseUnsupported    = "database_unsupported"
 	ReasonPrivilegesInsufficient = "privileges_insufficient"
 	ReasonRestoreInProgress      = "restore_in_progress"
+	ReasonRestartInProgress      = "restart_in_progress"
 )
 
 // Tools is the whitelisted PostgreSQL client tooling, connected as the schema
@@ -63,6 +64,8 @@ type Options struct {
 	TempDir string
 	Logger  observabilityport.RuntimeLogger
 	Now     func() time.Time
+	// RestartGate is shared with embedded update until the process exits.
+	RestartGate *sync.Mutex
 }
 
 // Info is the read model of the backup panel.
@@ -81,13 +84,14 @@ type RestoreAccepted struct {
 
 // Service exports and restores the deployment database.
 type Service struct {
-	db        *sql.DB
-	tools     Tools
-	cluster   Cluster
-	schemaDir string
-	tempDir   string
-	logger    observabilityport.RuntimeLogger
-	now       func() time.Time
+	db          *sql.DB
+	tools       Tools
+	cluster     Cluster
+	schemaDir   string
+	tempDir     string
+	logger      observabilityport.RuntimeLogger
+	now         func() time.Time
+	restartGate *sync.Mutex
 
 	mu        sync.Mutex
 	restoring bool
@@ -120,14 +124,15 @@ func NewService(opts Options) (*Service, error) {
 		}
 	}
 	return &Service{
-		db:        opts.DB,
-		tools:     opts.Tools,
-		cluster:   opts.Cluster,
-		schemaDir: opts.SchemaDir,
-		tempDir:   opts.TempDir,
-		logger:    opts.Logger,
-		now:       opts.Now,
-		handoff:   make(chan struct{}),
+		db:          opts.DB,
+		tools:       opts.Tools,
+		cluster:     opts.Cluster,
+		schemaDir:   opts.SchemaDir,
+		tempDir:     opts.TempDir,
+		logger:      opts.Logger,
+		now:         opts.Now,
+		restartGate: opts.RestartGate,
+		handoff:     make(chan struct{}),
 	}, nil
 }
 
@@ -169,6 +174,12 @@ func (s *Service) busy() bool {
 func (s *Service) restoreBlocker(ctx context.Context) string {
 	if s.busy() {
 		return ReasonRestoreInProgress
+	}
+	if s.restartGate != nil {
+		if !s.restartGate.TryLock() {
+			return ReasonRestartInProgress
+		}
+		s.restartGate.Unlock()
 	}
 	if s.tools == nil {
 		return ReasonToolsUnavailable
@@ -301,14 +312,24 @@ func (s *Service) Restore(ctx context.Context, body io.Reader) (RestoreAccepted,
 		if reason == ReasonRestoreInProgress {
 			return RestoreAccepted{}, restoreInProgress()
 		}
+		if reason == ReasonRestartInProgress {
+			return RestoreAccepted{}, restartInProgress()
+		}
 		return RestoreAccepted{}, &apperrors.Business{Status: 409, Code: "RESTORE_UNAVAILABLE", Message: restoreUnavailableText[reason]}
 	}
 	if !s.begin() {
 		return RestoreAccepted{}, restoreInProgress()
 	}
+	if s.restartGate != nil && !s.restartGate.TryLock() {
+		s.end()
+		return RestoreAccepted{}, restartInProgress()
+	}
 	handedOff := false
 	defer func() {
 		if !handedOff {
+			if s.restartGate != nil {
+				s.restartGate.Unlock()
+			}
 			s.end()
 		}
 	}()
@@ -331,6 +352,7 @@ func (s *Service) Restore(ctx context.Context, body io.Reader) (RestoreAccepted,
 
 	dir, err := os.MkdirTemp(s.tempDir, "bansoko-restore-*")
 	if err != nil {
+		s.warnRestore(ctx, "workspace", "Restore stopped because a temporary workspace could not be created.")
 		return RestoreAccepted{}, fmt.Errorf("create restore workspace: %w", err)
 	}
 	defer os.RemoveAll(dir)
@@ -350,10 +372,12 @@ func (s *Service) Restore(ctx context.Context, body io.Reader) (RestoreAccepted,
 	loading := sideName(database, kindRestoring, stamp)
 	admin, err := s.cluster.Open(ctx, maintenanceDatabase)
 	if err != nil {
+		s.warnRestore(ctx, "connect_database", "Restore stopped because the database server could not be reached.")
 		return RestoreAccepted{}, fmt.Errorf("connect to the database server: %w", err)
 	}
 	defer admin.Close()
 	if err := createLike(ctx, admin, loading, database); err != nil {
+		s.warnRestore(ctx, "create_database", "Restore stopped because the temporary database could not be created.")
 		return RestoreAccepted{}, fmt.Errorf("create restore database: %w", err)
 	}
 	created := loading
@@ -368,14 +392,16 @@ func (s *Service) Restore(ctx context.Context, body io.Reader) (RestoreAccepted,
 		}
 	}()
 	if err := s.tools.RestoreInto(ctx, payload, loading); err != nil {
-		s.warn(ctx, "restore", "backup_restore_load_failed", "load")
+		s.warnRestore(ctx, "load", "Restore stopped because the backup could not be loaded.")
 		return RestoreAccepted{}, &apperrors.Business{Status: 422, Code: "BACKUP_LOAD_FAILED", Message: "The backup could not be loaded. Current data is unchanged."}
 	}
 	if err := s.prepareLoaded(ctx, loading, running); err != nil {
+		s.warnRestore(ctx, "prepare_database", "Restore stopped because the loaded database could not be verified or prepared.")
 		return RestoreAccepted{}, err
 	}
 	ready := sideName(database, kindRestored, stamp)
 	if err := renameDatabase(ctx, admin, loading, ready); err != nil {
+		s.warnRestore(ctx, "mark_ready", "Restore stopped because the database could not be marked ready to switch.")
 		return RestoreAccepted{}, fmt.Errorf("mark restored database ready: %w", err)
 	}
 	created = ready
@@ -517,10 +543,21 @@ func (s *Service) warn(ctx context.Context, operation, reason, class string) {
 	})
 }
 
+func (s *Service) warnRestore(ctx context.Context, stage, message string) {
+	s.logger.Warn(ctx, observabilityport.RuntimeEvent{
+		Message: message, Component: "backup", Operation: "restore", Stage: stage,
+		Outcome: "failure", ReasonCode: "backup_restore_" + stage + "_failed",
+	})
+}
+
 var restoreUnavailableText = map[string]string{
 	ReasonToolsUnavailable:       "The database backup tools are not available on this deployment.",
 	ReasonDatabaseUnsupported:    "This deployment's database connection does not support restoring.",
 	ReasonPrivilegesInsufficient: "The database owner role may not create and rename databases.",
+}
+
+func restartInProgress() error {
+	return &apperrors.Business{Status: 409, Code: "RESTART_IN_PROGRESS", Message: "A restore or update restart is in progress."}
 }
 
 func restoreInProgress() error {

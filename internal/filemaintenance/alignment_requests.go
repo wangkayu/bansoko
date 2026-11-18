@@ -393,7 +393,7 @@ FOR UPDATE OF ch`, changeID).Scan(&animeID, &subscriptionID, &sourceID, &groupNa
 SELECT count(DISTINCT d.placement_id)
 FROM replacement_deletions d
 JOIN offset_alignment_changes ch ON ch.id = $1
-WHERE d.managed_anime_id = $2 AND d.state IN ('admitted', 'deleted') AND d.created_at >= ch.created_at
+WHERE d.managed_anime_id = $2 AND d.state = 'deleted' AND d.created_at >= ch.created_at
   AND d.coverage_keys ?| ARRAY(
       SELECT k.observation_key FROM alignment_requests r
       JOIN placement_coverage k ON k.placement_id = r.placement_id

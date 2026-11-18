@@ -15,6 +15,9 @@ import (
 )
 
 func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, opID string, target *hardeningdomain.EmbeddedUpdateSegment) (result string, resultErr error) {
+	if target == nil || target.PayloadSize <= 0 || target.PayloadSize > maxTotalStagedBytes {
+		return "", errors.New("update payload size is outside the supported range")
+	}
 	downloadDir := filepath.Join(s.updatesRoot, "downloads", opID)
 	if mkErr := ensureOperationDir(s.updatesRoot, downloadDir, 0o700); mkErr != nil {
 		return "", fmt.Errorf("create download directory: %w", mkErr)
@@ -71,7 +74,10 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 		}
 	}()
 	hasher := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(out, hasher), resp.Body)
+	written, copyErr := io.Copy(io.MultiWriter(out, hasher), io.LimitReader(resp.Body, target.PayloadSize+1))
+	if written != target.PayloadSize {
+		return "", fmt.Errorf("payload size mismatch (want %d got %d)", target.PayloadSize, written)
+	}
 	if copyErr != nil || out.Sync() != nil {
 		return "", errors.New("download update payload: transfer failed")
 	}

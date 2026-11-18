@@ -140,7 +140,7 @@ func loadPublicationProofTx(ctx context.Context, tx *sql.Tx, permit string) (pro
 				return protocol.Value{}, err
 			}
 		}
-		if step == "publish_target" && (collision == "version" || collision == "overwrite") {
+		if step == "publish_target" && publicationReplaces(collision, o) {
 			if err := validatePublicationObservation(proof.Object["displaced"].Object["value"], "displaced"); err != nil {
 				return protocol.Value{}, err
 			}

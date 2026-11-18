@@ -164,16 +164,10 @@ func (s *Service) persistOperationPlan(ctx context.Context, tx *sql.Tx, plan ope
 				// Only an approval lifts a target above the global skip or
 				// version policy; a target no approval names keeps it.
 				plan = applyGlobalCollision(plan, global)
-			case len(plan.overwriteSnapshot) == 0:
-				// Overwrite only authorizes replacing an existing file. The
-				// planner observed this target absent (no overwrite execution
-				// snapshot), so it is an ordinary ensure_present that refuses
-				// (block) anything appearing at the path before publication.
-				plan = downgradeAbsentOverwrite(plan)
-			default:
-				// An existing target that no approval names. A
-				// sidecar already holding the same file is adopted without a
-				// write.
+			case len(plan.overwriteSnapshot) > 0:
+				// A sidecar that already matches is adopted without a write.
+				// Otherwise the operation keeps overwrite, including when the
+				// target was absent and will be observed again at permit time.
 				adopted, err := s.adoptReplacementSidecar(ctx, s.preparedBatch, &plan, file)
 				if err != nil {
 					return err

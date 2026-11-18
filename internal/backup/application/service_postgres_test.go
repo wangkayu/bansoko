@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,6 +83,7 @@ type fixture struct {
 	cluster *pgarchive.Cluster
 	tools   *fakeTools
 	service *backupapplication.Service
+	gate    *sync.Mutex
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -92,13 +94,15 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	tools := &fakeTools{cluster: cluster, account: "from-backup"}
+	gate := &sync.Mutex{}
 	service, err := backupapplication.NewService(backupapplication.Options{
 		DB: runtimeDB, Tools: tools, Cluster: cluster, SchemaDir: repoMigrations(), TempDir: t.TempDir(),
+		RestartGate: gate,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{runtime: runtimeDB, cluster: cluster, tools: tools, service: service}
+	return &fixture{runtime: runtimeDB, cluster: cluster, tools: tools, service: service, gate: gate}
 }
 
 func (f *fixture) admin(t *testing.T) *sql.DB {
@@ -209,6 +213,10 @@ func TestBackupExportRestoreAndSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restore: %v", err)
 	}
+	if f.gate.TryLock() {
+		f.gate.Unlock()
+		t.Fatal("accepted restore released the restart gate before exit")
+	}
 	if accepted.BackupCreatedAt.IsZero() || !handedOff(f.service) {
 		t.Fatalf("restore accepted without a handoff: %+v", accepted)
 	}
@@ -246,6 +254,16 @@ func TestBackupRestoreRefusalsLeaveDataUnchanged(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	file := f.export(t)
+	f.gate.Lock()
+	info, infoErr := f.service.Info(ctx)
+	_, busyErr := f.service.Restore(ctx, bytes.NewReader(file))
+	f.gate.Unlock()
+	if infoErr != nil || info.RestoreAvailable || info.RestoreUnavailableReason != backupapplication.ReasonRestartInProgress {
+		t.Fatalf("restore availability while updating = %+v: %v", info, infoErr)
+	}
+	if businessCode(busyErr) != "RESTART_IN_PROGRESS" || handedOff(f.service) {
+		t.Fatalf("restore during update = %v", busyErr)
+	}
 	headerEnd := bytes.IndexByte(file[len(backupapplication.Magic):], '\n') + len(backupapplication.Magic) + 1
 	payload := file[headerEnd:]
 	reheader := func(mutate func(*backupapplication.Header), body []byte) []byte {
@@ -284,6 +302,10 @@ func TestBackupRestoreRefusalsLeaveDataUnchanged(t *testing.T) {
 			if code := businessCode(err); code != tc.code {
 				t.Fatalf("restore error = %v (code %q), want %s", err, code, tc.code)
 			}
+			if !f.gate.TryLock() {
+				t.Fatal("refused restore did not release the restart gate")
+			}
+			f.gate.Unlock()
 			if handedOff(f.service) {
 				t.Fatal("a refused restore requested the handoff")
 			}

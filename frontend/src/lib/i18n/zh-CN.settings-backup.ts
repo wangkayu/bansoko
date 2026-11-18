@@ -26,6 +26,7 @@ export const settingsBackupCopy = {
       database_unsupported: "此部署的数据库连接不支持在网页中还原",
       privileges_insufficient: "数据库账号没有创建数据库的权限，无法在网页中还原",
       restore_in_progress: "正在还原",
+      restart_in_progress: "正在更新",
     },
     fileInvalid: "文件不是有效的备份",
     versionMismatch: "备份的数据版本（{backup}）与当前版本（{current}）不一致，无法还原",

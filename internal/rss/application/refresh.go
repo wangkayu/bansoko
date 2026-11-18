@@ -38,6 +38,7 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		// the source runtime: the owner state is not this item's to rewrite, and
 		// nothing is refreshed, evaluated or submitted.
 		if errors.Is(err, parserpolicy.ErrInstanceParserPolicyRequired) {
+			s.logRefreshFailure(ctx, claim, sourceSnapshot{}, "load_source", "parser_policy_required", "could not load the required parser settings")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{
 				State:      workitems.StateFailed,
 				ReasonCode: "parser_policy_required",
@@ -54,8 +55,10 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		// fixture without a metadata row). The owner row is gone or unreachable,
 		// so there is no owner state to write.
 		if errors.Is(err, sql.ErrNoRows) {
+			s.logRefreshFailure(ctx, claim, sourceSnapshot{}, "load_source", "source_unavailable", "could not find the source or its subscription details; no feed was requested")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: workitems.StateFailed, ReasonCode: "source_unavailable", Reason: safeReason(err.Error())}, nil), nil
 		}
+		s.logRefreshFailure(ctx, claim, sourceSnapshot{}, "load_source", "", "could not read the saved source settings; no feed was requested")
 		return worker.Outcome{}, err
 	}
 	ineligibility := subscriptiondomain.EvaluateSourceRefreshEligibility(subscriptiondomain.SourceRefreshEligibilityFacts{
@@ -73,6 +76,14 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		ineligibility = subscriptiondomain.SourceRefreshEligible
 	}
 	if ineligibility != subscriptiondomain.SourceRefreshEligible {
+		message := "no feed was requested because the subscription is not active"
+		switch ineligibility {
+		case subscriptiondomain.SourceRefreshSubscriptionStopped:
+			message = "no feed was requested because the subscription was stopped"
+		case subscriptiondomain.SourceRefreshPolicyNotSelected:
+			message = "no feed was requested because the provider group is not selected"
+		}
+		s.logRefreshSkipped(ctx, claim, snapshot, string(ineligibility), message)
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: string(ineligibility)}, nil), nil
 	}
 	if snapshot.sourceKind == animedomain.SourceKindCustomRss {
@@ -82,6 +93,7 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 				reasonCode = subscriptiondomain.RSSLocatorSchemeUnsupportedCode
 				locatorErr = errors.New("RSS locator scheme is not supported for execution")
 			}
+			s.logRefreshFailure(ctx, claim, snapshot, "validate_source", reasonCode, "the saved feed address cannot be used; no feed was requested")
 			return s.refreshTerminalFailure(ctx, claim, snapshot, reasonCode, locatorErr), nil
 		}
 	}
@@ -104,7 +116,7 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		effect := &circuitEffect{}
 		return worker.WithAfterCommit(
 			worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: "refresh_not_modified"}, s.refreshNotModifiedWriter(claim, snapshot, effect)),
-			s.circuitAfterCommit(snapshot, effect, nil)), nil
+			s.circuitAfterCommit(claim, snapshot, effect, nil)), nil
 	}
 	if err != nil {
 		reason := safeReason(err.Error())
@@ -122,23 +134,25 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 			code, runtimeDetail = failure.Code, failure.Code
 			variant = observabilityport.VariantUnreadable
 		}
+		s.logRefreshFailure(ctx, claim, snapshot, "read_feed", code, refreshReadFailureMessage(code, err))
 		effect := &circuitEffect{}
 		return worker.WithAfterCommit(
 			worker.Retry(code, reason, subscriptiondomain.RefreshBackoff(snapshot.consecutiveFailures+1), s.refreshFailureWriter(claim, snapshot, runtimeDetail, effect)),
-			s.circuitAfterCommit(snapshot, effect, &refreshFailureNote{err: err, variant: variant})), nil
+			s.circuitAfterCommit(claim, snapshot, effect, &refreshFailureNote{err: err, variant: variant})), nil
 	}
 
 	feed, err := buildFeedEvaluations(ctx, items, snapshot)
 	if err != nil {
+		s.logRefreshFailure(ctx, claim, snapshot, "prepare_releases", "feed_parse_failed", "read the feed but could not prepare its entries for release evaluation")
 		effect := &circuitEffect{}
 		return worker.WithAfterCommit(
 			worker.Retry("feed_parse_failed", safeReason(err.Error()), subscriptiondomain.RefreshBackoff(snapshot.consecutiveFailures+1), s.refreshFailureWriter(claim, snapshot, safeReason(err.Error()), effect)),
-			s.circuitAfterCommit(snapshot, effect, &refreshFailureNote{err: err, variant: observabilityport.VariantUnreadable})), nil
+			s.circuitAfterCommit(claim, snapshot, effect, &refreshFailureNote{err: err, variant: observabilityport.VariantUnreadable})), nil
 	}
 	effect := &circuitEffect{}
 	return worker.WithAfterCommit(
 		worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: "refresh_succeeded"}, s.refreshSuccessWriter(claim, snapshot, feed, completeFeedValidators(exchange, feed), effect)),
-		s.circuitAfterCommit(snapshot, effect, nil)), nil
+		s.circuitAfterCommit(claim, snapshot, effect, nil)), nil
 }
 
 // refreshTriggerIsManual reports whether the WorkItem carries an explicit
@@ -379,6 +393,7 @@ RETURNING version`, snapshot.sourceID, cursorJSON, lastGoodJSON, claim.ExpectedO
 		}
 		if effect != nil {
 			effect.outcome = refreshLogOutcome{
+				committed:      true,
 				resumeBaseline: resumeBaseline,
 				newCount:       len(newKeys),
 				windowTotal:    len(feed),

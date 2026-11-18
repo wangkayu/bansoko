@@ -379,6 +379,7 @@ type sourceSnapshot struct {
 }
 
 type releaseSnapshot struct {
+	evaluationLog     *releaseLogEffect
 	releaseID         string
 	sourceID          string
 	subscriptionID    string

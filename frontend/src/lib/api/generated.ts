@@ -4932,7 +4932,7 @@ export interface components {
             reason_code?: string;
             reason_detail?: string;
             item_count?: number;
-            /** @description How many releases the rss_new_content batch's feed window held in total. The difference to item_count is the releases whose outcome did not change. Absent on records written before it was introduced. */
+            /** @description Total releases in the RSS window, including previously recorded releases. This count does not describe evaluation or comparison outcomes. Absent on records written before it was introduced. */
             window_total?: number;
             /** @description How the feed-level verdicts of one rss_new_content batch split: a ReleaseVerdict name (accepted_pending_download, waiting_metadata, filtered, parse_failed) to the number of newly discovered items carrying it at discovery time. This is the discovery outcome, not the later evaluation verdict: an accepted count means the items were handed to evaluation. Absent on records written before it was introduced. */
             outcome_counts?: {
@@ -6923,7 +6923,7 @@ export interface components {
             interval_unit: components["schemas"]["AutomationIntervalUnit"];
         };
         /** @enum {string} */
-        BackupRestoreUnavailableReason: "tools_unavailable" | "database_unsupported" | "privileges_insufficient" | "restore_in_progress";
+        BackupRestoreUnavailableReason: "tools_unavailable" | "database_unsupported" | "privileges_insufficient" | "restore_in_progress" | "restart_in_progress";
         BackupInfo: {
             /** @description Number of the latest applied schema migration; a restore accepts only a backup with this number. */
             schema_version: string;

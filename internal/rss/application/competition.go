@@ -443,7 +443,7 @@ func (h competitionHandler) Handle(ctx context.Context, claim workitems.Claim) (
 				return worker.Outcome{}, err
 			}
 			before := len(run.excluded)
-			s.runDecidedStages(ctx, animeID, &run)
+			s.runDecidedStages(ctx, claim, &run)
 			if !run.moved && len(run.excluded) > before && pass < competitionMaxPasses {
 				carried = run
 				continue
@@ -461,7 +461,7 @@ func (h competitionHandler) Handle(ctx context.Context, claim workitems.Claim) (
 }
 
 // runDecidedStages runs the decided stage of every release of the round.
-func (s *Service) runDecidedStages(ctx context.Context, animeID string, run *competitionRun) {
+func (s *Service) runDecidedStages(ctx context.Context, claim workitems.Claim, run *competitionRun) {
 	for _, decision := range run.round.Decisions {
 		snapshot, err := s.loadReleaseSnapshot(ctx, decision.ReleaseID)
 		if err != nil {
@@ -474,9 +474,10 @@ func (s *Service) runDecidedStages(ctx context.Context, animeID string, run *com
 		}
 		decided := decision
 		snapshot.competitionDecision = &decided
+		snapshot.evaluationLog = &releaseLogEffect{}
 		releaseClaim := workitems.Claim{
 			Owner: workitems.OwnerRef{Type: workitems.OwnerRelease, ID: decision.ReleaseID}, Kind: workitems.KindReleaseEvaluate,
-			ExpectedOwnerVersion: decision.Version, ManagedAnimeID: animeID,
+			ExpectedOwnerVersion: decision.Version, ManagedAnimeID: claim.Owner.ID,
 		}
 		outcome, err := s.evaluateRelease(ctx, releaseClaim, snapshot)
 		switch {
@@ -491,6 +492,7 @@ func (s *Service) runDecidedStages(ctx context.Context, animeID string, run *com
 			// waiting; it holds no episode of this round.
 			run.exclude(decision.ReleaseID, safeReason(outcome.OwnerResult.Reason), false)
 		default:
+			outcome = s.releaseEvaluationWithLog(claim, snapshot, snapshot.evaluationLog, outcome)
 			run.evaluations = append(run.evaluations, decidedEvaluation{decision: decision, outcome: outcome})
 		}
 	}

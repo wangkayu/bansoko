@@ -98,11 +98,14 @@ export const oneshotCopy = {
   create: "开始下载（{n}）",
   creating: "正在提交…",
   createdAll: "已提交 {n} 个一次性下载",
-  createdPartial: "已提交 {ok} 个，{failed} 个未提交",
+  adoptedCount: "{n} 个发布使用了媒体库中的已有文件",
+  failedCount: "{n} 个未提交",
+  resultSeparator: "；",
   createdNone: "全部未能提交",
   viewRecords: "查看执行记录",
   retryFailed: "重试未提交的种子",
-  resultOk: "已开始下载",
+  resultOk: "已提交下载",
+  resultAdopted: "已使用媒体库中的已有文件",
   resultFailed: "未提交",
 
   // 搜索快照来源：身份过期只能重新搜索，没有可重试的刷新

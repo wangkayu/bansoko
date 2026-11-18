@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/runtime/worker"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
@@ -44,7 +46,13 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 	db := openRSSDatabase(t)
 	ctx := context.Background()
 	sourceID, _ := seedRSSOwner(t, db, false, true)
-	store, err := workitems.NewStore(db, 0, nil)
+	logger := observabilityapplication.NewPersistentRuntimeLogger(io.Discard, t.TempDir())
+	t.Cleanup(func() {
+		if err := logger.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	store, err := workitems.NewStore(db, 0, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +86,7 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.SetDiagnosticRecorder(nil, logger)
 	// The runtime role cannot delete WorkItems; test cleanup uses the owner.
 	schemaOwner := ownerTestDB(t)
 	runtimeVersion := func() int64 {
@@ -87,7 +96,7 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 		}
 		return version
 	}
-	refresh := func() worker.Outcome {
+	refresh := func(wantLogReason string) worker.Outcome {
 		t.Helper()
 		if _, err := schemaOwner.ExecContext(ctx, `WITH o AS (DELETE FROM work_item_outcomes WHERE kind = 'rss_refresh') DELETE FROM work_items WHERE kind = 'rss_refresh'`); err != nil {
 			t.Fatal(err)
@@ -100,6 +109,21 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 		if err := store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
 			t.Fatal(err)
 		}
+		if outcome.AfterCommit != nil {
+			outcome.AfterCommit(ctx)
+		}
+		page, err := logger.RuntimeLogs(observabilityapplication.RuntimeLogQuery{WorkItemID: claim.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range page.Entries {
+			if entry.Component == "rss" && entry.Operation == "refresh" && entry.ReasonCode == wantLogReason &&
+				entry.WorkItemID == claim.ID && entry.Attempt == claim.Attempt && entry.Outcome == "success" &&
+				strings.HasPrefix(entry.Message, `RSS refresh for "Test Show" ("Test Group"): `) {
+				return outcome
+			}
+		}
+		t.Fatalf("refresh %s did not find %s in logs: %+v", claim.ID, wantLogReason, page.Entries)
 		return outcome
 	}
 	release := func() (string, int64) {
@@ -111,7 +135,7 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 		return id, version
 	}
 
-	first := refresh()
+	first := refresh("rss_refresh_new_releases")
 	if first.OwnerResult.ReasonCode != "refresh_succeeded" || torrentRequests.Load() != 1 || conditionalRequests.Load() != 0 {
 		t.Fatalf("first refresh: reason=%s torrent=%d conditional=%d", first.OwnerResult.ReasonCode, torrentRequests.Load(), conditionalRequests.Load())
 	}
@@ -128,7 +152,7 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT last_refresh_at::text FROM rss_source_runtime WHERE rss_source_id = $1`, sourceID).Scan(&refreshedBefore); err != nil {
 		t.Fatal(err)
 	}
-	notModified := refresh()
+	notModified := refresh("rss_refresh_not_modified")
 	if notModified.OwnerResult.ReasonCode != "refresh_not_modified" || conditionalRequests.Load() != 1 || torrentRequests.Load() != 1 {
 		t.Fatalf("304 refresh: reason=%s conditional=%d torrent=%d", notModified.OwnerResult.ReasonCode, conditionalRequests.Load(), torrentRequests.Load())
 	}
@@ -146,7 +170,7 @@ func TestRefreshConditionalRequestAndTorrentReuse(t *testing.T) {
 	// The upstream ignores validators and serves the full feed again: the
 	// known release must reuse its stored torrent instead of downloading it.
 	honourValidators = false
-	full := refresh()
+	full := refresh("rss_refresh_no_new_releases")
 	if full.OwnerResult.ReasonCode != "refresh_succeeded" || feedRequests.Load() != 3 || torrentRequests.Load() != 1 {
 		t.Fatalf("full re-read: reason=%s feed=%d torrent=%d", full.OwnerResult.ReasonCode, feedRequests.Load(), torrentRequests.Load())
 	}

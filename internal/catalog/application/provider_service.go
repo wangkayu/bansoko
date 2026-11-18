@@ -124,6 +124,7 @@ func (s *Service) RefreshProviderSeasonWithTrace(ctx context.Context, provider, 
 			return domain.Snapshot{}, readErr
 		}
 		snapshot.RefreshID, snapshot.TraceID = claim.ID, claim.TraceID
+		snapshot.RefreshInProgress = true
 		return snapshot, nil
 	}
 	// The claim row is committed on its own, so every exit that does not

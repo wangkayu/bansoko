@@ -92,6 +92,8 @@ func TestRetryFailedDownloadCreatesANewTask(t *testing.T) {
 	assertNotRetryable(t, err, RetryReasonDownloadInProgress)
 
 	failedTask := failCurrentDownload(t, "release-retry-failed")
+	logger := &refreshCaptureLogger{}
+	service.logger = logger
 	result, err := service.RetryRelease(ctx, "release-retry-failed", "retry-key-0001")
 	if err != nil {
 		t.Fatal(err)
@@ -122,6 +124,18 @@ WHERE r.id = $1`, "release-retry-failed", failedTask).Scan(&current, &failedStat
 	replay, err := service.RetryRelease(ctx, "release-retry-failed", "retry-key-0001")
 	if err != nil || replay != result {
 		t.Fatalf("replay = %+v, %v; want %+v", replay, err, result)
+	}
+	logged := 0
+	for _, event := range logger.events {
+		if event.Operation == "release_evaluate" {
+			logged++
+			if event.WorkItemID != "" || event.OwnerID != result.ReleaseID || event.StateAfter != result.Verdict || event.Operation != "release_evaluate" {
+				t.Fatalf("manual retry log = %+v; result = %+v", event, result)
+			}
+		}
+	}
+	if logged != 1 {
+		t.Fatalf("manual retry and replay logged %d evaluations, want one", logged)
 	}
 	if count := releaseTaskCount(t, db, "release-retry-failed"); count != 2 {
 		t.Fatalf("replay created a task: %d", count)

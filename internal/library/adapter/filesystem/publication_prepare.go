@@ -53,7 +53,10 @@ func (executor OSFileExecutor) PreparePublication(ctx context.Context, op domain
 		sys := publicationSyscalls{}.withObserveHook(executor.Hooks.PublicationObserveTarget)
 		target, err := sys.observeReplaced(verifiedEntry{parent: targetParent, name: filepath.Base(op.TargetPath), canonical: op.TargetPath})
 		if errors.Is(err, os.ErrNotExist) {
-			return result, publicationErr(domain.FileErrorCodeTargetOccupied, errors.New("overwrite target is no longer present"))
+			if op.Intent == domain.IntentReplace {
+				return result, publicationErr(domain.FileErrorCodeTargetOccupied, errors.New("approved replacement target is no longer present"))
+			}
+			return result, nil
 		}
 		if err != nil {
 			// Held open exclusively elsewhere (an SMB sharing violation is

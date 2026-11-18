@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"bansoko/internal/backup/adapter/pgarchive"
@@ -52,7 +53,7 @@ func recoverInterruptedRestore(ctx context.Context, servingDSN string, logger ob
 // buildBackupService composes backup export/restore. Missing PostgreSQL client
 // tools or a non-URL owner DSN are not fatal: the backup panel then reports
 // the capability as unavailable.
-func buildBackupService(ctx context.Context, db *sql.DB, servingDSN, schemaDir string, logger observabilityport.RuntimeLogger) (*backupapplication.Service, error) {
+func buildBackupService(ctx context.Context, db *sql.DB, servingDSN, schemaDir string, logger observabilityport.RuntimeLogger, restartGate *sync.Mutex) (*backupapplication.Service, error) {
 	ownerURL := backupDatabaseURL(servingDSN)
 	var tools backupapplication.Tools
 	if resolved, err := pgarchive.NewTools(ownerURL, pgexec.DefaultCandidatePaths); err != nil {
@@ -75,10 +76,11 @@ func buildBackupService(ctx context.Context, db *sql.DB, servingDSN, schemaDir s
 		}
 	}
 	return backupapplication.NewService(backupapplication.Options{
-		DB:        db,
-		Tools:     tools,
-		Cluster:   cluster,
-		SchemaDir: schemaDir,
-		Logger:    logger,
+		DB:          db,
+		Tools:       tools,
+		Cluster:     cluster,
+		SchemaDir:   schemaDir,
+		Logger:      logger,
+		RestartGate: restartGate,
 	})
 }

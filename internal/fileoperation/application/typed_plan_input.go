@@ -106,10 +106,8 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 	if err != nil {
 		return err
 	}
-	// The accepted delivery is the collision authority. Acceptance freezes an
-	// overwrite policy whose target was observed absent as an ordinary
-	// ensure_present/block delivery (overwrite only authorizes replacing an
-	// existing file), so the plan must not ask for a replacement binding.
+	// Older admissions could freeze block despite an overwrite file-effect
+	// setting. Preserve that accepted delivery; new admissions freeze overwrite.
 	if config.effect.CollisionPolicy == fileOperationCollisionOverwrite && in.Delivery.Intent == "ensure_present" && in.Delivery.Collision == "block" {
 		config.effect.CollisionPolicy = fileOperationCollisionFail
 	}

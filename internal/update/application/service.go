@@ -75,6 +75,8 @@ type Deps struct {
 	// condition is recorded only when a recorder is wired.
 	Diagnostics observabilityport.Recorder
 	Logger      observabilityport.RuntimeLogger
+	// RestartGate is shared with backup restore until the process exits.
+	RestartGate *sync.Mutex
 }
 
 type Service struct {
@@ -89,6 +91,7 @@ type Service struct {
 	clock                                                              func() time.Time
 	mu                                                                 sync.Mutex
 	chainRunning                                                       bool
+	restartGate                                                        *sync.Mutex
 	lastStatus                                                         Status
 	done                                                               chan struct{}
 	doneOnce                                                           sync.Once
@@ -123,7 +126,7 @@ func NewService(deps Deps) (*Service, error) {
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
+	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger, restartGate: deps.RestartGate}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
@@ -218,6 +221,10 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 		s.mu.Unlock()
 		return Status{}, false, &apperrors.Business{Status: 409, Code: "UPDATE_LOCKED", Message: "An update is already in progress."}
 	}
+	if s.restartGate != nil && !s.restartGate.TryLock() {
+		s.mu.Unlock()
+		return Status{}, false, &apperrors.Business{Status: 409, Code: "RESTART_IN_PROGRESS", Message: "A restore or update restart is in progress."}
+	}
 	s.chainRunning = true
 	s.mu.Unlock()
 	fail := func(err error) (Status, bool, error) {
@@ -226,6 +233,9 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 		detail := err.Error()
 		s.lastStatus = Status{Step: "failed", LastError: &detail}
 		s.mu.Unlock()
+		if s.restartGate != nil {
+			s.restartGate.Unlock()
+		}
 		return Status{}, false, err
 	}
 	client, gateway, err := s.operationClient(ctx)
@@ -289,7 +299,16 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 	s.mu.Lock()
 	s.lastStatus = status
 	s.mu.Unlock()
-	go s.runChain(manifest, digest, manifestURL, opID, resolved.source)
+	go func() {
+		s.runChain(manifest, digest, manifestURL, opID, resolved.source)
+		// A published marker belongs to bootstrap even if its directory sync
+		// failed. Keep restore excluded whenever the marker may exist.
+		if s.restartGate != nil {
+			if _, err := os.Lstat(filepath.Join(s.updatesRoot, PendingMarkerFileName)); errors.Is(err, os.ErrNotExist) {
+				s.restartGate.Unlock()
+			}
+		}
+	}()
 	return status, true, nil
 }
 func persistSignedManifest(root string, manifest hardeningdomain.ReleaseManifest) error {
@@ -522,6 +541,15 @@ func (s *Service) GetUpdateStatus(ctx context.Context) (Status, bool, error) {
 	record, found, err := journal.Snapshot(filepath.Join(s.updatesRoot, "journal.json"))
 	if err != nil {
 		return Status{}, false, fmt.Errorf("read durable embedded update status: %w", err)
+	}
+	if !found || !record.Active() {
+		failure, ok, failureErr := s.readPreparationFailure()
+		if failureErr != nil && !found {
+			return Status{}, false, failureErr
+		}
+		if ok && (!found || (failure.OperationID != record.OperationID && !failure.UpdatedAt.Before(record.UpdatedAt))) {
+			return failure, true, nil
+		}
 	}
 	if found {
 		var lastError *string

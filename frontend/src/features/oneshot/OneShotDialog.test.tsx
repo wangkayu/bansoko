@@ -312,7 +312,7 @@ function stubFetch(scenario: Scenario) {
       if (result.status !== 200) {
         return Response.json(result.body ?? { code: "INTERNAL", message: "内部错误" }, { status: result.status });
       }
-      return Response.json({
+      return Response.json(result.body ?? {
         one_shot_id: `os-${stableSeedKey}`,
         managed_anime_id: "m-1",
         subscription_id: "s-1",
@@ -796,6 +796,26 @@ describe("OneShotDialog 第二步：配置、渲染与提交", () => {
     const [, options] = toastMock.success.mock.calls[0]! as [unknown, { action: { onClick: () => void } }];
     options.action.onClick();
     expect(onOpenRecords).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])("按回执显示采用已有文件，只给实际下载提供记录入口（混合=%s）", async (mixed) => {
+    const onOpenRecords = vi.fn();
+    stubFetch({
+      view: viewOf([seedGroup({ items: [seedItem("seed-a", SEED_A), seedItem("seed-b", SEED_B)] })]),
+      download: (key) => key === "seed-a"
+        ? { status: 200, body: { download_task_id: null, state: "reclaim_pending" } }
+        : { status: 200 },
+    });
+    await renderAndEnter(providerEntry(), onOpenRecords);
+    await advanceToSettings(mixed ? [SEED_A, SEED_B] : [SEED_A]);
+    fireEvent.click(button(t("oneshot.create", { n: mixed ? 2 : 1 })));
+    expect(await screen.findByText(t("oneshot.resultAdopted"))).toBeInTheDocument();
+    expect(screen.queryAllByText(t("oneshot.resultOk"))).toHaveLength(mixed ? 1 : 0);
+    expect(screen.queryAllByRole("button", { name: t("oneshot.viewRecords") })).toHaveLength(mixed ? 1 : 0);
+    expect(toastMock.success).toHaveBeenCalledWith(
+      expect.stringContaining(t("oneshot.adoptedCount", { n: 1 })),
+      mixed ? expect.objectContaining({ action: expect.objectContaining({ label: t("oneshot.viewRecords") }) }) : undefined,
+    );
   });
 
   it("「恢复默认」只在本地复位命名与偏移，之后只有一次读模型重读", async () => {

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/update/packagemaker"
 )
@@ -64,6 +66,7 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 	defer s.finishChain()
 	ctx := context.Background()
 	var err error
+	stage, failureMessage := "release_input", "Update stopped because the release input could not be prepared."
 	if source == nil {
 		// Only the admitted operation reaches the chain with its own source; a
 		// caller without one rebuilds the deployment policy as before.
@@ -74,9 +77,11 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 	}
 	var payload string
 	if err == nil {
+		stage, failureMessage = "download_payload", "Update stopped because the release package could not be downloaded or verified."
 		payload, err = s.ensurePayload(ctx, source, operationID, manifest.EmbeddedUpdate)
 	}
 	if err == nil {
+		stage, failureMessage = "stage_release", "Update stopped because the release package could not be staged or verified."
 		_, err = s.stagePayload(payload, operationID, manifest)
 	}
 	if err == nil && FixtureStopAfter("staged") {
@@ -86,6 +91,7 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 		applyFixtureStopBeforeMarker()
 	}
 	if err == nil {
+		stage, failureMessage = "prepare_handoff", "Update stopped before restart because the handoff could not be prepared."
 		pointer := deploymentidentity.ReadCurrentPointer(s.updatesRoot)
 		if pointer.Presented && !pointer.Readable {
 			err = errors.New("current release pointer is corrupt; refusing pending update marker")
@@ -99,8 +105,34 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 		}
 	}
 	if err != nil {
-		detail := err.Error()
-		s.setStatus(Status{OperationID: operationID, Channel: Channel, Step: "failed", TargetReleaseID: manifest.ReleaseID, LastError: &detail})
+		detail := failureMessage
+		version, schema := manifest.Version, manifest.TargetMigrationVersion
+		s.mu.Lock()
+		created := s.lastStatus.CreatedAt
+		s.mu.Unlock()
+		now := time.Now().UTC()
+		if s.clock != nil {
+			now = s.clock().UTC()
+		}
+		if created.IsZero() {
+			created = now
+		}
+		status := Status{OperationID: operationID, Channel: Channel, Step: "failed", TargetReleaseID: manifest.ReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, LastError: &detail, CreatedAt: created, UpdatedAt: now}
+		s.setStatus(status)
+		if s.updatesRoot != "" {
+			if err := s.persistPreparationFailure(status); err != nil && s.logger != nil {
+				s.logger.Warn(ctx, observabilityport.RuntimeEvent{
+					Message: "The update failed before restart; its status could not be saved.", Component: "update", Operation: "apply_update",
+					Stage: "save_failure_status", Outcome: "failure", ReasonCode: "update_failure_status_unconfirmed", OwnerType: "update_operation", OwnerID: operationID,
+				})
+			}
+		}
+		if s.logger != nil {
+			s.logger.Warn(ctx, observabilityport.RuntimeEvent{
+				Message: detail, Component: "update", Operation: "apply_update", Stage: stage, Outcome: "failure",
+				ReasonCode: "update_preparation_failed", ErrorClass: "update", OwnerType: "update_operation", OwnerID: operationID,
+			})
+		}
 		return
 	}
 	ApplyFixtureStop("pending_marker")
@@ -187,12 +219,27 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return "", statErr
 	}
-	if err = publishReleaseTree(tempDir, releaseDir, []string{packagemaker.ServerEntryPath}); err != nil {
+	stagedInfo, err := os.Lstat(tempDir)
+	if err != nil {
 		return "", err
+	}
+	removeFailedPublish := func(cause error) error {
+		// A rename can succeed before the directory sync fails. Remove only
+		// the newly published tree this operation owned, never an existing release.
+		if current, statErr := os.Lstat(releaseDir); statErr == nil && os.SameFile(current, stagedInfo) {
+			if cleanupErr := os.RemoveAll(releaseDir); cleanupErr != nil {
+				return errors.Join(cause, cleanupErr)
+			}
+			return errors.Join(cause, syncDirectory(filepath.Dir(releaseDir)))
+		}
+		return cause
+	}
+	if err = publishReleaseTree(tempDir, releaseDir, []string{packagemaker.ServerEntryPath}); err != nil {
+		return "", removeFailedPublish(err)
 	}
 	cleanupTemp = false
 	if err = VerifyReleaseTree(releaseDir); err != nil {
-		return "", fmt.Errorf("verify published release tree: %w", err)
+		return "", removeFailedPublish(fmt.Errorf("verify published release tree: %w", err))
 	}
 	return releaseDir, nil
 }

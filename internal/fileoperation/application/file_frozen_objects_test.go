@@ -23,7 +23,7 @@ func TestFrozenPublicationObjectsRejectIncompleteEvidence(t *testing.T) {
 	if err := validatePublicationObjects(clean, "hardlink", "overwrite"); err != nil {
 		t.Fatalf("valid frozen evidence refused: %v", err)
 	}
-	for _, kind := range []string{"missing_target", "extra", "bad_source", "content_proof", "missing_identity", "negative_size", "non_regular"} {
+	for _, kind := range []string{"null_target", "extra", "bad_source", "content_proof", "missing_identity", "negative_size", "non_regular"} {
 		t.Run(kind, func(t *testing.T) {
 			objects, err := protocol.ParseStrict([]byte(raw))
 			if err != nil {
@@ -31,8 +31,8 @@ func TestFrozenPublicationObjectsRejectIncompleteEvidence(t *testing.T) {
 			}
 			target := objects.Object["expected_target"]
 			switch kind {
-			case "missing_target":
-				delete(objects.Object, "expected_target")
+			case "null_target":
+				objects.Object["expected_target"] = protocol.Value{Kind: protocol.KindNull}
 			case "extra":
 				objects.Object["foreign"] = protocol.Value{Kind: protocol.KindString, String: "untrusted"}
 			case "bad_source":
@@ -47,7 +47,7 @@ func TestFrozenPublicationObjectsRejectIncompleteEvidence(t *testing.T) {
 			case "non_regular":
 				target.Object["file_type"] = protocol.Value{Kind: protocol.KindString, String: "directory"}
 			}
-			if kind != "missing_target" && kind != "extra" && kind != "bad_source" {
+			if kind != "null_target" && kind != "extra" && kind != "bad_source" {
 				if err := validatePublicationObservation(target, "target"); err == nil {
 					t.Fatal("independent object consumer accepted invalid observation")
 				}

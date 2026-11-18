@@ -50,7 +50,7 @@ WHERE managed_anime_id = $1 AND state = 'active' ORDER BY physical_path LIMIT 10
 // productionIntent is the sole production Media/Delivery/Limits projection.
 // It reads actual transaction-local configuration; no fixture defaults, client
 // proof, current-program substitution or invented filesystem roots are used.
-func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode, connection string, overwriteTargetAbsent bool, captures ...*ReplacementCapture) (acquisitionIntent, error) {
+func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode, connection string, captures ...*ReplacementCapture) (acquisitionIntent, error) {
 	var title string
 	var titleOverride, providerTitle sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT title, title_override, provider_title FROM managed_anime WHERE id=$1`, c.material.management.managedID).Scan(&title, &titleOverride, &providerTitle); err != nil {
@@ -122,13 +122,6 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 	collision := map[anime.CollisionPolicy]string{anime.CollisionPolicyFail: "block", anime.CollisionPolicyVersioned: "version", anime.CollisionPolicyOverwrite: "overwrite"}[effect.CollisionPolicy]
 	replacements := []any{}
 	intent := "ensure_present"
-	if collision == "overwrite" && overwriteTargetAbsent && len(captures) == 0 {
-		// Overwrite only authorizes replacing an existing file. The caller
-		// observed no overwrite target present, so the delivery is an
-		// ordinary ensure_present that refuses (block) anything appearing at a
-		// path before publication; no replacement approval is involved.
-		collision = "block"
-	}
 	if len(captures) > 0 {
 		// One approval per present approved target (a batch replaces per
 		// file). An approved replacement takes effect above the global policy:

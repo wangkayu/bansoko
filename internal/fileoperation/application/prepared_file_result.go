@@ -21,6 +21,7 @@ type preparedFileResult struct {
 	specDigest, planDigest, dependencyDigest                   string
 	resolutionCanonical, checkpointCanonical, closureCanonical string
 	finalObjectCanonical, sourceCleanup, evidenceDigest        string
+	replacedExisting                                           bool
 	fileFactCanonical                                          string
 	notificationPayload                                        string
 	claimWork                                                  string
@@ -99,7 +100,11 @@ func captureSuccessfulFileResultTx(ctx context.Context, tx *sql.Tx, claim workit
 	if err != nil {
 		return preparedFileResult{}, err
 	}
-	p.finalObjectCanonical = string(protocol.Canonical(checkpoint.Object["publish_target"].Object["proof"].Object["target"]))
+	publishProof := checkpoint.Object["publish_target"].Object["proof"]
+	// A versioned publish displaces its own reservation, not an existing file.
+	p.replacedExisting = publishProof.Object["displaced"].Object["state"].String == "known" &&
+		checkpoint.Object["reserve_version"].Object["state"].String != "confirmed"
+	p.finalObjectCanonical = string(protocol.Canonical(publishProof.Object["target"]))
 	p.sourceCleanup = "not_required"
 	if checkpoint.Object["source_cleanup"].Object["state"].String == "confirmed" {
 		p.sourceCleanup = "completed"

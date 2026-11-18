@@ -12545,10 +12545,9 @@ components:
           type: integer
           minimum: 0
           description: >-
-            How many releases the rss_new_content batch's feed window held in
-            total. The difference to item_count is the releases whose outcome
-            did not change. Absent on records written before it was
-            introduced.
+            Total releases in the RSS window, including previously recorded
+            releases. This count does not describe evaluation or comparison
+            outcomes. Absent on records written before it was introduced.
         outcome_counts:
           type: object
           additionalProperties:
@@ -17397,7 +17396,7 @@ components:
           $ref: '#/components/schemas/AutomationIntervalUnit'
     BackupRestoreUnavailableReason:
       type: string
-      enum: [tools_unavailable, database_unsupported, privileges_insufficient, restore_in_progress]
+      enum: [tools_unavailable, database_unsupported, privileges_insufficient, restore_in_progress, restart_in_progress]
     BackupInfo:
       type: object
       additionalProperties: false

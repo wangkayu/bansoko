@@ -301,6 +301,17 @@ func TestPublicationPrepareRefusals(t *testing.T) {
 	})
 	t.Run("overwrite target absent", func(t *testing.T) {
 		f := newPublicationFixture(t, domain.OperationCopy, domain.CollisionOverwrite)
+		prep, err := (OSFileExecutor{}).PreparePublication(context.Background(), f.op, "permit")
+		if err != nil {
+			t.Fatalf("global overwrite of an absent target must stay publishable: %v", err)
+		}
+		if prep.ExpectedTarget != nil {
+			t.Fatal("absent target produced a replacement observation")
+		}
+	})
+	t.Run("approved replacement target absent", func(t *testing.T) {
+		f := newPublicationFixture(t, domain.OperationCopy, domain.CollisionOverwrite)
+		f.op.Intent = domain.IntentReplace
 		_, err := (OSFileExecutor{}).PreparePublication(context.Background(), f.op, "permit")
 		if domain.PublicationFailureCode(err) != domain.FileErrorCodeTargetOccupied {
 			t.Fatalf("err=%v", err)

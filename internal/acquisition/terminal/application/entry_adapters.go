@@ -33,9 +33,6 @@ type EntryTask struct {
 	Resolution                OwnerResolution
 	// Replacements holds one approval per present overwrite target.
 	Replacements []*ReplacementCapture
-	// OverwriteTargetAbsent says the pre-download observation found nothing at
-	// an overwrite target, so that target needs no replacement approval.
-	OverwriteTargetAbsent bool
 }
 type entryAcceptor struct {
 	service *Service
@@ -192,7 +189,7 @@ func (a *entryAcceptor) prepare(ctx context.Context, scope txscope.Tx, input Ent
 	if c.material.release.version != input.ExpectedVersion {
 		return PreparedHandle{}, acceptError(409, "INPUT_STALE", "release_version_changed", nil)
 	}
-	intent, err := productionIntent(ctx, tx, c, a.mode, input.QbConnectionID, input.OverwriteTargetAbsent, input.Replacements...)
+	intent, err := productionIntent(ctx, tx, c, a.mode, input.QbConnectionID, input.Replacements...)
 	if err != nil {
 		return PreparedHandle{}, mapAcceptanceError(err)
 	}

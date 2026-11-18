@@ -31,7 +31,8 @@ func verifyPublicationStepBinding(step, collision, dependency string, objects, c
 		if !samePublicationSize(proof.Object["target"], objects.Object["source"]) {
 			return fail()
 		}
-		if collision == "block" && (proof.Object["atomic_method"].String != "no_replace" || proof.Object["displaced"].Object["state"].String != "absent") {
+		replaces := publicationReplaces(collision, objects)
+		if !replaces && (proof.Object["atomic_method"].String != "no_replace" || proof.Object["displaced"].Object["state"].String != "absent") {
 			return fail()
 		}
 		target := objects.Object["target"]
@@ -42,7 +43,7 @@ func verifyPublicationStepBinding(step, collision, dependency string, objects, c
 			return fail()
 		}
 		displaced := proof.Object["displaced"].Object["value"]
-		if collision == "version" || collision == "overwrite" {
+		if replaces {
 			if proof.Object["atomic_method"].String != "replace" || proof.Object["displaced"].Object["state"].String != "known" || !equal(displaced.Object["location"], target) {
 				return fail()
 			}
@@ -53,7 +54,7 @@ func verifyPublicationStepBinding(step, collision, dependency string, objects, c
 				return fail()
 			}
 		}
-		if collision == "overwrite" && !samePublicationSize(displaced, objects.Object["expected_target"]) {
+		if collision == "overwrite" && replaces && !samePublicationSize(displaced, objects.Object["expected_target"]) {
 			return fail()
 		}
 	case "source_cleanup", "temp_cleanup":

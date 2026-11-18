@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	observabilityapplication "bansoko/internal/observability/application"
+	"bansoko/internal/observability/outbound"
 	"bansoko/internal/runtime/worker"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
@@ -36,7 +39,10 @@ VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetcher := &rssFakeSourceFetcher{err: errors.New("upstream down")}
+	const upstreamError = "upstream down at https://feeds.example.test/private-path?token=not-for-logs"
+	fetcher := &rssFakeSourceFetcher{err: outbound.WithFailure(errors.New(upstreamError), outbound.Failure{
+		Class: outbound.ClassHTTPStatus, Status: 503,
+	})}
 	service, err := newRSSService(t, db, store, fetcher)
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +51,8 @@ VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.SetDiagnosticRecorder(recorder, nil)
+	logger := observabilityapplication.NewTeedRuntimeLogger(io.Discard)
+	service.SetDiagnosticRecorder(recorder, logger)
 	owner := workitems.OwnerRef{Type: workitems.OwnerRSSSourceRuntime, ID: sourceID}
 	// The runtime role cannot delete WorkItems; test cleanup uses the owner.
 	schemaOwner := ownerTestDB(t)
@@ -84,6 +91,20 @@ VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 
 		outcome, err := service.Handle(ctx, claim)
 		if err != nil || outcome.Kind != worker.OutcomeRetry || outcome.RetryAfter != want {
 			t.Fatalf("failure %d: outcome=%+v err=%v, want retry after %s", i+1, outcome, err, want)
+		}
+		page, err := logger.RuntimeLogs(observabilityapplication.RuntimeLogQuery{WorkItemID: claim.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Entries) != 1 {
+			t.Fatalf("expected a single failed refresh result before retry writeback: %+v", page.Entries)
+		}
+		entry := page.Entries[0]
+		if entry.Component != "rss" || entry.Stage != "read_feed" || entry.ReasonCode != "feed_fetch_failed" ||
+			entry.Outcome != "failure" || entry.Retryable != nil || strings.Contains(entry.Message, "private-path") ||
+			entry.Message != `RSS refresh for "Test Show" ("Test Group"): the feed request returned HTTP 503` ||
+			entry.WorkItemID != claim.ID || entry.Attempt != claim.Attempt {
+			t.Fatalf("incorrect or unsafe failed refresh result: %+v", entry)
 		}
 		if _, err := store.Retry(ctx, claim, outcome.ReasonCode, outcome.Reason, outcome.RetryAfter, outcome.WriteOwner); err != nil {
 			t.Fatal(err)

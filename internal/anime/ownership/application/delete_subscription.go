@@ -9,6 +9,7 @@ import (
 
 	"bansoko/internal/apperrors"
 	"bansoko/internal/events"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/workitems"
@@ -150,6 +151,11 @@ WHERE id = $1 AND lifecycle_state = 'active' AND fence_epoch = $2`, managedAnime
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit managed anime retirement: %w", err)
 	}
+	s.logger.Info(ctx, observabilityport.RuntimeEvent{
+		Message:   "Removed the subscription from active management; local records, download data, and media files were kept.",
+		Component: "anime_ownership", Operation: "subscription_retire", Outcome: "success", ReasonCode: "subscription_retired",
+		OwnerType: "managed_anime", OwnerID: managedAnimeID,
+	})
 	s.publishInvalidations(events.TargetSubscribed, events.TargetCatalog, events.TargetRSS)
 	return nil
 }

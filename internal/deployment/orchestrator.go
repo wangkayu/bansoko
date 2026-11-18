@@ -78,13 +78,18 @@ func (o *Orchestrator) Run(ctx context.Context, plan Plan) (Result, error) {
 		}
 	}
 
+	if run.State == "failed" {
+		gate := run.Checkpoint.Gate
+		if gate == nil || gate.Passed {
+			return Result{}, errors.New("failed recovery run has no failed gate decision")
+		}
+		return Result{Run: run, Gate: *gate, Failed: true}, nil
+	}
+
 	entries := o.Registry.EnabledEntries()
 	for _, reg := range entries {
 		if call, ok := run.Checkpoint.CallFor(reg.Key); ok && call.State == StateCompleted {
 			continue // already settled as a safe terminal state; never re-invoke
-		}
-		if run.State == "failed" {
-			break // a previous failed call already failed the run; do not keep going
 		}
 		result, callErr := o.invoke(ctx, reg, run.ID, plan.WindowID)
 		retry := false

@@ -4,9 +4,10 @@ package adapter
 // re-pull hits its provider once, records the native titles and rewrites the
 // persistent episode title rows through the overwrite store, and every
 // failure is the typed conflict the action surfaces — with the cache rows
-// left exactly as they were.
+// unchanged when a provider fails before the first write.
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,10 +92,10 @@ func TestConfiguredWorkRefresherRePullsWorkAndEpisodeTitles(t *testing.T) {
 		EpisodeTitles: cache,
 		Titles:        titles,
 	}
-	if err := refresher.RefreshWork(ctx, "bgm", "subject", "10", 0); err != nil {
+	if written, err := refresher.RefreshWork(ctx, "bgm", "subject", "10", 0); err != nil || !written {
 		t.Fatalf("BGM re-pull: %v", err)
 	}
-	if err := refresher.RefreshWork(ctx, "tmdb", "tv", "42", 0); err != nil {
+	if written, err := refresher.RefreshWork(ctx, "tmdb", "tv", "42", 0); err != nil || !written {
 		t.Fatalf("TMDB re-pull: %v", err)
 	}
 	if strings.Join(cache.calls, " ") != "bgm#10#0 tmdb#42#1" {
@@ -133,8 +134,8 @@ func TestConfiguredWorkRefresherFailsTyped(t *testing.T) {
 		},
 		EpisodeTitles: cache,
 	}
-	err := refresher.RefreshWork(ctx, "bgm", "subject", "10", 0)
-	if failed, ok := err.(*apperrors.Business); !ok || failed.Code != "METADATA_REFRESH_FAILED" {
+	written, err := refresher.RefreshWork(ctx, "bgm", "subject", "10", 0)
+	if failed, ok := err.(*apperrors.Business); written || !ok || failed.Code != "METADATA_REFRESH_FAILED" {
 		t.Fatalf("an unreachable provider is METADATA_REFRESH_FAILED, got %v", err)
 	}
 	if len(cache.calls) != 0 {
@@ -158,7 +159,7 @@ func TestConfiguredWorkRefresherFailsTyped(t *testing.T) {
 		Secrets:       testSecrets{},
 		EpisodeTitles: cache,
 	}
-	ctrlErr := unkeyed.RefreshWork(ctx, "tmdb", "tv", "42", 1)
+	_, ctrlErr := unkeyed.RefreshWork(ctx, "tmdb", "tv", "42", 1)
 	if credErr, ok := ctrlErr.(*apperrors.Business); !ok || credErr.Code != "TMDB_CREDENTIAL_NOT_CONFIGURED" {
 		t.Fatalf("a missing credential is the typed 409, got %v", ctrlErr)
 	}
@@ -167,5 +168,17 @@ func TestConfiguredWorkRefresherFailsTyped(t *testing.T) {
 	hitsMu.Unlock()
 	if total != 0 {
 		t.Fatalf("a missing credential never reaches the provider, hits=%d", total)
+	}
+}
+
+func TestStoreRefreshedTitlesReportsPartialWrite(t *testing.T) {
+	cache := &recordingTitleCache{err: errors.New("private upstream details")}
+	titles := &recordingTitleRecorder{}
+	refresher := ConfiguredWorkRefresher{EpisodeTitles: cache, Titles: titles}
+	written, err := refresher.storeRefreshedTitles(context.Background(), "Bangumi", identitymetadatadomain.WorkTitles{WorkID: "10"}, episodetitle.SourceBGM, 0)
+	var failure *apperrors.Business
+	if !written || len(titles.records) != 1 || len(cache.calls) != 1 || !errors.As(err, &failure) ||
+		failure.Code != "METADATA_REFRESH_FAILED" || failure.Message != "The Bangumi work titles were saved, but the episode titles could not be refreshed." {
+		t.Fatalf("written = %v, failure = %v, work writes = %v, episode attempts = %v", written, err, titles.records, cache.calls)
 	}
 }

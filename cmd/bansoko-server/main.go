@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -596,7 +597,8 @@ func runServe(args []string) {
 
 	// Backup export (download) and restore (upload). A verified restore asks
 	// for the handoff below.
-	backupService, err := buildBackupService(ctx, db, cfg.DatabaseURL, cfg.SchemaDir, runtimeLogger)
+	restartGate := &sync.Mutex{}
+	backupService, err := buildBackupService(ctx, db, cfg.DatabaseURL, cfg.SchemaDir, runtimeLogger, restartGate)
 	if err != nil {
 		fatalStartup(runtimeLogger, "backup service build failed", "backup_build_failed")
 	}
@@ -705,7 +707,8 @@ func runServe(args []string) {
 			fatalStartup(runtimeLogger, err.Error(), "embedded_update_retired_env")
 		}
 		updateSvc, svcErr := updateapplication.NewService(updateapplication.Deps{
-			DB: db, UpdatesRoot: updatesRoot,
+			RestartGate: restartGate,
+			DB:          db, UpdatesRoot: updatesRoot,
 			Lane:             os.Getenv(updateapplication.EnvLane),
 			ChannelBase:      os.Getenv(updateapplication.EnvChannelBase),
 			Production:       cfg.Environment == "production",
@@ -882,7 +885,7 @@ func runServe(args []string) {
 			return
 		}
 		if err := backupService.Activate(switchCtx); err != nil {
-			fatalStartup(runtimeLogger, "restore switch failed; the current data is kept", "backup_restore_switch_failed")
+			fatalStartup(runtimeLogger, "restore switch could not be confirmed; restart will check the database state", "backup_restore_switch_failed")
 			return
 		}
 		os.Exit(0)
@@ -991,8 +994,7 @@ func runAutomationDispatcher(ctx context.Context, dispatcher *automationapplicat
 				ErrorClass: "automation",
 			})
 		}
-		scheduled, err := dispatcher.DispatchDue(ctx)
-		if err != nil && ctx.Err() == nil {
+		if _, err := dispatcher.DispatchDue(ctx); err != nil && ctx.Err() == nil {
 			logger.Warn(ctx, observabilityport.RuntimeEvent{
 				Message:    "automation scheduled dispatch failed",
 				Component:  "automation",
@@ -1002,8 +1004,7 @@ func runAutomationDispatcher(ctx context.Context, dispatcher *automationapplicat
 				ErrorClass: "automation",
 			})
 		}
-		manual, err := dispatcher.DispatchManual(ctx)
-		if err != nil && ctx.Err() == nil {
+		if _, err := dispatcher.DispatchManual(ctx); err != nil && ctx.Err() == nil {
 			logger.Warn(ctx, observabilityport.RuntimeEvent{
 				Message:    "automation manual dispatch failed",
 				Component:  "automation",
@@ -1011,15 +1012,6 @@ func runAutomationDispatcher(ctx context.Context, dispatcher *automationapplicat
 				Outcome:    "failure",
 				ReasonCode: "manual_dispatch_failed",
 				ErrorClass: "automation",
-			})
-		}
-		if scheduled > 0 || manual > 0 {
-			logger.Info(ctx, observabilityport.RuntimeEvent{
-				Message:    fmt.Sprintf("automation dispatch completed (scheduled=%d manual=%d)", scheduled, manual),
-				Component:  "automation",
-				Operation:  "dispatch",
-				Outcome:    "success",
-				ReasonCode: "dispatch_completed",
 			})
 		}
 	}

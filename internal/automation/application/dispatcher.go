@@ -83,6 +83,7 @@ type dispatchCounts struct {
 	merged      int
 	skipped     int
 	errors      int
+	committed   int // Inline group discoveries or metadata writes, not WorkItems.
 }
 
 type discoveryPolicy = selectiondomain.DiscoveryPolicy
@@ -378,13 +379,11 @@ func (d *Dispatcher) finishRun(ctx context.Context, runID, kind string, counts d
 	if now.Before(startedAt) {
 		now = startedAt
 	}
-	// Determine terminal state. A dispatch that returned an error is failed.
-	// A dispatch that completed with per-target errors but some successes is
-	// partial. Only error-free runs with no dispatch error are completed.
-	// This must satisfy the CHECK constraints on automation_dispatch_runs:
-	//   state <> 'completed'  OR dispatch_error_count = 0
-	//   state <> 'partial'    OR (dispatch_error_count > 0 AND (enqueued_count + merged_count) > 0)
-	//   state <> 'failed'     OR (dispatch_error_count > 0 AND (enqueued_count + merged_count) = 0)
+	if dispatchErr != nil && counts.errors == 0 {
+		counts.errors = 1
+	}
+	// The persisted dispatch state is constrained by the work counters. Inline
+	// results use their own facts in the runtime summary.
 	state := "completed"
 	if dispatchErr != nil {
 		state = "failed"
@@ -408,13 +407,19 @@ func (d *Dispatcher) finishRun(ctx context.Context, runID, kind string, counts d
 		return
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `
+	var trigger string
+	err = tx.QueryRowContext(ctx, `
 UPDATE automation_dispatch_runs
 SET state = $2, target_count = $3, enqueued_count = $4, merged_count = $5,
     skipped_count = $6, dispatch_error_count = $7,
     finished_at = $8, retention_until = $8::timestamptz + INTERVAL '30 days', updated_at = $8
-WHERE id = $1`,
-		runID, state, counts.targetCount, counts.enqueued, counts.merged, counts.skipped, counts.errors, now); err != nil {
+WHERE id = $1 AND state = 'running'
+RETURNING trigger`,
+		runID, state, counts.targetCount, counts.enqueued, counts.merged, counts.skipped, counts.errors, now).Scan(&trigger)
+	if errors.Is(err, sql.ErrNoRows) {
+		return // A recovery path already settled this run.
+	}
+	if err != nil {
 		d.logError(ctx, observabilityport.RuntimeEvent{
 			Message:    "automation dispatch run finish update failed",
 			Operation:  "finish_run",
@@ -427,7 +432,7 @@ WHERE id = $1`,
 	}
 	// Scheduled runs advance from completion time. Manual runs do not alter the
 	// schedule because they are explicit user actions.
-	if kind != "" {
+	if trigger == "scheduled" {
 		if _, err := tx.ExecContext(ctx, `
 UPDATE automation_schedules s
 SET next_run_at = CASE WHEN s.enabled THEN $2::timestamptz + CASE s.interval_unit
@@ -436,8 +441,7 @@ SET next_run_at = CASE WHEN s.enabled THEN $2::timestamptz + CASE s.interval_uni
         ELSE s.interval_value * INTERVAL '1 day'
     END ELSE NULL END,
     last_dispatch_at = $2, version = version + 1, updated_at = $2
-WHERE s.kind = $1
-  AND EXISTS (SELECT 1 FROM automation_dispatch_runs r WHERE r.id = $3 AND r.trigger = 'scheduled')`, kind, now, runID); err != nil {
+WHERE s.kind = $1`, kind, now); err != nil {
 			d.logError(ctx, observabilityport.RuntimeEvent{
 				Message:    "automation dispatch run schedule update failed",
 				Operation:  "finish_run",
@@ -460,6 +464,7 @@ WHERE s.kind = $1
 		})
 		return
 	}
+	d.logDispatchResult(ctx, runID, kind, trigger, counts, dispatchErr != nil)
 	d.recordObservability(ctx, kind, state, counts, dispatchErr)
 	if d.eventHub != nil {
 		d.eventHub.Publish(events.Event{Target: events.TargetRecords})
@@ -593,12 +598,13 @@ WHERE s.kind = $1 AND $2 = 'scheduled'`, run.kind, run.trigger); err != nil {
 	if len(stale) > 0 && d.eventHub != nil {
 		d.eventHub.Publish(events.Event{Target: events.TargetRecords})
 	}
-	if len(stale) > 0 {
-		d.logInfo(ctx, observabilityport.RuntimeEvent{
-			Message:    fmt.Sprintf("reaped %d stale automation run(s)", len(stale)),
+	for _, run := range stale {
+		d.logWarn(ctx, observabilityport.RuntimeEvent{
+			Message:    fmt.Sprintf("Completion of %s was not confirmed before the deadline; its automation run was marked failed.", automationRunLabel(run.kind, run.trigger)),
 			Operation:  "reap",
-			Outcome:    "success",
-			ReasonCode: "stale_runs_reaped",
+			ReasonCode: "stale_run_failed",
+			OwnerType:  "automation_dispatch_run",
+			OwnerID:    run.id,
 		})
 	}
 	return nil
@@ -712,6 +718,7 @@ WHERE s.state = 'active'
 		counts.enqueued += c.enqueued
 		counts.merged += c.merged
 		counts.skipped += c.skipped
+		counts.committed++
 	}
 	return counts, nil
 }
@@ -1147,8 +1154,8 @@ WHERE s.state = 'active'
 // unchanged season costs one 304 and rewrites no entries. Unlike the other
 // kinds the target work is executed inline: there are at most four targets and
 // the catalog refresh claim already deduplicates against manual refreshes.
-// A refreshed season counts as enqueued, a disabled one as skipped, and an
-// outage snapshot or refresh error as a dispatch error.
+// For legacy counters, a checked season counts as enqueued, a live refresh as
+// merged, a disabled target as skipped, and an outage as an error.
 func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts, error) {
 	var counts dispatchCounts
 	if d.CatalogRefresher == nil {
@@ -1178,6 +1185,10 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 		}
 		for _, season := range seasons {
 			snapshot, err := d.CatalogRefresher.RefreshProviderSeason(ctx, provider, season)
+			if err == nil && snapshot.RefreshInProgress {
+				counts.merged++
+				continue
+			}
 			if err != nil || snapshot.Status == catalogdomain.StatusOutage {
 				counts.errors++
 				d.logWarn(ctx, observabilityport.RuntimeEvent{
@@ -1271,6 +1282,7 @@ WHERE m.bgm_work_id IS NULL
 		counts.enqueued += c.enqueued
 		counts.merged += c.merged
 		counts.skipped += c.skipped
+		counts.committed += c.committed
 	}
 	return counts, nil
 }
@@ -1446,11 +1458,19 @@ FOR UPDATE OF r`,
 	if err := tx.Commit(); err != nil {
 		return counts, fmt.Errorf("commit metadata update: %w", err)
 	}
-	if outcome == backfill.OutcomeComplete {
-		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "success", "metadata_match_completed", "Metadata matched successfully.")
-	} else {
-		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "warning", "metadata_match_partial", "Only part of the required metadata identity was found.")
+	event := observabilityport.RuntimeEvent{
+		Operation: "metadata_match", OwnerType: "managed_anime", OwnerID: managedAnimeID,
+		Message: "Automatic matching saved metadata; both Bangumi and TMDB are linked.", Outcome: "success", ReasonCode: "metadata_match_completed",
 	}
+	if outcome == backfill.OutcomeComplete {
+		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "success", event.ReasonCode, event.Message)
+	} else {
+		event.Message = "Automatic matching saved metadata, but a Bangumi or TMDB binding is still missing."
+		event.Outcome, event.ReasonCode = "partial", "metadata_match_partial"
+		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "warning", event.ReasonCode, event.Message)
+	}
+	d.logInfo(ctx, event)
+	counts.committed++
 	return counts, nil
 }
 
@@ -1536,7 +1556,9 @@ func (d *Dispatcher) logWarn(ctx context.Context, event observabilityport.Runtim
 		return
 	}
 	event.Component = "automation"
-	event.Outcome = "failure"
+	if event.Outcome == "" {
+		event.Outcome = "failure"
+	}
 	d.Logger.Warn(ctx, event)
 }
 

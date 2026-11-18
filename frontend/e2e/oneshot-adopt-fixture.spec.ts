@@ -445,7 +445,7 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await expect(task.getByRole("button", { name: /^高级/ })).toHaveAttribute("aria-expanded", "false");
     await expect(task.getByText("1 个视频")).toBeVisible();
     await task.getByRole("button", { name: "开始下载（1）" }).click();
-    await expect(page.getByText("已提交 1 个一次性下载", { exact: true })).toBeVisible();
+    await expect(page.getByText("1 个发布使用了媒体库中的已有文件", { exact: true })).toBeVisible();
     await expect.poll(() => download.submittedRequest()).toBeTruthy();
     expect(download.submittedRequest()).toMatchObject({
       provider: "anibt",
@@ -465,7 +465,8 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     expect(download.submittedIdempotencyKey()).toBeTruthy();
     // 服务端采纳了已有的精确目标集（download_task_id 为空）：结果就地显示，提交后不能
     // 回到第一步，也没有可再次提交的种子，所以只投递了一次。
-    await expect(task.getByText("已开始下载")).toBeVisible();
+    await expect(task.getByText("已使用媒体库中的已有文件")).toBeVisible();
+    await expect(task.getByRole("button", { name: "查看执行记录" })).toHaveCount(0);
     await expect(task.getByRole("button", { name: "上一步" })).toHaveCount(0);
     await expect(task.getByRole("button", { name: /^开始下载/ })).toHaveCount(0);
     await expect(task.getByRole("button", { name: "完成" })).toBeVisible();

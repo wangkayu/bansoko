@@ -82,6 +82,7 @@ WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 RETURNING version`, snapshot.releaseID, ReleaseVerdictStartBaseline, evaluationVersionString(), snapshot.rulesVersion, claim.ExpectedOwnerVersion).Scan(&version); err != nil {
 			return 0, fmt.Errorf("persist start baseline release: %w", err)
 		}
+		snapshot.evaluationLog.record(ReleaseVerdictStartBaseline, ReleaseVerdictStartBaseline, "")
 		return version, nil
 	}
 }

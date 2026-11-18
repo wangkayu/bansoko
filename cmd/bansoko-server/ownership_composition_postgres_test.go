@@ -11,8 +11,8 @@ import (
 
 type ownershipCompositionRefresher struct{}
 
-func (ownershipCompositionRefresher) RefreshWork(context.Context, string, string, string, int) error {
-	return nil
+func (ownershipCompositionRefresher) RefreshWork(context.Context, string, string, string, int) (bool, error) {
+	return true, nil
 }
 
 // The production provider must connect the same hub consumed by SSE. Without

@@ -68,7 +68,8 @@ import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount } fro
 // The dialog presents only the server's judgments: downloadability comes from download_action,
 //   filter outcomes and target paths from the RSS read model; the frontend never re-computes rules.
 
-type SeedOutcome = { key: string; ok: boolean; error?: string };
+type SeedOutcome = { key: string; ok: boolean; adopted?: boolean; error?: string };
+const hasDownloadRecord = (outcome: SeedOutcome) => outcome.ok && !outcome.adopted;
 
 const OFFSET_MIN = -1000;
 const OFFSET_MAX = 1000;
@@ -293,7 +294,7 @@ function SeedRender({
       {outcome && (
         <p className="tw:m-0 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5">
           <StatePill tone={outcome.ok ? "online" : "offline"}>
-            {outcome.ok ? t("oneshot.resultOk") : t("oneshot.resultFailed")}
+            {outcome.adopted ? t("oneshot.resultAdopted") : outcome.ok ? t("oneshot.resultOk") : t("oneshot.resultFailed")}
           </StatePill>
           {outcome.error && <span className="text-muted text-caption">{outcome.error}</span>}
         </p>
@@ -746,8 +747,8 @@ export function OneShotDialog({
     for (const row of targets) {
       const input = requestFor(row, prepared);
       try {
-        await downloadSnapshotSeed(row.snapshotID, row.stableSeedKey, input, idempotencyKeyFor(row, input));
-        next.push({ key: row.key, ok: true });
+        const result = await downloadSnapshotSeed(row.snapshotID, row.stableSeedKey, input, idempotencyKeyFor(row, input));
+        next.push({ key: row.key, ok: true, adopted: result.download_task_id === null });
       } catch (cause) {
         next.push({ key: row.key, ok: false, error: submitErrorOf(cause) });
       }
@@ -758,11 +759,18 @@ export function OneShotDialog({
       return merged;
     });
     setSubmitting(false);
-    const ok = next.filter((outcome) => outcome.ok).length;
-    const records = onOpenRecords ? { action: { label: t("oneshot.viewRecords"), onClick: onOpenRecords } } : undefined;
-    if (ok === next.length) toast.success(t("oneshot.createdAll", { n: ok }), records);
-    else if (ok === 0) toast.error(t("oneshot.createdNone"), records);
-    else toast.warning(t("oneshot.createdPartial", { ok, failed: next.length - ok }), records);
+    const queued = next.filter(hasDownloadRecord).length;
+    const adopted = next.filter((outcome) => outcome.adopted).length;
+    const failed = next.length - queued - adopted;
+    const records = queued > 0 && onOpenRecords ? { action: { label: t("oneshot.viewRecords"), onClick: onOpenRecords } } : undefined;
+    const summary = [
+      queued > 0 ? t("oneshot.createdAll", { n: queued }) : null,
+      adopted > 0 ? t("oneshot.adoptedCount", { n: adopted }) : null,
+      failed > 0 ? t("oneshot.failedCount", { n: failed }) : null,
+    ].filter(Boolean).join(t("oneshot.resultSeparator"));
+    if (failed === 0) toast.success(summary, records);
+    else if (failed === next.length) toast.error(t("oneshot.createdNone"));
+    else toast.warning(summary, records);
   }
 
   // --- step two: advanced fold, phone summary, jump-to-input -------------------------
@@ -914,7 +922,7 @@ export function OneShotDialog({
                 {t("oneshot.back")}
               </Button>
             )}
-            {submitted && onOpenRecords && <Button onClick={onOpenRecords}>{t("oneshot.viewRecords")}</Button>}
+            {onOpenRecords && Array.from(outcomes.values()).some(hasDownloadRecord) && <Button onClick={onOpenRecords}>{t("oneshot.viewRecords")}</Button>}
             {allDone ? (
               <Button variant="primary" onClick={onClose}>
                 {t("oneshot.done")}

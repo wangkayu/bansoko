@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/workitems"
 )
 
 type libraryRecorder struct {
@@ -56,7 +57,7 @@ func TestFileFailureRequestMapsTypedErrno(t *testing.T) {
 func TestFileSuccessClosesLibraryAndInternalSource(t *testing.T) {
 	rec := &libraryRecorder{}
 	s := &Service{diagnostics: rec}
-	s.fileSuccessAfterCommit()(context.Background())
+	s.fileSuccessAfterCommit(workitems.Claim{}, false)(context.Background())
 	if len(rec.successes) != 2 ||
 		rec.successes[0] != (observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindLibrary, TargetID: "library"}) ||
 		rec.successes[1] != observabilityport.InternalSuccess(observabilityport.InternalFileOperation) {

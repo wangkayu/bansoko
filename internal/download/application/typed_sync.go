@@ -164,7 +164,7 @@ func (s *Service) withSyncDiagnostics(outcome worker.Outcome, err error, code, t
 		return outcome, err
 	}
 	record := func(variant observabilityport.ConditionVariant, failure outbound.Failure) (worker.Outcome, error) {
-		return worker.WithAfterCommit(outcome, func(ctx context.Context) {
+		return worker.AppendAfterCommit(outcome, func(ctx context.Context) {
 			request := observabilityport.DiagnosticFailureRequest{
 				Condition: observabilityport.Condition{Kind: observabilityport.KindDownloader, Variant: variant},
 				Severity:  observabilityport.SeverityError, TargetID: s.downloaderTarget(ctx), TargetName: "qBittorrent",
@@ -206,7 +206,7 @@ func (s *Service) withSyncDiagnostics(outcome worker.Outcome, err error, code, t
 	if !due {
 		return outcome, nil
 	}
-	return worker.WithAfterCommit(outcome, func(ctx context.Context) {
+	return worker.AppendAfterCommit(outcome, func(ctx context.Context) {
 		if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindDownloader, TargetID: s.downloaderTarget(ctx)}); record != nil {
 			record(ctx)
 		}
@@ -327,5 +327,9 @@ func (s *Service) finishTypedSync(ctx context.Context, claim workitems.Claim, ta
 	if reply.State == "failed" && reply.CommittedReason != "" {
 		terminalReason = safeReason(reply.CommittedReason)
 	}
-	return worker.Committed(claim, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode, Reason: terminalReason}), nil
+	out := worker.Committed(claim, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode, Reason: terminalReason})
+	if reply.Applied {
+		out = s.withDownloadTerminalLog(claim, out, "sync_download")
+	}
+	return out, nil
 }

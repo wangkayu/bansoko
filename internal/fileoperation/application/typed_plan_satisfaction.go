@@ -49,9 +49,8 @@ func (s *Service) observePlanSatisfaction(ctx context.Context, b *artifactPrepar
 	if in.Delivery.Operation == "move" || in.Delivery.Intent == "replace" || in.Delivery.Cleanup.Mode != "none" {
 		return s.checkHardlinkDevice(ctx, p, file)
 	}
-	// An overwrite delivery's per-target collision is the plan's own: an
-	// absent target was downgraded to block and keeps it, and a present
-	// unmanaged target is replaced by the rename, never adopted.
+	// Overwrite is decided on the target observation in the publication
+	// permit, not by adopting a same-size file here.
 	if in.Delivery.Collision == "overwrite" {
 		if p.collisionPolicy == "overwrite" {
 			return s.checkHardlinkDevice(ctx, p, file)

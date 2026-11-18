@@ -439,6 +439,7 @@ const (
 const (
 	BackupRestoreUnavailableReasonDatabaseUnsupported    BackupRestoreUnavailableReason = "database_unsupported"
 	BackupRestoreUnavailableReasonPrivilegesInsufficient BackupRestoreUnavailableReason = "privileges_insufficient"
+	BackupRestoreUnavailableReasonRestartInProgress      BackupRestoreUnavailableReason = "restart_in_progress"
 	BackupRestoreUnavailableReasonRestoreInProgress      BackupRestoreUnavailableReason = "restore_in_progress"
 	BackupRestoreUnavailableReasonToolsUnavailable       BackupRestoreUnavailableReason = "tools_unavailable"
 )
@@ -9458,7 +9459,7 @@ type SubscriptionLogDetails struct {
 	// VersionCount Replacement result: the number of versions of the episode kept after the decision, written only when the candidate is already placed and no version was replaced.
 	VersionCount *int `json:"version_count,omitempty"`
 
-	// WindowTotal How many releases the rss_new_content batch's feed window held in total. The difference to item_count is the releases whose outcome did not change. Absent on records written before it was introduced.
+	// WindowTotal Total releases in the RSS window, including previously recorded releases. This count does not describe evaluation or comparison outcomes. Absent on records written before it was introduced.
 	WindowTotal *int `json:"window_total,omitempty"`
 }
 

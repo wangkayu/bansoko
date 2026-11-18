@@ -180,6 +180,7 @@ func RecoverInterrupted(ctx context.Context, cluster Cluster, logger observabili
 			Message: message, Component: "backup", Operation: "restore_recovery", Outcome: "warning", ReasonCode: reason,
 		})
 	}
+	discardReasons := make(map[string]string)
 	if !liveExists {
 		replaced, ok := newest(database, names, kindReplaced)
 		if !ok {
@@ -202,7 +203,11 @@ func RecoverInterrupted(ctx context.Context, cluster Cluster, logger observabili
 	} else if stamp, ok := newest(database, names, kindRestored); ok {
 		ready := sideName(database, kindRestored, stamp)
 		age := now.Sub(time.Unix(stamp, 0))
-		if age >= 0 && age <= rollForwardWindow && sameSchema(ctx, cluster, database, ready) {
+		if age < 0 || age > rollForwardWindow {
+			discardReasons[ready] = "backup_restore_ready_expired"
+		} else if !sameSchema(ctx, cluster, database, ready) {
+			discardReasons[ready] = "backup_restore_ready_schema_unconfirmed"
+		} else {
 			if err := swapIn(ctx, admin, database, ready, stamp); err != nil {
 				return err
 			}
@@ -214,6 +219,12 @@ func RecoverInterrupted(ctx context.Context, cluster Cluster, logger observabili
 	for name := range names {
 		if err := dropDatabase(ctx, admin, name); err != nil {
 			return err
+		}
+		switch discardReasons[name] {
+		case "backup_restore_ready_expired":
+			note("Discarded a prepared restore outside the restart recovery window.", discardReasons[name])
+		case "backup_restore_ready_schema_unconfirmed":
+			note("Discarded a prepared restore because its schema could not be confirmed against the running database.", discardReasons[name])
 		}
 	}
 	return nil

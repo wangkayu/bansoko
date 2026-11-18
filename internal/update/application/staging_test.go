@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"bansoko/internal/update/packagemaker"
@@ -84,6 +85,23 @@ func TestExtractVerifyPublishHappyPath(t *testing.T) {
 func TestVerifyReleaseTreeRequiresRetainedPayload(t *testing.T) {
 	if err := VerifyReleaseTree(t.TempDir()); err == nil {
 		t.Fatal("a tree without its retained payload must be rejected")
+	}
+}
+
+func TestVerifyReleaseTreeRejectsInvalidOverlayManifest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, SignedManifestEntryPath)
+	if err := os.WriteFile(path, []byte(`{"release_id":"historical"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyStagedReleaseTree(dir); err == nil || !strings.Contains(err.Error(), "no embedded update segment") {
+		t.Fatalf("historical manifest: %v", err)
+	}
+	if err := os.Truncate(path, maxManifestBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyStagedReleaseTree(dir); err == nil || !strings.Contains(err.Error(), "bounded read size") {
+		t.Fatalf("oversized manifest: %v", err)
 	}
 }
 

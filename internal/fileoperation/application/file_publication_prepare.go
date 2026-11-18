@@ -49,10 +49,7 @@ func preparedPublicationObjects(op domain.FileOperation, p domain.PublicationPre
 		}
 	}
 	objects := map[string]any{"source": source, "source_parent": pathIdentity(p.SourceParent), "target": targetLocation, "target_parent": pathIdentity(p.TargetParent), "temp": tempLocation}
-	if op.CollisionPolicy == domain.CollisionOverwrite {
-		if p.ExpectedTarget == nil {
-			return "", fmt.Errorf("overwrite target observation required")
-		}
+	if op.CollisionPolicy == domain.CollisionOverwrite && p.ExpectedTarget != nil {
 		objects["expected_target"] = pathObject(targetLocation, *p.ExpectedTarget)
 	}
 	canonical, err := canonicalPlanValue(objects)

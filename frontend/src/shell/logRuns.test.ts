@@ -209,14 +209,14 @@ describe("discoveryOutcomeText", () => {
     expect(entryView(line, undefined).meta).toBeUndefined();
   });
 
-  it("says how many window releases keep their verdict", () => {
+  it("reports the new entry without drawing conclusions about the other entries in the feed", () => {
     const line = entry({
       kind: "rss_new_content",
       message_code: "rss_new_content",
-      message_params: { count: 3 },
-      details: { item_count: 3, window_total: 30, outcome_counts: { accepted_pending_download: 3 } },
+      message_params: { count: 1 },
+      details: { item_count: 1, window_total: 8, outcome_counts: { accepted_pending_download: 1 } },
     });
-    expect(entryView(line, undefined).meta).toBe("待评价 3、其余 27 个种子结局不变");
+    expect(entryView(line, undefined).meta).toBe("待评价 1");
   });
 });
 

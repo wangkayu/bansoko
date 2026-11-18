@@ -1137,8 +1137,6 @@ func openFileOperationDBWithPolicy(t *testing.T, mutate func(map[string]any)) (*
 			t.Fatalf("freeze the fixture overwrite incumbent: %v", incumbentErr)
 		}
 		if unmanaged, _ := policy[fixtureUnmanagedOverwriteKey].(bool); unmanaged {
-			// The incumbent stays on disk but no approval names it: the
-			// delivery is ensure_present/overwrite (unmanaged overwrite).
 			delete(policy, "fixture_replacement_binding")
 			delete(policy, "fixture_replacement_target")
 		}

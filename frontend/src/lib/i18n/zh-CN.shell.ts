@@ -150,7 +150,6 @@ export const logCopy = {
     filtered: "被过滤 {n}",
     filteredWithReasons: "被过滤 {n}（{reasons}）",
     parseFailed: "标题无法解析 {n}",
-    othersUnchanged: "其余 {n} 个种子结局不变",
   },
   // 批次评价头行第二行：这批种子的结局分布，按固定顺序拼接，标签沿用种子状态词汇。
   batch: {
@@ -210,11 +209,11 @@ export const logCopy = {
     release_adopted_existing: "已使用媒体库中已有的文件",
     release_acquisition_failed: "未能受理",
     release_submitted: "已提交下载",
-    release_awaiting_competition: "等待同集的其他版本",
+    release_awaiting_competition: "待进行同集比较",
     release_resume_baseline: "发布于恢复订阅之前，已跳过",
     release_start_baseline: "发布于订阅之前，已跳过",
-    release_batch_first: "首次评价 {count} 个种子",
-    release_batch_reevaluated: "重新评价 {count} 个种子",
+    release_batch_first: "已安排首次评价 {count} 个种子",
+    release_batch_reevaluated: "已安排评价 {count} 个种子",
     download_submitted: "已提交下载：{name}",
     download_completed: "下载完成",
     download_removed: "已在下载器中删除",

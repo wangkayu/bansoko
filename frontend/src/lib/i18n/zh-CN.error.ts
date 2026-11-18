@@ -278,6 +278,7 @@ export const errorCopy = {
 
   // --- 更新 ---
   UPDATE_LOCKED: "正在更新中，请稍后查看进度",
+  RESTART_IN_PROGRESS: "正在还原或更新，请稍后重试",
 
   // --- 备份 ---
   BACKUP_UNAVAILABLE: "此部署缺少数据库备份工具",

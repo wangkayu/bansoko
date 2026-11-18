@@ -132,7 +132,7 @@ func (s *Service) PrepareNativeTx(ctx context.Context, scope txscope.Tx, a accep
 		return preparedOrReplay{}, mapAcceptanceError(err)
 	}
 	if i.production {
-		projection, err := productionIntent(ctx, tx, c, i.entryMode, i.connection, false, i.replacements...)
+		projection, err := productionIntent(ctx, tx, c, i.entryMode, i.connection, i.replacements...)
 		if err != nil {
 			return preparedOrReplay{}, mapAcceptanceError(err)
 		}

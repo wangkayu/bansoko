@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bansoko/internal/download/domain"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -103,6 +104,20 @@ FROM download_tasks WHERE id = $1`, taskID).Scan(&highwater, &lastProgress); err
 	return state, failureCode, failureReason, correlation, highwater, lastProgress
 }
 
+type downloadResultLog struct {
+	observabilityport.NopRuntimeLogger
+	warnings []observabilityport.RuntimeEvent
+	infos    []observabilityport.RuntimeEvent
+}
+
+func (l *downloadResultLog) Warn(_ context.Context, event observabilityport.RuntimeEvent) {
+	l.warnings = append(l.warnings, event)
+}
+
+func (l *downloadResultLog) Info(_ context.Context, event observabilityport.RuntimeEvent) {
+	l.infos = append(l.infos, event)
+}
+
 // TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheDownloadToCleanup
 // is the migrated backstop case: a reliable high-water mark that stopped
 // growing past the frozen stall window fails as DOWNLOAD_STALLED. The sync
@@ -122,6 +137,9 @@ func TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheDownloadToCleanup
 		ContentCompleteBytes: &complete, PayloadTotalBytes: &total,
 	}}
 	service, store := newDownloadService(t, db, provider, &fakeRuntimeConfig{})
+	log := &downloadResultLog{}
+	diagnostics := &syncRecorder{}
+	service.SetDiagnosticRecorder(diagnostics, log)
 	claim := createClaimedQBWorkItem(t, db, store, "task-qb-stalled", workitems.KindQBSync)
 
 	outcome, err := service.Handle(context.Background(), claim)
@@ -142,6 +160,18 @@ func TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheDownloadToCleanup
 	}
 	if correlation.ExternalID != "tag:qb:release-qb-test" {
 		t.Fatalf("stall verdict dropped the correlation: %+v", correlation)
+	}
+	if len(log.warnings) != 0 || len(diagnostics.successes) != 0 || outcome.AfterCommit == nil {
+		t.Fatalf("log or diagnostic did not wait for the post-commit callback: log=%+v diagnostics=%+v", log.warnings, diagnostics.successes)
+	}
+	outcome.AfterCommit(context.Background())
+	if len(diagnostics.successes) != 1 || diagnostics.successes[0].Kind != observabilityport.KindDownloader {
+		t.Fatalf("the successful qB poll must close the downloader diagnostic: %+v", diagnostics.successes)
+	}
+	if len(log.warnings) != 1 || log.warnings[0].WorkItemID != claim.ID ||
+		log.warnings[0].StateAfter != "failed" || log.warnings[0].ReasonCode != "DOWNLOAD_STALLED" ||
+		!strings.Contains(log.warnings[0].Message, "no progress") {
+		t.Fatalf("stall log did not reflect the committed owner verdict: %+v", log.warnings)
 	}
 	// The high-water mark is preserved: a stall is a statement about what was
 	// already observed, never an instruction to forget it.
