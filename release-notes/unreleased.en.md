@@ -23,6 +23,7 @@
 ## Fixed
 
 - Automation run records and logs distinguish completed catalog checks from queued work and show confirmed results even when some tasks fail.
+- Interrupted automation runs with no confirmed result show as unconfirmed rather than failed in settings and logs.
 - Runtime logs distinguish network, package verification, and local storage failures during update preparation without exposing request URLs or file paths.
 - Tabs and filters stay visible while scrolling the event or runtime log list in the log dialog.
 - Import completion and failure notifications for AniBT and Mikan subscriptions now prefer the source cover. Download and import notifications for one-shots started from either catalog also prefer that entry's cover. If no source cover is available, notifications fall back to Bangumi, TMDB, then the built-in placeholder.

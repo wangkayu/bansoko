@@ -35,7 +35,8 @@ func (d *Dispatcher) logDispatchResult(ctx context.Context, runID, kind, trigger
 		event.Outcome = "partial"
 	}
 	label := automationRunLabel(kind, trigger)
-	if result.unconfirmed {
+	if result.state == "unconfirmed" {
+		event.Outcome = "unconfirmed"
 		event.Message = fmt.Sprintf("Completion of %s was not confirmed.", label)
 		d.logWarn(ctx, event)
 		return

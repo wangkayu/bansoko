@@ -4917,7 +4917,8 @@ paths:
             the result's outcome, or in_progress while the run has no result.
             failure includes failed acquisitions, failed business records,
             failed and partial automation runs, and failed or unconfirmed
-            (unknown) notification deliveries.
+            (unknown) notification deliveries. An unconfirmed automation run
+            is informational rather than a confirmed failure.
           schema:
             $ref: '#/components/schemas/ObservabilityRecordState'
         - name: q
@@ -10470,7 +10471,10 @@ components:
       enum: [minute, hour, day]
     AutomationState:
       type: string
-      enum: [queued, running, completed, partial, failed]
+      enum: [queued, running, completed, partial, failed, unconfirmed]
+      description: >-
+        Unconfirmed is terminal: the run stopped or was recovered without a
+        reliable outcome. Its counters are not evidence of work performed.
     SubscriptionLogKind:
       type: string
       enum:

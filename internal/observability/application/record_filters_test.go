@@ -150,6 +150,9 @@ func TestSourceStatePredicates(t *testing.T) {
 	if got := automationStates.predicate(RecordStateFailure); got != "e.state IN ('partial', 'failed')" {
 		t.Fatalf("automation failure: %s", got)
 	}
+	if got := automationStates.predicate(RecordStateInfo); got != "e.state IN ('unconfirmed')" {
+		t.Fatalf("unconfirmed automation is informational: %s", got)
+	}
 }
 
 func TestSQLListQuotes(t *testing.T) {

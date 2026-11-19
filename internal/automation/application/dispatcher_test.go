@@ -116,6 +116,18 @@ func TestSettleDispatch(t *testing.T) {
 	}
 }
 
+func TestDispatchOutcomePreservesConfirmedSuccessAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	counts := dispatchCounts{targetCount: 1, enqueued: 1}
+	if result := dispatchOutcome(ctx, counts, nil); result.state != "completed" || result.counts != counts {
+		t.Fatalf("confirmed success changed: %+v", result)
+	}
+	if result := dispatchOutcome(ctx, counts, ctx.Err()); result != unconfirmedDispatch() {
+		t.Fatalf("canceled result asserted counts: %+v", result)
+	}
+}
+
 func TestSafeDispatchErrorRedactsSensitiveValues(t *testing.T) {
 	if got := safeDispatchError(errors.New("request https://example.test/?token=secret")); got == "request https://example.test/?token=secret" {
 		t.Fatal("expected sensitive dispatch error to be redacted")
@@ -126,37 +138,31 @@ func TestSafeDispatchErrorRedactsSensitiveValues(t *testing.T) {
 }
 
 type captureRoutineRecorder struct {
-	routine   observabilityport.RoutineRequest
+	routine observabilityport.RoutineRequest
+	observabilityport.Recorder
 	failures  []observabilityport.DiagnosticFailureRequest
 	successes []observabilityport.DiagnosticSuccessRequest
 }
 
-func (r *captureRoutineRecorder) UpsertRoutine(_ context.Context, req observabilityport.RoutineRequest) error {
+func (r *captureRoutineRecorder) UpsertRoutineTx(_ context.Context, _ txscope.Tx, req observabilityport.RoutineRequest) error {
 	r.routine = req
 	return nil
 }
-func (r *captureRoutineRecorder) RecordDiagnosticFailure(_ context.Context, req observabilityport.DiagnosticFailureRequest) error {
+func (r *captureRoutineRecorder) RecordDiagnosticFailureTx(_ context.Context, _ txscope.Tx, req observabilityport.DiagnosticFailureRequest) error {
 	r.failures = append(r.failures, req)
 	return nil
 }
-func (r *captureRoutineRecorder) RecordDiagnosticSuccess(_ context.Context, req observabilityport.DiagnosticSuccessRequest) error {
+func (r *captureRoutineRecorder) RecordDiagnosticSuccessTx(_ context.Context, _ txscope.Tx, req observabilityport.DiagnosticSuccessRequest) error {
 	r.successes = append(r.successes, req)
-	return nil
-}
-func (r *captureRoutineRecorder) UpsertRoutineTx(context.Context, txscope.Tx, observabilityport.RoutineRequest) error {
-	return nil
-}
-func (r *captureRoutineRecorder) RecordDiagnosticFailureTx(context.Context, txscope.Tx, observabilityport.DiagnosticFailureRequest) error {
-	return nil
-}
-func (r *captureRoutineRecorder) RecordDiagnosticSuccessTx(context.Context, txscope.Tx, observabilityport.DiagnosticSuccessRequest) error {
 	return nil
 }
 
 func TestRecordObservabilitySuccessfulDispatchClosesAllDispatchEpisodes(t *testing.T) {
 	recorder := &captureRoutineRecorder{}
 	d := &Dispatcher{Recorder: recorder}
-	d.recordObservability(context.Background(), "rss_refresh", settleDispatch(dispatchCounts{}, nil))
+	if err := d.recordObservability(context.Background(), txscope.Tx{}, "rss_refresh", settleDispatch(dispatchCounts{}, nil)); err != nil {
+		t.Fatal(err)
+	}
 
 	want := observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)
 	if len(recorder.successes) != 1 || recorder.successes[0] != want {
@@ -167,7 +173,9 @@ func TestRecordObservabilitySuccessfulDispatchClosesAllDispatchEpisodes(t *testi
 func TestRecordObservabilityWritesStructuredDispatchCounts(t *testing.T) {
 	recorder := &captureRoutineRecorder{}
 	d := &Dispatcher{Recorder: recorder}
-	d.recordObservability(context.Background(), "metadata_match", settleDispatch(dispatchCounts{targetCount: 5, completed: 2, enqueued: 4, merged: 1, skipped: 2, errors: 3}, nil))
+	if err := d.recordObservability(context.Background(), txscope.Tx{}, "metadata_match", settleDispatch(dispatchCounts{targetCount: 5, completed: 2, enqueued: 4, merged: 1, skipped: 2, errors: 3}, nil)); err != nil {
+		t.Fatal(err)
+	}
 
 	var details map[string]int
 	if err := json.Unmarshal(recorder.routine.Details, &details); err != nil {

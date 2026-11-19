@@ -192,6 +192,7 @@ export const settingsNotificationsCopy = {
     saved: "自动任务已保存",
     saveFailed: "保存自动任务失败",
     lastOutcome: {
+      unconfirmed: "结果未确认",
       queued: "排队中",
       running: "运行中",
       completed: "上次成功",
@@ -213,6 +214,7 @@ export const settingsNotificationsCopy = {
     runDone: "{name}执行完成",
     runPartial: "{name}部分完成",
     runFailed: "{name}执行失败",
+    runUnconfirmed: "{name}结果未确认",
     runNowFailed: "立即执行失败",
     cancel: "取消",
     save: "保存",

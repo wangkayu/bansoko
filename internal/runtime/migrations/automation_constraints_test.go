@@ -40,6 +40,15 @@ func TestAutomationDispatchRunConstraints(t *testing.T) {
 			started_at, finished_at
 		) VALUES ('dispatch-partial-empty', 'metadata_match', 'manual', 'partial', 1, 0, 1,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	p.accept("unconfirmed dispatch without asserted counts", `
+		INSERT INTO automation_dispatch_runs(id, kind, trigger, state, started_at, finished_at)
+		VALUES ('dispatch-unconfirmed', 'rss_refresh', 'scheduled', 'unconfirmed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	p.reject("unconfirmed dispatch with an asserted inline completion count", `
+		UPDATE automation_dispatch_runs SET completed_count = 0 WHERE id = 'dispatch-unconfirmed'`)
+	p.reject("unconfirmed dispatch with asserted queued work", `
+		UPDATE automation_dispatch_runs SET enqueued_count = 1 WHERE id = 'dispatch-unconfirmed'`)
+	p.reject("unconfirmed dispatch without a finish timestamp", `
+		UPDATE automation_dispatch_runs SET finished_at = NULL WHERE id = 'dispatch-unconfirmed'`)
 }
 
 // The global scope uses the 'global' sentinel id; other scopes never do.

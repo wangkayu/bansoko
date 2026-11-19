@@ -50,6 +50,7 @@ const (
 	RoutineResultDispatchCompleted        RoutineResultCode  = "dispatch_completed"
 	RoutineResultDispatchPartial          RoutineResultCode  = "dispatch_partial"
 	RoutineResultDispatchFailed           RoutineResultCode  = "dispatch_failed"
+	RoutineResultDispatchUnconfirmed      RoutineResultCode  = "dispatch_unconfirmed"
 	RoutineResultRetentionPassCompleted   RoutineResultCode  = "retention_pass_completed"
 	RoutineResultRetentionPassFailed      RoutineResultCode  = "retention_pass_failed"
 	RoutineResultFileManagerCompleted     RoutineResultCode  = "file_manager_operation_completed"
@@ -67,7 +68,7 @@ var (
 		RoutineProviderRefresh:      {RoutineResultProviderRefreshCompleted: {}, RoutineResultProviderRefreshFailed: {}, RoutineResultProviderParserWarning: {}},
 		RoutineRSSRefresh:           {RoutineResultRSSRefreshSucceeded: {}, RoutineResultRSSRefreshFailed: {}},
 		RoutineMetadataMatch:        {RoutineResultMetadataPending: {}, RoutineResultMetadataCompleted: {}, RoutineResultMetadataPartial: {}, RoutineResultMetadataNoResult: {}, RoutineResultMetadataConfigError: {}, RoutineResultMetadataProviderError: {}},
-		RoutineAutomationDispatch:   {RoutineResultDispatchCompleted: {}, RoutineResultDispatchPartial: {}, RoutineResultDispatchFailed: {}},
+		RoutineAutomationDispatch:   {RoutineResultDispatchCompleted: {}, RoutineResultDispatchPartial: {}, RoutineResultDispatchFailed: {}, RoutineResultDispatchUnconfirmed: {}},
 		RoutineRetentionPass:        {RoutineResultRetentionPassCompleted: {}, RoutineResultRetentionPassFailed: {}},
 		RoutineFileManagerOperation: {RoutineResultFileManagerCompleted: {}, RoutineResultFileManagerFailed: {}},
 	}
@@ -104,6 +105,7 @@ func RoutineIdentities() []RoutineIdentity {
 		{RoutineMetadataMatch, RoutineScopeSubscription, RoutineOutcomeFailure, RoutineResultMetadataProviderError},
 		{RoutineAutomationDispatch, RoutineScopeAutomation, RoutineOutcomeSuccess, RoutineResultDispatchCompleted},
 		{RoutineAutomationDispatch, RoutineScopeAutomation, RoutineOutcomeWarning, RoutineResultDispatchPartial},
+		{RoutineAutomationDispatch, RoutineScopeAutomation, RoutineOutcomeWarning, RoutineResultDispatchUnconfirmed},
 		{RoutineAutomationDispatch, RoutineScopeAutomation, RoutineOutcomeFailure, RoutineResultDispatchFailed},
 		RoutineRetentionPassIdentity(RoutineOutcomeSuccess, RoutineResultRetentionPassCompleted),
 		RoutineRetentionPassIdentity(RoutineOutcomeFailure, RoutineResultRetentionPassFailed),

@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -189,7 +188,7 @@ ORDER BY next_run_at`, now)
 	}
 
 	for _, item := range due {
-		if err := d.dispatchOne(ctx, item.kind, item.intervalValue, item.intervalUnit, now); err != nil {
+		if err := d.dispatchOne(ctx, item.kind, item.intervalValue, item.intervalUnit, now); err != nil && ctx.Err() == nil {
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "automation schedule dispatch failed",
 				Operation:  "dispatch",
@@ -233,7 +232,7 @@ ORDER BY created_at`)
 	}
 
 	for _, item := range queued {
-		if err := d.dispatchManualRun(ctx, item.id, item.kind); err != nil {
+		if err := d.dispatchManualRun(ctx, item.id, item.kind); err != nil && ctx.Err() == nil {
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "manual automation run dispatch failed",
 				Operation:  "dispatch_manual",
@@ -247,7 +246,7 @@ ORDER BY created_at`)
 	return len(queued), nil
 }
 
-func (d *Dispatcher) dispatchOne(ctx context.Context, kind string, intervalValue int, intervalUnit string, now time.Time) (errRet error) {
+func (d *Dispatcher) dispatchOne(ctx context.Context, kind string, intervalValue int, intervalUnit string, now time.Time) error {
 	_ = intervalValue
 	_ = intervalUnit
 	runID := uuid.NewString()
@@ -292,22 +291,11 @@ VALUES ($1, $2, 'scheduled', 'running', $3, $3::timestamptz + INTERVAL '30 days'
 		return fmt.Errorf("commit schedule dispatch: %w", err)
 	}
 
-	// Ensure the dispatch run always reaches a terminal state, even if
-	// runDispatch panics. Without this, a stuck 'running' row permanently
-	// blocks all future dispatches of the same kind (unique constraint).
-	defer func() {
-		if r := recover(); r != nil {
-			d.finishRun(ctx, runID, kind, unconfirmedDispatch(), now)
-			errRet = fmt.Errorf("dispatch %s panic: %v", kind, r)
-		}
-	}()
-
-	counts, dispatchErr := d.runDispatch(ctx, kind, true)
-	d.finishRun(ctx, runID, kind, settleDispatch(counts, dispatchErr), now)
-	return dispatchErr
+	d.runClaimedDispatch(ctx, runID, kind, true)
+	return nil
 }
 
-func (d *Dispatcher) dispatchManualRun(ctx context.Context, runID, kind string) (errRet error) {
+func (d *Dispatcher) dispatchManualRun(ctx context.Context, runID, kind string) error {
 	now := time.Now().UTC()
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -338,19 +326,8 @@ WHERE id = $1 AND state = 'queued'`, runID, now)
 		return fmt.Errorf("commit manual dispatch claim: %w", err)
 	}
 
-	// Ensure the dispatch run always reaches a terminal state, even if
-	// runDispatch panics. Without this, a stuck 'running' row permanently
-	// blocks all future dispatches of the same kind (unique constraint).
-	defer func() {
-		if r := recover(); r != nil {
-			d.finishRun(ctx, runID, kind, unconfirmedDispatch(), now)
-			errRet = fmt.Errorf("dispatch %s panic: %v", kind, r)
-		}
-	}()
-
-	counts, dispatchErr := d.runDispatch(ctx, kind, false)
-	d.finishRun(ctx, runID, kind, settleDispatch(counts, dispatchErr), now)
-	return dispatchErr
+	d.runClaimedDispatch(ctx, runID, kind, false)
+	return nil
 }
 
 // runDispatch executes one kind. scheduled distinguishes the timer from a
@@ -371,148 +348,6 @@ func (d *Dispatcher) runDispatch(ctx context.Context, kind string, scheduled boo
 	}
 }
 
-// finishRun records the terminal state at the actual completion time:
-// startedAt is when the run was claimed, and a scheduled run's next_run_at is
-// computed from completion so a slow run does not shorten the next interval.
-func (d *Dispatcher) finishRun(ctx context.Context, runID, kind string, result dispatchResult, startedAt time.Time) {
-	now := time.Now().UTC()
-	if now.Before(startedAt) {
-		now = startedAt
-	}
-	counts := result.counts
-	var completed *int
-	if !result.unconfirmed {
-		completed = &counts.completed
-	}
-	tx, err := d.DB.BeginTx(ctx, nil)
-	if err != nil {
-		d.logError(ctx, observabilityport.RuntimeEvent{
-			Message:    "automation dispatch run finish failed",
-			Operation:  "finish_run",
-			ReasonCode: "finish_run_begin_failed",
-			OwnerType:  "automation_dispatch_run",
-			OwnerID:    runID,
-			ErrorClass: "finish_run",
-		})
-		return
-	}
-	defer tx.Rollback()
-	var trigger string
-	err = tx.QueryRowContext(ctx, `
-UPDATE automation_dispatch_runs
-SET state = $2, target_count = $3, enqueued_count = $4, merged_count = $5,
-    skipped_count = $6, dispatch_error_count = $7, completed_count = $9,
-    finished_at = $8, retention_until = $8::timestamptz + INTERVAL '30 days', updated_at = $8
-WHERE id = $1 AND state = 'running'
-RETURNING trigger`,
-		runID, result.state, counts.targetCount, counts.enqueued, counts.merged, counts.skipped, counts.errors, now, completed).Scan(&trigger)
-	if errors.Is(err, sql.ErrNoRows) {
-		return // A recovery path already settled this run.
-	}
-	if err != nil {
-		d.logError(ctx, observabilityport.RuntimeEvent{
-			Message:    "automation dispatch run finish update failed",
-			Operation:  "finish_run",
-			ReasonCode: "finish_run_update_failed",
-			OwnerType:  "automation_dispatch_run",
-			OwnerID:    runID,
-			ErrorClass: "finish_run",
-		})
-		return
-	}
-	// Scheduled runs advance from completion time. Manual runs do not alter the
-	// schedule because they are explicit user actions.
-	if trigger == "scheduled" {
-		if _, err := tx.ExecContext(ctx, `
-UPDATE automation_schedules s
-SET next_run_at = CASE WHEN s.enabled THEN $2::timestamptz + CASE s.interval_unit
-        WHEN 'minute' THEN s.interval_value * INTERVAL '1 minute'
-        WHEN 'hour' THEN s.interval_value * INTERVAL '1 hour'
-        ELSE s.interval_value * INTERVAL '1 day'
-    END ELSE NULL END,
-    last_dispatch_at = $2, version = version + 1, updated_at = $2
-WHERE s.kind = $1`, kind, now); err != nil {
-			d.logError(ctx, observabilityport.RuntimeEvent{
-				Message:    "automation dispatch run schedule update failed",
-				Operation:  "finish_run",
-				ReasonCode: "finish_run_schedule_failed",
-				OwnerType:  "automation_dispatch_run",
-				OwnerID:    runID,
-				ErrorClass: "finish_run",
-			})
-			return
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		d.logError(ctx, observabilityport.RuntimeEvent{
-			Message:    "automation dispatch run finish commit failed",
-			Operation:  "finish_run",
-			ReasonCode: "finish_run_commit_failed",
-			OwnerType:  "automation_dispatch_run",
-			OwnerID:    runID,
-			ErrorClass: "finish_run",
-		})
-		return
-	}
-	d.logDispatchResult(ctx, runID, kind, trigger, result)
-	d.recordObservability(ctx, kind, result)
-	if d.eventHub != nil {
-		d.eventHub.Publish(events.Event{Target: events.TargetRecords})
-	}
-}
-
-func (d *Dispatcher) recordObservability(ctx context.Context, kind string, result dispatchResult) {
-	if d.Recorder == nil {
-		return
-	}
-	outcome, resultCode := result.routineOutcome()
-	counts := result.counts
-	summary := "Automation run outcome could not be confirmed."
-	var details json.RawMessage
-	var err error
-	// Structured counts let the settings surface render a localized summary;
-	// the English key=value summary stays as the machine-stable fallback.
-	if !result.unconfirmed {
-		summary = fmt.Sprintf("targets=%d completed=%d enqueued=%d merged=%d skipped=%d errors=%d",
-			counts.targetCount, counts.completed, counts.enqueued, counts.merged, counts.skipped, counts.errors)
-		details, err = json.Marshal(map[string]int{
-			"target_count":    counts.targetCount,
-			"completed_count": counts.completed,
-			"enqueued_count":  counts.enqueued,
-			"merged_count":    counts.merged,
-			"skipped_count":   counts.skipped,
-			"error_count":     counts.errors,
-		})
-	}
-	if err != nil {
-		d.logError(ctx, observabilityport.RuntimeEvent{
-			Message:    "automation routine details encoding failed",
-			Operation:  "observability",
-			ReasonCode: "routine_details_encode_failed",
-			ErrorClass: "observability",
-		})
-	}
-	routineIdentity := observabilityport.AutomationDispatchRoutine(outcome, resultCode)
-	if err := d.Recorder.UpsertRoutine(ctx, observabilityport.RoutineRequest{
-		Identity: routineIdentity, ScopeID: kind, Summary: summary, Details: details,
-	}); err != nil {
-		d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation routine write failed", Operation: "observability", ReasonCode: "routine_write_failed", ErrorClass: "observability"})
-	}
-	if result.state != "completed" {
-		failure := observabilityport.InternalFailure(observabilityport.InternalAutomationDispatch, "")
-		if result.state == "partial" {
-			failure.Severity = observabilityport.SeverityWarning
-		}
-		if err := d.Recorder.RecordDiagnosticFailure(ctx, failure); err != nil {
-			d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation diagnostic write failed", Operation: "observability", ReasonCode: "diagnostic_write_failed", ErrorClass: "observability"})
-		}
-		return
-	}
-	if err := d.Recorder.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)); err != nil {
-		d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation recovery write failed", Operation: "observability", ReasonCode: "recovery_write_failed", ErrorClass: "observability"})
-	}
-}
-
 func safeDispatchError(err error) string {
 	if err == nil {
 		return ""
@@ -522,75 +357,6 @@ func safeDispatchError(err error) string {
 		return message
 	}
 	return message
-}
-
-// ReapStaleRuns marks dispatch runs stuck in 'running' past a timeout as
-// failed. This prevents a crashed/panicked dispatch (from before the
-// defer+recover fix) from permanently blocking future runs of the same kind.
-func (d *Dispatcher) ReapStaleRuns(ctx context.Context, maxRunning time.Duration) error {
-	if maxRunning <= 0 {
-		return fmt.Errorf("stale run timeout must be positive")
-	}
-	tx, err := d.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin stale dispatch reaper: %w", err)
-	}
-	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `
-SELECT id, kind, trigger
-FROM automation_dispatch_runs
-WHERE state = 'running' AND started_at < CURRENT_TIMESTAMP - make_interval(secs => $1)
-FOR UPDATE`, maxRunning.Seconds())
-	if err != nil {
-		return fmt.Errorf("list stale dispatch runs: %w", err)
-	}
-	type staleRun struct{ id, kind, trigger string }
-	var stale []staleRun
-	for rows.Next() {
-		var run staleRun
-		if err := rows.Scan(&run.id, &run.kind, &run.trigger); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan stale dispatch run: %w", err)
-		}
-		stale = append(stale, run)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("iterate stale dispatch runs: %w", err)
-	}
-	rows.Close()
-	for _, run := range stale {
-		if _, err := tx.ExecContext(ctx, `
-UPDATE automation_dispatch_runs
-SET state = 'failed', finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP,
-    dispatch_error_count = GREATEST(dispatch_error_count, 1)
-WHERE id = $1 AND state = 'running'`, run.id); err != nil {
-			return fmt.Errorf("fail stale dispatch run %s: %w", run.id, err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-UPDATE automation_schedules s
-SET next_run_at = CASE WHEN s.enabled THEN CURRENT_TIMESTAMP ELSE NULL END,
-    last_dispatch_at = CURRENT_TIMESTAMP, version = version + 1, updated_at = CURRENT_TIMESTAMP
-WHERE s.kind = $1 AND $2 = 'scheduled'`, run.kind, run.trigger); err != nil {
-			return fmt.Errorf("recover stale schedule %s: %w", run.kind, err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit stale dispatch reaper: %w", err)
-	}
-	if len(stale) > 0 && d.eventHub != nil {
-		d.eventHub.Publish(events.Event{Target: events.TargetRecords})
-	}
-	for _, run := range stale {
-		d.logWarn(ctx, observabilityport.RuntimeEvent{
-			Message:    fmt.Sprintf("Completion of %s was not confirmed before the deadline; its automation run was marked failed.", automationRunLabel(run.kind, run.trigger)),
-			Operation:  "reap",
-			ReasonCode: "stale_run_failed",
-			OwnerType:  "automation_dispatch_run",
-			OwnerID:    run.id,
-		})
-	}
-	return nil
 }
 
 // dispatchGroupDiscovery finds active provider subscriptions, discovers their
@@ -668,12 +434,18 @@ WHERE s.state = 'active'
 	run.GroupReaders = memoizeGroupReaders(d.GroupReaders)
 	run.reuseUnchangedGroups = scheduled
 	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return counts, err
+		}
 		if scheduled && !target.airing && target.recentlyFound {
 			counts.skipped++
 			continue
 		}
 		policy, err := d.readDiscoveryPolicy(ctx, target.managedAnimeID)
 		if err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "group discovery policy read failed",
@@ -687,6 +459,9 @@ WHERE s.state = 'active'
 		}
 		c, err := run.discoverOne(ctx, target.managedAnimeID, target.subscriptionID, target.provider, target.catalogEntryRef, target.animeTitle, policy)
 		if err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "group discovery failed",
@@ -1054,12 +829,18 @@ WHERE s.state = 'active'
 	counts.targetCount = len(targets)
 
 	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return counts, err
+		}
 		if target.backingOff || target.providerPaused {
 			counts.skipped++
 			continue
 		}
 		tx, err := d.DB.BeginTx(ctx, nil)
 		if err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "rss refresh dispatch transaction failed",
@@ -1074,6 +855,9 @@ WHERE s.state = 'active'
 		runtimeVersion, ineligibility, eligibilityErr := sourceRefreshEligibilityTx(ctx, tx, target.sourceID)
 		if eligibilityErr != nil {
 			tx.Rollback()
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "rss refresh source eligibility read failed",
@@ -1099,6 +883,9 @@ WHERE s.state = 'active'
 		})
 		if err != nil {
 			tx.Rollback()
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			if errors.Is(err, workitems.ErrLiveItemConflict) {
 				counts.merged++
 			} else {
@@ -1115,6 +902,9 @@ WHERE s.state = 'active'
 			continue
 		}
 		if err := tx.Commit(); err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "rss refresh dispatch commit failed",
@@ -1150,11 +940,17 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 	}
 	seasons := []string{catalogdomain.SeasonAt(now), catalogdomain.SeasonAfter(now)}
 	for _, provider := range []string{catalogapp.ProviderAniBT, catalogapp.ProviderMikan} {
+		if err := ctx.Err(); err != nil {
+			return counts, err
+		}
 		counts.targetCount += len(seasons)
 		// One switch per provider: the latest saved preference row of any
 		// season, so an opt-out survives the season rollover.
 		enabled, err := d.CatalogRefresher.ProviderRefreshEnabled(ctx, provider)
 		if err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors += len(seasons)
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message: "catalog refresh preference read failed", Operation: "catalog_refresh",
@@ -1167,12 +963,18 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 			continue
 		}
 		for _, season := range seasons {
+			if err := ctx.Err(); err != nil {
+				return counts, err
+			}
 			snapshot, err := d.CatalogRefresher.RefreshProviderSeason(ctx, provider, season)
 			if err == nil && snapshot.RefreshInProgress {
 				counts.merged++
 				continue
 			}
 			if err != nil || snapshot.Status == catalogdomain.StatusOutage {
+				if canceled := ctx.Err(); canceled != nil {
+					return counts, canceled
+				}
 				counts.errors++
 				d.logWarn(ctx, observabilityport.RuntimeEvent{
 					Message: "catalog season refresh failed", Operation: "catalog_refresh",
@@ -1244,6 +1046,9 @@ WHERE m.bgm_work_id IS NULL
 	counts.targetCount = len(targets)
 
 	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return counts, err
+		}
 		entryRef := ""
 		if target.entryRef.Valid {
 			entryRef = target.entryRef.String
@@ -1251,6 +1056,9 @@ WHERE m.bgm_work_id IS NULL
 		c, err := d.matchOne(ctx, target.managedAnimeID, target.title, target.origin, entryRef,
 			target.bgmWorkID, target.tmdbWorkID, target.tmdbKind, target.mediaKind, target.tmdbSeason, target.totalEpisodes, target.year, target.season, target.metadataVersion)
 		if err != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				return counts, canceled
+			}
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "metadata match dispatch failed",
@@ -1458,13 +1266,13 @@ FOR UPDATE OF r`,
 }
 
 func (d *Dispatcher) recordMetadataMatchOutcome(ctx context.Context, managedAnimeID, outcome, resultCode, summary string) {
-	if d.Recorder == nil {
+	if d.Recorder == nil || ctx.Err() != nil {
 		return
 	}
 	identity := observabilityport.MetadataMatchRoutine(observabilityport.RoutineOutcome(outcome), observabilityport.RoutineResultCode(resultCode))
 	if err := d.Recorder.UpsertRoutine(ctx, observabilityport.RoutineRequest{
 		Identity: identity, ScopeID: managedAnimeID, ManagedAnimeID: managedAnimeID, Summary: summary,
-	}); err != nil {
+	}); err != nil && ctx.Err() == nil {
 		d.logError(ctx, observabilityport.RuntimeEvent{
 			Message: "automation routine write failed", Operation: "observability", ReasonCode: "routine_write_failed",
 			OwnerType: "managed_anime", OwnerID: managedAnimeID, ErrorClass: "observability",

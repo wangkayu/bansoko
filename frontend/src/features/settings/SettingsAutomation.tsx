@@ -39,21 +39,22 @@ const AUTOMATION_KIND_LABEL = (): Record<AutomationKind, string> => ({
   catalog_refresh: t("nav.automationKind.catalog_refresh"),
 });
 
-// The last schedule dispatch outcome: queued/running are transient in-flight states, completed/partial/failed are terminal.
-const lastRunOutcomeLabel = (): Partial<Record<AutomationState, string>> => ({
+const lastRunOutcomeLabel = (): Record<AutomationState, string> => ({
   queued: t("settings.automation.lastOutcome.queued"),
   running: t("settings.automation.lastOutcome.running"),
   completed: t("settings.automation.lastOutcome.completed"),
   partial: t("settings.automation.lastOutcome.partial"),
   failed: t("settings.automation.lastOutcome.failed"),
+  unconfirmed: t("settings.automation.lastOutcome.unconfirmed"),
 });
 
-const lastRunOutcomeColor: Partial<Record<AutomationState, "muted" | "info" | "online" | "warning" | "offline">> = {
+const lastRunOutcomeColor: Record<AutomationState, "muted" | "info" | "online" | "warning" | "offline"> = {
   queued: "muted",
   running: "info",
   completed: "online",
   partial: "warning",
   failed: "offline",
+  unconfirmed: "warning",
 };
 
 export function SettingsAutomation() {
@@ -181,6 +182,7 @@ function SchedulesCard() {
       if (state === "completed") toast.success(t("settings.automation.runDone", { name }));
       else if (state === "partial") toast.warning(t("settings.automation.runPartial", { name }));
       else if (state === "failed") toast.error(t("settings.automation.runFailed", { name }));
+      else if (state === "unconfirmed") toast.warning(t("settings.automation.runUnconfirmed", { name }));
       else toast.info(t("settings.automation.triggered"));
       await invalidateSchedules();
       await queryClient.invalidateQueries({ queryKey: observabilityKeys.records });
@@ -222,7 +224,7 @@ function SchedulesCard() {
                 </Chip>
                 {item.last_run_outcome && (
                   <StatePill tone={lastRunOutcomeColor[item.last_run_outcome.state]}>
-                    {lastRunOutcomeLabel()[item.last_run_outcome.state] ?? item.last_run_outcome.state}
+                    {lastRunOutcomeLabel()[item.last_run_outcome.state]}
                   </StatePill>
                 )}
               </div>

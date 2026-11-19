@@ -1001,7 +1001,9 @@ VALUES ('scheduled-completion-run', 'metadata_match', 'scheduled', 'running', CU
 	}
 
 	dispatcher := &Dispatcher{DB: db}
-	dispatcher.finishRun(ctx, "scheduled-completion-run", "metadata_match", settleDispatch(dispatchCounts{}, nil), time.Now().UTC())
+	if err := dispatcher.finishRun(ctx, "scheduled-completion-run", settleDispatch(dispatchCounts{}, nil)); err != nil {
+		t.Fatal(err)
+	}
 
 	var state string
 	var exact bool
@@ -1051,7 +1053,7 @@ JOIN automation_schedules s ON s.kind = r.kind
 WHERE r.id = 'stale-metadata-run'`).Scan(&state, &exact); err != nil {
 		t.Fatal(err)
 	}
-	if state != "failed" || !exact {
+	if state != "unconfirmed" || !exact {
 		t.Fatalf("stale reaper state=%s one_database_timestamp=%v", state, exact)
 	}
 }
@@ -1086,7 +1088,7 @@ JOIN automation_schedules s ON s.kind = r.kind
 WHERE r.id = 'stale-manual-metadata-run'`).Scan(&state, &unchanged); err != nil {
 		t.Fatal(err)
 	}
-	if state != "failed" || !unchanged {
+	if state != "unconfirmed" || !unchanged {
 		t.Fatalf("stale manual state=%s schedule_unchanged=%v", state, unchanged)
 	}
 }

@@ -446,6 +446,7 @@ export const enReasonCopy = {
   no_release_placement: "This torrent has no import record",
   claim_failed: "Task is being handled by another process. It will retry automatically.",
   dispatch_failed: "Scheduled task failed",
+  dispatch_unconfirmed: "Task result unconfirmed",
   manual_dispatch_failed: "Manual run failed",
   discovery_failed: "Failed to fetch",
   sweep_failed: "Cleanup failed",

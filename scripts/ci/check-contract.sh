@@ -386,7 +386,7 @@ end
   "AutomationKind" => %w[group_discovery rss_refresh metadata_match catalog_refresh],
   "AutomationTrigger" => %w[scheduled manual],
   "AutomationIntervalUnit" => %w[minute hour day],
-  "AutomationState" => %w[queued running completed partial failed],
+  "AutomationState" => %w[queued running completed partial failed unconfirmed],
   "SubscriptionLogOutcome" => %w[info success failure],
   "SubscriptionLogSource" => %w[subscription one_shot manual],
   "ObservabilityRecordState" => %w[in_progress success failure info],

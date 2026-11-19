@@ -406,11 +406,12 @@ const (
 
 // Defines values for AutomationState.
 const (
-	AutomationStateCompleted AutomationState = "completed"
-	AutomationStateFailed    AutomationState = "failed"
-	AutomationStatePartial   AutomationState = "partial"
-	AutomationStateQueued    AutomationState = "queued"
-	AutomationStateRunning   AutomationState = "running"
+	AutomationStateCompleted   AutomationState = "completed"
+	AutomationStateFailed      AutomationState = "failed"
+	AutomationStatePartial     AutomationState = "partial"
+	AutomationStateQueued      AutomationState = "queued"
+	AutomationStateRunning     AutomationState = "running"
+	AutomationStateUnconfirmed AutomationState = "unconfirmed"
 )
 
 // Defines values for AutomationTrigger.
@@ -3918,19 +3919,21 @@ type AuthSession struct {
 // AutomationDispatchRun defines model for AutomationDispatchRun.
 type AutomationDispatchRun struct {
 	// CompletedCount Confirmed inline actions, not queued tasks. Unknown for historical or unconfirmed runs, and not yet available while a run is live.
-	CompletedCount     *int              `json:"completed_count"`
-	DispatchErrorCount int               `json:"dispatch_error_count"`
-	EnqueuedCount      int               `json:"enqueued_count"`
-	FinishedAt         *time.Time        `json:"finished_at"`
-	Id                 ID                `json:"id"`
-	Kind               AutomationKind    `json:"kind"`
-	MergedCount        int               `json:"merged_count"`
-	RetentionUntil     time.Time         `json:"retention_until"`
-	SkippedCount       int               `json:"skipped_count"`
-	StartedAt          *time.Time        `json:"started_at"`
-	State              AutomationState   `json:"state"`
-	TargetCount        int               `json:"target_count"`
-	Trigger            AutomationTrigger `json:"trigger"`
+	CompletedCount     *int           `json:"completed_count"`
+	DispatchErrorCount int            `json:"dispatch_error_count"`
+	EnqueuedCount      int            `json:"enqueued_count"`
+	FinishedAt         *time.Time     `json:"finished_at"`
+	Id                 ID             `json:"id"`
+	Kind               AutomationKind `json:"kind"`
+	MergedCount        int            `json:"merged_count"`
+	RetentionUntil     time.Time      `json:"retention_until"`
+	SkippedCount       int            `json:"skipped_count"`
+	StartedAt          *time.Time     `json:"started_at"`
+
+	// State Unconfirmed is terminal: the run stopped or was recovered without a reliable outcome. Its counters are not evidence of work performed.
+	State       AutomationState   `json:"state"`
+	TargetCount int               `json:"target_count"`
+	Trigger     AutomationTrigger `json:"trigger"`
 }
 
 // AutomationIntervalUnit defines model for AutomationIntervalUnit.
@@ -3952,7 +3955,9 @@ type AutomationRecordRecordType string
 type AutomationRunAccepted struct {
 	Accepted AutomationRunAcceptedAccepted `json:"accepted"`
 	RunId    ID                            `json:"run_id"`
-	State    AutomationState               `json:"state"`
+
+	// State Unconfirmed is terminal: the run stopped or was recovered without a reliable outcome. Its counters are not evidence of work performed.
+	State AutomationState `json:"state"`
 }
 
 // AutomationRunAcceptedAccepted defines model for AutomationRunAccepted.Accepted.
@@ -3960,9 +3965,11 @@ type AutomationRunAcceptedAccepted bool
 
 // AutomationRunOutcome defines model for AutomationRunOutcome.
 type AutomationRunOutcome struct {
-	FinishedAt *time.Time      `json:"finished_at"`
-	StartedAt  *time.Time      `json:"started_at"`
-	State      AutomationState `json:"state"`
+	FinishedAt *time.Time `json:"finished_at"`
+	StartedAt  *time.Time `json:"started_at"`
+
+	// State Unconfirmed is terminal: the run stopped or was recovered without a reliable outcome. Its counters are not evidence of work performed.
+	State AutomationState `json:"state"`
 }
 
 // AutomationSchedule defines model for AutomationSchedule.
@@ -3987,7 +3994,7 @@ type AutomationSchedulePatch struct {
 	IntervalValue   int                    `json:"interval_value"`
 }
 
-// AutomationState defines model for AutomationState.
+// AutomationState Unconfirmed is terminal: the run stopped or was recovered without a reliable outcome. Its counters are not evidence of work performed.
 type AutomationState string
 
 // AutomationTrigger defines model for AutomationTrigger.
@@ -10604,7 +10611,7 @@ type ListObservabilityRecordsParams struct {
 	// EventView Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows), and so are the detail entries of a release_batch_processed batch, whose head row is the batch's one timeline row; terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected.
 	EventView *ListObservabilityRecordsParamsEventView `form:"event_view,omitempty" json:"event_view,omitempty"`
 
-	// State Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries.
+	// State Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries. An unconfirmed automation run is informational rather than a confirmed failure.
 	State *ObservabilityRecordState `form:"state,omitempty" json:"state,omitempty"`
 
 	// Q Case-insensitive search text (trimmed; blank means no search). It matches the anime title, a business record's release title, file name or subgroup name, and a notification's target name; a business record of a Release run matches when any record of its run does.

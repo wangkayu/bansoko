@@ -452,6 +452,7 @@ export const reasonCopy = {
   no_release_placement: "该种子没有入库记录",
   claim_failed: "任务正在被其他流程处理，将自动重试",
   dispatch_failed: "自动任务执行失败",
+  dispatch_unconfirmed: "任务结果未确认",
   manual_dispatch_failed: "手动执行失败",
   discovery_failed: "获取失败",
   sweep_failed: "清理失败",

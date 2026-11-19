@@ -193,6 +193,7 @@ export const enSettingsNotificationsCopy = {
     saved: "Scheduled task saved",
     saveFailed: "Failed to save scheduled task",
     lastOutcome: {
+      unconfirmed: "Result unconfirmed",
       queued: "Queued",
       running: "Running",
       completed: "Last run succeeded",
@@ -214,6 +215,7 @@ export const enSettingsNotificationsCopy = {
     runDone: "{name} completed",
     runPartial: "{name} partly completed",
     runFailed: "{name} failed",
+    runUnconfirmed: "Result unconfirmed for {name}",
     runNowFailed: "Failed to run now",
     cancel: "Cancel",
     save: "Save",

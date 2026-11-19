@@ -91,6 +91,7 @@ var (
 		RecordStateInProgress: {"queued", "running"},
 		RecordStateSuccess:    {"completed"},
 		RecordStateFailure:    {"partial", "failed"},
+		RecordStateInfo:       {"unconfirmed"},
 	}}
 	// An unknown delivery is unconfirmed: it counts as a failure.
 	pluginStates = sourceStates{column: "e.state", values: map[string][]string{

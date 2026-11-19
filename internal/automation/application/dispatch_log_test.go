@@ -50,18 +50,25 @@ VALUES ('stale-run', 'rss_refresh', 'manual', 'running', CURRENT_TIMESTAMP - INT
 		t.Fatal(err)
 	}
 	logger := &dispatchResultLogger{}
-	d := &Dispatcher{DB: db, Logger: logger}
+	recorder := automationRecorder(t, db)
+	d := &Dispatcher{DB: db, Logger: logger, Recorder: recorder}
+	if err := recorder.UpsertRoutine(ctx, observabilityport.RoutineRequest{
+		Identity: observabilityport.AutomationDispatchRoutine(observabilityport.RoutineOutcomeSuccess, observabilityport.RoutineResultDispatchCompleted),
+		ScopeID:  "rss_refresh",
+		Summary:  "Previous run completed",
+		Details:  []byte(`{"completed_count":3}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := d.ReapStaleRuns(ctx, 10*time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	d.finishRun(ctx, "stale-run", "rss_refresh", settleDispatch(dispatchCounts{targetCount: 1, enqueued: 1}, nil), time.Now())
-	var state string
-	var completed *int
-	if err := db.QueryRowContext(ctx, `SELECT state, completed_count FROM automation_dispatch_runs WHERE id = 'stale-run'`).Scan(&state, &completed); err != nil {
+	if err := d.finishRun(ctx, "stale-run", settleDispatch(dispatchCounts{targetCount: 1, enqueued: 1}, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if state != "failed" || completed != nil || len(logger.infos) != 0 || len(logger.warns) != 1 || logger.warns[0].OwnerID != "stale-run" {
-		t.Fatalf("state = %s; infos = %+v, warns = %+v", state, logger.infos, logger.warns)
+	assertUnconfirmedDispatch(t, db, "stale-run")
+	if len(logger.infos) != 0 || len(logger.warns) != 1 || logger.warns[0].OwnerID != "stale-run" || logger.warns[0].ReasonCode != "dispatch_unconfirmed" {
+		t.Fatalf("infos = %+v, warns = %+v", logger.infos, logger.warns)
 	}
 }
 
@@ -75,7 +82,9 @@ VALUES ('broken-run', 'catalog_refresh', 'manual', 'running', CURRENT_TIMESTAMP)
 	}
 	logger := &dispatchResultLogger{}
 	d := &Dispatcher{DB: db, Logger: logger}
-	d.finishRun(ctx, "broken-run", "catalog_refresh", settleDispatch(dispatchCounts{}, errors.New("private upstream context")), time.Now())
+	if err := d.finishRun(ctx, "broken-run", settleDispatch(dispatchCounts{}, errors.New("private upstream context"))); err != nil {
+		t.Fatal(err)
+	}
 	var state string
 	var failures int
 	if err := db.QueryRowContext(ctx, `SELECT state, dispatch_error_count FROM automation_dispatch_runs WHERE id = 'broken-run'`).Scan(&state, &failures); err != nil {
