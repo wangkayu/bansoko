@@ -62,8 +62,11 @@ func TestDownloadSubmittedFactsLabelTheBatchEpisodes(t *testing.T) {
 	if single["release.episodes"] != "01" || single["ep.display"] != "1" {
 		t.Fatalf("single = %v / %v", single["release.episodes"], single["ep.display"])
 	}
-	if movie := downloadSubmittedFacts(downloadNotificationRow{coverageKeys: []byte(`["movie:0"]`)}, "anime-1", taskSnapshot{}, providerCorrelation{}); movie["release.episodes"] != nil {
-		t.Fatalf("movie release.episodes = %v", movie["release.episodes"])
+	movie := downloadSubmittedFacts(downloadNotificationRow{
+		releaseIdentity: []byte(`{"State":"resolved","Kind":"movie"}`), coverageKeys: []byte(`["movie:0"]`),
+	}, "anime-1", taskSnapshot{}, providerCorrelation{})
+	if movie["release.episodes"] != nil || movie["release.is_movie"] != true {
+		t.Fatalf("movie facts = %v", movie)
 	}
 }
 

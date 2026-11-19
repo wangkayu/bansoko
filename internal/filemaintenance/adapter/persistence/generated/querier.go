@@ -88,7 +88,7 @@ type Querier interface {
 	LockReplacementDeletionOwnerVersion(ctx context.Context, cleanupID string) (int64, error)
 	//ManagedAnimeTitle
 	//
-	//  SELECT title
+	//  SELECT COALESCE(NULLIF(btrim(title_override), ''), title)::text AS title
 	//  FROM managed_anime
 	//  WHERE id = $1
 	ManagedAnimeTitle(ctx context.Context, animeID string) (string, error)

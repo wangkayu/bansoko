@@ -18,6 +18,7 @@ import (
 	"bansoko/internal/download/admission"
 	"bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/events"
 	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
@@ -950,7 +951,9 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 	facts := notification.InputFacts(row.inputSnapshot)
 	facts["task.origin"] = notification.TaskOrigin(row.entryKind)
 	facts["torrent.tree"] = torrentTreeText(row.torrentPayload)
-	for key, value := range notification.EpisodeFacts(releaseIdentityFact(row.releaseIdentity)) {
+	identity, movie := releaseIdentityFact(row.releaseIdentity)
+	facts["release.is_movie"] = movie
+	for key, value := range notification.EpisodeFacts(identity) {
 		facts[key] = value
 	}
 	var coverage []string
@@ -991,15 +994,16 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 // releaseIdentityFact adapts a media fact snapshot's EpisodeIdentity (stored
 // with Go field names) to the frozen identity shape notification.EpisodeFacts
 // reads.
-func releaseIdentityFact(raw []byte) any {
+func releaseIdentityFact(raw []byte) (any, bool) {
 	var identity struct {
 		State      string
+		Kind       string
 		RawEpisode *string
 		Episode    *string
 		Offset     int
 	}
 	if len(raw) == 0 || json.Unmarshal(raw, &identity) != nil {
-		return nil
+		return nil, false
 	}
 	fv := func(value *string) any {
 		if value == nil {
@@ -1009,7 +1013,7 @@ func releaseIdentityFact(raw []byte) any {
 	}
 	return map[string]any{"state": "known", "value": map[string]any{
 		"state": identity.State, "raw_episode": fv(identity.RawEpisode), "episode": fv(identity.Episode), "offset": json.Number(fmt.Sprint(identity.Offset)),
-	}}
+	}}, identity.State == episodeidentity.StateResolved && identity.Kind == episodeidentity.KindMovie
 }
 
 func nullableFact(value string) any {

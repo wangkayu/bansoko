@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bansoko/internal/notifypresent"
 	"bansoko/internal/templatecatalog/notification"
 	"context"
 	"strings"
@@ -20,7 +21,7 @@ func TestNotificationCatalogCompleteness(t *testing.T) {
 		NotificationTriggerKindFileOperationCompleted,
 		NotificationTriggerKindFileOperationFailed,
 	} {
-		catalog, err := service.GetNotificationCatalog(ctx, string(trigger), "")
+		catalog, err := service.GetNotificationCatalog(ctx, string(trigger), "", "")
 		if err != nil {
 			t.Fatalf("GetNotificationCatalog(%s) returned error: %v", trigger, err)
 		}
@@ -52,11 +53,11 @@ func TestNotificationCatalogCompleteness(t *testing.T) {
 	}
 
 	// Trigger-specific subsets.
-	downloadCatalog, _ := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindDownloadSubmitted), "")
+	downloadCatalog, _ := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindDownloadSubmitted), "", "")
 	if !variableNames(downloadCatalog.Variables)["download.task"] {
 		t.Error("download_submitted missing download.task")
 	}
-	fileCatalog, _ := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindFileOperationCompleted), "")
+	fileCatalog, _ := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindFileOperationCompleted), "", "")
 	fileNames := variableNames(fileCatalog.Variables)
 	for _, want := range []string{"out.name", "out.path", "op.kind"} {
 		if !fileNames[want] {
@@ -65,14 +66,38 @@ func TestNotificationCatalogCompleteness(t *testing.T) {
 	}
 
 	// An unknown catalog version is rejected.
-	if _, err := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindFileOperationCompleted), "notification-catalog-v0"); err == nil {
+	if _, err := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindFileOperationCompleted), "notification-catalog-v0", ""); err == nil {
 		t.Error("expected error for an unsupported catalog version")
+	}
+}
+
+func TestNotificationCatalogLocaleDefaults(t *testing.T) {
+	service := NewService()
+	ctx := context.Background()
+
+	zh, err := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindDownloadSubmitted), "", "")
+	if err != nil {
+		t.Fatalf("zh catalog returned error: %v", err)
+	}
+	en, err := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindDownloadSubmitted), "", notification.LocaleEN)
+	if err != nil {
+		t.Fatalf("en catalog returned error: %v", err)
+	}
+	wantTitle, wantBody := notification.DefaultsFor(string(NotificationTriggerKindDownloadSubmitted), notification.LocaleEN)
+	if en.DefaultTemplate.TitleTemplate != wantTitle || en.DefaultTemplate.BodyTemplate != wantBody {
+		t.Errorf("en default = %q / %q, want the English system default", en.DefaultTemplate.TitleTemplate, en.DefaultTemplate.BodyTemplate)
+	}
+	if zh.DefaultTemplate.TitleTemplate == en.DefaultTemplate.TitleTemplate {
+		t.Error("zh-CN and en defaults are identical")
+	}
+	if _, err := service.GetNotificationCatalog(ctx, string(NotificationTriggerKindDownloadSubmitted), "", "fr"); err == nil {
+		t.Error("expected error for an unsupported locale")
 	}
 }
 
 func TestNotificationCatalogUnknownTrigger(t *testing.T) {
 	service := NewService()
-	if _, err := service.GetNotificationCatalog(context.Background(), "not_a_trigger", ""); err == nil {
+	if _, err := service.GetNotificationCatalog(context.Background(), "not_a_trigger", "", ""); err == nil {
 		t.Fatal("expected error for unknown trigger kind")
 	}
 }
@@ -276,6 +301,21 @@ func TestPreviewNotificationReturnsStructuredAttachments(t *testing.T) {
 	if !strings.HasSuffix(preview.Body, "下载") {
 		t.Fatalf("body = %q", preview.Body)
 	}
+	// The preview carries the same channel presentation production sends: a
+	// short message with an image is a Telegram photo, and Feishu can only
+	// offer the image as a link when a URL exists (the sample has none).
+	if preview.Presentation.Telegram.Mode != notifypresent.TelegramModePhoto || preview.Presentation.Telegram.ImageOmitted {
+		t.Fatalf("telegram presentation = %+v", preview.Presentation.Telegram)
+	}
+	if !preview.Presentation.Feishu.ImageOmitted || preview.Presentation.Feishu.Image != nil {
+		t.Fatalf("feishu presentation = %+v", preview.Presentation.Feishu)
+	}
+	if preview.Presentation.Webhook.Message.Image == nil || preview.Presentation.Webhook.Message.Image.Source != "bgm" {
+		t.Fatalf("webhook presentation = %+v", preview.Presentation.Webhook.Message)
+	}
+	if len(preview.Presentation.Webhook.Message.Links) != 1 || preview.Presentation.Webhook.Message.Links[0].Provider != "download" {
+		t.Fatalf("webhook links = %+v", preview.Presentation.Webhook.Message.Links)
+	}
 }
 
 func TestPreviewNotificationUnknownVariable(t *testing.T) {
@@ -350,6 +390,29 @@ func TestPreviewNotificationInvalidSyntax(t *testing.T) {
 	}
 	if len(preview.Errors) != 1 || preview.Errors[0].Code != "unterminated_expression" {
 		t.Fatalf("expected unterminated_expression error, got %+v", preview.Errors)
+	}
+}
+
+// A gated attachment-only line with an invalid argument was accepted by v1:
+// the line is dropped and the invalid directive is reported as a warning, not
+// an error. The preview stays valid.
+func TestPreviewNotificationReportsGatedAttachmentAsWarning(t *testing.T) {
+	service := NewService()
+	preview, err := service.PreviewNotification(context.Background(), NotificationTemplatePreviewInput{
+		BodyTemplate:    "Text\n{{showIf(anime.title)}}{{image(bgm.id)}}",
+		CatalogVersion:  NotificationTemplatePreviewInputCatalogVersionNotificationCatalogV1,
+		LanguageVersion: NotificationTemplatePreviewInputLanguageVersionBansokoTemplate1,
+		TitleTemplate:   "{{anime.title}}",
+		TriggerKind:     NotificationTriggerKindDownloadSubmitted,
+	})
+	if err != nil || !preview.Valid {
+		t.Fatalf("preview=%+v error=%v", preview, err)
+	}
+	if len(preview.Errors) != 0 {
+		t.Fatalf("a gated invalid attachment must not be an error: %+v", preview.Errors)
+	}
+	if len(preview.Warnings) != 1 || preview.Warnings[0].Code != "attachment_without_effect" {
+		t.Fatalf("expected an attachment_without_effect warning, got %+v", preview.Warnings)
 	}
 }
 

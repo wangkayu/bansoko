@@ -5725,6 +5725,13 @@ paths:
           schema:
             type: string
             enum: [notification-catalog-v1]
+        - name: locale
+          in: query
+          required: false
+          description: Language of the system default templates; omitted is zh-CN.
+          schema:
+            type: string
+            enum: [zh-CN, en]
       responses:
         '200':
           description: Closed notification template catalog.
@@ -18916,10 +18923,12 @@ components:
     NotificationTemplatePreview:
       type: object
       additionalProperties: false
-      required: [language_version, catalog_version, valid, title, body, body_parts, attachments, warnings, errors, variables]
+      required: [language_version, catalog_version, valid, title, body, body_parts, attachments, presentation, warnings, errors, variables]
       properties:
         attachments:
           $ref: '#/components/schemas/NotificationTemplatePreviewAttachments'
+        presentation:
+          $ref: '#/components/schemas/NotificationTemplatePreviewPresentation'
         language_version:
           type: string
           enum: [bansoko-template-1]
@@ -18950,6 +18959,142 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TemplateVariable'
+    NotificationTemplatePreviewPresentation:
+      type: object
+      additionalProperties: false
+      required: [telegram, feishu, webhook]
+      description: >-
+        The same rendered message in each supported channel's own shape, built
+        by the pure helpers the delivery formatters call. The editor renders
+        these values instead of reimplementing channel limits and shapes.
+      properties:
+        telegram:
+          $ref: '#/components/schemas/NotificationTemplatePreviewTelegram'
+        feishu:
+          $ref: '#/components/schemas/NotificationTemplatePreviewFeishu'
+        webhook:
+          $ref: '#/components/schemas/NotificationTemplatePreviewWebhook'
+    NotificationTemplatePreviewTelegram:
+      type: object
+      additionalProperties: false
+      required: [mode, text, title, body_parts, text_units, image_omitted, truncated]
+      properties:
+        mode:
+          type: string
+          enum: [sendPhoto, sendMessage]
+          description: >-
+            sendPhoto carries the message as a picture caption; sendMessage is a
+            regular text message (the picture, if any, is dropped).
+        text:
+          type: string
+          description: >-
+            Final HTML that Telegram receives: the photo caption or the message
+            text, already fitted to the channel limit.
+        title:
+          type: string
+          description: The channel-fitted title as plain text.
+        body_parts:
+          type: array
+          description: The channel-fitted body with its inline links.
+          items:
+            $ref: '#/components/schemas/NotificationTemplatePreviewBodyPart'
+        text_units:
+          type: integer
+          description: Length of text in UTF-16 code units, the unit Telegram counts.
+        image_omitted:
+          type: boolean
+          description: >-
+            An image was requested but the caption exceeds the photo limit, so
+            the message is sent without it.
+        truncated:
+          type: boolean
+          description: >-
+            The text exceeded the message limit; links are kept and the
+            remaining text is truncated when sent.
+    NotificationTemplatePreviewFeishu:
+      type: object
+      additionalProperties: false
+      required: [title, content, image, image_omitted]
+      properties:
+        title:
+          type: string
+        content:
+          type: array
+          description: Post paragraphs; an image link, when available, is its own last paragraph.
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/NotificationTemplatePreviewFeishuElement'
+        image:
+          allOf:
+            - $ref: '#/components/schemas/NotificationTemplatePreviewFeishuImage'
+          nullable: true
+          description: Present when the image can be sent as a link.
+        image_omitted:
+          type: boolean
+          description: >-
+            An image was requested but no URL is available, so Feishu shows
+            none.
+    NotificationTemplatePreviewFeishuElement:
+      type: object
+      additionalProperties: false
+      required: [tag, text]
+      properties:
+        tag:
+          type: string
+          enum: [text, a]
+        text:
+          type: string
+        href:
+          type: string
+          format: uri
+    NotificationTemplatePreviewFeishuImage:
+      type: object
+      additionalProperties: false
+      required: [label, url]
+      properties:
+        label:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          format: uri
+    NotificationTemplatePreviewWebhook:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          $ref: '#/components/schemas/NotificationTemplatePreviewWebhookMessage'
+    NotificationTemplatePreviewWebhookMessage:
+      type: object
+      additionalProperties: false
+      required: [title, body, image, links]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        image:
+          allOf:
+            - $ref: '#/components/schemas/NotificationTemplatePreviewWebhookImage'
+          nullable: true
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTemplatePreviewLink'
+    NotificationTemplatePreviewWebhookImage:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source:
+          type: string
+        url:
+          type: string
+          format: uri
+        placeholder:
+          type: boolean
     NamingTemplatePreviewInput:
       type: object
       additionalProperties: false

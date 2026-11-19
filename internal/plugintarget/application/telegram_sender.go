@@ -6,6 +6,8 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+
+	"bansoko/internal/notifypresent"
 )
 
 const maxTelegramImageBytes = 2 << 20
@@ -37,7 +39,7 @@ func (h *PluginDeliverHandler) sendTelegramMessage(ctx context.Context, req *htt
 			if err != nil {
 				return telegramFallbackBuildFailure(modes), nil
 			}
-			next, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, fitTelegramHTML(message, telegramTextLimit))
+			next, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, notifypresent.FitTelegram(presentMessage(message), notifypresent.TelegramTextLimit))
 			if err != nil {
 				return telegramFallbackBuildFailure(modes), nil
 			}
@@ -51,7 +53,7 @@ func (h *PluginDeliverHandler) sendTelegramMessage(ctx context.Context, req *htt
 		if err != nil {
 			return telegramFallbackBuildFailure(modes), nil
 		}
-		next, err := buildTelegramPhotoRequest(ctx, chatID, token, fitTelegramHTML(message, telegramCaptionLimit), nextImage)
+		next, err := buildTelegramPhotoRequest(ctx, chatID, token, notifypresent.FitTelegram(presentMessage(message), notifypresent.TelegramCaptionLimit), nextImage)
 		if err != nil {
 			return telegramFallbackBuildFailure(modes), nil
 		}

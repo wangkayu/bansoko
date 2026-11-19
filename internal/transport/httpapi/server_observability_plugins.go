@@ -265,7 +265,11 @@ func (s *Server) GetNotificationTemplateCatalog(w http.ResponseWriter, r *http.R
 	if params.CatalogVersion != nil {
 		catalogVersion = string(*params.CatalogVersion)
 	}
-	notificationCatalog, err := s.deps.TemplateCatalog.GetNotificationCatalog(r.Context(), string(triggerKind), catalogVersion)
+	locale := ""
+	if params.Locale != nil {
+		locale = string(*params.Locale)
+	}
+	notificationCatalog, err := s.deps.TemplateCatalog.GetNotificationCatalog(r.Context(), string(triggerKind), catalogVersion, locale)
 	if err != nil {
 		writeError(w, r, err)
 		return

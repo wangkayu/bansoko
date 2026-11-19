@@ -43,6 +43,29 @@ func placeholderNotificationImage() *outboundImage {
 	}
 }
 
+func (h *PluginDeliverHandler) prepareOutboundMessage(ctx context.Context, row deliveryRow) (outboundMessage, error) {
+	if len(row.messageSnapshot) == 0 {
+		// Pre-snapshot rows retain their legacy delivery path until they expire.
+		title, _, err := h.resolveMessage(row)
+		if err != nil {
+			return outboundMessage{}, err
+		}
+		return h.resolveOutboundMessage(ctx, row, title)
+	}
+	snapshot, err := loadNotificationMessage(row.messageSnapshot, row.renderedTitle.String, row.renderedBody.String, row.renderedDigest.String)
+	if err != nil {
+		return outboundMessage{}, err
+	}
+	message := outboundMessage{
+		Title: snapshot.Title, Body: notification.PlainText(snapshot.Parts),
+		Parts: snapshot.Parts, Links: notification.Links(snapshot.Parts),
+	}
+	if snapshot.Image != nil {
+		message.Image = h.resolveOutboundImage(ctx, snapshot.Image.request(), snapshot.Image.URL)
+	}
+	return message, nil
+}
+
 func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row deliveryRow, title string) (outboundMessage, error) {
 	facts, err := notificationFactsForDelivery(row)
 	if err != nil {
@@ -56,23 +79,11 @@ func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row d
 		return outboundMessage{Title: title}, errors.New("notification trigger is invalid")
 	}
 	message := outboundMessage{Title: title, Body: rendered.Body, Parts: rendered.BodyParts}
-	attachments, ok := notification.SemanticAttachments(row.triggerKind, row.titleTemplate, row.bodyTemplate, facts)
-	if !ok {
-		return outboundMessage{Title: title}, errors.New("notification trigger is invalid")
-	}
+	attachments := rendered.Attachments
 	message.Links = attachments.Links
 	if !attachments.Image {
 		return message, nil
 	}
-	if attachments.ImageSource == "custom" {
-		if imageURL := notification.SafeExternalImageURL(attachments.ImageURL); imageURL != "" {
-			message.Image = &outboundImage{Source: "custom", URL: imageURL}
-		} else {
-			message.Image = placeholderNotificationImage()
-		}
-		return message, nil
-	}
-
 	request := plugintargetport.NotificationImageRequest{
 		ManagedAnimeID:  row.imageManagedAnimeID.String,
 		CatalogEntry:    row.imageCatalogEntry,
@@ -82,15 +93,30 @@ func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row d
 		TMDBKind:        notificationFactString(facts, "tmdb.kind"),
 		PreferredSource: attachments.ImageSource,
 	}
+	if request.BGMID == "" {
+		request.BGMID = row.imageBinding.BGMID
+	}
+	if request.TMDBID == "" {
+		request.TMDBID, request.TMDBKind = row.imageBinding.TMDBID, row.imageBinding.TMDBKind
+	}
+	message.Image = h.resolveOutboundImage(ctx, request, attachments.ImageURL)
+	return message, nil
+}
+
+func (h *PluginDeliverHandler) resolveOutboundImage(ctx context.Context, request plugintargetport.NotificationImageRequest, customURL string) *outboundImage {
+	if request.PreferredSource == "custom" {
+		if imageURL := notification.SafeExternalImageURL(customURL); imageURL != "" {
+			return &outboundImage{Source: "custom", URL: imageURL}
+		}
+		return placeholderNotificationImage()
+	}
 	if h.imageResolver != nil {
 		resolved, resolveErr := h.imageResolver.ResolveNotificationImage(ctx, request)
 		if resolveErr == nil && validNotificationImageURL(resolved.URL) {
-			message.Image = &outboundImage{Source: resolved.Source, URL: resolved.URL}
-			return message, nil
+			return &outboundImage{Source: resolved.Source, URL: resolved.URL}
 		}
 	}
-	message.Image = placeholderNotificationImage()
-	return message, nil
+	return placeholderNotificationImage()
 }
 
 func notificationFactsForDelivery(row deliveryRow) (map[string]any, error) {

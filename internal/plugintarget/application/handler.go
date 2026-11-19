@@ -223,6 +223,7 @@ type deliveryRow struct {
 	triggerKind         string
 	imageManagedAnimeID sql.NullString
 	imageCatalogEntry   plugintargetport.NotificationCatalogEntry
+	imageBinding        plugintargetport.SubscriptionBinding
 	state               string
 	version             int64
 	attemptCount        int
@@ -234,6 +235,8 @@ type deliveryRow struct {
 	bodyTemplate        string
 	renderedTitle       sql.NullString
 	renderedBody        sql.NullString
+	renderedDigest      sql.NullString
+	messageSnapshot     json.RawMessage
 }
 
 type durableAttempt struct {
@@ -324,11 +327,7 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		return worker.WithAfterCommit(outcome, h.deliveryAttemptAfterCommit(claim, result, outcome.Kind == worker.OutcomeRetry)), nil
 	}
 
-	title, _, err := h.resolveMessage(row)
-	if err != nil {
-		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
-	}
-	message, err := h.resolveOutboundMessage(ctx, row, title)
+	message, err := h.prepareOutboundMessage(ctx, row)
 	if err != nil {
 		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification message is invalid", newSecretRedactor("")), nil
 	}
@@ -470,33 +469,37 @@ func (h *PluginDeliverHandler) notifyDiagnostic(row deliveryRow, variant observa
 
 func (h *PluginDeliverHandler) loadDelivery(ctx context.Context, id string) (deliveryRow, error) {
 	var row deliveryRow
-	// File-operation notifications intentionally have no subscription lifecycle
-	// owner. Use the accepted acquisition's origin only to look up an image.
+	// Frozen evidence supplies new events. Keep the existing owner lookup for
+	// deliveries admitted before image identities were frozen.
 	err := h.db.QueryRowContext(ctx, `
 SELECT d.id, d.plugin_target_config_id, d.adapter_kind, d.adapter_config_snapshot,
        d.config_status, d.config_schema_version, d.secret_ref, d.delivery_kind, d.trigger_kind,
-       COALESCE(d.managed_anime_id, (
+	       CASE WHEN d.message_snapshot IS NULL THEN COALESCE(d.managed_anime_id, (
            SELECT a.origin_managed_anime_ref
            FROM file_operations f JOIN acquisitions a ON a.id = f.acquisition_id
            WHERE d.delivery_kind = 'business' AND d.source_owner_type = 'file_operation'
              AND d.trigger_kind IN ('file_operation_completed', 'file_operation_failed')
              AND f.id = d.source_owner_id AND a.entry_kind IN ('automatic', 'subscription_add')
-       )), COALESCE(n.source_evidence #>> '{image_catalog_entry,provider}', ''),
+	       )) END, COALESCE(n.source_evidence #>> '{image_catalog_entry,provider}', ''),
        COALESCE(n.source_evidence #>> '{image_catalog_entry,entry_ref}', ''),
+	       COALESCE(n.source_evidence #>> '{image_binding,bgm_id}', ''),
+	       COALESCE(n.source_evidence #>> '{image_binding,tmdb_id}', ''),
+	       COALESCE(n.source_evidence #>> '{image_binding,tmdb_kind}', ''),
        d.state, d.version, d.attempt_count, d.payload, d.payload_digest, d.target_display,
        d.template_catalog_version, d.title_template_snapshot, d.body_template_snapshot,
-       d.rendered_title, d.rendered_body, t.name
+       d.rendered_title, d.rendered_body, d.rendered_message_digest, d.message_snapshot, t.name
 FROM plugin_deliveries d LEFT JOIN plugin_target_configs t ON t.id = d.plugin_target_config_id
-LEFT JOIN notification_admissions n ON d.delivery_kind = 'business'
+LEFT JOIN notification_admissions n ON d.message_snapshot IS NULL AND d.delivery_kind = 'business'
     AND n.trigger_kind = d.trigger_kind AND n.source_owner_type = d.source_owner_type
     AND n.source_owner_id = d.source_owner_id AND n.source_owner_version = d.source_owner_version
     AND n.result_key = d.source_result_key
 WHERE d.id = $1`, id).Scan(
 		&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus,
 		&row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.imageManagedAnimeID,
-		&row.imageCatalogEntry.Provider, &row.imageCatalogEntry.EntryRef, &row.state, &row.version,
+		&row.imageCatalogEntry.Provider, &row.imageCatalogEntry.EntryRef,
+		&row.imageBinding.BGMID, &row.imageBinding.TMDBID, &row.imageBinding.TMDBKind, &row.state, &row.version,
 		&row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog,
-		&row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
+		&row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.renderedDigest, &row.messageSnapshot, &row.targetName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, errors.New("plugin delivery not found")
 	}

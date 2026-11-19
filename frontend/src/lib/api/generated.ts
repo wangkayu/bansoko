@@ -7612,6 +7612,7 @@ export interface components {
         };
         NotificationTemplatePreview: {
             attachments: components["schemas"]["NotificationTemplatePreviewAttachments"];
+            presentation: components["schemas"]["NotificationTemplatePreviewPresentation"];
             /** @enum {string} */
             language_version: "bansoko-template-1";
             /** @enum {string} */
@@ -7623,6 +7624,67 @@ export interface components {
             warnings: components["schemas"]["TemplateWarning"][];
             errors: components["schemas"]["TemplateSourceError"][];
             variables: components["schemas"]["TemplateVariable"][];
+        };
+        /** @description The same rendered message in each supported channel's own shape, built by the pure helpers the delivery formatters call. The editor renders these values instead of reimplementing channel limits and shapes. */
+        NotificationTemplatePreviewPresentation: {
+            telegram: components["schemas"]["NotificationTemplatePreviewTelegram"];
+            feishu: components["schemas"]["NotificationTemplatePreviewFeishu"];
+            webhook: components["schemas"]["NotificationTemplatePreviewWebhook"];
+        };
+        NotificationTemplatePreviewTelegram: {
+            /**
+             * @description sendPhoto carries the message as a picture caption; sendMessage is a regular text message (the picture, if any, is dropped).
+             * @enum {string}
+             */
+            mode: "sendPhoto" | "sendMessage";
+            /** @description Final HTML that Telegram receives: the photo caption or the message text, already fitted to the channel limit. */
+            text: string;
+            /** @description The channel-fitted title as plain text. */
+            title: string;
+            /** @description The channel-fitted body with its inline links. */
+            body_parts: components["schemas"]["NotificationTemplatePreviewBodyPart"][];
+            /** @description Length of text in UTF-16 code units, the unit Telegram counts. */
+            text_units: number;
+            /** @description An image was requested but the caption exceeds the photo limit, so the message is sent without it. */
+            image_omitted: boolean;
+            /** @description The text exceeded the message limit; links are kept and the remaining text is truncated when sent. */
+            truncated: boolean;
+        };
+        NotificationTemplatePreviewFeishu: {
+            title: string;
+            /** @description Post paragraphs; an image link, when available, is its own last paragraph. */
+            content: components["schemas"]["NotificationTemplatePreviewFeishuElement"][][];
+            /** @description Present when the image can be sent as a link. */
+            image: components["schemas"]["NotificationTemplatePreviewFeishuImage"] | null;
+            /** @description An image was requested but no URL is available, so Feishu shows none. */
+            image_omitted: boolean;
+        };
+        NotificationTemplatePreviewFeishuElement: {
+            /** @enum {string} */
+            tag: "text" | "a";
+            text: string;
+            /** Format: uri */
+            href?: string;
+        };
+        NotificationTemplatePreviewFeishuImage: {
+            label: string;
+            /** Format: uri */
+            url: string;
+        };
+        NotificationTemplatePreviewWebhook: {
+            message: components["schemas"]["NotificationTemplatePreviewWebhookMessage"];
+        };
+        NotificationTemplatePreviewWebhookMessage: {
+            title: string;
+            body: string;
+            image: components["schemas"]["NotificationTemplatePreviewWebhookImage"] | null;
+            links: components["schemas"]["NotificationTemplatePreviewLink"][];
+        };
+        NotificationTemplatePreviewWebhookImage: {
+            source: string;
+            /** Format: uri */
+            url?: string;
+            placeholder?: boolean;
         };
         NamingTemplatePreviewInput: {
             /**
@@ -13049,6 +13111,8 @@ export interface operations {
             query?: {
                 /** @description Catalog to describe; omitted is notification-catalog-v1. */
                 catalog_version?: "notification-catalog-v1";
+                /** @description Language of the system default templates; omitted is zh-CN. */
+                locale?: "zh-CN" | "en";
             };
             header?: never;
             path: {

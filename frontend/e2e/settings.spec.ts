@@ -297,6 +297,43 @@ async function mockSettingsReads(page: Page) {
             { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" },
           ],
         },
+        presentation: {
+          telegram: {
+            mode: "sendPhoto",
+            text: "<b>预览标题</b>\n\n默认正文\nBangumi\nTMDB",
+            title: "预览标题",
+            body_parts: [
+              { text: "默认正文\n", link: null },
+              { text: "Bangumi", link: { provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" } },
+              { text: "\n", link: null },
+              { text: "TMDB", link: { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" } },
+            ],
+            text_units: 30,
+            image_omitted: false,
+            truncated: false,
+          },
+          feishu: {
+            title: "预览标题",
+            content: [
+              [{ tag: "text", text: "默认正文" }],
+              [{ tag: "a", text: "Bangumi", href: "https://bgm.tv/subject/123" }],
+              [{ tag: "a", text: "TMDB", href: "https://www.themoviedb.org/tv/456" }],
+            ],
+            image: null,
+            image_omitted: true,
+          },
+          webhook: {
+            message: {
+              title: "预览标题",
+              body: "默认正文\nBangumi\nTMDB",
+              image: { source: "automatic", placeholder: true },
+              links: [
+                { provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" },
+                { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" },
+              ],
+            },
+          },
+        },
         errors: [],
         warnings: [],
         variables: [],

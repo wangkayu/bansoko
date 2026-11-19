@@ -90,7 +90,10 @@ VALUES ('cover-marker','anime-trace','subscription-trace','cover-feed','rel-ep-1
 				if err != nil {
 					t.Fatal(err)
 				}
-				msg, err := handler.resolveOutboundMessage(ctx, row, row.renderedTitle.String)
+				if len(row.messageSnapshot) == 0 {
+					t.Fatalf("%s: missing message snapshot", trigger)
+				}
+				msg, err := handler.prepareOutboundMessage(ctx, row)
 				if err != nil || msg.Image == nil || msg.Image.Source != tt.source || msg.Image.URL != tt.url {
 					t.Fatalf("%s: image=%+v err=%v", trigger, msg.Image, err)
 				}
@@ -107,4 +110,59 @@ type notificationCoverConnections struct{}
 
 func (notificationCoverConnections) ListConnections(context.Context) ([]configurationdomain.Connection, error) {
 	return nil, nil
+}
+
+func TestRetirementFreezesImageBeforeLocalCleanup(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	owner := disposabledb.Owner(t)
+	svc := newTestService(t, db)
+	input := validCreateInput(t)
+	input.Enabled, input.Secret = true, secretSetInput(t)
+	input.TriggerKinds = []TriggerKind{TriggerSubscriptionChanged}
+	if _, err := svc.CreateTarget(ctx, input, "retired-cover"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.ExecContext(ctx, `
+INSERT INTO managed_anime(id,title) VALUES ('retired-cover','Fixture');
+INSERT INTO subscriptions(id,managed_anime_id,origin,origin_entry_ref,state)
+VALUES ('retired-sub','retired-cover','mikan','123','stopped');
+INSERT INTO anime_metadata(managed_anime_id,bgm_work_id,tmdb_work_id,tmdb_media_kind,tmdb_season)
+VALUES ('retired-cover','789','456','tv',1);`); err != nil {
+		t.Fatal(err)
+	}
+	request, err := plugintargetport.SubscriptionChangedRequest("retired-sub", 1, "retired-cover", "Fixture", plugintargetport.SubscriptionRetired, plugintargetport.SubscriptionBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendPendingAdmission(t, ctx, db, svc, request)
+	if _, err := owner.ExecContext(ctx, `DELETE FROM anime_metadata WHERE managed_anime_id='retired-cover'; DELETE FROM subscriptions WHERE id='retired-sub'`); err != nil {
+		t.Fatal(err)
+	}
+	if count := resolveWorkflowAdmissions(t, svc, string(TriggerSubscriptionChanged)); count != 1 {
+		t.Fatalf("resolved deliveries=%d", count)
+	}
+	var id string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM plugin_deliveries WHERE source_owner_id='retired-sub' AND managed_anime_id IS NULL`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	images := &fakeNotificationImageResolver{image: plugintargetport.NotificationImage{URL: "https://images.example.test/cover.jpg"}}
+	handler := NewPluginDeliverHandler(db, nil, nil, nil, nil)
+	handler.SetNotificationImageResolver(images)
+	row, err := handler.loadDelivery(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(row.messageSnapshot) == 0 {
+		t.Fatal("missing message snapshot")
+	}
+	message, err := handler.prepareOutboundMessage(ctx, row)
+	if err != nil || message.Image == nil || len(message.Links) != 0 {
+		t.Fatalf("retirement message=%+v err=%v", message, err)
+	}
+	got := images.request
+	if got.ManagedAnimeID != "" || got.CatalogEntry.Provider != "mikan" || got.CatalogEntry.EntryRef != "123" ||
+		got.BGMID != "789" || got.TMDBID != "456" || got.TMDBKind != "tv" {
+		t.Fatalf("image identity=%+v", got)
+	}
 }

@@ -383,6 +383,21 @@ FOR UPDATE`, targetID, idempotencyKey).Scan(&existingHash, &existingDeliveryID)
 	deliveryID := uuid.NewString()
 	effectKey := "plugin_deliver:" + deliveryID
 	targetDisplay := buildTargetDisplay(target)
+	trigger := string(input.TriggerKind)
+	facts := notification.Sample(trigger)
+	message := renderBusinessMessage(trigger, titleTemplate, bodyTemplate, facts)
+	if !message.Valid() {
+		first := message.Errors[0]
+		return TestAccepted{}, &apperrors.Validation{Code: "TEMPLATE_INVALID", Details: []apperrors.FieldViolation{{
+			Field: fieldPtr(string(first.Field)), Code: first.Code, Message: first.Message,
+			Start: &first.Start, End: &first.End,
+		}}}
+	}
+	message.Title = notification.TestTitle(message.Title)
+	snapshot, err := freezeNotificationMessage(message, facts, nil)
+	if err != nil {
+		return TestAccepted{}, fmt.Errorf("freeze test notification message: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO plugin_deliveries(
     id, plugin_target_config_id, plugin_target_config_version, adapter_kind,
@@ -390,14 +405,16 @@ INSERT INTO plugin_deliveries(
     source_owner_type, source_owner_id, source_owner_version, source_result_key,
     test_request_idempotency_key, test_request_hash, state, idempotency_key,
     payload_schema_version, payload, payload_digest, template_language_version,
-    template_catalog_version, title_template_snapshot, body_template_snapshot, target_display)
+    template_catalog_version, title_template_snapshot, body_template_snapshot, target_display,
+    rendered_title, rendered_body, rendered_message_digest, message_snapshot)
 VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), 'test', $7, 'plugin_target', $2, $3, $8,
-    $9, $10, 'pending', $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+    $9, $10, 'pending', $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
 		deliveryID, targetID, target.Version, string(target.AdapterKind),
 		target.Config, secretRef, string(input.TriggerKind), idempotencyKey,
 		idempotencyKey, requestHash, effectKey, deliverypayload.SchemaVersion,
 		frozenPayload, hashBytes(frozenPayload), templateLanguageVersion, templateCatalogVersion,
-		titleTemplate, bodyTemplate, targetDisplay); err != nil {
+		titleTemplate, bodyTemplate, targetDisplay, message.Title, message.Body,
+		hashBytes([]byte(message.Title+"\n\n"+message.Body)), snapshot); err != nil {
 		return TestAccepted{}, fmt.Errorf("create test plugin delivery: %w", err)
 	}
 
@@ -465,7 +482,7 @@ func (s *Service) ListDeliveries(ctx context.Context, params DeliveryQuery) (Del
 	}
 	queryArgs := append(append([]any{}, args...), limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT to_jsonb(d) - 'secret_ref'
+SELECT to_jsonb(d) - 'secret_ref' - 'message_snapshot'
 FROM (
   SELECT d.* FROM plugin_deliveries d
   WHERE `+filter+`
@@ -510,7 +527,7 @@ func (s *Service) GetDelivery(ctx context.Context, deliveryID string) (DeliveryD
 
 	var deliveryRow []byte
 	err := s.db.QueryRowContext(ctx, `
-SELECT to_jsonb(d) - 'secret_ref'
+SELECT to_jsonb(d) - 'secret_ref' - 'message_snapshot'
 FROM plugin_deliveries d
 WHERE d.id = $1`, deliveryID).Scan(&deliveryRow)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -909,13 +926,15 @@ func validateTemplateSet(templateSet json.RawMessage) error {
 // renders deliveries, so a saved template can only fail later on output that
 // depends on real facts. Compile diagnostics are returned as a typed 422 with
 // their source spans.
+type eventTemplate struct {
+	Mode          string `json:"mode"`
+	TitleTemplate string `json:"title_template"`
+	BodyTemplate  string `json:"body_template"`
+}
+
 func validateEventTemplate(trigger string, event json.RawMessage) error {
 	field := "template_set.events." + trigger
-	var value struct {
-		Mode          string `json:"mode"`
-		TitleTemplate string `json:"title_template"`
-		BodyTemplate  string `json:"body_template"`
-	}
+	var value eventTemplate
 	if err := json.Unmarshal(event, &value); err != nil {
 		return configInvalid(field, "template event could not be decoded")
 	}

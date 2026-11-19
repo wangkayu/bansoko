@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"bansoko/internal/persistence/txscope"
+	"bansoko/internal/templatecatalog/notification"
 )
 
 const (
@@ -206,8 +207,9 @@ type DisplacedTarget struct{ File, Group, Title string }
 // instead of borrowing a library name, a planned target or a live Release row.
 // Old may contain empty entries: they still count as replaced versions.
 type OriginalSource struct {
-	New DisplacedTarget
-	Old []DisplacedTarget
+	New         DisplacedTarget
+	Old         []DisplacedTarget
+	ReleaseTags json.RawMessage
 }
 
 // ReplacementAppliedRequest builds the replacement_applied admission of one
@@ -281,6 +283,9 @@ func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID,
 		facts["replaced.new.file"] = name
 	}
 	facts["replaced.old_versions"] = originals
+	for key, value := range notification.ValueFacts(nil, source.ReleaseTags, notification.Text) {
+		facts[key] = value
+	}
 	payload, err := json.Marshal(facts)
 	if err != nil {
 		return BusinessDeliveryRequest{}, err

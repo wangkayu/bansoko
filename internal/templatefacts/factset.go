@@ -123,6 +123,7 @@ type ReleaseFacts struct {
 	Site         string
 	PublishedAt  string
 	Episodes     string
+	IsMovie      bool
 	SubtitleMode string
 	Lang         string
 	Langs        []string

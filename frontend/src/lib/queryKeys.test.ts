@@ -148,7 +148,7 @@ describe("query key contracts", () => {
     expect(apiTokenKeys.raw("token-1")).toEqual(["api-token-raw", "token-1"]);
 
     expect(templateCatalogKeys.naming("js-naming-1")).toEqual(["template-catalog", "naming", "js-naming-1"]);
-    expect(templateCatalogKeys.notification("release", "notification-catalog-v1")).toEqual(["template-catalog", "notification", "release", "notification-catalog-v1"]);
+    expect(templateCatalogKeys.notification("release", "notification-catalog-v1", "en")).toEqual(["template-catalog", "notification", "release", "notification-catalog-v1", "en"]);
 
     expect(updateKeys.status).toEqual(["update", "status"]);
     expect(backupKeys.info).toEqual(["backup", "info"]);

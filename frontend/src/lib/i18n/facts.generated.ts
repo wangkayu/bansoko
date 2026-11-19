@@ -182,8 +182,8 @@ export const factsCopy = {
       description: "派生值：overwrite（新文件写入同一位置）或 redownload（同一条发布重新下载）。",
     },
     link: {
-      label: "应用内链接",
-      description: "派生值：应用内的 # 锚点：打开这次获取的执行记录，其中列出需要手动匹配的文件。",
+      label: "应用内锚点",
+      description: "派生值：指向本次执行记录的应用内锚点，仅可作为文本使用，不能用作通知的外部链接。",
     },
     type: {
       label: "事件",
@@ -427,6 +427,10 @@ export const factsCopy = {
       label: "下载集数",
       description: "派生值：这次下载要入库的集数，如 01-04 或 01, 03, 07；合集时单集字段为空。",
     },
+    is_movie: {
+      label: "电影发布",
+      description: "派生值：冻结身份确定为电影时为真；电影没有集数。",
+    },
     lang: {
       label: "语言",
       description: "解析值：从标题识别的主语言代码，如 sc、tc、jpsc。",
@@ -468,6 +472,10 @@ export const factsCopy = {
     id: {
       label: "发布 ID",
       description: "采集值：发布条目的标识。",
+    },
+    is_movie: {
+      label: "电影发布",
+      description: "派生值：冻结身份确定为电影时为真；电影没有集数。",
     },
     lang: {
       label: "语言",
@@ -925,8 +933,8 @@ export const enFactsCopy = {
       description: "Derived: overwrite (a new file took the path) or redownload (the same release was downloaded again).",
     },
     link: {
-      label: "In-app link",
-      description: "Derived: In-app # anchor: opens this acquisition's execution record, which lists the files awaiting a manual match.",
+      label: "In-app anchor",
+      description: "Derived: In-app anchor for this execution record. It can be used as text, but not as an external notification link.",
     },
     type: {
       label: "Event",
@@ -1170,6 +1178,10 @@ export const enFactsCopy = {
       label: "Episodes",
       description: "Derived: Episodes this download will place, such as 01-04 or 01, 03, 07; for a batch the single-episode facts are empty.",
     },
+    is_movie: {
+      label: "Movie release",
+      description: "Derived: True when the frozen identity is a movie; movies do not have episode numbers.",
+    },
     lang: {
       label: "Language",
       description: "Parsed: Main language code read from the title, such as sc, tc or jpsc.",
@@ -1211,6 +1223,10 @@ export const enFactsCopy = {
     id: {
       label: "Release ID",
       description: "Collected: Identifier of the release.",
+    },
+    is_movie: {
+      label: "Movie release",
+      description: "Derived: True when the frozen identity is a movie; movies do not have episode numbers.",
     },
     lang: {
       label: "Language",

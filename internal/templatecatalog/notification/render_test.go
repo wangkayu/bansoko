@@ -2,8 +2,10 @@ package notification
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"bansoko/internal/templatefacts"
 )
@@ -165,6 +167,35 @@ func TestEveryDefaultRendersWithItsSampleFacts(t *testing.T) {
 			}
 			if !ok || len(links.Links) != wantLinks {
 				t.Fatalf("%s/%s default semantic links = %+v, valid=%v; want %d", trigger, locale, links.Links, ok, wantLinks)
+			}
+		}
+	}
+}
+
+func TestReleaseEpisodeLineDistinguishesMoviesBatchesAndEpisodeZero(t *testing.T) {
+	for _, trigger := range []string{TriggerDownloadSubmitted, TriggerReleaseDiscovered} {
+		for locale, label := range map[string]string{LocaleZH: "集数：", LocaleEN: "Episodes: "} {
+			title, body := DefaultsFor(trigger, locale)
+			facts := Sample(trigger)
+			for _, tc := range []struct {
+				movie          bool
+				batch, episode any
+				want           string
+			}{
+				{true, nil, nil, ""},
+				{false, "01-03", nil, "01-03"},
+				{false, nil, "0", "0"},
+			} {
+				facts["release.is_movie"], facts["release.episodes"], facts["ep.display"] = tc.movie, tc.batch, tc.episode
+				message, _ := RenderMessage(trigger, title, body, facts)
+				if !message.Valid() || strings.Contains(message.Body, label+tc.want) != (tc.want != "") {
+					t.Fatalf("%s/%s movie=%v: %+v", trigger, locale, tc.movie, message)
+				}
+			}
+			delete(facts, "release.is_movie") // an admission frozen before the movie marker existed
+			message, _ := RenderMessage(trigger, title, body, facts)
+			if !strings.Contains(message.Body, label+"0") {
+				t.Fatalf("%s/%s historical admission hid episode zero: %q", trigger, locale, message.Body)
 			}
 		}
 	}
@@ -597,6 +628,265 @@ func TestDisplacedDefaultDoesNotUseTheReleaseGroupAsTheFileParse(t *testing.T) {
 		message := renderDefault(t, TriggerFileDisplaced, locale, facts)
 		if strings.Contains(message.Body, "发布组MISUSE") {
 			t.Fatalf("%s: body presented the release group as the file parse: %q", locale, message.Body)
+		}
+	}
+}
+
+// A v1 template may gate an image-only line whose arguments are invalid. The
+// renderer dropped that line before validating it, so v1 accepted and ignored
+// the form; it must remain saveable and renderable, with a warning that names
+// the loss instead of an error that blocks the save.
+func TestGatedImageArgumentsWarnWithoutBlockingSave(t *testing.T) {
+	const source = "{{showIf(anime.group)}}{{image('http://example.com/a.jpg')}}"
+	errors, ok := Compile(TriggerDownloadSubmitted, "title", source)
+	if !ok || len(errors) != 0 {
+		t.Fatalf("gated image errors = %+v", errors)
+	}
+	message, _ := RenderMessage(TriggerDownloadSubmitted, "title", source, map[string]any{"anime.group": "Group"})
+	if !message.Valid() {
+		t.Fatalf("stored gated image no longer renders: %+v", message.Errors)
+	}
+	// Delivery keeps its v1 behavior for the accepted form: the directive still
+	// requests an image (an unsafe literal resolves to the placeholder), while
+	// the warning names why it can never load.
+	if !message.Attachments.Image || message.Attachments.ImageSource != "custom" || message.Attachments.ImageURL != "" {
+		t.Fatalf("the accepted gated image changed: %+v", message.Attachments)
+	}
+	if !hasWarning(message.Warnings, "attachment_without_effect") {
+		t.Fatalf("the ignored gated image is not reported: %+v", message.Warnings)
+	}
+	if errors, _ := Compile(TriggerDownloadSubmitted, "title", "{{showIf(anime.group)}}{{image(bgm.image)}}"); len(errors) != 0 {
+		t.Fatalf("valid gated image rejected: %+v", errors)
+	}
+	shown, _ := RenderMessage(TriggerDownloadSubmitted, "title", "{{showIf(anime.group)}}{{image(bgm.image)}}", map[string]any{"anime.group": "Group"})
+	if !shown.Valid() || !shown.Attachments.Image || shown.Attachments.ImageSource != "bgm" {
+		t.Fatalf("valid gated image did not attach: %+v", shown.Attachments)
+	}
+	hidden, _ := RenderMessage(TriggerDownloadSubmitted, "title", "{{showIf(anime.group)}}{{image(bgm.image)}}", map[string]any{})
+	if !hidden.Valid() || hidden.Attachments.Image {
+		t.Fatalf("hidden gated image attached: %+v", hidden.Attachments)
+	}
+}
+
+// A v1 template may nest link/image inside another function; the nesting never
+// produced an attachment, and v1 accepted it silently. It stays saveable and
+// renders the same text, with a warning; invalid arguments remain errors.
+func TestNestedAttachmentsWarnWithoutBlockingSave(t *testing.T) {
+	for _, source := range []string{
+		"{{if(eq(anime.title, 'x'), link(bgm.link, 'Bangumi'), '')}}",
+		"{{coalesce(image(bgm.image), '')}}",
+	} {
+		errors, ok := Compile(TriggerDownloadSubmitted, "title", source)
+		if !ok || len(errors) != 0 {
+			t.Fatalf("nested attachment compiled: %s: %+v", source, errors)
+		}
+		message, _ := RenderMessage(TriggerDownloadSubmitted, "title", source, Sample(TriggerDownloadSubmitted))
+		if !message.Valid() {
+			t.Fatalf("stored nested attachment = %s: %+v", source, message.Errors)
+		}
+		if message.Attachments.Image || len(message.Attachments.Links) != 0 {
+			t.Fatalf("%s produced an attachment: %+v", source, message.Attachments)
+		}
+		if !hasWarning(message.Warnings, "attachment_without_effect") {
+			t.Fatalf("%s is not reported: %+v", source, message.Warnings)
+		}
+	}
+	// The same placement with an invalid target was already invalid and stays
+	// an error.
+	if errors, _ := Compile(TriggerDownloadSubmitted, "title", "{{coalesce(image('http://example.com/a.jpg'), '')}}"); len(errors) != 1 {
+		t.Fatalf("invalid nested image compiled: %+v", errors)
+	}
+	message, ok := RenderMessage(TriggerDownloadSubmitted, "title", "{{coalesce(image(bgm.image), '')}}body", Sample(TriggerDownloadSubmitted))
+	if !ok || !message.Valid() || message.Body != "body" {
+		t.Fatalf("stored nested attachment = %+v", message)
+	}
+}
+
+func hasWarning(warnings []Warning, code string) bool {
+	for _, warning := range warnings {
+		if warning.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+// The explicit capability catalog is the single source of which semantic
+// variables (and the legacy source group) an event advertises.
+func TestCapabilitiesDriveTheVariableDirectory(t *testing.T) {
+	for _, trigger := range Triggers {
+		capabilities, ok := CapabilitiesFor(trigger)
+		if !ok {
+			t.Fatalf("%s has no capabilities", trigger)
+		}
+		variables, ok := Variables(trigger)
+		if !ok {
+			t.Fatalf("%s has no variable directory", trigger)
+		}
+		names := make(map[string]bool, len(variables))
+		for _, variable := range variables {
+			names[variable.Name] = true
+		}
+		checks := map[string]Capability{
+			BGMLinkVariable:      CapabilityProviderWorkIDs,
+			TMDBLinkVariable:     CapabilityProviderWorkIDs,
+			BGMImageVariable:     CapabilityBoundPoster,
+			TMDBImageVariable:    CapabilityBoundPoster,
+			AniBTLinkVariable:    CapabilityReleaseSource,
+			MikanLinkVariable:    CapabilityReleaseSource,
+			ReleaseLinkVariable:  CapabilityReleaseSource,
+			DownloadLinkVariable: CapabilityReleaseSource,
+			AniBTImageVariable:   CapabilityCatalogCover,
+			MikanImageVariable:   CapabilityCatalogCover,
+			"anime.group":        CapabilitySourceGroup,
+		}
+		for name, capability := range checks {
+			if names[name] != capabilities.Has(capability) {
+				t.Errorf("%s: directory has %s=%v, capability %s=%v", trigger, name, names[name], capability, capabilities.Has(capability))
+			}
+		}
+		if _, present := Sample(trigger)["anime.group"]; present != capabilities.Has(CapabilitySourceGroup) {
+			t.Errorf("%s: sample anime.group=%v, capability source_group=%v", trigger, present, capabilities.Has(CapabilitySourceGroup))
+		}
+	}
+	for _, trigger := range []string{TriggerSubscriptionChanged, TriggerReplacementDeletionFailed, TriggerFileDisplaced} {
+		capabilities, _ := CapabilitiesFor(trigger)
+		if capabilities.Has(CapabilitySourceGroup) || capabilities.Has(CapabilityReleaseSource) || !capabilities.Has(CapabilityCatalogCover) {
+			t.Errorf("%s confuses a work's catalog cover with a single release or source group", trigger)
+		}
+	}
+}
+
+// Message.Attachments is collected by the render that produced BodyParts, so
+// the compatibility wrapper cannot disagree with the message.
+func TestMessageAttachmentsComeFromTheSameRender(t *testing.T) {
+	facts := map[string]any{
+		"anime.title": "Show", "bgm.id": "123", "tmdb.id": "456", "tmdb.kind": "tv",
+		"release.src": "anibt", "anibt.link": "https://anibt.net/release/1",
+	}
+	const body = "{{image(bgm.image)}}\n{{link(bgm.link, 'Bangumi')}}\n{{link(tmdb.link, 'TMDB')}}"
+	message, ok := RenderMessage(TriggerDownloadSubmitted, "Title", body, facts)
+	if !ok || !message.Valid() {
+		t.Fatalf("render = %+v", message)
+	}
+	wantLinks := Links(message.BodyParts)
+	if len(wantLinks) != 2 || !reflect.DeepEqual(message.Attachments.Links, wantLinks) {
+		t.Fatalf("attachments links = %+v, body links = %+v", message.Attachments.Links, wantLinks)
+	}
+	if !message.Attachments.Image || message.Attachments.ImageSource != "bgm" {
+		t.Fatalf("attachments image = %+v", message.Attachments)
+	}
+	wrapper, ok := SemanticAttachments(TriggerDownloadSubmitted, "Title", body, facts)
+	if !ok || !reflect.DeepEqual(wrapper, message.Attachments) {
+		t.Fatalf("wrapper = %+v, message attachments = %+v", wrapper, message.Attachments)
+	}
+
+	// A hidden gated link is neither in the body nor in the attachments.
+	gated := "{{showIf(anime.title)}}{{link(bgm.link, 'Bangumi')}}"
+	hidden, _ := RenderMessage(TriggerDownloadSubmitted, "Title", gated, map[string]any{})
+	if !hidden.Valid() || len(hidden.Attachments.Links) != 0 || len(Links(hidden.BodyParts)) != 0 {
+		t.Fatalf("hidden gated link leaked: %+v / %+v", hidden.Attachments, hidden.BodyParts)
+	}
+}
+
+func TestFirstVisibleImageWinsInTemplateOrder(t *testing.T) {
+	facts := map[string]any{"anime.title": "Show"}
+	for _, source := range []string{
+		"Text {{image(bgm.image)}}\n{{image(tmdb.image)}}",
+		"{{showIf(anime.title)}}Text {{image(bgm.image)}}\n{{image(tmdb.image)}}",
+		"{{showIf(anime.title)}}{{image(bgm.image)}}\n{{image(tmdb.image)}}",
+	} {
+		message, ok := RenderMessage(TriggerDownloadSubmitted, "Title", source, facts)
+		if !ok || !message.Valid() || message.Attachments.ImageSource != "bgm" {
+			t.Fatalf("first image lost for %q: %+v", source, message)
+		}
+	}
+}
+
+func TestTestTitleMarksAndBoundsTheTitle(t *testing.T) {
+	if got := TestTitle(""); got != "[TEST]" {
+		t.Fatalf("empty title = %q", got)
+	}
+	if got := TestTitle("Hello"); got != "[TEST] Hello" {
+		t.Fatalf("title = %q", got)
+	}
+	long := strings.Repeat("长", MaxRenderedTitleChars)
+	marked := TestTitle(long)
+	if !strings.HasPrefix(marked, "[TEST] ") {
+		t.Fatalf("marked title lost its marker: %q", marked)
+	}
+	if got := utf8.RuneCountInString(marked); got != MaxRenderedTitleChars {
+		t.Fatalf("marked title length = %d, want %d", got, MaxRenderedTitleChars)
+	}
+}
+
+func TestIfEvaluatesOnlyTheSelectedBranch(t *testing.T) {
+	const template = "{{if(eq(anime.title, 'Show'), 'selected', release.title)}}"
+	facts := map[string]any{"anime.title": "Show"}
+	message, ok := RenderMessage(TriggerDownloadSubmitted, "title", template, facts)
+	if !ok || !message.Valid() || message.Body != "selected" {
+		t.Fatalf("selected branch = %+v", message)
+	}
+	for _, warning := range message.Warnings {
+		if warning.Variable == "release.title" {
+			t.Fatalf("unselected branch warned: %+v", message.Warnings)
+		}
+	}
+	facts["anime.title"] = "Other"
+	message, ok = RenderMessage(TriggerDownloadSubmitted, "title", template, facts)
+	if !ok || !message.Valid() || message.Body != "" {
+		t.Fatalf("empty selected branch = %+v", message)
+	}
+	warned := false
+	for _, warning := range message.Warnings {
+		warned = warned || warning.Variable == "release.title"
+	}
+	if !warned {
+		t.Fatalf("selected empty branch did not warn: %+v", message.Warnings)
+	}
+}
+
+func TestUnknownFilesListShowsPathAndSizeAndKeepsStructure(t *testing.T) {
+	sample := Sample(TriggerUnknownFilesImported)
+	entries, ok := sample["out.files"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("out.files sample = %#v", sample["out.files"])
+	}
+	entry, ok := entries[0].(map[string]any)
+	if !ok || entry["path"] == nil || entry["size"] == nil {
+		t.Fatalf("out.files entry lost its structure: %#v", entries[0])
+	}
+	message := renderDefault(t, TriggerUnknownFilesImported, LocaleZH, sample)
+	want := FormatFact(entry["path"]) + " (" + FormatFact(entry["size"]) + " B)"
+	if !strings.Contains(message.Body, want) {
+		t.Fatalf("out.files body = %q, want %q", message.Body, want)
+	}
+}
+
+func TestLegacyAnimeGroupReferencesStayCompilable(t *testing.T) {
+	for _, trigger := range []string{TriggerSubscriptionChanged, TriggerReplacementDeletionFailed, TriggerFileDisplaced} {
+		if errors, ok := Compile(trigger, "{{anime.group}}", "{{anime.group}}"); !ok || len(errors) != 0 {
+			t.Fatalf("%s rejected a stored anime.group reference: %+v", trigger, errors)
+		}
+	}
+}
+
+func TestLegacyAnimeGroupCompatibilityDoesNotReviveSampleValues(t *testing.T) {
+	for _, trigger := range []string{TriggerSubscriptionChanged, TriggerReplacementDeletionFailed, TriggerFileDisplaced} {
+		facts := Sample(trigger)
+		if _, present := facts["anime.group"]; present {
+			t.Fatalf("%s previews an anime.group sample value", trigger)
+		}
+		message, ok := RenderMessage(trigger, "{{anime.group}}", "body", facts)
+		if !ok || !message.Valid() || message.Title != "" {
+			t.Fatalf("%s legacy anime.group render = %+v", trigger, message)
+		}
+		warned := false
+		for _, warning := range message.Warnings {
+			warned = warned || warning.Variable == "anime.group"
+		}
+		if !warned {
+			t.Fatalf("%s did not report the empty legacy anime.group: %+v", trigger, message.Warnings)
 		}
 	}
 }

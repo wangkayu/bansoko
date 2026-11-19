@@ -87,6 +87,6 @@ WHERE managed_anime_id = sqlc.arg(anime_id) AND state = 'blocked' AND attempt IS
 ORDER BY id;
 
 -- name: ManagedAnimeTitle :one
-SELECT title
+SELECT COALESCE(NULLIF(btrim(title_override), ''), title)::text AS title
 FROM managed_anime
 WHERE id = sqlc.arg(anime_id);

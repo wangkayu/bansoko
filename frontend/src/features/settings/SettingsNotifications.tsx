@@ -130,6 +130,8 @@ const secretInputPlaceholder = (): Record<PluginTargetConfig["adapter_kind"], st
 
 type TemplateMode = "system_default" | "custom";
 
+type NotificationLocale = NonNullable<PluginTargetConfig["template_set"]["locale"]>;
+
 // The per-event editing state. Preview output is deliberately NOT part of the draft: it is a
 //   read-only rendering of the current text and must never move the dirty comparison.
 type EventTemplateDraft = {
@@ -158,6 +160,9 @@ type NotificationDraft = {
   auth_value: string;
   secret_mode: SecretMode;
   catalog_version: NotificationCatalogVersion;
+  // Language of the system default templates. An existing channel keeps the language its stored
+  //   template set was accepted in; a new channel starts in the current UI language.
+  locale: NotificationLocale;
   // One editing state per registry trigger event, built in the order /config/notifications/trigger-kinds
   //   returns; on save everything is written back explicitly (the backend accepts the full registry's
   //   events).
@@ -204,6 +209,7 @@ function emptyDraft(kinds: NotificationTriggerKind[]): NotificationDraft {
     auth_value: "",
     secret_mode: "keep",
     catalog_version: TEMPLATE_CATALOG_VERSION,
+    locale: getLocale(),
     events: emptyEvents(kinds),
   };
 }
@@ -218,6 +224,7 @@ function draftFromTarget(target: PluginTargetConfig, kinds: NotificationTriggerK
   base.trigger_kinds = [...target.trigger_kinds];
   base.secret_mode = target.has_secret ? "keep" : "replace";
   base.catalog_version = target.template_set.catalog_version;
+  base.locale = target.template_set.locale ?? "zh-CN";
   // A target whose stored config is not provably canonical reports
   // config_status=invalid with a null config, and the editor starts from an
   // empty draft so saving re-establishes a canonical document. The generated
@@ -422,7 +429,7 @@ export function SettingsNotifications() {
       const templateSet = {
         language_version: TEMPLATE_LANGUAGE_VERSION,
         catalog_version: draft.catalog_version,
-        locale: getLocale(),
+        locale: draft.locale,
         events: Object.fromEntries(
           Object.entries(draft.events).map(([kind, event]) => [
             kind,
@@ -708,6 +715,7 @@ export function SettingsNotifications() {
                     kind={tplKind}
                     adapter={draft.adapter_kind}
                     catalogVersion={draft.catalog_version}
+                    locale={draft.locale}
                     event={draft.events[tplKind] ?? defaultEventTemplate()}
                     isPhone={isPhone}
                     onBack={() => setMobileEditing(false)}
@@ -1040,6 +1048,7 @@ function TemplatePane({
   kind,
   adapter,
   catalogVersion,
+  locale,
   event,
   isPhone,
   onBack,
@@ -1048,6 +1057,7 @@ function TemplatePane({
   kind: NotificationTriggerKind;
   adapter: PluginTargetConfig["adapter_kind"];
   catalogVersion: NotificationCatalogVersion;
+  locale: NotificationLocale;
   event: EventTemplateDraft;
   isPhone: boolean;
   onBack: () => void;
@@ -1059,8 +1069,8 @@ function TemplatePane({
   // The insertion point follows the last focused input, defaulting to the body.
   const lastFocused = useRef<"title" | "body">("body");
   const catalog = useQuery({
-    queryKey: templateCatalogKeys.notification(kind, catalogVersion),
-    queryFn: () => getNotificationTemplateCatalog(kind, catalogVersion),
+    queryKey: templateCatalogKeys.notification(kind, catalogVersion, locale),
+    queryFn: () => getNotificationTemplateCatalog(kind, catalogVersion, locale),
     staleTime: Infinity,
   });
   const defaults = catalog.data?.default_template;
@@ -1075,18 +1085,34 @@ function TemplatePane({
     }
   }
 
+  // Image variables are message-level attachments and can only be written in the body, on a line
+  //   of their own. Provider images use the call form image(path); the plain image variable stays
+  //   the bare reference.
+  function catalogToken(path: string): string {
+    if (path === "image") return "{{image}}";
+    if (path.endsWith(".image")) return `{{image(${path})}}`;
+    return `{{${path}}}`;
+  }
+
   function insertToken(token: string) {
-    const field = lastFocused.current;
+    const isImage = token === "{{image}}" || token.startsWith("{{image(");
+    const field = isImage ? "body" : lastFocused.current;
     const element = field === "title" ? titleRef.current : bodyRef.current;
     const current = field === "title" ? event.title_template : event.body_template;
     const start = element?.selectionStart ?? current.length;
     const end = element?.selectionEnd ?? current.length;
-    const next = current.slice(0, start) + token + current.slice(end);
+    let before = current.slice(0, start);
+    let after = current.slice(end);
+    if (isImage) {
+      if (before !== "" && !before.endsWith("\n")) before += "\n";
+      if (after !== "" && !after.startsWith("\n")) after = "\n" + after;
+    }
+    const next = before + token + after;
     onChange(field === "title" ? { ...event, title_template: next } : { ...event, body_template: next });
     if (!element) return;
     requestAnimationFrame(() => {
       element.focus();
-      const caret = start + token.length;
+      const caret = before.length + token.length;
       element.setSelectionRange(caret, caret);
     });
   }
@@ -1134,7 +1160,7 @@ function TemplatePane({
                   </summary>
                   <FactCatalog
                     facts={catalog.data.variables.map((variable) => ({ ...variable, path: variable.name }))}
-                    token={(path) => `{{${path}}}`}
+                    token={catalogToken}
                     onInsert={insertToken}
                   />
                   <div className="settings-notifications-template-functions">
@@ -1268,7 +1294,7 @@ function TemplatePreview({
         <StatePill tone="offline">{t("settings.notifications.template.invalid")}</StatePill>
       )}
       {result && result.valid && (
-        <AdapterMessage adapter={adapter} kind={kind} title={result.title} body={result.body} bodyParts={result.body_parts} attachments={result.attachments} />
+        <AdapterMessage adapter={adapter} kind={kind} presentation={result.presentation} />
       )}
       {result?.errors.map((item, index) => (
         <div key={`e${index}`}>
@@ -1288,60 +1314,90 @@ function TemplatePreview({
   );
 }
 
-/** The rendered message drawn in the adapter's own shape. */
+/**
+ * The rendered message in the adapter's own shape. Channel limits and shapes
+ * come from the backend presentation, which the delivery formatters also use,
+ * so the preview cannot drift from what is actually sent.
+ */
 function AdapterMessage({
   adapter,
   kind,
-  title,
-  body,
-  bodyParts,
-  attachments,
+  presentation,
 }: {
   adapter: PluginTargetConfig["adapter_kind"];
   kind: NotificationTriggerKind;
-  title: string;
-  body: string;
-  bodyParts: NotificationTemplatePreview["body_parts"];
-  attachments: NotificationTemplatePreview["attachments"];
+  presentation: NotificationTemplatePreview["presentation"];
 }) {
   if (adapter === "telegram") {
-    // With an image the adapter sends a photo whose caption is the whole text.
+    const telegram = presentation.telegram;
+    const asPhoto = telegram.mode === "sendPhoto";
     return (
       <div className="settings-notifications-preview-tg">
-        {attachments.image && (
+        {asPhoto && (
           <div className="settings-notifications-preview-image text-caption">{t("settings.notifications.template.imageNote")}</div>
         )}
-        <div className="settings-notifications-preview-tg-title">{title}</div>
-        <div className="settings-notifications-preview-body">{renderBodyInline(bodyParts, body)}</div>
+        {telegram.image_omitted && (
+          <p className="text-caption tw:text-warning">{t("settings.notifications.template.telegramImageOmitted")}</p>
+        )}
+        {telegram.truncated && (
+          <p className="text-caption tw:text-warning">{t("settings.notifications.template.telegramTruncated")}</p>
+        )}
+        <div className="settings-notifications-preview-tg-title">{telegram.title}</div>
+        <div className="settings-notifications-preview-body">{renderBodyInline(telegram.body_parts)}</div>
       </div>
     );
   }
   if (adapter === "feishu") {
-    // Feishu custom bots cannot upload images: the image can only appear as a link.
+    const feishu = presentation.feishu;
+    // Feishu cannot upload images: an available image is the last link
+    // paragraph in content, and no URL means nothing is shown.
     return (
       <div className="settings-notifications-preview-fs">
-        <div className="settings-notifications-preview-fs-head">{title}</div>
-        <div className="settings-notifications-preview-body settings-notifications-preview-fs-body">{renderBodyInline(bodyParts, body)}</div>
-        {attachments.image && (
-          <div className="settings-notifications-preview-fs-foot text-caption">{t("settings.notifications.template.feishuImageNote")}</div>
+        <div className="settings-notifications-preview-fs-head">{feishu.title}</div>
+        <div className="settings-notifications-preview-body settings-notifications-preview-fs-body">{renderFeishuContent(feishu.content)}</div>
+        {feishu.image_omitted && (
+          <div className="settings-notifications-preview-fs-foot text-caption tw:text-warning">{t("settings.notifications.template.feishuImageNoUrl")}</div>
         )}
       </div>
     );
   }
-  const message: Record<string, unknown> = { title, body };
-  if (attachments.image) message.image = attachments.image;
-  if (attachments.links.length > 0) message.links = attachments.links;
+  const message = presentation.webhook.message;
   return (
-    <pre className="settings-notifications-preview-wh">{JSON.stringify({ event: kind, message }, null, 2)}</pre>
+    <>
+      <pre className="settings-notifications-preview-wh">{JSON.stringify({ event: kind, message }, null, 2)}</pre>
+      <p className="text-caption tw:text-muted-foreground">{t("settings.notifications.template.webhookEnvelopeNote")}</p>
+    </>
   );
+}
+
+/** Feishu post paragraphs, one line each; link elements stay inline. */
+function renderFeishuContent(
+  content: NotificationTemplatePreview["presentation"]["feishu"]["content"],
+): React.ReactNode {
+  if (content.length === 0) return null;
+  const nodes: React.ReactNode[] = [];
+  let key = 0;
+  for (const paragraph of content) {
+    if (nodes.length > 0) nodes.push(<br key={key++} />);
+    for (const element of paragraph) {
+      if (element.tag === "a") {
+        nodes.push(
+          <span key={key++} className="settings-notifications-preview-anchor">
+            {element.text}
+          </span>,
+        );
+      } else if (element.text !== " ") {
+        nodes.push(<span key={key++}>{element.text}</span>);
+      }
+    }
+  }
+  return nodes;
 }
 
 /** Body parts in template order: links stay inline where the template wrote them. */
 function renderBodyInline(
   bodyParts: NotificationTemplatePreview["body_parts"],
-  fallback: string,
 ): React.ReactNode {
-  if (bodyParts.length === 0) return fallback;
   const nodes: React.ReactNode[] = [];
   let key = 0;
   for (const part of bodyParts) {

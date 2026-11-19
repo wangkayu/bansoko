@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/notifypresent"
 	"bansoko/internal/templatecatalog/notification"
 )
 
@@ -50,7 +51,7 @@ func TestFeishuPostContentRendersLinksInline(t *testing.T) {
 			{Text: "TMDB", Link: &notification.Link{Provider: "tmdb", Label: "TMDB", URL: "https://www.themoviedb.org/tv/456"}},
 		},
 	}
-	content := feishuPostContent(message)
+	content := notifypresent.Feishu(presentMessage(message)).Content
 	if len(content) != 4 || content[1][0].Text != " " {
 		t.Fatalf("content = %+v", content)
 	}

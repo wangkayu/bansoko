@@ -203,7 +203,7 @@ func TestCreateListUpdateTestDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal delivery: %v", err)
 	}
-	if containsAny(string(deliveryRaw), "secret_ref", "123:abc") {
+	if containsAny(string(deliveryRaw), "secret_ref", "123:abc", "message_snapshot") {
 		t.Fatalf("delivery read model leaked secret material: %s", deliveryRaw)
 	}
 
@@ -212,6 +212,49 @@ func TestCreateListUpdateTestDelivery(t *testing.T) {
 	var notFound *apperrors.NotFound
 	if !errors.As(err, &notFound) {
 		t.Fatalf("expected not found for missing delivery, got %v", err)
+	}
+}
+
+func TestQueuedTestDeliveryKeepsItsFrozenMessage(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	svc := newTestService(t, db)
+	create := validCreateInput(t)
+	create.Enabled, create.Secret = true, secretSetInput(t)
+	trigger := string(TriggerDownloadSubmitted)
+	create.TemplateSet = templateSetWithEventBody(t, trigger, "Before {{link('https://example.test/old', 'old')}}\n{{image('https://example.test/cover.jpg')}}")
+	target, err := svc.CreateTarget(ctx, create, "test-snapshot-target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := svc.TestTarget(ctx, target.ID, TargetTestInput{TriggerKind: TriggerDownloadSubmitted, ExpectedVersion: target.Version}, "test-snapshot-delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := updateTargetInput(t, create.Name, true, SecretInput{Mode: "keep"})
+	update.ExpectedVersion = target.Version
+	update.TemplateSet = templateSetWithEventBody(t, trigger, "After {{link('https://example.test/new', 'new')}}")
+	if _, err := svc.UpdateTarget(ctx, target.ID, target.Version, update); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE plugin_deliveries SET message_snapshot=NULL WHERE id=$1`, accepted.DeliveryID); err == nil || !strings.Contains(err.Error(), "NOTIFICATION_MESSAGE_IMMUTABLE") {
+		t.Fatalf("queued snapshot should not be editable by runtime: %v", err)
+	}
+	renderer := &countingTemplateRenderer{err: errors.New("legacy renderer must not be called")}
+	handler := NewPluginDeliverHandler(db, nil, nil, nil, renderer)
+	for i := 0; i < 2; i++ {
+		row, err := handler.loadDelivery(ctx, accepted.DeliveryID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg, err := handler.prepareOutboundMessage(ctx, row)
+		if err != nil || msg.Title != "[TEST] title" || msg.Body != "Before old" || len(msg.Links) != 1 ||
+			msg.Links[0].URL != "https://example.test/old" || msg.Image == nil || msg.Image.URL != "https://example.test/cover.jpg" {
+			t.Fatalf("prepare %d: message=%+v err=%v", i, msg, err)
+		}
+	}
+	if renderer.calls != 0 {
+		t.Fatalf("snapshot delivery called the legacy renderer %d times", renderer.calls)
 	}
 }
 

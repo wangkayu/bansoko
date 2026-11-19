@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"bansoko/internal/notifypresent"
 	deliverypayload "bansoko/internal/plugintarget/payload"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/templatecatalog/notification"
@@ -238,8 +239,8 @@ func TestTelegramLongCaptionFallsBackToBoundedHTMLText(t *testing.T) {
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if telegramTextLength(payload["text"]) > telegramTextLimit || !strings.Contains(payload["text"], "Bangumi") || payload["parse_mode"] != "HTML" {
-		t.Fatalf("bounded text length=%d payload=%v", telegramTextLength(payload["text"]), payload)
+	if notifypresent.TelegramTextUnits(payload["text"]) > notifypresent.TelegramTextLimit || !strings.Contains(payload["text"], "Bangumi") || payload["parse_mode"] != "HTML" {
+		t.Fatalf("bounded text length=%d payload=%v", notifypresent.TelegramTextUnits(payload["text"]), payload)
 	}
 }
 
@@ -262,9 +263,9 @@ func TestTelegramFullTorrentTreeKeepsTheCompleteTotals(t *testing.T) {
 			{Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
 		},
 	}
-	got := fitTelegramHTML(message, telegramTextLimit)
-	if telegramTextLength(got) > telegramTextLimit {
-		t.Fatalf("full tree text is %d units", telegramTextLength(got))
+	got := notifypresent.FitTelegram(presentMessage(message), notifypresent.TelegramTextLimit)
+	if notifypresent.TelegramTextUnits(got) > notifypresent.TelegramTextLimit {
+		t.Fatalf("full tree text is %d units", notifypresent.TelegramTextUnits(got))
 	}
 	if !strings.Contains(got, "合计: 30.0 GiB · 30 files") {
 		t.Fatalf("the complete totals were truncated:\n%s", got)
@@ -275,7 +276,7 @@ func TestTelegramFullTorrentTreeKeepsTheCompleteTotals(t *testing.T) {
 }
 
 func TestTelegramHTMLTruncationBudgetsEscapedText(t *testing.T) {
-	for _, limit := range []int{telegramCaptionLimit, telegramTextLimit} {
+	for _, limit := range []int{notifypresent.TelegramCaptionLimit, notifypresent.TelegramTextLimit} {
 		message := outboundMessage{
 			Title: strings.Repeat(`<&>"'`, 100),
 			Body:  strings.Repeat(`<&>"'`, 5000),
@@ -284,9 +285,9 @@ func TestTelegramHTMLTruncationBudgetsEscapedText(t *testing.T) {
 				{Text: "Bangumi", Link: &notification.Link{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
 			},
 		}
-		got := fitTelegramHTML(message, limit)
-		if telegramTextLength(got) > limit {
-			t.Fatalf("limit %d: escaped HTML has %d UTF-16 units: %q", limit, telegramTextLength(got), got)
+		got := notifypresent.FitTelegram(presentMessage(message), limit)
+		if notifypresent.TelegramTextUnits(got) > limit {
+			t.Fatalf("limit %d: escaped HTML has %d UTF-16 units: %q", limit, notifypresent.TelegramTextUnits(got), got)
 		}
 		if !strings.Contains(got, "&amp;") || !strings.Contains(got, "Bangumi") {
 			t.Fatalf("limit %d: escaped body or links were lost: %q", limit, got)

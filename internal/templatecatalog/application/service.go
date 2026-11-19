@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"bansoko/internal/apperrors"
 	"bansoko/internal/namingvars"
+	"bansoko/internal/notifypresent"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/templatecatalog/notification"
 )
@@ -32,18 +32,26 @@ func NewService() *Service { return &Service{} }
 
 // GetNotificationCatalog returns the closed variable/function catalog, system
 // default title/body templates, and fixed redacted sample facts for one trigger.
-// catalogVersion must be empty or the current catalog version.
-func (s *Service) GetNotificationCatalog(_ context.Context, triggerKind, catalogVersion string) (NotificationTemplateCatalog, error) {
+// catalogVersion must be empty or the current catalog version; locale selects
+// the language of the system default templates (empty is zh-CN).
+func (s *Service) GetNotificationCatalog(_ context.Context, triggerKind, catalogVersion, locale string) (NotificationTemplateCatalog, error) {
 	catalog, err := notificationCatalogVersion(catalogVersion)
 	if err != nil {
 		return NotificationTemplateCatalog{}, err
+	}
+	switch locale {
+	case "", notification.LocaleZH:
+		locale = notification.LocaleZH
+	case notification.LocaleEN:
+	default:
+		return NotificationTemplateCatalog{}, &apperrors.BadRequest{Code: "TEMPLATE_LOCALE_UNSUPPORTED", Message: fmt.Sprintf("Unsupported notification template locale %q.", locale)}
 	}
 	trigger := NotificationTriggerKind(triggerKind)
 	variables, ok := notificationVariables(trigger)
 	if !ok {
 		return NotificationTemplateCatalog{}, &apperrors.BadRequest{Code: "TEMPLATE_TRIGGER_INVALID", Message: fmt.Sprintf("Unknown notification trigger kind %q.", triggerKind)}
 	}
-	defaultTitle, defaultBody := notification.Defaults(triggerKind)
+	defaultTitle, defaultBody := notification.DefaultsFor(triggerKind, locale)
 	return NotificationTemplateCatalog{
 		CatalogVersion:  NotificationTemplateCatalogCatalogVersion(catalog),
 		DefaultTemplate: NotificationEventTemplateCustom{BodyTemplate: defaultBody, Mode: NotificationEventTemplateCustomModeCustom, TitleTemplate: defaultTitle},
@@ -158,17 +166,27 @@ func (s *Service) PreviewNotification(_ context.Context, input NotificationTempl
 		}
 	}
 	message, _ := notification.RenderMessage(trigger, input.TitleTemplate, input.BodyTemplate, sample)
-	semantic, _ := notification.SemanticAttachments(trigger, input.TitleTemplate, input.BodyTemplate, sample)
+	// The unified render already produced the semantic attachments for the
+	// same facts; building a presentation from the message never scans the
+	// template a second time.
+	semantic := message.Attachments
 	attachments := NotificationTemplatePreviewAttachments{Links: []NotificationTemplatePreviewLink{}}
+	presented := notifypresent.Message{Title: message.Title, Body: message.Body, Parts: message.BodyParts, Links: semantic.Links}
 	if semantic.Image {
 		source := semantic.ImageSource
-		if source == "" {
+		// Unknown targets (for example a gated directive whose argument was
+		// rejected) are reported as warnings; the preview still shows the
+		// automatic image slot rather than an invalid source name.
+		switch source {
+		case "bgm", "tmdb", "anibt", "mikan", "custom":
+		default:
 			source = "automatic"
 		}
 		attachments.Image = &NotificationTemplatePreviewImage{Source: source}
 		if source == "custom" && semantic.ImageURL != "" {
 			attachments.Image.URL = &semantic.ImageURL
 		}
+		presented.Image = &notifypresent.Image{Source: source, URL: semantic.ImageURL, Placeholder: semantic.ImageURL == ""}
 	}
 	for _, link := range semantic.Links {
 		attachments.Links = append(attachments.Links, NotificationTemplatePreviewLink{Provider: link.Provider, Label: link.Label, URL: link.URL})
@@ -188,6 +206,7 @@ func (s *Service) PreviewNotification(_ context.Context, input NotificationTempl
 		CatalogVersion:  NotificationTemplatePreviewCatalogVersion(catalog),
 		Errors:          mapSourceErrors(message.Errors),
 		LanguageVersion: NotificationTemplatePreviewLanguageVersionBansokoTemplate1,
+		Presentation:    notifypresent.Build(presented),
 		Title:           message.Title,
 		Valid:           message.Valid(),
 		Variables:       variables,
@@ -471,16 +490,8 @@ func (s *Service) RenderNotification(titleTemplate, bodyTemplate, triggerKind, c
 		first := message.Errors[0]
 		return "", "", fmt.Errorf("%s template render error: %s", first.Field, first.Message)
 	}
-	const (
-		testMarker       = "[TEST]"
-		testMarkerPrefix = testMarker + " "
-	)
-	if message.Title == "" {
-		return testMarker, message.Body, nil
-	}
-	titleRunes := []rune(message.Title)
-	if limit := notification.MaxRenderedTitleChars - utf8.RuneCountInString(testMarkerPrefix); len(titleRunes) > limit {
-		titleRunes = titleRunes[:limit]
-	}
-	return testMarkerPrefix + string(titleRunes), message.Body, nil
+	// TestTitle applies the [TEST] marker and keeps the marked title inside the
+	// same rendered bound; previews, business deliveries and stored defaults
+	// never carry it.
+	return notification.TestTitle(message.Title), message.Body, nil
 }

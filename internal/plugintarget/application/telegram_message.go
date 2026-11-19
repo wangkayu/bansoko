@@ -6,19 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"strings"
-	"unicode/utf16"
 
-	"bansoko/internal/templatecatalog/notification"
-)
-
-const (
-	telegramCaptionLimit = 1024
-	telegramTextLimit    = 4096
+	"bansoko/internal/notifypresent"
 )
 
 type telegramRequestMode struct {
@@ -39,18 +32,29 @@ func (h *PluginDeliverHandler) buildTelegramMessageRequest(ctx context.Context, 
 	if err != nil {
 		return nil, telegramRequestMode{}, err
 	}
-	fullHTML := renderTelegramHTML(message)
-	if message.Image != nil && telegramTextLength(fullHTML) <= telegramCaptionLimit {
+	presentation := notifypresent.Telegram(presentMessage(message))
+	if presentation.Mode == notifypresent.TelegramModePhoto {
 		mode := telegramRequestMode{Method: "sendPhoto", Image: "url", Source: message.Image.Source}
 		if message.Image.Placeholder {
 			mode.Image = "placeholder"
 		}
-		req, err := buildTelegramPhotoRequest(ctx, chatID, token, fullHTML, message.Image)
+		req, err := buildTelegramPhotoRequest(ctx, chatID, token, presentation.Text, message.Image)
 		return req, mode, err
 	}
 	mode := telegramRequestMode{Method: "sendMessage"}
-	req, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, fitTelegramHTML(message, telegramTextLimit))
+	req, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, presentation.Text)
 	return req, mode, err
+}
+
+// presentMessage maps the delivery IR onto the shared channel presentation
+// input. outboundImage.Data stays local to delivery; presentation never needs
+// image bytes.
+func presentMessage(message outboundMessage) notifypresent.Message {
+	presented := notifypresent.Message{Title: message.Title, Body: message.Body, Parts: message.Parts, Links: message.Links}
+	if message.Image != nil {
+		presented.Image = &notifypresent.Image{Source: message.Image.Source, URL: message.Image.URL, Placeholder: message.Image.Placeholder}
+	}
+	return presented
 }
 
 func telegramCredentials(row deliveryRow, secretValue string) (chatID, token string, err error) {
@@ -125,156 +129,6 @@ func buildTelegramHTMLMessageRequest(ctx context.Context, chatID, token, text st
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return req, nil
-}
-
-func renderTelegramHTML(message outboundMessage) string {
-	var builder strings.Builder
-	if message.Title != "" {
-		builder.WriteString("<b>")
-		builder.WriteString(html.EscapeString(message.Title))
-		builder.WriteString("</b>")
-	}
-	body := telegramBodyHTML(message)
-	if body != "" {
-		if builder.Len() > 0 {
-			builder.WriteString("\n\n")
-		}
-		builder.WriteString(body)
-	}
-	return builder.String()
-}
-
-// telegramBodyHTML renders body parts in template order: links stay inline,
-// text is escaped. Without parts (a text-only caller) the plain body is used.
-func telegramBodyHTML(message outboundMessage) string {
-	if len(message.Parts) == 0 {
-		return html.EscapeString(message.Body)
-	}
-	var builder strings.Builder
-	for _, part := range message.Parts {
-		builder.WriteString(telegramPartHTML(part))
-	}
-	return builder.String()
-}
-
-func telegramPartHTML(part notification.BodyPart) string {
-	if part.Link == nil {
-		return html.EscapeString(part.Text)
-	}
-	var builder strings.Builder
-	builder.WriteString(`<a href="`)
-	builder.WriteString(html.EscapeString(part.Link.URL))
-	builder.WriteString(`">`)
-	builder.WriteString(html.EscapeString(part.Link.Label))
-	builder.WriteString("</a>")
-	return builder.String()
-}
-
-func fitTelegramHTML(message outboundMessage, limit int) string {
-	full := renderTelegramHTML(message)
-	if telegramTextLength(full) <= limit {
-		return full
-	}
-	message.Title = truncateTelegramHTMLText(message.Title, min(256, limit/4))
-	reserved := telegramTextLength(html.EscapeString(message.Title)) + len("<b></b>") + 2
-	budget := max(0, limit-reserved)
-	if len(message.Parts) == 0 {
-		message.Body = truncateTelegramHTMLText(message.Body, budget)
-		return renderTelegramHTML(message)
-	}
-	message.Parts = truncateTelegramParts(message.Parts, budget)
-	message.Body = notification.PlainText(message.Parts)
-	return renderTelegramHTML(message)
-}
-
-// truncateTelegramParts keeps every link and spends the remaining budget on
-// text in template order, so an overflowing body still carries its links. A
-// text part that does not fit ends the body with an ellipsis.
-func truncateTelegramParts(parts []notification.BodyPart, limit int) []notification.BodyPart {
-	linkWidth := 0
-	for _, part := range parts {
-		if part.Link != nil {
-			linkWidth += telegramTextLength(telegramPartHTML(part))
-		}
-	}
-	if linkWidth >= limit {
-		return truncateTelegramPartsPrefix(parts, limit)
-	}
-	textBudget := limit - linkWidth
-	kept := make([]notification.BodyPart, 0, len(parts))
-	truncated := false
-	for _, part := range parts {
-		if part.Link != nil {
-			kept = append(kept, part)
-			continue
-		}
-		if truncated {
-			continue
-		}
-		if width := telegramTextLength(telegramPartHTML(part)); width <= textBudget {
-			kept = append(kept, part)
-			textBudget -= width
-			continue
-		}
-		text := truncateTelegramHTMLText(part.Text, textBudget-1)
-		if text != "" {
-			kept = append(kept, notification.BodyPart{Text: text})
-		}
-		truncated = true
-	}
-	return kept
-}
-
-// truncateTelegramPartsPrefix fills the budget in template order and drops the
-// rest, closing with an ellipsis; it is the last resort when the links alone
-// exceed the limit.
-func truncateTelegramPartsPrefix(parts []notification.BodyPart, limit int) []notification.BodyPart {
-	kept := make([]notification.BodyPart, 0, len(parts))
-	remaining := limit
-	for _, part := range parts {
-		width := telegramTextLength(telegramPartHTML(part))
-		if width <= remaining {
-			kept = append(kept, part)
-			remaining -= width
-			continue
-		}
-		if part.Link != nil {
-			return append(kept, notification.BodyPart{Text: "…"})
-		}
-		text := truncateTelegramHTMLText(part.Text, remaining-1)
-		if text != "" {
-			kept = append(kept, notification.BodyPart{Text: text})
-		}
-		return kept
-	}
-	return kept
-}
-
-// truncateTelegramHTMLText budgets the escaped representation that Telegram
-// actually receives, not the shorter plain text before HTML escaping.
-func truncateTelegramHTMLText(value string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if telegramTextLength(html.EscapeString(value)) <= limit {
-		return value
-	}
-	var builder strings.Builder
-	units := 0
-	for _, r := range value {
-		width := telegramTextLength(html.EscapeString(string(r)))
-		if units+width+1 > limit {
-			break
-		}
-		builder.WriteRune(r)
-		units += width
-	}
-	builder.WriteRune('…')
-	return builder.String()
-}
-
-func telegramTextLength(value string) int {
-	return len(utf16.Encode([]rune(value)))
 }
 
 func telegramResponseImageRejected(status int, body []byte) bool {

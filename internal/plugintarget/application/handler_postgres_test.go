@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/notifypresent"
 	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
@@ -233,16 +234,6 @@ func TestHandlerNotStartedPrepareFailureFinalizesSameAttempt(t *testing.T) {
 		resolver func(SecretResolver) *countingSecretResolver
 	}{
 		{
-			name:     "renderer failure",
-			wantCode: "notification_template_invalid",
-			renderer: func() *countingTemplateRenderer {
-				return &countingTemplateRenderer{err: errors.New("renderer unavailable")}
-			},
-			resolver: func(delegate SecretResolver) *countingSecretResolver {
-				return &countingSecretResolver{delegate: delegate, available: true}
-			},
-		},
-		{
 			name:     "secret unavailable",
 			wantCode: "secret_resolve_failed",
 			renderer: func() *countingTemplateRenderer { return &countingTemplateRenderer{title: "title", body: "body"} },
@@ -296,7 +287,7 @@ func TestHandlerDiagnosticFailureRunsAfterCommittedBusinessEvidence(t *testing.T
 	service, id, claim := seedHandlerDelivery(t)
 	client := &countingHTTPClient{status: http.StatusNoContent}
 	recorder := &failingDiagnosticRecorder{}
-	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems, client, &fakeTemplateRenderer{err: errors.New("invalid template")})
+	handler := NewPluginDeliverHandler(service.db, &countingSecretResolver{}, service.workItems, client, nil)
 	handler.SetDiagnosticRecorder(recorder, nil)
 
 	out, err := handler.Handle(context.Background(), claim)
@@ -321,7 +312,7 @@ func TestHandlerDiagnosticFailureRunsAfterCommittedBusinessEvidence(t *testing.T
 	if err := service.db.QueryRowContext(context.Background(), `SELECT d.state,w.state,d.last_error_code FROM plugin_deliveries d JOIN work_item_history w ON w.owner_type='plugin_delivery' AND w.owner_id=d.id WHERE d.id=$1`, id).Scan(&deliveryState, &itemState, &reasonCode); err != nil {
 		t.Fatal(err)
 	}
-	if deliveryState != "failed" || itemState != workitems.StateFailed || reasonCode != "notification_template_invalid" {
+	if deliveryState != "failed" || itemState != workitems.StateFailed || reasonCode != "secret_resolve_failed" {
 		t.Fatalf("business evidence rolled back: delivery=%s item=%s reason=%s", deliveryState, itemState, reasonCode)
 	}
 
@@ -676,7 +667,8 @@ func (r *recordingHTTPClient) Do(req *http.Request) (*http.Response, error) {
 func TestHandlerTelegramDeliveryShape(t *testing.T) {
 	service, id, claim := seedHandlerDelivery(t)
 	client := &recordingHTTPClient{}
-	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems, client, &fakeTemplateRenderer{title: "Title", body: "Body"})
+	renderer := &countingTemplateRenderer{err: errors.New("legacy renderer must not be called")}
+	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems, client, renderer)
 	out, err := handler.Handle(context.Background(), claim)
 	if err != nil {
 		t.Fatal(err)
@@ -733,15 +725,15 @@ func TestHandlerTelegramDeliveryShape(t *testing.T) {
 	if fields["parse_mode"] != "HTML" {
 		t.Errorf("telegram parse_mode = %q, want HTML", fields["parse_mode"])
 	}
-	// The fake renderer only supplies the title; the body is the delivery's own
-	// render, so the caption keeps the links inline where the default template
-	// wrote them.
-	_, defaultBody := notification.DefaultsFor(notification.TriggerDownloadSubmitted, notification.LocaleZH)
-	rendered, ok := notification.RenderMessage(notification.TriggerDownloadSubmitted, "", defaultBody, notification.Sample(notification.TriggerDownloadSubmitted))
+	if renderer.calls != 0 {
+		t.Fatalf("snapshot delivery called the legacy renderer %d times", renderer.calls)
+	}
+	defaultTitle, defaultBody := notification.DefaultsFor(notification.TriggerDownloadSubmitted, notification.LocaleZH)
+	rendered, ok := notification.RenderMessage(notification.TriggerDownloadSubmitted, defaultTitle, defaultBody, notification.Sample(notification.TriggerDownloadSubmitted))
 	if !ok || !rendered.Valid() {
 		t.Fatalf("default body render = %+v", rendered.Errors)
 	}
-	wantCaption := "<b>Title</b>\n\n" + telegramBodyHTML(outboundMessage{Parts: rendered.BodyParts})
+	wantCaption := notifypresent.TelegramHTML(notifypresent.Message{Title: notification.TestTitle(rendered.Title), Parts: rendered.BodyParts})
 	if fields["caption"] != wantCaption {
 		t.Errorf("telegram caption = %q, want %q", fields["caption"], wantCaption)
 	}
@@ -1111,8 +1103,8 @@ func TestHandlerRequestStartReclaimAttemptLogAfterCommitPostgres(t *testing.T) {
 func TestHandlerPreSendFailureAttemptLogAfterCommitPostgres(t *testing.T) {
 	service, _, claim := seedHandlerDelivery(t)
 	logger := &capturingRuntimeLogger{}
-	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems,
-		&countingHTTPClient{status: http.StatusNoContent}, &fakeTemplateRenderer{err: errors.New("invalid template https://private.example")})
+	handler := NewPluginDeliverHandler(service.db, &countingSecretResolver{value: `{"endpoint_url":"https://private.example"}`, available: true}, service.workItems,
+		&countingHTTPClient{status: http.StatusNoContent}, nil)
 	handler.SetDiagnosticRecorder(nil, logger)
 
 	out, err := handler.Handle(context.Background(), claim)
@@ -1138,7 +1130,7 @@ func TestHandlerPreSendFailureAttemptLogAfterCommitPostgres(t *testing.T) {
 			t.Fatalf("message %q lacks %q", event.Message, want)
 		}
 	}
-	if strings.Contains(event.Message, "private.example") || strings.Contains(event.Message, "template") {
+	if strings.Contains(event.Message, "private.example") || strings.Contains(event.Message, "bot_token") {
 		t.Fatalf("message carried the builder error: %q", event.Message)
 	}
 }

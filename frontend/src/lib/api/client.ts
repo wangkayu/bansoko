@@ -1906,8 +1906,11 @@ export type NotificationCatalogVersion = NotificationTemplateCatalog["catalog_ve
 export function getNotificationTemplateCatalog(
   triggerKind: NotificationTriggerKind,
   catalogVersion?: NotificationCatalogVersion,
+  locale?: "zh-CN" | "en",
 ): Promise<NotificationTemplateCatalog> {
-  const query = catalogVersion ? `?${new URLSearchParams({ catalog_version: catalogVersion }).toString()}` : "";
+  const query = catalogVersion
+    ? `?${new URLSearchParams({ catalog_version: catalogVersion, ...(locale ? { locale } : {}) }).toString()}`
+    : "";
   return request(`/template-catalogs/notification/${encodePathSegment(triggerKind)}${query}`, {
     method: "GET",
   });

@@ -1356,6 +1356,12 @@ const (
 	NotificationTemplatePreviewLanguageVersionBansokoTemplate1 NotificationTemplatePreviewLanguageVersion = "bansoko-template-1"
 )
 
+// Defines values for NotificationTemplatePreviewFeishuElementTag.
+const (
+	NotificationTemplatePreviewFeishuElementTagA    NotificationTemplatePreviewFeishuElementTag = "a"
+	NotificationTemplatePreviewFeishuElementTagText NotificationTemplatePreviewFeishuElementTag = "text"
+)
+
 // Defines values for NotificationTemplatePreviewImageSource.
 const (
 	NotificationTemplatePreviewImageSourceAnibt     NotificationTemplatePreviewImageSource = "anibt"
@@ -1384,6 +1390,12 @@ const (
 	NotificationTemplatePreviewLinkProviderDownload NotificationTemplatePreviewLinkProvider = "download"
 	NotificationTemplatePreviewLinkProviderMikan    NotificationTemplatePreviewLinkProvider = "mikan"
 	NotificationTemplatePreviewLinkProviderTmdb     NotificationTemplatePreviewLinkProvider = "tmdb"
+)
+
+// Defines values for NotificationTemplatePreviewTelegramMode.
+const (
+	NotificationTemplatePreviewTelegramModeSendMessage NotificationTemplatePreviewTelegramMode = "sendMessage"
+	NotificationTemplatePreviewTelegramModeSendPhoto   NotificationTemplatePreviewTelegramMode = "sendPhoto"
 )
 
 // Defines values for NotificationTemplateSetCatalogVersion.
@@ -2819,6 +2831,12 @@ const (
 // Defines values for GetNotificationTemplateCatalogParamsCatalogVersion.
 const (
 	GetNotificationTemplateCatalogParamsCatalogVersionNotificationCatalogV1 GetNotificationTemplateCatalogParamsCatalogVersion = "notification-catalog-v1"
+)
+
+// Defines values for GetNotificationTemplateCatalogParamsLocale.
+const (
+	GetNotificationTemplateCatalogParamsLocaleEn   GetNotificationTemplateCatalogParamsLocale = "en"
+	GetNotificationTemplateCatalogParamsLocaleZhCN GetNotificationTemplateCatalogParamsLocale = "zh-CN"
 )
 
 // AccountUpdateInput Change the owner username and/or password. At least one of username or new_password must be present. The current password is always re-checked.
@@ -6658,10 +6676,13 @@ type NotificationTemplatePreview struct {
 	CatalogVersion  NotificationTemplatePreviewCatalogVersion  `json:"catalog_version"`
 	Errors          []TemplateSourceError                      `json:"errors"`
 	LanguageVersion NotificationTemplatePreviewLanguageVersion `json:"language_version"`
-	Title           string                                     `json:"title"`
-	Valid           bool                                       `json:"valid"`
-	Variables       []TemplateVariable                         `json:"variables"`
-	Warnings        []TemplateWarning                          `json:"warnings"`
+
+	// Presentation The same rendered message in each supported channel's own shape, built by the pure helpers the delivery formatters call. The editor renders these values instead of reimplementing channel limits and shapes.
+	Presentation NotificationTemplatePreviewPresentation `json:"presentation"`
+	Title        string                                  `json:"title"`
+	Valid        bool                                    `json:"valid"`
+	Variables    []TemplateVariable                      `json:"variables"`
+	Warnings     []TemplateWarning                       `json:"warnings"`
 }
 
 // NotificationTemplatePreviewCatalogVersion defines model for NotificationTemplatePreview.CatalogVersion.
@@ -6683,6 +6704,35 @@ type NotificationTemplatePreviewBodyPart struct {
 
 	// Text Literal text, or the label when link is present.
 	Text string `json:"text"`
+}
+
+// NotificationTemplatePreviewFeishu defines model for NotificationTemplatePreviewFeishu.
+type NotificationTemplatePreviewFeishu struct {
+	// Content Post paragraphs; an image link, when available, is its own last paragraph.
+	Content [][]NotificationTemplatePreviewFeishuElement `json:"content"`
+
+	// Image Present when the image can be sent as a link.
+	Image *NotificationTemplatePreviewFeishuImage `json:"image"`
+
+	// ImageOmitted An image was requested but no URL is available, so Feishu shows none.
+	ImageOmitted bool   `json:"image_omitted"`
+	Title        string `json:"title"`
+}
+
+// NotificationTemplatePreviewFeishuElement defines model for NotificationTemplatePreviewFeishuElement.
+type NotificationTemplatePreviewFeishuElement struct {
+	Href *string                                     `json:"href,omitempty"`
+	Tag  NotificationTemplatePreviewFeishuElementTag `json:"tag"`
+	Text string                                      `json:"text"`
+}
+
+// NotificationTemplatePreviewFeishuElementTag defines model for NotificationTemplatePreviewFeishuElement.Tag.
+type NotificationTemplatePreviewFeishuElementTag string
+
+// NotificationTemplatePreviewFeishuImage defines model for NotificationTemplatePreviewFeishuImage.
+type NotificationTemplatePreviewFeishuImage struct {
+	Label string `json:"label"`
+	Url   string `json:"url"`
 }
 
 // NotificationTemplatePreviewImage defines model for NotificationTemplatePreviewImage.
@@ -6722,6 +6772,60 @@ type NotificationTemplatePreviewLink struct {
 
 // NotificationTemplatePreviewLinkProvider defines model for NotificationTemplatePreviewLink.Provider.
 type NotificationTemplatePreviewLinkProvider string
+
+// NotificationTemplatePreviewPresentation The same rendered message in each supported channel's own shape, built by the pure helpers the delivery formatters call. The editor renders these values instead of reimplementing channel limits and shapes.
+type NotificationTemplatePreviewPresentation struct {
+	Feishu   NotificationTemplatePreviewFeishu   `json:"feishu"`
+	Telegram NotificationTemplatePreviewTelegram `json:"telegram"`
+	Webhook  NotificationTemplatePreviewWebhook  `json:"webhook"`
+}
+
+// NotificationTemplatePreviewTelegram defines model for NotificationTemplatePreviewTelegram.
+type NotificationTemplatePreviewTelegram struct {
+	// BodyParts The channel-fitted body with its inline links.
+	BodyParts []NotificationTemplatePreviewBodyPart `json:"body_parts"`
+
+	// ImageOmitted An image was requested but the caption exceeds the photo limit, so the message is sent without it.
+	ImageOmitted bool `json:"image_omitted"`
+
+	// Mode sendPhoto carries the message as a picture caption; sendMessage is a regular text message (the picture, if any, is dropped).
+	Mode NotificationTemplatePreviewTelegramMode `json:"mode"`
+
+	// Text Final HTML that Telegram receives: the photo caption or the message text, already fitted to the channel limit.
+	Text string `json:"text"`
+
+	// TextUnits Length of text in UTF-16 code units, the unit Telegram counts.
+	TextUnits int `json:"text_units"`
+
+	// Title The channel-fitted title as plain text.
+	Title string `json:"title"`
+
+	// Truncated The text exceeded the message limit; links are kept and the remaining text is truncated when sent.
+	Truncated bool `json:"truncated"`
+}
+
+// NotificationTemplatePreviewTelegramMode sendPhoto carries the message as a picture caption; sendMessage is a regular text message (the picture, if any, is dropped).
+type NotificationTemplatePreviewTelegramMode string
+
+// NotificationTemplatePreviewWebhook defines model for NotificationTemplatePreviewWebhook.
+type NotificationTemplatePreviewWebhook struct {
+	Message NotificationTemplatePreviewWebhookMessage `json:"message"`
+}
+
+// NotificationTemplatePreviewWebhookImage defines model for NotificationTemplatePreviewWebhookImage.
+type NotificationTemplatePreviewWebhookImage struct {
+	Placeholder *bool   `json:"placeholder,omitempty"`
+	Source      string  `json:"source"`
+	Url         *string `json:"url,omitempty"`
+}
+
+// NotificationTemplatePreviewWebhookMessage defines model for NotificationTemplatePreviewWebhookMessage.
+type NotificationTemplatePreviewWebhookMessage struct {
+	Body  string                                   `json:"body"`
+	Image *NotificationTemplatePreviewWebhookImage `json:"image"`
+	Links []NotificationTemplatePreviewLink        `json:"links"`
+	Title string                                   `json:"title"`
+}
 
 // NotificationTemplateSet defines model for NotificationTemplateSet.
 type NotificationTemplateSet struct {
@@ -10655,10 +10759,16 @@ type GetNamingTemplateCatalogParamsLanguage string
 type GetNotificationTemplateCatalogParams struct {
 	// CatalogVersion Catalog to describe; omitted is notification-catalog-v1.
 	CatalogVersion *GetNotificationTemplateCatalogParamsCatalogVersion `form:"catalog_version,omitempty" json:"catalog_version,omitempty"`
+
+	// Locale Language of the system default templates; omitted is zh-CN.
+	Locale *GetNotificationTemplateCatalogParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
 }
 
 // GetNotificationTemplateCatalogParamsCatalogVersion defines parameters for GetNotificationTemplateCatalog.
 type GetNotificationTemplateCatalogParamsCatalogVersion string
+
+// GetNotificationTemplateCatalogParamsLocale defines parameters for GetNotificationTemplateCatalog.
+type GetNotificationTemplateCatalogParamsLocale string
 
 // AdmitUpdateParams defines parameters for AdmitUpdate.
 type AdmitUpdateParams struct {
@@ -20517,6 +20627,14 @@ func (siw *ServerInterfaceWrapper) GetNotificationTemplateCatalog(w http.Respons
 	err = runtime.BindQueryParameter("form", true, false, "catalog_version", r.URL.Query(), &params.CatalogVersion)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "catalog_version", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "locale" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "locale", r.URL.Query(), &params.Locale)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "locale", Err: err})
 		return
 	}
 

@@ -136,8 +136,8 @@ export const apiTokenKeys = {
 
 export const templateCatalogKeys = {
   naming: (language: string) => ["template-catalog", "naming", language] as const,
-  notification: (kind: string, catalogVersion: string) =>
-    ["template-catalog", "notification", kind, catalogVersion] as const,
+  notification: (kind: string, catalogVersion: string, locale: string) =>
+    ["template-catalog", "notification", kind, catalogVersion, locale] as const,
 };
 
 export const updateKeys = {

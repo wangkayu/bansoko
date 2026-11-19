@@ -145,6 +145,24 @@ func TestSelectTemplateCustom(t *testing.T) {
 	}
 }
 
+func templateSetWithEventBody(t *testing.T, trigger, body string) json.RawMessage {
+	t.Helper()
+	var template map[string]any
+	if err := json.Unmarshal(defaultTemplateSet(t), &template); err != nil {
+		t.Fatal(err)
+	}
+	events, ok := template["events"].(map[string]any)
+	if !ok {
+		t.Fatal("template set events missing")
+	}
+	events[trigger] = map[string]any{"mode": "custom", "title_template": "title", "body_template": body}
+	raw, err := json.Marshal(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
 func replaceTemplateField(t *testing.T, field, value string) json.RawMessage {
 	t.Helper()
 	var template map[string]any
@@ -191,5 +209,40 @@ func TestValidateTargetCommonRejectsUncompilableTemplate(t *testing.T) {
 	input.TemplateSet = json.RawMessage(strings.Replace(string(input.TemplateSet), "{{anime.nope}}", "{{download.task}}", 1))
 	if err := validateTargetCommon(input.PluginKind, input.AdapterKind, input.ConfigSchemaVersion, input.Config, input.TemplateSet, input.TriggerKinds, input.Name); !errors.As(err, &validation) {
 		t.Fatalf("cross-trigger variable accepted: %v", err)
+	}
+}
+
+func TestValidateTargetCommonRejectsInvalidUngatedImage(t *testing.T) {
+	input := validCreateInput(t)
+	input.TemplateSet = templateSetWithEventBody(t, string(TriggerDownloadSubmitted), "{{image('http://example.com/a.jpg')}}")
+	err := validateTargetCommon(input.PluginKind, input.AdapterKind, input.ConfigSchemaVersion, input.Config, input.TemplateSet, input.TriggerKinds, input.Name)
+	var validation *apperrors.Validation
+	if !errors.As(err, &validation) || validation.Code != "TEMPLATE_INVALID" || len(validation.Details) == 0 {
+		t.Fatalf("ungated image err=%v", err)
+	}
+	detail := validation.Details[0]
+	if detail.Field == nil || *detail.Field != "template_set.events.download_submitted.body_template" || detail.Code != "invalid_expression" {
+		t.Fatalf("detail=%+v field=%v", detail, detail.Field)
+	}
+}
+
+func TestValidateTargetCommonAcceptsBareProviderImage(t *testing.T) {
+	input := validCreateInput(t)
+	input.TemplateSet = templateSetWithEventBody(t, string(TriggerDownloadSubmitted), "{{bgm.image}}")
+	if err := validateTargetCommon(input.PluginKind, input.AdapterKind, input.ConfigSchemaVersion, input.Config, input.TemplateSet, input.TriggerKinds, input.Name); err != nil {
+		t.Fatalf("bare provider image rejected: %v", err)
+	}
+}
+
+func TestValidateTemplateSetUsesSameV1SemanticsForNewAndEditedTemplates(t *testing.T) {
+	trigger := string(TriggerDownloadSubmitted)
+	for _, body := range []string{
+		"{{if(anime.title, image(bgm.image), '')}}",
+		"Edited\n{{if(eq(anime.title, 'x'), link(bgm.link, 'Bangumi'), '')}}",
+		"{{showIf(anime.group)}}{{image('http://example.com/a.jpg')}}",
+	} {
+		if err := validateTemplateSet(templateSetWithEventBody(t, trigger, body)); err != nil {
+			t.Errorf("v1 template %q rejected: %v", body, err)
+		}
 	}
 }

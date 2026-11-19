@@ -172,71 +172,56 @@ func mustLookupFact(facts map[string]any, name string) any {
 	return value
 }
 
-// SemanticAttachments returns attachments in template source order, title then
-// body. It applies standalone showIf gates before collecting links, matching the
-// rendered body so a hidden link is not exposed as a channel attachment. An
-// unavailable target emits no attachment; text rendering keeps its own warnings.
+// SemanticAttachments returns the semantic content of the message a template
+// renders. It is a compatibility wrapper over the single render result:
+// RenderMessage already collects the image directive and the body links it
+// resolved, so a caller that has the Message should read Message.Attachments
+// instead of rendering twice.
 func SemanticAttachments(trigger, titleTemplate, bodyTemplate string, facts map[string]any) (Attachments, bool) {
-	if _, ok := knownVariables(trigger); !ok {
+	message, ok := RenderMessage(trigger, titleTemplate, bodyTemplate, facts)
+	if !ok {
 		return Attachments{}, false
 	}
-	var attachments Attachments
-	for _, source := range []string{titleTemplate, bodyTemplate} {
-		for source != "" {
-			length := templateLineLength(source)
-			line := source[:length]
-			source = source[length:]
-			if gate, offset, gated := lineGate(line); gated {
-				if !gateHasValue(gate, facts) {
-					continue
-				}
-				line = line[offset:]
-			}
-			for _, expression := range sourceExpressions(line) {
-				switch node := expression.(type) {
-				case variableExpression:
-					if node.name == ImageVariable && !attachments.Image {
-						attachments.Image = true
-					}
-				case callExpression:
-					switch node.name {
-					case ImageVariable:
-						if attachments.Image || len(node.args) != 1 {
-							continue
-						}
-						attachments.Image = true
-						switch target := node.args[0].(type) {
-						case variableExpression:
-							attachments.ImageSource = strings.TrimSuffix(target.name, ".image")
-						case literalExpression:
-							attachments.ImageSource = "custom"
-							attachments.ImageURL = SafeExternalImageURL(target.value)
-						}
-					case "link":
-						if len(node.args) != 2 {
-							continue
-						}
-						label, ok := node.args[1].(literalExpression)
-						if !ok || !validLinkLabel(label.value) {
-							continue
-						}
-						provider, target := "custom", ""
-						switch value := node.args[0].(type) {
-						case variableExpression:
-							provider = strings.TrimSuffix(value.name, ".link")
-							target = LinkValue(facts, value.name)
-						case literalExpression:
-							target = SafeExternalURL(value.value, false)
-						}
-						if target != "" {
-							attachments.Links = append(attachments.Links, Link{Provider: provider, Label: strings.TrimSpace(label.value), URL: target})
-						}
-					}
-				}
-			}
+	return message.Attachments, true
+}
+
+// imageAttachment returns the message-level image an expression requests. Only
+// a top-level image directive has an effect; an expression that nests one in
+// another function never produces an attachment (the renderer reports that
+// form instead).
+func imageAttachment(expression templateExpression) (Attachments, bool) {
+	switch node := expression.(type) {
+	case variableExpression:
+		switch {
+		case node.name == ImageVariable:
+			return Attachments{Image: true}, true
+		case isImageVariable(node.name):
+			return Attachments{Image: true, ImageSource: strings.TrimSuffix(node.name, ".image")}, true
 		}
+	case callExpression:
+		if node.name != ImageVariable || len(node.args) != 1 {
+			return Attachments{}, false
+		}
+		attachment := Attachments{Image: true}
+		switch target := node.args[0].(type) {
+		case variableExpression:
+			attachment.ImageSource = strings.TrimSuffix(target.name, ".image")
+		case literalExpression:
+			attachment.ImageSource = "custom"
+			attachment.ImageURL = SafeExternalImageURL(target.value)
+		}
+		return attachment, true
 	}
-	return attachments, true
+	return Attachments{}, false
+}
+
+// mergeFirstImage keeps the first image a template requests in rendering order.
+// Channels carry one message image, so later directives add nothing.
+func mergeFirstImage(dst *Attachments, src Attachments) {
+	if dst.Image || !src.Image {
+		return
+	}
+	dst.Image, dst.ImageSource, dst.ImageURL = src.Image, src.ImageSource, src.ImageURL
 }
 
 func validLinkLabel(label string) bool {
@@ -252,30 +237,8 @@ func validLinkLabel(label string) bool {
 	return true
 }
 
-func sourceExpressions(source string) []templateExpression {
-	var expressions []templateExpression
-	remaining := source
-	for len(remaining) > 0 {
-		start := strings.Index(remaining, "{{")
-		if start < 0 {
-			break
-		}
-		afterOpen := remaining[start+2:]
-		end := strings.Index(afterOpen, "}}")
-		if end < 0 {
-			break
-		}
-		if expression, err := parseExpression(strings.TrimSpace(afterOpen[:end])); err == nil {
-			expressions = append(expressions, expression)
-		}
-		remaining = afterOpen[end+2:]
-	}
-	return expressions
-}
-
-// semanticSourceSegments removes standalone attachment directives while
-// retaining every other segment's original byte offset. Validation of the
-// removed expressions happens separately in renderText.
+// semanticSourceSegments retains standalone image directives in source order
+// without rendering their lines as text. Every segment keeps its byte offset.
 func semanticSourceSegments(source string) []templateSourceSegment {
 	if !strings.Contains(source, "{{") {
 		return []templateSourceSegment{{text: source}}
@@ -290,18 +253,24 @@ func semanticSourceSegments(source string) []templateSourceSegment {
 		} else {
 			lineEnd = len(source)
 		}
-		if !isSemanticDirectiveLine(source[lineStart:lineEnd]) {
+		line := source[lineStart:lineEnd]
+		image, ok := semanticDirectiveExpression(line)
+		if !ok {
 			lineStart = lineEnd
 			continue
 		}
 		if lineStart > segmentStart {
 			segments = append(segments, templateSourceSegment{text: source[segmentStart:lineStart], originalStart: segmentStart})
 		}
-		if !hasNewline && len(segments) > 0 {
-			last := &segments[len(segments)-1]
-			last.text = strings.TrimSuffix(last.text, "\n")
-			last.text = strings.TrimSuffix(last.text, "\r")
+		if !hasNewline {
+			for index := len(segments) - 1; index >= 0; index-- {
+				if last := &segments[index]; last.image == nil {
+					last.text = strings.TrimSuffix(strings.TrimSuffix(last.text, "\n"), "\r")
+					break
+				}
+			}
 		}
+		segments = append(segments, templateSourceSegment{text: line, originalStart: lineStart, image: image})
 		segmentStart = lineEnd
 		lineStart = lineEnd
 	}
@@ -311,16 +280,19 @@ func semanticSourceSegments(source string) []templateSourceSegment {
 	return segments
 }
 
-func isSemanticDirectiveLine(line string) bool {
+// semanticDirectiveExpression parses a line that contains exactly one
+// message-level attachment directive. The whole trimmed line must be that
+// expression.
+func semanticDirectiveExpression(line string) (templateExpression, bool) {
 	line = strings.TrimSpace(line)
 	if len(line) < 4 || !strings.HasPrefix(line, "{{") || !strings.HasSuffix(line, "}}") {
-		return false
+		return nil, false
 	}
 	expression, err := parseExpression(strings.TrimSpace(line[2 : len(line)-2]))
-	if err != nil {
-		return false
+	if err != nil || !isAttachmentExpression(expression) {
+		return nil, false
 	}
-	return isAttachmentExpression(expression)
+	return expression, true
 }
 
 // isAttachmentExpression reports whether an expression produces a message-level
@@ -329,7 +301,7 @@ func isSemanticDirectiveLine(line string) bool {
 func isAttachmentExpression(expression templateExpression) bool {
 	switch node := expression.(type) {
 	case variableExpression:
-		return node.name == ImageVariable
+		return node.name == ImageVariable || isImageVariable(node.name)
 	case callExpression:
 		return node.name == ImageVariable
 	default:

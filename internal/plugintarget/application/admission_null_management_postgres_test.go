@@ -19,6 +19,9 @@ func TestFileNotificationUsesSubscriptionOriginOnlyForImage(t *testing.T) {
 	service := newTestService(t, db)
 	ctx := context.Background()
 	animetest.SeedReleaseOwnerChain(t, owner, "cover-feed")
+	if _, err := owner.ExecContext(ctx, `UPDATE subscriptions SET origin='mikan', origin_entry_ref='123' WHERE id='subscription-trace'`); err != nil {
+		t.Fatal(err)
+	}
 	animetest.SeedSubscriptionFileOp(t, "cover-feed", 1, "completed", "automatic")
 	animetest.SeedSubscriptionFileOp(t, "cover-feed", 2, "failed", "subscription_add")
 	animetest.SeedCompletedFileOp(t, db, "cover-feed", 3, false, "completed") // one-shot with the same fixture origin reference
@@ -32,10 +35,10 @@ func TestFileNotificationUsesSubscriptionOriginOnlyForImage(t *testing.T) {
 	tests := []struct {
 		operation string
 		trigger   TriggerKind
-		anime     string
+		entryRef  string
 	}{
-		{"op-rel-ep-1", TriggerFileOperationCompleted, "anime-trace"},
-		{"op-rel-ep-2", TriggerFileOperationFailed, "anime-trace"},
+		{"op-rel-ep-1", TriggerFileOperationCompleted, "123"},
+		{"op-rel-ep-2", TriggerFileOperationFailed, "123"},
 		{"op-rel-ep-3", TriggerFileOperationCompleted, ""},
 		{"purged-operation", TriggerFileOperationCompleted, ""},
 	}
@@ -76,8 +79,8 @@ FROM plugin_deliveries d JOIN work_item_history w ON w.owner_type='plugin_delive
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = handler.resolveOutboundMessage(ctx, row, row.renderedTitle.String)
-			if err != nil || images.request.ManagedAnimeID != tt.anime || images.request.BGMID != "123" {
+			_, err = handler.prepareOutboundMessage(ctx, row)
+			if err != nil || images.request.ManagedAnimeID != "" || images.request.CatalogEntry.EntryRef != tt.entryRef || images.request.BGMID != "123" {
 				t.Fatalf("image request=%+v err=%v", images.request, err)
 			}
 		})

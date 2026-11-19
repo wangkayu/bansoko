@@ -1,6 +1,7 @@
 // Package notification is the single bansoko-template-1 notification core: the
-// closed per-trigger variable catalog, the function allowlist, the system
-// default templates, the fixed redacted sample facts, and the renderer.
+// explicit per-trigger capability catalog, the closed variable catalog derived
+// from it, the function allowlist, the system default templates, the fixed
+// redacted sample facts, and the renderer.
 //
 // The catalog is the unified fact vocabulary (the templatefacts registry).
 // Delivery payloads store facts under their registry paths (see
@@ -80,6 +81,75 @@ func SupportedCatalog(catalog string) bool {
 	return catalog == CatalogVersion
 }
 
+// Capability is one event-level feature the template grammar may address. The
+// variable directory, the sample facts and the attachment vocabulary derive
+// from these declared capabilities instead of guessing from fact presence, so
+// an event advertises exactly what its frozen payload can supply.
+type Capability string
+
+const (
+	// CapabilityProviderWorkIDs exposes bound BGM/TMDB IDs as message facts.
+	CapabilityProviderWorkIDs Capability = "provider_work_ids"
+	// CapabilityReleaseSource exposes links belonging to a single release.
+	CapabilityReleaseSource Capability = "release_source"
+	// CapabilityCatalogCover uses the work's catalog identity, not its release site.
+	CapabilityCatalogCover Capability = "catalog_cover"
+	// CapabilityBoundPoster uses bindings frozen for images, even when an event
+	// does not expose bound work IDs as message facts.
+	CapabilityBoundPoster Capability = "bound_poster"
+	// CapabilitySourceGroup: the event has one subscription source group, so
+	// anime.group appears in the directory and in the sample facts. Stored
+	// templates may still name the legacy variable; it renders empty.
+	CapabilitySourceGroup Capability = "source_group"
+)
+
+// Capabilities is the closed capability set of one trigger.
+type Capabilities struct {
+	ProviderWorkIDs bool
+	ReleaseSource   bool
+	SourceGroup     bool
+	CatalogCover    bool
+	BoundPoster     bool
+}
+
+// Has reports whether the capability is declared.
+func (c Capabilities) Has(capability Capability) bool {
+	switch capability {
+	case CapabilityProviderWorkIDs:
+		return c.ProviderWorkIDs
+	case CapabilityReleaseSource:
+		return c.ReleaseSource
+	case CapabilitySourceGroup:
+		return c.SourceGroup
+	case CapabilityCatalogCover:
+		return c.CatalogCover
+	case CapabilityBoundPoster:
+		return c.BoundPoster
+	default:
+		return false
+	}
+}
+
+// CapabilitiesFor returns the explicit capabilities of a trigger. The media
+// pipeline carries both its bound work identity and the release it accepted;
+// the workflow triggers carry only what their event froze. A subscription
+// transition, a failed old-version deletion and a displaced file have no
+// single subscription source group.
+func CapabilitiesFor(trigger string) (Capabilities, bool) {
+	switch trigger {
+	case TriggerDownloadSubmitted, TriggerFileOperationCompleted, TriggerFileOperationFailed:
+		return Capabilities{ProviderWorkIDs: true, ReleaseSource: true, SourceGroup: true, CatalogCover: true, BoundPoster: true}, true
+	case TriggerReleaseDiscovered, TriggerDownloadFailed, TriggerUnknownFilesImported, TriggerReplacementApplied:
+		return Capabilities{ReleaseSource: true, SourceGroup: true, CatalogCover: true, BoundPoster: true}, true
+	case TriggerSubscriptionChanged:
+		return Capabilities{ProviderWorkIDs: true, CatalogCover: true, BoundPoster: true}, true
+	case TriggerReplacementDeletionFailed, TriggerFileDisplaced:
+		return Capabilities{CatalogCover: true, BoundPoster: true}, true
+	default:
+		return Capabilities{}, false
+	}
+}
+
 // Function is one allowlisted template function.
 type Function struct {
 	Name        string
@@ -144,6 +214,7 @@ var payloadKeyDefs = []payloadKeyDef{
 	{"release.id", onAll},
 	{"release.title", onAll},
 	{"release.published_at", onDownload},
+	{"release.is_movie", onDownload},
 	{"ep.raw", onDownload | onCompleted},
 	{"ep.offset", onDownload | onCompleted},
 	{"ep.number", onDownload | onCompleted},
@@ -218,10 +289,11 @@ func Variables(trigger string) ([]Variable, bool) {
 	if !ok {
 		return nil, false
 	}
+	capabilities, _ := CapabilitiesFor(trigger)
 	facts := templatefacts.ScenarioFacts(scenario)
 	variables := make([]Variable, 0, len(facts))
 	for _, fact := range facts {
-		if fact.Hidden {
+		if fact.Hidden || (fact.Path == "anime.group" && !capabilities.Has(CapabilitySourceGroup)) {
 			continue
 		}
 		variables = append(variables, Variable{
@@ -238,14 +310,10 @@ func Variables(trigger string) ([]Variable, bool) {
 			LabelKey: "templateFacts.semantic.image.label", DescriptionKey: "templateFacts.semantic.image.description",
 		},
 	)
-	available := make(map[string]bool, len(variables))
-	for _, variable := range variables {
-		available[variable.Name] = true
-	}
-	for _, variable := range derivedLinkVariables(available) {
+	for _, variable := range derivedLinkVariables(capabilities) {
 		variables = append(variables, variable)
 	}
-	for _, variable := range derivedImageVariables(available) {
+	for _, variable := range derivedImageVariables(capabilities) {
 		variables = append(variables, variable)
 	}
 	if trigger == TriggerReplacementApplied {
@@ -265,20 +333,21 @@ func Variables(trigger string) ([]Variable, bool) {
 	return variables, true
 }
 
-func derivedLinkVariables(available map[string]bool) []Variable {
+func derivedLinkVariables(capabilities Capabilities) []Variable {
 	defs := []struct {
-		name, requires, label, description string
+		name, label, description string
+		requires                 Capability
 	}{
-		{BGMLinkVariable, "bgm.id", "Bangumi 链接", "已绑定 Bangumi 条目的安全页面地址。"},
-		{TMDBLinkVariable, "tmdb.id", "TMDB 链接", "已绑定 TMDB 条目的安全页面地址。"},
-		{AniBTLinkVariable, "release.src", "AniBT 发布链接", "当前 AniBT 发布的安全页面地址；非 AniBT 发布为空。"},
-		{MikanLinkVariable, "release.src", "Mikan 发布链接", "当前 Mikan 发布的安全页面地址；非 Mikan 发布为空。"},
-		{ReleaseLinkVariable, "release.src", "发布页面", "当前发布的安全详情页地址；没有明确页面证据时为空。"},
-		{DownloadLinkVariable, "release.src", "下载链接", "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。"},
+		{BGMLinkVariable, "Bangumi 链接", "已绑定 Bangumi 条目的安全页面地址。", CapabilityProviderWorkIDs},
+		{TMDBLinkVariable, "TMDB 链接", "已绑定 TMDB 条目的安全页面地址。", CapabilityProviderWorkIDs},
+		{AniBTLinkVariable, "AniBT 发布链接", "当前 AniBT 发布的安全页面地址；非 AniBT 发布为空。", CapabilityReleaseSource},
+		{MikanLinkVariable, "Mikan 发布链接", "当前 Mikan 发布的安全页面地址；非 Mikan 发布为空。", CapabilityReleaseSource},
+		{ReleaseLinkVariable, "发布页面", "当前发布的安全详情页地址；没有明确页面证据时为空。", CapabilityReleaseSource},
+		{DownloadLinkVariable, "下载链接", "不含 passkey、token 或其他凭据的下载地址；无法安全外发时为空。", CapabilityReleaseSource},
 	}
 	variables := make([]Variable, 0, len(defs))
 	for _, def := range defs {
-		if !available[def.requires] {
+		if !capabilities.Has(def.requires) {
 			continue
 		}
 		variables = append(variables, Variable{Name: def.name, Type: TypeString, Label: def.label, Description: def.description,
@@ -289,18 +358,19 @@ func derivedLinkVariables(available map[string]bool) []Variable {
 	return variables
 }
 
-func derivedImageVariables(available map[string]bool) []Variable {
+func derivedImageVariables(capabilities Capabilities) []Variable {
 	defs := []struct {
-		name, requires, label, description string
+		name, label, description string
+		requires                 Capability
 	}{
-		{BGMImageVariable, "bgm.id", "Bangumi 图片", "指定使用已绑定 Bangumi 条目的海报；不可用时使用内置占位图。"},
-		{TMDBImageVariable, "tmdb.id", "TMDB 图片", "指定使用已绑定 TMDB 条目的海报；不可用时使用内置占位图。"},
-		{AniBTImageVariable, "release.src", "AniBT 图片", "指定使用当前 AniBT 作品的封面；不可用时使用内置占位图。"},
-		{MikanImageVariable, "release.src", "Mikan 图片", "指定使用当前 Mikan 作品的封面；不可用时使用内置占位图。"},
+		{BGMImageVariable, "Bangumi 图片", "指定使用已绑定 Bangumi 条目的海报；不可用时使用内置占位图。", CapabilityBoundPoster},
+		{TMDBImageVariable, "TMDB 图片", "指定使用已绑定 TMDB 条目的海报；不可用时使用内置占位图。", CapabilityBoundPoster},
+		{AniBTImageVariable, "AniBT 图片", "指定使用作品在 AniBT 目录中的封面；不可用时使用内置占位图。", CapabilityCatalogCover},
+		{MikanImageVariable, "Mikan 图片", "指定使用作品在 Mikan 目录中的封面；不可用时使用内置占位图。", CapabilityCatalogCover},
 	}
 	variables := make([]Variable, 0, len(defs))
 	for _, def := range defs {
-		if !available[def.requires] {
+		if !capabilities.Has(def.requires) {
 			continue
 		}
 		variables = append(variables, Variable{Name: def.name, Type: TypeString, Label: def.label, Description: def.description,
@@ -333,9 +403,11 @@ func DefaultsFor(trigger, locale string) (title, body string) {
 const subscriptionChangedBody = "{{showIf(if(eq(event.action, 'started'), bgm.link, ''))}}{{link(bgm.link, 'Bangumi')}}\n" +
 	"{{showIf(if(eq(event.action, 'started'), tmdb.link, ''))}}{{link(tmdb.link, 'TMDB')}}"
 
+const episodeLineGate = "{{showIf(if(defaultIfEmpty(release.is_movie, 'false'), '', 'episodes'))}}"
+
 var defaultsZH = map[string][2]string{
 	TriggerDownloadSubmitted: {"已加入下载：{{anime.title}}",
-		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{defaultIfEmpty(ep.display, '未识别')}}"},
+		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n" + episodeLineGate + "集数：{{coalesce(release.episodes, ep.display, '未识别')}}"},
 	TriggerSubscriptionChanged: {"{{if(eq(event.action, 'started'), '开始订阅', if(eq(event.action, 'stopped'), '已停止订阅', if(eq(event.action, 'resumed'), '已恢复订阅', '已退订')))}}：{{anime.title}}",
 		subscriptionChangedBody},
 	TriggerFileOperationCompleted: {"入库完成：{{anime.title}}",
@@ -345,7 +417,7 @@ var defaultsZH = map[string][2]string{
 	TriggerDownloadFailed: {"下载失败：{{anime.title}}",
 		"原因：{{if(eq(result.category, 'stalled'), '下载停滞', if(eq(result.category, 'timeout'), '等待超时', if(eq(result.category, 'client'), '下载客户端报错', if(eq(result.category, 'unobservable'), '无法读取下载状态', if(eq(result.category, 'occupied'), '下载器中已有同一种子的任务', '提交失败')))))}}{{if(result.retryable, '\n可在 RSS 页面重试。', '')}}\n{{showIf(release.title)}}{{release.title}}\n{{showIf(release.link)}}{{link(release.link, '查看发布页')}}"},
 	TriggerReleaseDiscovered: {"发现新发布：{{anime.title}}",
-		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n集数：{{coalesce(release.episodes, ep.display, '未识别')}}\n{{showIf(if(eq(release.src, 'anibt'), coalesce(anibt.res, anibt.lang, anibt.subtitle, anibt.format, anibt.tag), ''))}}站点标签：{{anibt.res}} {{anibt.lang}} {{anibt.subtitle}} {{anibt.format}} {{anibt.tag}}\n{{showIf(if(eq(release.src, 'anibt'), '', coalesce(rt.res, rt.source, rt.vc, rt.lang)))}}标题解析：{{rt.res}} {{rt.source}} {{rt.vc}} {{rt.lang}}\n{{showIf(release.site)}}来源：{{release.site}}\n{{showIf(release.link)}}{{link(release.link, '查看发布页')}}"},
+		"{{release.title}}\n字幕组：{{defaultIfEmpty(anime.group, '未知')}}\n" + episodeLineGate + "集数：{{coalesce(release.episodes, ep.display, '未识别')}}\n{{showIf(if(eq(release.src, 'anibt'), coalesce(anibt.res, anibt.lang, anibt.subtitle, anibt.format, anibt.tag), ''))}}站点标签：{{anibt.res}} {{anibt.lang}} {{anibt.subtitle}} {{anibt.format}} {{anibt.tag}}\n{{showIf(if(eq(release.src, 'anibt'), '', coalesce(rt.res, rt.source, rt.vc, rt.lang)))}}标题解析：{{rt.res}} {{rt.source}} {{rt.vc}} {{rt.lang}}\n{{showIf(release.site)}}来源：{{release.site}}\n{{showIf(release.link)}}{{link(release.link, '查看发布页')}}"},
 	TriggerUnknownFilesImported: {"有未识别的文件入库：{{anime.title}}",
 		"{{release.title}}\n{{out.count}} 个文件需要手动匹配：\n{{out.files}}"},
 	TriggerReplacementDeletionFailed: {"旧版本未删除：{{anime.title}}",
@@ -358,11 +430,11 @@ var defaultsZH = map[string][2]string{
 
 var defaultsEN = map[string][2]string{
 	TriggerDownloadSubmitted: {"Added to download queue: {{anime.title}}",
-		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisode: {{defaultIfEmpty(ep.display, 'not recognized')}}"},
+		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\n" + episodeLineGate + "Episodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}"},
 	TriggerSubscriptionChanged: {"{{if(eq(event.action, 'started'), 'Subscribed', if(eq(event.action, 'stopped'), 'Subscription stopped', if(eq(event.action, 'resumed'), 'Subscription resumed', 'Unsubscribed')))}}: {{anime.title}}",
 		subscriptionChangedBody},
 	TriggerReleaseDiscovered: {"New release: {{anime.title}}",
-		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\nEpisodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}\n{{showIf(if(eq(release.src, 'anibt'), coalesce(anibt.res, anibt.lang, anibt.subtitle, anibt.format, anibt.tag), ''))}}Site tags: {{anibt.res}} {{anibt.lang}} {{anibt.subtitle}} {{anibt.format}} {{anibt.tag}}\n{{showIf(if(eq(release.src, 'anibt'), '', coalesce(rt.res, rt.source, rt.vc, rt.lang)))}}Title parse: {{rt.res}} {{rt.source}} {{rt.vc}} {{rt.lang}}\n{{showIf(release.site)}}Source: {{release.site}}\n{{showIf(release.link)}}{{link(release.link, 'View release')}}"},
+		"{{release.title}}\nGroup: {{defaultIfEmpty(anime.group, 'unknown')}}\n" + episodeLineGate + "Episodes: {{coalesce(release.episodes, ep.display, 'not recognized')}}\n{{showIf(if(eq(release.src, 'anibt'), coalesce(anibt.res, anibt.lang, anibt.subtitle, anibt.format, anibt.tag), ''))}}Site tags: {{anibt.res}} {{anibt.lang}} {{anibt.subtitle}} {{anibt.format}} {{anibt.tag}}\n{{showIf(if(eq(release.src, 'anibt'), '', coalesce(rt.res, rt.source, rt.vc, rt.lang)))}}Title parse: {{rt.res}} {{rt.source}} {{rt.vc}} {{rt.lang}}\n{{showIf(release.site)}}Source: {{release.site}}\n{{showIf(release.link)}}{{link(release.link, 'View release')}}"},
 	TriggerFileOperationCompleted: {"Added to library: {{anime.title}}",
 		"{{release.title}}\nFile: {{out.name}}\nSubtitles: {{out.subtitles}}\n{{showIf(frt.group)}}Group: {{frt.group}}"},
 	TriggerFileOperationFailed: {"Library import failed: {{anime.title}}",
@@ -386,9 +458,10 @@ func Sample(trigger string) map[string]any {
 	if !ok {
 		return map[string]any{}
 	}
+	capabilities, _ := CapabilitiesFor(trigger)
 	facts := map[string]any{}
 	for _, fact := range templatefacts.ScenarioFacts(scenario) {
-		if !fact.Hidden {
+		if !fact.Hidden && (fact.Path != "anime.group" || capabilities.Has(CapabilitySourceGroup)) {
 			facts[fact.Path] = sampleFact(fact.SampleFor(scenario))
 		}
 	}

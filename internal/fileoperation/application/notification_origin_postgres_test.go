@@ -3,6 +3,9 @@ package application
 import (
 	"os"
 	"testing"
+
+	"bansoko/internal/library/adapter/filesystem"
+	"bansoko/internal/workitems"
 )
 
 func TestFileNotificationsPreserveAcceptedOrigin(t *testing.T) {
@@ -50,5 +53,30 @@ func TestFileNotificationsPreserveAcceptedOrigin(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestFileFailureNotificationUsesObservedHDRAndFrozenEpisode(t *testing.T) {
+	db, fixture := openFileOperationDB(t)
+	if _, err := ownerTestDB(t).Exec(`UPDATE artifact_files SET facts=facts || '{"hdr":"HDR10"}'::jsonb WHERE id=$1`, fixture.fileID); err != nil {
+		t.Fatal(err)
+	}
+	svc := newFixtureServiceWithPorts(t, db, fixture, filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	seedA11Plan(t, fixture.artifactID, nil)
+	runA11PlanWorker(t, db, svc)
+	var id string
+	if err := db.QueryRow(`SELECT id FROM file_operations WHERE artifact_id=$1 AND file_ref='primary'`, fixture.artifactID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(fixture.sourcePath); err != nil {
+		t.Fatal(err)
+	}
+	x := typedRuntimeFixture{db: db, s: svc, store: &workitems.Store{DB: db, RetentionDays: workitems.DefaultRetentionDays}}
+	if handled, err := x.runFileWorker(t); !handled || err != nil {
+		t.Fatalf("worker=%v error=%v", handled, err)
+	}
+	facts := singleFileNotificationAdmission(t, db, id, "file_operation_failed").payload
+	if facts["media.hdr"] != "HDR10" || facts["ep.number"] != "1" || facts["file.ext"] != "mkv" {
+		t.Fatalf("failure facts=%v", facts)
 	}
 }

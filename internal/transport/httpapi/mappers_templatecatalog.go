@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bansoko/internal/notifypresent"
 	templatecatalogapplication "bansoko/internal/templatecatalog/application"
+	"bansoko/internal/templatecatalog/notification"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -51,11 +53,95 @@ func mapNotificationTemplatePreview(preview templatecatalogapplication.Notificat
 		CatalogVersion:  generated.NotificationTemplatePreviewCatalogVersion(preview.CatalogVersion),
 		Errors:          mapTemplateSourceErrors(preview.Errors),
 		LanguageVersion: generated.NotificationTemplatePreviewLanguageVersion(preview.LanguageVersion),
+		Presentation:    mapNotificationTemplatePresentation(preview.Presentation),
 		Title:           preview.Title,
 		Valid:           preview.Valid,
 		Variables:       mapTemplateVariables(preview.Variables),
 		Warnings:        mapTemplateWarnings(preview.Warnings),
 	}
+}
+
+func mapNotificationTemplatePresentation(presentation notifypresent.Presentation) generated.NotificationTemplatePreviewPresentation {
+	telegramParts := make([]generated.NotificationTemplatePreviewBodyPart, 0, len(presentation.Telegram.Parts))
+	for _, part := range presentation.Telegram.Parts {
+		telegramParts = append(telegramParts, mapNotificationBodyPart(part.Text, part.Link))
+	}
+	feishuContent := make([][]generated.NotificationTemplatePreviewFeishuElement, 0, len(presentation.Feishu.Content))
+	for _, paragraph := range presentation.Feishu.Content {
+		elements := make([]generated.NotificationTemplatePreviewFeishuElement, 0, len(paragraph))
+		for _, element := range paragraph {
+			mapped := generated.NotificationTemplatePreviewFeishuElement{
+				Tag:  generated.NotificationTemplatePreviewFeishuElementTag(element.Tag),
+				Text: element.Text,
+			}
+			if element.Href != "" {
+				href := element.Href
+				mapped.Href = &href
+			}
+			elements = append(elements, mapped)
+		}
+		feishuContent = append(feishuContent, elements)
+	}
+	var feishuImage *generated.NotificationTemplatePreviewFeishuImage
+	if presentation.Feishu.Image != nil {
+		feishuImage = &generated.NotificationTemplatePreviewFeishuImage{
+			Label: presentation.Feishu.Image.Label,
+			Url:   presentation.Feishu.Image.URL,
+		}
+	}
+	webhookLinks := make([]generated.NotificationTemplatePreviewLink, 0, len(presentation.Webhook.Message.Links))
+	for _, link := range presentation.Webhook.Message.Links {
+		webhookLinks = append(webhookLinks, generated.NotificationTemplatePreviewLink{
+			Provider: generated.NotificationTemplatePreviewLinkProvider(link.Provider),
+			Label:    link.Label,
+			Url:      link.URL,
+		})
+	}
+	var webhookImage *generated.NotificationTemplatePreviewWebhookImage
+	if image := presentation.Webhook.Message.Image; image != nil {
+		webhookImage = &generated.NotificationTemplatePreviewWebhookImage{Source: image.Source}
+		if image.URL != "" {
+			url := image.URL
+			webhookImage.Url = &url
+		}
+		if image.Placeholder {
+			placeholder := true
+			webhookImage.Placeholder = &placeholder
+		}
+	}
+	return generated.NotificationTemplatePreviewPresentation{
+		Telegram: generated.NotificationTemplatePreviewTelegram{
+			Mode:         generated.NotificationTemplatePreviewTelegramMode(presentation.Telegram.Mode),
+			Text:         presentation.Telegram.Text,
+			Title:        presentation.Telegram.Title,
+			BodyParts:    telegramParts,
+			TextUnits:    presentation.Telegram.TextUnits,
+			ImageOmitted: presentation.Telegram.ImageOmitted,
+			Truncated:    presentation.Telegram.Truncated,
+		},
+		Feishu: generated.NotificationTemplatePreviewFeishu{
+			Title:        presentation.Feishu.Title,
+			Content:      feishuContent,
+			Image:        feishuImage,
+			ImageOmitted: presentation.Feishu.ImageOmitted,
+		},
+		Webhook: generated.NotificationTemplatePreviewWebhook{
+			Message: generated.NotificationTemplatePreviewWebhookMessage{
+				Title: presentation.Webhook.Message.Title,
+				Body:  presentation.Webhook.Message.Body,
+				Image: webhookImage,
+				Links: webhookLinks,
+			},
+		},
+	}
+}
+
+func mapNotificationBodyPart(text string, link *notification.Link) generated.NotificationTemplatePreviewBodyPart {
+	part := generated.NotificationTemplatePreviewBodyPart{Text: text}
+	if link != nil {
+		part.Link = &generated.NotificationTemplatePreviewLink{Provider: generated.NotificationTemplatePreviewLinkProvider(link.Provider), Label: link.Label, Url: link.URL}
+	}
+	return part
 }
 
 func mapNotificationTemplatePreviewInput(input generated.NotificationTemplatePreviewInput) templatecatalogapplication.NotificationTemplatePreviewInput {

@@ -1475,6 +1475,7 @@ func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Conte
 		return err
 	}
 	source.New = plugintargetport.DisplacedTarget{File: candidateSource.File, Group: candidateSource.Group, Title: candidateSource.Title}
+	source.ReleaseTags = candidateSource.Tags
 	for _, id := range replacedIDs {
 		facts, found, err := placementSourceFactsTx(ctx, tx, id)
 		if err != nil {

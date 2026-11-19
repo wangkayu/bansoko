@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"bansoko/internal/notifypresent"
 	"bansoko/internal/templatefacts"
 )
 
@@ -28,34 +29,15 @@ const (
 	HeaderWebhookSignature = "X-Webhook-Signature"
 )
 
-type webhookImage struct {
-	Source      string `json:"source"`
-	URL         string `json:"url,omitempty"`
-	Placeholder bool   `json:"placeholder,omitempty"`
-}
-
-type webhookLink struct {
-	Provider string `json:"provider"`
-	Label    string `json:"label"`
-	URL      string `json:"url"`
-}
-
-type webhookMessage struct {
-	Title string        `json:"title"`
-	Body  string        `json:"body"`
-	Image *webhookImage `json:"image,omitempty"`
-	Links []webhookLink `json:"links"`
-}
-
 // webhookEnvelope is the single outbound document. Field order is fixed by
 // the struct so the signed bytes are deterministic for one attempt.
 type webhookEnvelope struct {
-	DeliveryID string         `json:"delivery_id"`
-	Event      string         `json:"event"`
-	Timestamp  string         `json:"timestamp"`
-	Attempt    int            `json:"attempt"`
-	Message    webhookMessage `json:"message"`
-	Payload    map[string]any `json:"payload"`
+	DeliveryID string                       `json:"delivery_id"`
+	Event      string                       `json:"event"`
+	Timestamp  string                       `json:"timestamp"`
+	Attempt    int                          `json:"attempt"`
+	Message    notifypresent.WebhookMessage `json:"message"`
+	Payload    map[string]any               `json:"payload"`
 }
 
 // buildWebhookEnvelope returns the body of one webhook attempt.
@@ -72,16 +54,7 @@ func buildWebhookEnvelope(deliveryID, trigger string, attempt int, at time.Time,
 	if err := decoder.Decode(&canonical); err != nil {
 		return nil, errors.New("webhook payload could not be decoded")
 	}
-	typed := webhookMessage{
-		Title: message.Title, Body: message.Body,
-		Links: make([]webhookLink, 0, len(message.Links)),
-	}
-	if message.Image != nil {
-		typed.Image = &webhookImage{Source: message.Image.Source, URL: message.Image.URL, Placeholder: message.Image.Placeholder}
-	}
-	for _, link := range message.Links {
-		typed.Links = append(typed.Links, webhookLink{Provider: link.Provider, Label: link.Label, URL: link.URL})
-	}
+	typed := notifypresent.Webhook(presentMessage(message)).Message
 	envelope := webhookEnvelope{
 		DeliveryID: deliveryID, Event: trigger,
 		Timestamp: at.UTC().Format(time.RFC3339), Attempt: attempt,

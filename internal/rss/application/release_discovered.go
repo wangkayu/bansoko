@@ -10,6 +10,7 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/batchplan"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/templatecatalog/notification"
@@ -179,7 +180,8 @@ func releaseDiscoveredFacts(snapshot releaseSnapshot, item acquisitiondomain.Fee
 		"release.id":           text(snapshot.releaseID),
 		"release.title":        text(item.Title),
 		"release.published_at": nil, "release.episodes": nil,
-		"ep.number": nil, "ep.raw": nil, "ep.display": nil,
+		"release.is_movie": evidence != nil && evidence.Identity.State == episodeidentity.StateResolved && evidence.Identity.Kind == episodeidentity.KindMovie,
+		"ep.number":        nil, "ep.raw": nil, "ep.display": nil,
 		"torrent.file_count": nil, "torrent.size": nil, "torrent.tree": nil,
 	}
 	if !item.Published.IsZero() {

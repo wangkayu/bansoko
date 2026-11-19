@@ -191,6 +191,7 @@ type placementSourceFacts struct {
 	Title string
 	Group string
 	File  string
+	Tags  json.RawMessage
 }
 
 // placementSourceFactsTx reads one placement's frozen source through the
@@ -215,6 +216,7 @@ func placementSourceFactsTx(ctx context.Context, tx *sql.Tx, id string) (placeme
 		return placementSourceFacts{}, true, nil
 	}
 	var title, group, file sql.NullString
+	var tags []byte
 	err = tx.QueryRowContext(ctx, `
 SELECT CASE WHEN i.input->'source'->'title'->>'state' = 'known'
              AND btrim(i.input->'source'->'title'->>'value') <> ''
@@ -222,11 +224,12 @@ SELECT CASE WHEN i.input->'source'->'title'->>'state' = 'known'
        CASE WHEN i.input->'source'->'group'->>'state' = 'known'
              AND btrim(i.input->'source'->'group'->>'value') <> ''
             THEN i.input->'source'->'group'->>'value' END,
-       NULLIF(regexp_replace(rtrim(af.relative_path, '/'), '^.*/', ''), '')
+	       NULLIF(regexp_replace(rtrim(af.relative_path, '/'), '^.*/', ''), ''),
+	       i.input->'source'->'tag_evidence'
 FROM public.file_operations o
 LEFT JOIN public.acquisitions i ON i.id = o.acquisition_id
 LEFT JOIN public.artifact_files af ON af.id = o.artifact_file_id
-WHERE o.id = $1`, ownerRef).Scan(&title, &group, &file)
+WHERE o.id = $1`, ownerRef).Scan(&title, &group, &file, &tags)
 	if errors.Is(err, sql.ErrNoRows) {
 		// The detail-expiry compaction deletes the operation (and its artifact
 		// file) while the placement stays: no fact is invented for it.
@@ -235,7 +238,7 @@ WHERE o.id = $1`, ownerRef).Scan(&title, &group, &file)
 	if err != nil {
 		return placementSourceFacts{}, true, fmt.Errorf("read placement source facts: %w", err)
 	}
-	return placementSourceFacts{Title: title.String, Group: group.String, File: file.String}, true, nil
+	return placementSourceFacts{Title: title.String, Group: group.String, File: file.String, Tags: tags}, true, nil
 }
 
 // placementTargetsTx names the versions behind the given placements, in the

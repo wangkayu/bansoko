@@ -52,12 +52,17 @@ type Warning struct {
 // BodyParts is the body in template order: literal text and links at the
 // positions the template wrote them. Body is the same content as plain text
 // (one label per link) for storage, limits and text-only consumers.
+//
+// Attachments is the channel-neutral semantic content of the same render: the
+// first image directive that rendered (title or body) and every body link in
+// order. A channel renderer reads it instead of scanning the template again.
 type Message struct {
-	Title     string
-	Body      string
-	BodyParts []BodyPart
-	Errors    []SourceError
-	Warnings  []Warning
+	Title       string
+	Body        string
+	BodyParts   []BodyPart
+	Attachments Attachments
+	Errors      []SourceError
+	Warnings    []Warning
 }
 
 // BodyPart is one inline piece of the rendered body: literal text (Link nil)
@@ -94,6 +99,26 @@ func PlainText(parts []BodyPart) string {
 // Valid reports whether the render produced no errors.
 func (m Message) Valid() bool { return len(m.Errors) == 0 }
 
+// TestTitle applies the [TEST] marker of a test delivery to a rendered title.
+// Only the test-delivery result carries the marker; previews, business
+// deliveries and the system default templates never do. The marker sits
+// outside RenderMessage's output check, so a title at the rune limit is
+// truncated by runes to keep the marked title within the same bound.
+func TestTitle(title string) string {
+	const (
+		marker = "[TEST]"
+		prefix = marker + " "
+	)
+	if title == "" {
+		return marker
+	}
+	runes := []rune(title)
+	if limit := MaxRenderedTitleChars - utf8.RuneCountInString(prefix); len(runes) > limit {
+		runes = runes[:limit]
+	}
+	return prefix + string(runes)
+}
+
 // RenderMessage is the single notification rendering core. Preview, test
 // delivery and business delivery all call it with the trigger's catalog
 // variable set; only the facts differ (fixed sample facts or frozen payload
@@ -107,12 +132,19 @@ func RenderMessage(trigger, titleTemplate, bodyTemplate string, facts map[string
 	}
 	title := renderText(titleTemplate, facts, known, FieldTitle)
 	body := renderText(bodyTemplate, facts, known, FieldBody)
+	attachments := Attachments{Image: title.attachments.Image, ImageSource: title.attachments.ImageSource, ImageURL: title.attachments.ImageURL}
+	mergeFirstImage(&attachments, body.attachments)
+	// A title link renders as its label only, so the body parts are exactly
+	// the links a channel may emit. The links come from the same render that
+	// produced the text.
+	attachments.Links = Links(body.parts)
 	message := Message{
-		Title:     title.text,
-		Body:      PlainText(body.parts),
-		BodyParts: body.parts,
-		Errors:    append(append([]SourceError{}, title.errors...), body.errors...),
-		Warnings:  mergeWarnings(title.warnings, body.warnings),
+		Title:       title.text,
+		Body:        PlainText(body.parts),
+		BodyParts:   body.parts,
+		Attachments: attachments,
+		Errors:      append(append([]SourceError{}, title.errors...), body.errors...),
+		Warnings:    mergeWarnings(title.warnings, body.warnings),
 	}
 	if len(message.Errors) == 0 {
 		message.Errors = outputErrors(message.Title, message.Body, len(titleTemplate), len(bodyTemplate))
@@ -124,6 +156,11 @@ func RenderMessage(trigger, titleTemplate, bodyTemplate string, facts map[string
 // without facts. It returns only source diagnostics (syntax, unknown
 // variables/functions, arity, size); output checks need facts and belong to
 // RenderMessage.
+//
+// Compile deliberately does not reject an attachment form that has no effect:
+// v1 accepted a nested link/image and a gated image-only line, and an already
+// stored template must stay saveable. RenderMessage reports those forms as
+// warnings, so preview and delivery show the loss without blocking a save.
 func Compile(trigger, titleTemplate, bodyTemplate string) ([]SourceError, bool) {
 	known, ok := knownVariables(trigger)
 	if !ok {
@@ -132,6 +169,24 @@ func Compile(trigger, titleTemplate, bodyTemplate string) ([]SourceError, bool) 
 	title := renderText(titleTemplate, nil, known, FieldTitle)
 	body := renderText(bodyTemplate, nil, known, FieldBody)
 	return append(append([]SourceError{}, title.errors...), body.errors...), true
+}
+
+// containsNestedAttachment reports whether a link(...) or image(...) call sits
+// below the expression's root.
+func containsNestedAttachment(expression templateExpression) bool {
+	call, ok := expression.(callExpression)
+	if !ok {
+		return false
+	}
+	for _, arg := range call.args {
+		if child, ok := arg.(callExpression); ok && (child.name == "link" || child.name == ImageVariable) {
+			return true
+		}
+		if containsNestedAttachment(arg) {
+			return true
+		}
+	}
+	return false
 }
 
 // outputErrors rejects a message that cannot be stored or sent: an entirely
@@ -170,6 +225,13 @@ func knownVariables(trigger string) (map[string]bool, bool) {
 		known[variable.Name] = true
 	}
 	known[varsWildcard] = true
+	// Stored custom templates may still name anime.group for a trigger whose
+	// catalog no longer exposes a single-source group. Keeping the name
+	// resolvable lets an unrelated save proceed; an absent fact still renders
+	// empty, exactly as before.
+	if capabilities, _ := CapabilitiesFor(trigger); !capabilities.Has(CapabilitySourceGroup) {
+		known["anime.group"] = true
+	}
 	return known, true
 }
 
@@ -236,11 +298,16 @@ func FormatFact(value any) string {
 // identity still renders the identity.
 func listEntryText(entry map[string]any) string {
 	text := FormatFact(entry["path"])
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 	for _, key := range []string{"group", "title"} {
 		if part := FormatFact(entry[key]); part != "" {
 			parts = append(parts, part)
 		}
+	}
+	// out.files records each file byte size next to its path; the entry stays
+	// structured, and the size also joins the text presentation.
+	if size := FormatFact(entry["size"]); size != "" {
+		parts = append(parts, size+" B")
 	}
 	if len(parts) == 0 {
 		return text
@@ -253,10 +320,11 @@ func listEntryText(entry map[string]any) string {
 }
 
 type renderResult struct {
-	text     string
-	parts    []BodyPart
-	errors   []SourceError
-	warnings []Warning
+	text        string
+	parts       []BodyPart
+	attachments Attachments
+	errors      []SourceError
+	warnings    []Warning
 }
 
 type templateExpression interface {
@@ -311,6 +379,23 @@ func (e callExpression) evaluate(facts map[string]any) (string, bool, []Warning)
 		}
 		return "", true, warnings
 	}
+	if e.name == "if" {
+		// Only the selected branch is evaluated: a fact in the other branch is
+		// not rendered, so it is not a missing variable to warn about.
+		if len(e.args) != 3 {
+			return "", false, nil
+		}
+		condition, present, warnings := e.args[0].evaluate(facts)
+		if !present {
+			return "", true, warnings
+		}
+		branch := e.args[2]
+		if isTruthy(condition) {
+			branch = e.args[1]
+		}
+		value, ok, branchWarnings := branch.evaluate(facts)
+		return value, ok, append(warnings, branchWarnings...)
+	}
 	var warnings []Warning
 	values := make([]string, 0, len(e.args))
 	present := make([]bool, 0, len(e.args))
@@ -346,14 +431,6 @@ func applyFunction(name string, values []string, present []bool, warnings []Warn
 			return "", true, warnings
 		}
 		return strings.ReplaceAll(values[0], values[1], values[2]), true, warnings
-	case "if":
-		if !present[0] {
-			return "", true, warnings
-		}
-		if isTruthy(values[0]) {
-			return values[1], true, warnings
-		}
-		return values[2], true, warnings
 	case "eq":
 		if !(present[0] && present[1]) {
 			return "", true, warnings
@@ -377,6 +454,7 @@ func isTruthy(value string) bool {
 type templateSourceSegment struct {
 	text          string
 	originalStart int
+	image         templateExpression
 }
 
 func renderText(source string, facts map[string]any, known map[string]bool, field Field) renderResult {
@@ -393,46 +471,48 @@ func renderText(source string, facts map[string]any, known map[string]bool, fiel
 		})
 		return renderResult{errors: errors}
 	}
-	semanticErrors, semanticWarnings := validateStandaloneSemanticDirectives(source, facts, known, field)
-	errors = append(errors, semanticErrors...)
-	warnings = append(warnings, semanticWarnings...)
 	errors = append(errors, validateLineDirectives(source, known, field)...)
+	warnings = append(warnings, nestedAttachmentWarnings(source, known)...)
+	var attachments Attachments
 	for _, segment := range semanticSourceSegments(source) {
+		if segment.image != nil {
+			if err := validateExpression(segment.image, known); err != nil {
+				start := strings.Index(segment.text, "{{")
+				end := strings.Index(segment.text[start+2:], "}}") + start + 4
+				errors = append(errors, SourceError{Code: "invalid_expression", Message: err.Error(), Field: field, Start: segment.originalStart + start, End: segment.originalStart + end})
+			} else if image, ok := imageAttachment(segment.image); ok {
+				mergeFirstImage(&attachments, image)
+			}
+			continue
+		}
 		result := renderTextSegment(source, segment, facts, known, field)
 		builder.WriteString(result.text)
 		parts = append(parts, result.parts...)
+		mergeFirstImage(&attachments, result.attachments)
 		errors = append(errors, result.errors...)
 		warnings = append(warnings, result.warnings...)
 	}
 	sort.SliceStable(errors, func(i, j int) bool { return errors[i].Start < errors[j].Start })
-	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
+	return renderResult{text: builder.String(), parts: parts, attachments: attachments, errors: errors, warnings: warnings}
 }
 
-func validateStandaloneSemanticDirectives(source string, facts map[string]any, known map[string]bool, field Field) ([]SourceError, []Warning) {
-	var errors []SourceError
+// nestedAttachmentWarnings reports a valid link/image nested in another
+// function. That placement never produces an attachment, and v1 accepted it
+// silently; a warning keeps the loss visible without rejecting a stored
+// template. An expression with invalid arguments already renders an error.
+func nestedAttachmentWarnings(source string, known map[string]bool) []Warning {
 	var warnings []Warning
-	for lineStart := 0; lineStart < len(source); {
-		lineEnd := strings.IndexByte(source[lineStart:], '\n')
-		if lineEnd < 0 {
-			lineEnd = len(source)
-		} else {
-			lineEnd += lineStart + 1
+	for _, span := range expressionSpans(source) {
+		expression, err := parseExpression(strings.TrimSpace(span.source))
+		if err != nil || !containsNestedAttachment(expression) || validateExpression(expression, known) != nil {
+			continue
 		}
-		line := source[lineStart:lineEnd]
-		if isSemanticDirectiveLine(line) {
-			start := strings.Index(line, "{{")
-			afterOpen := line[start+2:]
-			end := strings.Index(afterOpen, "}}")
-			_, exprWarnings, exprError := evaluateExpression(afterOpen[:end], facts, known)
-			if exprError != nil {
-				errors = append(errors, SourceError{Code: exprError.code, Message: exprError.message, Field: field, Start: lineStart + start, End: lineStart + start + 2 + end + 2})
-			} else {
-				warnings = append(warnings, exprWarnings...)
-			}
-		}
-		lineStart = lineEnd
+		warnings = append(warnings, Warning{
+			Code:    "attachment_without_effect",
+			Message: "link 和 image 不能作为其他函数的参数，附件不会生效。",
+		})
 	}
-	return errors, warnings
+	return warnings
 }
 
 // expressionSpan locates one {{...}} expression in a template source.
@@ -530,6 +610,7 @@ func mentionsShowIf(expression templateExpression) bool {
 func renderTextSegment(source string, segment templateSourceSegment, facts map[string]any, known map[string]bool, field Field) renderResult {
 	var builder strings.Builder
 	var parts []BodyPart
+	var attachments Attachments
 	var errors []SourceError
 	var warnings []Warning
 	remaining := segment.text
@@ -543,23 +624,55 @@ func renderTextSegment(source string, segment templateSourceSegment, facts map[s
 			// and the rest of the line renders as its own line, or the whole
 			// line disappears.
 			rest := line[restOffset:]
-			switch {
-			case facts != nil && !gateHasValue(gate, facts):
+			if isAttachmentOnlyLine(rest) {
+				visible := facts != nil && gateHasValue(gate, facts)
+				lineAttachments, lineWarnings := attachmentOnlyLine(rest, known)
+				warnings = append(warnings, lineWarnings...)
+				if visible {
+					mergeFirstImage(&attachments, lineAttachments)
+				}
 				dropLine(&builder, &parts, final)
-			case isAttachmentOnlyLine(rest):
+			} else if facts != nil && !gateHasValue(gate, facts) {
 				dropLine(&builder, &parts, final)
-			default:
+			} else {
 				result, drop := renderLine(source, rest, cursor+restOffset, final, facts, known, field)
+				mergeFirstImage(&attachments, result.attachments)
 				appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
 			}
 		} else {
 			result, drop := renderLine(source, line, cursor, final, facts, known, field)
+			mergeFirstImage(&attachments, result.attachments)
 			appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
 		}
 		remaining = remaining[consumed:]
 		cursor += consumed
 	}
-	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
+	return renderResult{text: builder.String(), parts: parts, attachments: attachments, errors: errors, warnings: warnings}
+}
+
+// attachmentOnlyLine collects the image a gated attachment-only line requests
+// and reports arguments the ordinary expression pass never sees: the line is
+// dropped before rendering, so v1 accepted an invalid attachment here. A
+// warning keeps that accepted form visible instead of turning it into an error.
+func attachmentOnlyLine(line string, known map[string]bool) (Attachments, []Warning) {
+	var attachments Attachments
+	var warnings []Warning
+	for _, span := range expressionSpans(line) {
+		expression, err := parseExpression(strings.TrimSpace(span.source))
+		if err != nil {
+			continue
+		}
+		if image, ok := imageAttachment(expression); ok {
+			mergeFirstImage(&attachments, image)
+		}
+		if err := validateExpression(expression, known); err != nil {
+			warnings = append(warnings, Warning{
+				Code:    "attachment_without_effect",
+				Message: err.Error() + "（该行由 showIf 控制，无效附件会被忽略。）",
+			})
+		}
+	}
+	return attachments, warnings
 }
 
 // templateLineLength returns one render chunk, including any multiline expression
@@ -618,6 +731,7 @@ func appendLine(builder *strings.Builder, parts *[]BodyPart, errors *[]SourceErr
 func renderPlainLine(source, remaining string, cursor int, facts map[string]any, known map[string]bool, field Field) renderResult {
 	var builder strings.Builder
 	var parts []BodyPart
+	var attachments Attachments
 	var errors []SourceError
 	var warnings []Warning
 	appendText := func(text string) {
@@ -651,6 +765,14 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 		}
 		inner := afterOpen[:end]
 		expressionEnd := expressionStart + 2 + end + 2
+		// A top-level image directive is a message-level attachment, even when
+		// it sits in a line with text. A nested one has no effect and is
+		// reported by nestedAttachmentWarnings.
+		if expression, err := parseExpression(strings.TrimSpace(inner)); err == nil {
+			if image, ok := imageAttachment(expression); ok {
+				mergeFirstImage(&attachments, image)
+			}
+		}
 		text, link, exprWarnings, exprError := evaluateExpressionNode(inner, facts, known)
 		if exprError != nil {
 			errors = append(errors, SourceError{
@@ -681,7 +803,7 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 		cursor = expressionEnd
 		remaining = afterOpen[end+2:]
 	}
-	return renderResult{text: builder.String(), parts: parts, errors: errors, warnings: warnings}
+	return renderResult{text: builder.String(), parts: parts, attachments: attachments, errors: errors, warnings: warnings}
 }
 
 // renderLine renders one line chunk: a standalone list variable repeats its

@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/notifypresent"
 	templatecatalogapplication "bansoko/internal/templatecatalog/application"
+	"bansoko/internal/templatecatalog/notification"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -84,6 +86,45 @@ func TestMapNotificationTemplatePreviewPreservesErrorsAndWarnings(t *testing.T) 
 	}
 	if mapped.Warnings[0].Variable == nil || *mapped.Warnings[0].Variable != "anime.title_override" {
 		t.Fatalf("warning variable = %#v", mapped.Warnings[0].Variable)
+	}
+}
+
+func TestMapNotificationTemplatePreviewCarriesChannelPresentation(t *testing.T) {
+	mapped := mapNotificationTemplatePreview(templatecatalogapplication.NotificationTemplatePreview{
+		Presentation: notifypresent.Build(notifypresent.Message{
+			Title: "Title",
+			Body:  "Body",
+			Parts: []notification.BodyPart{{Text: "Body"}},
+			Image: &notifypresent.Image{Source: "bgm", URL: "https://lain.bgm.tv/pic/1.jpg"},
+			Links: []notification.Link{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}},
+		}),
+	})
+
+	telegram := mapped.Presentation.Telegram
+	if telegram.Mode != generated.NotificationTemplatePreviewTelegramModeSendPhoto || telegram.ImageOmitted || telegram.Truncated {
+		t.Fatalf("telegram = %#v", telegram)
+	}
+	if telegram.TextUnits == 0 || !strings.Contains(telegram.Text, "<b>Title</b>") || !strings.Contains(telegram.Text, "Body") {
+		t.Fatalf("telegram text = %#v", telegram)
+	}
+	feishu := mapped.Presentation.Feishu
+	if feishu.Image == nil || feishu.Image.Label != "Bangumi" || feishu.Image.Url != "https://lain.bgm.tv/pic/1.jpg" {
+		t.Fatalf("feishu image = %#v", feishu.Image)
+	}
+	if len(feishu.Content) == 0 || feishu.Content[len(feishu.Content)-1][0].Tag != generated.NotificationTemplatePreviewFeishuElementTagA {
+		t.Fatalf("feishu content = %#v", feishu.Content)
+	}
+	webhook := mapped.Presentation.Webhook.Message
+	if webhook.Image == nil || webhook.Image.Url == nil || *webhook.Image.Url != "https://lain.bgm.tv/pic/1.jpg" || len(webhook.Links) != 1 {
+		t.Fatalf("webhook = %#v", webhook)
+	}
+	// The wire shape requires non-null arrays even when the message has none.
+	empty := mapNotificationTemplatePreview(templatecatalogapplication.NotificationTemplatePreview{})
+	if empty.Presentation.Webhook.Message.Links == nil {
+		t.Fatal("empty webhook links mapped to nil; schema requires an array")
+	}
+	if empty.Presentation.Feishu.Content == nil {
+		t.Fatal("empty feishu content mapped to nil; schema requires an array")
 	}
 }
 

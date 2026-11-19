@@ -220,7 +220,7 @@ type EmbeddedUpdateService interface {
 // and the side-effect-free preview renderer. It is implemented by
 // internal/templatecatalog/application.
 type TemplateCatalogService interface {
-	GetNotificationCatalog(ctx context.Context, triggerKind, catalogVersion string) (templatecatalogapplication.NotificationTemplateCatalog, error)
+	GetNotificationCatalog(ctx context.Context, triggerKind, catalogVersion, locale string) (templatecatalogapplication.NotificationTemplateCatalog, error)
 	GetNamingCatalog(ctx context.Context, language string) (templatecatalogapplication.NamingTemplateCatalog, error)
 	PreviewNotification(ctx context.Context, input templatecatalogapplication.NotificationTemplatePreviewInput) (templatecatalogapplication.NotificationTemplatePreview, error)
 	PreviewNaming(ctx context.Context, input templatecatalogapplication.NamingTemplatePreviewInput) (templatecatalogapplication.NamingTemplatePreview, error)

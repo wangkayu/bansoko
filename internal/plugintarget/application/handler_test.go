@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/notifypresent"
 	"bansoko/internal/workitems"
 )
 
@@ -209,8 +210,8 @@ func TestPluginDeliverHandler_BuildFeishuRequest(t *testing.T) {
 		Content struct {
 			Post struct {
 				ZH struct {
-					Title   string                `json:"title"`
-					Content [][]feishuPostElement `json:"content"`
+					Title   string                          `json:"title"`
+					Content [][]notifypresent.FeishuElement `json:"content"`
 				} `json:"zh_cn"`
 			} `json:"post"`
 		} `json:"content"`

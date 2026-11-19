@@ -129,6 +129,65 @@ func TestExplicitProviderImageAndCustomAttachments(t *testing.T) {
 	}
 }
 
+func TestTitleLinkKeepsOnlyItsLabelAndNeverBecomesAnAttachment(t *testing.T) {
+	facts := map[string]any{"anime.title": "Show", "bgm.id": "123"}
+	const title = "{{link(bgm.link, 'Bangumi')}}"
+	const body = "{{link(bgm.link, 'Body')}}"
+	message, ok := RenderMessage(TriggerDownloadSubmitted, title, body, facts)
+	if !ok || !message.Valid() || message.Title != "Bangumi" {
+		t.Fatalf("title link render = %+v", message)
+	}
+	found := false
+	for _, warning := range message.Warnings {
+		found = found || warning.Code == "link_in_title"
+	}
+	if !found {
+		t.Fatalf("title link loss is not reported: %+v", message.Warnings)
+	}
+	attachments, ok := SemanticAttachments(TriggerDownloadSubmitted, title, body, facts)
+	if !ok || len(attachments.Links) != 1 || attachments.Links[0].Label != "Body" {
+		t.Fatalf("title link became an attachment: %+v", attachments.Links)
+	}
+}
+
+func TestBareProviderImageResolvesLikeTheImageDirective(t *testing.T) {
+	facts := Sample(TriggerDownloadSubmitted)
+	const body = "{{bgm.image}}\n{{anime.title}}"
+	message, ok := RenderMessage(TriggerDownloadSubmitted, "title", body, facts)
+	if !ok || !message.Valid() || message.Body != FormatFact(facts["anime.title"]) {
+		t.Fatalf("bare provider image render = %+v", message)
+	}
+	attachments, ok := SemanticAttachments(TriggerDownloadSubmitted, "title", body, facts)
+	if !ok || !attachments.Image || attachments.ImageSource != "bgm" {
+		t.Fatalf("bare provider image attachment = %+v", attachments)
+	}
+	automatic, _ := SemanticAttachments(TriggerDownloadSubmitted, "title", "{{image}}", facts)
+	if !automatic.Image || automatic.ImageSource != "" {
+		t.Fatalf("automatic image changed = %+v", automatic)
+	}
+}
+
+// Every advertised provider image alias means exactly what the explicit
+// image(...) call means: same attachment, same text (none).
+func TestEveryBareProviderImageAliasMatchesItsExplicitForm(t *testing.T) {
+	for _, trigger := range Triggers {
+		facts := Sample(trigger)
+		for _, name := range ImageVariables {
+			bare, ok := RenderMessage(trigger, "title", "{{"+name+"}}", facts)
+			explicit, _ := RenderMessage(trigger, "title", "{{image("+name+")}}", facts)
+			if !ok || !bare.Valid() || !explicit.Valid() || strings.TrimSpace(bare.Body) != "" ||
+				!bare.Attachments.Image || bare.Attachments.ImageSource != explicit.Attachments.ImageSource {
+				t.Fatalf("%s / %s bare=%+v explicit=%+v", trigger, name, bare, explicit)
+			}
+		}
+	}
+	// A frozen binding for a poster does not make the same event's binding a
+	// text fact or add a link to the body.
+	if errors, _ := Compile(TriggerDownloadFailed, "title", "{{bgm.link}}"); len(errors) != 1 {
+		t.Fatalf("download_failed exposed an image binding as a link: %+v", errors)
+	}
+}
+
 func TestStandaloneSubtitleListRepeatsLabelAndOmitsEmptyLine(t *testing.T) {
 	body := "文件：{{out.name}}\n字幕：{{out.subtitles}}\n目录：{{out.dir}}"
 	facts := Sample(TriggerFileOperationCompleted)

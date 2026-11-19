@@ -508,14 +508,14 @@ func (q *Queries) LockReplacementDeletionOwnerVersion(ctx context.Context, clean
 }
 
 const managedAnimeTitle = `-- name: ManagedAnimeTitle :one
-SELECT title
+SELECT COALESCE(NULLIF(btrim(title_override), ''), title)::text AS title
 FROM managed_anime
 WHERE id = $1
 `
 
 // ManagedAnimeTitle
 //
-//	SELECT title
+//	SELECT COALESCE(NULLIF(btrim(title_override), ''), title)::text AS title
 //	FROM managed_anime
 //	WHERE id = $1
 func (q *Queries) ManagedAnimeTitle(ctx context.Context, animeID string) (string, error) {

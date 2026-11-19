@@ -390,7 +390,8 @@ func (s *Service) PatchAnimeSubscription(ctx context.Context, managedAnimeID str
 	var retiredAt, startBaselineAt sql.NullTime
 	var newReleasesOnly, ignoreMultiVideo bool
 	err = tx.QueryRowContext(ctx, `
-SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.entry_season, s.created_at, s.state, s.version, ma.title,
+SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.entry_season, s.created_at, s.state, s.version,
+       COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title),
        ma.lifecycle_state, ma.fence_epoch, ma.retired_at, s.new_releases_only, s.start_baseline_at,
        s.ignore_multi_video_releases
 FROM subscriptions s

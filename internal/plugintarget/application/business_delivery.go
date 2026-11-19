@@ -163,6 +163,10 @@ FOR UPDATE`, target.ID, request.TriggerKind, request.SourceOwnerType, request.So
 	}
 
 	messageDigest := hashBytes([]byte(renderedTitle + "\n\n" + renderedBody))
+	snapshot, err := freezeNotificationMessage(message, facts, request.SourceEvidence)
+	if err != nil {
+		return fmt.Errorf("freeze business notification message: %w", err)
+	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO plugin_deliveries(
     id, plugin_target_config_id, plugin_target_config_version, adapter_kind,
@@ -171,14 +175,14 @@ INSERT INTO plugin_deliveries(
     managed_anime_id, state, idempotency_key, payload_schema_version, payload,
     payload_digest, template_language_version, template_catalog_version,
     title_template_snapshot, body_template_snapshot, rendered_title, rendered_body,
-    rendered_message_digest, target_display)
+    rendered_message_digest, target_display, message_snapshot)
 VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), 'business', $7, $8, $9, $10, $11,
-        NULLIF($12, ''), 'pending', $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
+        NULLIF($12, ''), 'pending', $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
 		deliveryID, target.ID, target.Version, string(target.AdapterKind), target.Config, target.secretRef,
 		request.TriggerKind, request.SourceOwnerType, request.SourceOwnerID, request.SourceOwnerVersion, request.ResultKey,
 		request.ManagedAnimeID, idempotencyKey, deliverypayload.SchemaVersion, frozenPayload, digest,
 		templateLanguageVersion, templateCatalogVersion, titleTemplate, bodyTemplate, renderedTitle, renderedBody,
-		messageDigest, targetDisplay)
+		messageDigest, targetDisplay, snapshot)
 	if err != nil {
 		return fmt.Errorf("create business delivery: %w", err)
 	}

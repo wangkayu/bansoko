@@ -73,7 +73,8 @@ function webhookTarget(overrides: Partial<PluginTargetConfig> = {}): PluginTarge
   };
 }
 
-function templateCatalogBody(catalogVersion = "notification-catalog-v1") {
+function templateCatalogBody(catalogVersion = "notification-catalog-v1", locale = "zh-CN") {
+  const english = locale === "en";
   return {
     language_version: "bansoko-template-1",
     catalog_version: catalogVersion,
@@ -81,10 +82,55 @@ function templateCatalogBody(catalogVersion = "notification-catalog-v1") {
     variables: [
       { name: "anime.title", label: "Anime title", type: "string", nullable: false, source: "anime", sample_value: "示例动画", phase: "release", label_key: "facts.anime.title.label" },
       { name: "ep.display", label: "Episode", type: "string", nullable: true, source: "ep", sample_value: "07", phase: "release", label_key: "facts.ep.display.label" },
+      { name: "image", label: "Image", type: "string", nullable: false, source: "system" },
+      { name: "bgm.image", label: "Bangumi image", type: "string", nullable: true, source: "bgm" },
     ],
     functions: [],
-    default_template: { mode: "custom", title_template: "默认标题", body_template: "默认正文" },
+    default_template: english
+      ? { mode: "custom", title_template: "Default title", body_template: "Default body" }
+      : { mode: "custom", title_template: "默认标题", body_template: "默认正文" },
     sample: { values: {} },
+  };
+}
+
+function previewPresentation(overrides: Record<string, unknown> = {}) {
+  return {
+    telegram: { mode: "sendPhoto", text: "<b>预览标题</b>\n\n预览正文", title: "预览标题", body_parts: [{ text: "预览正文", link: null }], text_units: 20, image_omitted: false, truncated: false },
+    feishu: {
+      title: "预览标题",
+      content: [[{ tag: "text", text: "预览正文" }]],
+      image: null,
+      image_omitted: false,
+    },
+    webhook: {
+      message: {
+        title: "预览标题",
+        body: "预览正文",
+        image: { source: "automatic", placeholder: true },
+        links: [{ provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" }],
+      },
+    },
+    ...overrides,
+  };
+}
+
+function previewBody(overrides: Record<string, unknown> = {}) {
+  return {
+    language_version: "bansoko-template-1",
+    catalog_version: "notification-catalog-v1",
+    title: "预览标题",
+    body: "预览正文",
+    body_parts: [{ text: "预览正文", link: null }],
+    valid: true,
+    attachments: {
+      image: { source: "automatic" },
+      links: [{ provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" }],
+    },
+    presentation: previewPresentation(),
+    errors: [],
+    warnings: [],
+    variables: [],
+    ...overrides,
   };
 }
 
@@ -94,6 +140,7 @@ function stubFetch(
     patchError?: unknown;
     triggerKinds?: string[];
     triggerKindsError?: boolean;
+    preview?: () => Record<string, unknown>;
   } = {},
 ) {
   fetchMock = vi.fn<FetchStub>(async (input, init) => {
@@ -132,21 +179,10 @@ function stubFetch(
       return new Response(null, { status: 204 });
     }
     if (init?.method === "POST" && url.includes("/template-previews/notification")) {
-      return new Response(JSON.stringify({
-        language_version: "bansoko-template-1",
-        catalog_version: "notification-catalog-v1",
-        title: "预览标题",
-        body: "预览正文",
-        body_parts: [{ text: "预览正文", link: null }],
-        valid: true,
-        attachments: {
-          image: { source: "automatic" },
-          links: [{ provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" }],
-        },
-        errors: [],
-        warnings: [],
-        variables: [],
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(options.preview ? options.preview() : previewBody()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     if (init?.method === "POST" && url.includes("/test")) {
       return new Response(JSON.stringify({ accepted: true, delivery_id: "delivery-1" }), {
@@ -168,8 +204,10 @@ function stubFetch(
       );
     }
     if (url.includes("/template-catalogs/")) {
-      const version = new URL(url, "http://localhost").searchParams.get("catalog_version") ?? "notification-catalog-v1";
-      return new Response(JSON.stringify(templateCatalogBody(version)), {
+      const params = new URL(url, "http://localhost").searchParams;
+      const version = params.get("catalog_version") ?? "notification-catalog-v1";
+      const locale = params.get("locale") ?? "zh-CN";
+      return new Response(JSON.stringify(templateCatalogBody(version, locale)), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -536,7 +574,7 @@ describe("SettingsNotifications 模板页", () => {
     const body = screen.getByLabelText(t("settings.notifications.template.bodyField"));
     await waitFor(() => expect(title).toHaveValue("默认标题"));
 
-    const catalog = screen.getByText(t("settings.notifications.template.variables", { n: 2 })).closest("details")!;
+    const catalog = screen.getByText(t("settings.notifications.template.variables", { n: 4 })).closest("details")!;
     expect(within(catalog as HTMLElement).getByText(t("templateFacts.roots.ep"))).toBeInTheDocument();
 
     fireEvent.focus(title);
@@ -581,6 +619,166 @@ describe("SettingsNotifications 模板页", () => {
 
     expect(screen.queryByLabelText(t("settings.notifications.template.titleField"))).not.toBeInTheDocument();
     await screen.findByText(t("settings.notifications.template.followDefault"));
+  });
+
+  it("编辑英文渠道：模板目录按渠道语言读取，自定义模板以英文默认开始，保存保留该语言", async () => {
+    const base = templateSet();
+    stubFetch({
+      targets: [
+        telegramTarget({
+          template_set: { ...base, locale: "en" } as PluginTargetConfig["template_set"],
+        }),
+      ],
+    });
+    renderNotifications();
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.notifications.edit") }));
+    await openTemplatePage();
+
+    const catalogCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/template-catalogs/notification/"),
+    );
+    expect(String(catalogCall?.[0] ?? "")).toContain("locale=en");
+
+    await userEvent.click(await screen.findByRole("radio", { name: t("settings.notifications.template.modeCustom") }));
+    const title = await screen.findByLabelText(t("settings.notifications.template.titleField"));
+    await waitFor(() => expect(title).toHaveValue("Default title"));
+
+    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.save") }));
+    await waitFor(() => expect(patchCalls()).toHaveLength(1));
+    const set = postBody(patchCalls()[0]!).template_set as { locale: string };
+    expect(set.locale).toBe("en");
+  });
+
+  it("点击图片变量把 image(...) 插入正文并独立成行", async () => {
+    stubFetch();
+    renderNotifications();
+    await openNewDialog();
+    await openTemplatePage();
+    await userEvent.click(await screen.findByRole("radio", { name: t("settings.notifications.template.modeCustom") }));
+
+    const title = await screen.findByLabelText(t("settings.notifications.template.titleField"));
+    const body = screen.getByLabelText(t("settings.notifications.template.bodyField")) as HTMLTextAreaElement;
+    const catalog = screen.getByText(t("settings.notifications.template.variables", { n: 4 })).closest("details")!;
+
+    // An image is a body attachment even when the title was the last focused field.
+    fireEvent.focus(title);
+    fireEvent.click(within(catalog as HTMLElement).getByRole("button", { name: /bgm\.image/ }));
+
+    expect(title).toHaveValue("默认标题");
+    expect(body.value.split("\n")).toContain("{{image(bgm.image)}}");
+  });
+
+  it("Telegram 预览：说明文字超过 1024 时标为普通消息且不带图片", async () => {
+    const longBody = "x".repeat(1100);
+    stubFetch({
+      preview: () =>
+        previewBody({
+          body: longBody,
+          body_parts: [{ text: longBody, link: null }],
+          attachments: { image: { source: "automatic" }, links: [] },
+          presentation: previewPresentation({
+            telegram: { mode: "sendMessage", text: longBody, title: "", body_parts: [{ text: longBody, link: null }], text_units: 1100, image_omitted: true, truncated: false },
+          }),
+        }),
+    });
+    renderNotifications();
+    await openNewDialog();
+    await openTemplatePage();
+
+    await screen.findByText(t("settings.notifications.template.telegramImageOmitted"));
+    expect(screen.queryByText(t("settings.notifications.template.imageNote"))).not.toBeInTheDocument();
+  });
+
+  it("Telegram 预览：无图片且说明文字超过 4096 时提示截断", async () => {
+    const longBody = "x".repeat(5000);
+    const fittedBody = `${"x".repeat(4095)}…`;
+    stubFetch({
+      preview: () =>
+        previewBody({
+          body: longBody,
+          body_parts: [{ text: longBody, link: null }],
+          attachments: { image: null, links: [] },
+          presentation: previewPresentation({
+            telegram: { mode: "sendMessage", text: fittedBody, title: "", body_parts: [{ text: fittedBody, link: null }], text_units: 4096, image_omitted: false, truncated: true },
+          }),
+        }),
+    });
+    renderNotifications();
+    await openNewDialog();
+    await openTemplatePage();
+
+    await screen.findByText(t("settings.notifications.template.telegramTruncated"));
+    expect(screen.getByText(fittedBody)).toBeInTheDocument();
+    expect(screen.queryByText(longBody)).not.toBeInTheDocument();
+  });
+
+  it("飞书预览：没有图片地址时不显示图片", async () => {
+    stubFetch({
+      preview: () =>
+        previewBody({
+          attachments: { image: { source: "automatic" }, links: [] },
+          presentation: previewPresentation({
+            feishu: {
+              title: "预览标题",
+              content: [[{ tag: "text", text: "预览正文" }]],
+              image: null,
+              image_omitted: true,
+            },
+          }),
+        }),
+    });
+    renderNotifications();
+    await openNewDialog();
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.field.type") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.adapter.feishu") }));
+    await openTemplatePage();
+
+    await screen.findByText(t("settings.notifications.template.feishuImageNoUrl"));
+  });
+
+  it("飞书预览：有图片地址时显示为带来源名称的链接", async () => {
+    stubFetch({
+      preview: () =>
+        previewBody({
+          attachments: {
+            image: { source: "custom", url: "https://example.com/a.jpg" },
+            links: [],
+          },
+          presentation: previewPresentation({
+            feishu: {
+              title: "预览标题",
+              content: [
+                [{ tag: "text", text: "预览正文" }],
+                [{ tag: "a", text: "Image", href: "https://example.com/a.jpg" }],
+              ],
+              image: { label: "Image", url: "https://example.com/a.jpg" },
+              image_omitted: false,
+            },
+          }),
+        }),
+    });
+    renderNotifications();
+    await openNewDialog();
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.field.type") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.adapter.feishu") }));
+    await openTemplatePage();
+
+    // The image link is Feishu's own final post paragraph, rendered by the backend presentation.
+    await screen.findByText("Image");
+  });
+
+  it("Webhook 预览：只展示 message 部分并说明完整 envelope 的其它字段", async () => {
+    stubFetch();
+    renderNotifications();
+    await openNewDialog();
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.notifications.field.type") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.notifications.adapter.webhook") }));
+    await openTemplatePage();
+
+    await screen.findByText(t("settings.notifications.template.webhookEnvelopeNote"));
+    const pre = document.querySelector(".settings-notifications-preview-wh");
+    expect(pre?.textContent).toContain('"event": "download_submitted"');
+    expect(pre?.textContent).toContain('"links"');
   });
 });
 

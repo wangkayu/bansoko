@@ -1,6 +1,10 @@
 package application
 
-import "time"
+import (
+	"time"
+
+	"bansoko/internal/notifypresent"
+)
 
 // NotificationTriggerKind identifies one supported notification event.
 type NotificationTriggerKind string
@@ -143,10 +147,14 @@ type NotificationTemplatePreview struct {
 	CatalogVersion  NotificationTemplatePreviewCatalogVersion
 	Errors          []TemplateSourceError
 	LanguageVersion NotificationTemplatePreviewLanguageVersion
-	Title           string
-	Valid           bool
-	Variables       []TemplateVariable
-	Warnings        []TemplateWarning
+	// Presentation is every channel's rendering of the same message, produced
+	// by the pure helpers the delivery formatters call. The editor draws it
+	// instead of reimplementing channel limits and shapes.
+	Presentation notifypresent.Presentation
+	Title        string
+	Valid        bool
+	Variables    []TemplateVariable
+	Warnings     []TemplateWarning
 }
 
 type NotificationTemplatePreviewInputCatalogVersion string
