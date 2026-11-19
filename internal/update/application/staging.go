@@ -125,9 +125,9 @@ func extractPayload(payload io.Reader, tempDir string) (map[string]string, error
 			digest := sha256.New()
 			written, copyErr := io.Copy(io.MultiWriter(out, digest), reader)
 			closeErr := out.Close()
-			if copyErr != nil || closeErr != nil {
+			if writeErr := errors.Join(copyErr, closeErr); writeErr != nil {
 				_ = os.Remove(target)
-				return nil, fmt.Errorf("stage payload entry %s: write failed", validName)
+				return nil, fmt.Errorf("stage payload entry %s: %w", validName, writeErr)
 			}
 			if written != header.Size {
 				return nil, fmt.Errorf("payload entry %s truncated during staging", validName)

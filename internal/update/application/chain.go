@@ -67,6 +67,7 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 	ctx := context.Background()
 	var err error
 	stage, failureMessage := "release_input", "Update stopped because the release input could not be prepared."
+	failureClass := prepSourceInvalid
 	if source == nil {
 		// Only the admitted operation reaches the chain with its own source; a
 		// caller without one rebuilds the deployment policy as before.
@@ -74,14 +75,17 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 	}
 	if err == nil && manifest.EmbeddedUpdate == nil {
 		err = errors.New("release manifest has no embedded update segment")
+		failureClass = prepManifestInvalid
 	}
 	var payload string
 	if err == nil {
 		stage, failureMessage = "download_payload", "Update stopped because the release package could not be downloaded or verified."
+		failureClass = prepTransfer
 		payload, err = s.ensurePayload(ctx, source, operationID, manifest.EmbeddedUpdate)
 	}
 	if err == nil {
 		stage, failureMessage = "stage_release", "Update stopped because the release package could not be staged or verified."
+		failureClass = prepArchive
 		_, err = s.stagePayload(payload, operationID, manifest)
 	}
 	if err == nil && FixtureStopAfter("staged") {
@@ -92,9 +96,11 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 	}
 	if err == nil {
 		stage, failureMessage = "prepare_handoff", "Update stopped before restart because the handoff could not be prepared."
+		failureClass = prepHandoff
 		pointer := deploymentidentity.ReadCurrentPointer(s.updatesRoot)
 		if pointer.Presented && !pointer.Readable {
 			err = errors.New("current release pointer is corrupt; refusing pending update marker")
+			failureClass = prepPointerInvalid
 		}
 		previous := ""
 		if pointer.Readable {
@@ -102,6 +108,9 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 		}
 		if err == nil {
 			err = WritePendingMarker(s.updatesRoot, PendingMarker{OperationID: operationID, ReleaseID: manifest.ReleaseID, ManifestDigest: digest, ReleaseSequence: manifest.ReleaseSequence, PreviousReleaseID: previous})
+			if errors.Is(err, os.ErrExist) {
+				failureClass = prepHandoffExists
+			}
 		}
 	}
 	if err != nil {
@@ -130,7 +139,7 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 		if s.logger != nil {
 			s.logger.Warn(ctx, observabilityport.RuntimeEvent{
 				Message: detail, Component: "update", Operation: "apply_update", Stage: stage, Outcome: "failure",
-				ReasonCode: "update_preparation_failed", ErrorClass: "update", OwnerType: "update_operation", OwnerID: operationID,
+				ReasonCode: "update_preparation_failed", ErrorClass: string(classifyPreparation(err, failureClass)), OwnerType: "update_operation", OwnerID: operationID,
 			})
 		}
 		return
@@ -176,7 +185,11 @@ func verifyDownloadedPayload(path string, target *hardeningdomain.EmbeddedUpdate
 	return nil
 }
 
-func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomain.ReleaseManifest) (string, error) {
+func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomain.ReleaseManifest) (_ string, resultErr error) {
+	class := prepStorage
+	defer func() {
+		resultErr = labelPreparationError(resultErr, class)
+	}()
 	tempDir := filepath.Join(s.updatesRoot, "releases", ".tmp-"+opID)
 	if err := ensureOperationDir(s.updatesRoot, tempDir, 0o755); err != nil {
 		return "", fmt.Errorf("create staging directory: %w", err)
@@ -187,10 +200,12 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 			_ = os.RemoveAll(tempDir)
 		}
 	}()
+	class = prepArchive
 	hashes, err := extractPayloadToTemp(payloadPath, tempDir)
 	if err != nil {
 		return "", err
 	}
+	class = prepReleaseVerify
 	meta, err := verifyStagedTree(tempDir)
 	if err != nil {
 		return "", err
@@ -198,21 +213,26 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 	if meta.ReleaseID != manifest.ReleaseID {
 		return "", fmt.Errorf("payload metadata claims release %s, manifest targets %s", meta.ReleaseID, manifest.ReleaseID)
 	}
+	class = prepStorage
 	if err = copyFileDurable(payloadPath, filepath.Join(tempDir, PayloadArchiveEntryPath), 0o600); err != nil {
 		return "", fmt.Errorf("retain verified payload archive: %w", err)
 	}
 	if err = persistSignedManifest(tempDir, manifest); err != nil {
 		return "", fmt.Errorf("retain release descriptor: %w", err)
 	}
+	class = prepReleaseVerify
 	if err = VerifyStagedReleaseTree(tempDir); err != nil {
 		return "", fmt.Errorf("verify retained release identity: %w", err)
 	}
+	class = prepReleasePublish
 	releaseDir := filepath.Join(s.updatesRoot, "releases", manifest.ReleaseID)
 	if info, statErr := os.Lstat(releaseDir); statErr == nil {
 		if !info.IsDir() || !treeMatchesReleaseDir(releaseDir, hashes) {
+			class = prepReleaseConflict
 			return "", fmt.Errorf("releases/%s already holds different content; refusing to overlay", manifest.ReleaseID)
 		}
 		if err = VerifyReleaseTree(releaseDir); err != nil {
+			class = prepReleaseVerify
 			return "", fmt.Errorf("existing releases/%s failed verification: %w", manifest.ReleaseID, err)
 		}
 		return releaseDir, nil
@@ -239,6 +259,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 	}
 	cleanupTemp = false
 	if err = VerifyReleaseTree(releaseDir); err != nil {
+		class = prepReleaseVerify
 		return "", removeFailedPublish(fmt.Errorf("verify published release tree: %w", err))
 	}
 	return releaseDir, nil

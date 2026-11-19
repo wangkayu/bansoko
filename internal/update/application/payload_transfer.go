@@ -15,15 +15,22 @@ import (
 )
 
 func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, opID string, target *hardeningdomain.EmbeddedUpdateSegment) (result string, resultErr error) {
+	class := prepPayloadSize
+	defer func() {
+		resultErr = labelPreparationError(resultErr, class)
+	}()
+
 	if target == nil || target.PayloadSize <= 0 || target.PayloadSize > maxTotalStagedBytes {
 		return "", errors.New("update payload size is outside the supported range")
 	}
 	downloadDir := filepath.Join(s.updatesRoot, "downloads", opID)
+	class = prepStorage
 	if mkErr := ensureOperationDir(s.updatesRoot, downloadDir, 0o700); mkErr != nil {
 		return "", fmt.Errorf("create download directory: %w", mkErr)
 	}
 	outPath := filepath.Join(downloadDir, PayloadFileName)
 
+	class = prepSourceInvalid
 	if source == nil {
 		source = s.source
 	}
@@ -40,13 +47,16 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 	}
 	resp, doErr := source.Client().Do(req)
 	if doErr != nil {
+		class = classifyPayloadTransport(doErr)
 		return "", fmt.Errorf("fetch update payload: %w", doErr)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		class = classifyPayloadHTTP(resp.StatusCode)
 		return "", fmt.Errorf("payload source answered HTTP %d", resp.StatusCode)
 	}
 
+	class = prepStorage
 	partial := outPath + ".part"
 	partialDir := filepath.Dir(outPath)
 	if info, statErr := os.Lstat(partial); statErr == nil {
@@ -75,12 +85,22 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 	}()
 	hasher := sha256.New()
 	written, copyErr := io.Copy(io.MultiWriter(out, hasher), io.LimitReader(resp.Body, target.PayloadSize+1))
+	if copyErr != nil && !errors.Is(copyErr, io.ErrUnexpectedEOF) {
+		class = classifyPayloadTransport(copyErr)
+		return "", fmt.Errorf("download update payload: transfer failed: %w", copyErr)
+	}
 	if written != target.PayloadSize {
+		class = prepPayloadSize
 		return "", fmt.Errorf("payload size mismatch (want %d got %d)", target.PayloadSize, written)
 	}
-	if copyErr != nil || out.Sync() != nil {
-		return "", errors.New("download update payload: transfer failed")
+	if copyErr != nil {
+		class = prepTransfer
+		return "", fmt.Errorf("download update payload: incomplete transfer: %w", copyErr)
 	}
+	if err := out.Sync(); err != nil {
+		return "", fmt.Errorf("sync downloaded payload: %w", err)
+	}
+	class = prepPayloadVerify
 	digest := hex.EncodeToString(hasher.Sum(nil))
 	if err := verifyPayloadSource(partial, out, written, target.PayloadSize, digest, target.PayloadDigest); err != nil {
 		return "", err
@@ -96,6 +116,7 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 		return "", errors.New("downloaded payload changed after initial verification")
 	}
 
+	class = prepPayloadPublish
 	private, err := os.CreateTemp(partialDir, ".payload-publish-*")
 	if err != nil {
 		return "", fmt.Errorf("create private payload publication: %w", err)
@@ -120,9 +141,13 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 	}
 	privateHash := sha256.New()
 	privateBytes, copyErr := io.Copy(io.MultiWriter(private, privateHash), out)
-	if copyErr != nil || private.Sync() != nil {
+	if copyErr != nil {
 		_ = private.Close()
-		return "", errors.New("copy private payload publication failed")
+		return "", fmt.Errorf("copy private payload publication failed: %w", copyErr)
+	}
+	if err := private.Sync(); err != nil {
+		_ = private.Close()
+		return "", fmt.Errorf("sync private payload publication: %w", err)
 	}
 	privateDigest := hex.EncodeToString(privateHash.Sum(nil))
 	if privateBytes != target.PayloadSize || privateDigest != target.PayloadDigest {
