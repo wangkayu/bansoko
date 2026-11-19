@@ -114,15 +114,13 @@ func disposableManifestDigest(t *testing.T, manifest hardeningdomain.ReleaseMani
 // disposableFixture serves one signed release manifest through the real HTTP
 // verification path and records every request path, so a test can prove that
 // discovery either reached the deployment source or never touched it. With
-// blockPayload the derived payload sibling is requested but answered only when
-// the test releases it, which keeps an admitted update chain deterministically
-// in flight.
+// blockPayload the derived payload sibling is requested but held until the
+// test ends, keeping an admitted update chain deterministically in flight.
 type disposableFixture struct {
 	server   *httptest.Server
 	manifest hardeningdomain.ReleaseManifest
 
 	blockPayload   bool
-	releasePayload chan struct{}
 	payloadStarted chan struct{}
 	payloadOnce    sync.Once
 
@@ -135,9 +133,9 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 	fixture := &disposableFixture{
 		manifest:       manifest,
 		blockPayload:   blockPayload,
-		releasePayload: make(chan struct{}),
 		payloadStarted: make(chan struct{}),
 	}
+	testDone := t.Context().Done()
 	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fixture.record(r.URL.Path)
 		if r.URL.Path == disposableChannelDocumentPath {
@@ -170,13 +168,15 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 		if strings.HasSuffix(r.URL.Path, PayloadFileName) {
 			fixture.payloadOnce.Do(func() { close(fixture.payloadStarted) })
 			if fixture.blockPayload {
-				<-fixture.releasePayload
+				select {
+				case <-testDone:
+				case <-r.Context().Done():
+				}
 			}
 		}
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(fixture.server.Close)
-	t.Cleanup(func() { close(fixture.releasePayload) })
 	return fixture
 }
 
@@ -224,6 +224,24 @@ func disposableService(t *testing.T, deps Deps) *Service {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	// The test context unblocks the payload handler before cleanup starts.
+	// Wait for the chain's terminal writes before TempDir removes its root.
+	t.Cleanup(func() {
+		if !service.Running() {
+			return
+		}
+		deadline := time.NewTimer(10 * time.Second)
+		defer deadline.Stop()
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		for service.Running() {
+			select {
+			case <-tick.C:
+			case <-deadline.C:
+				t.Fatal("update chain still running during test cleanup")
+			}
+		}
+	})
 	return service
 }
 
