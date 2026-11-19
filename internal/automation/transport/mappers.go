@@ -53,6 +53,7 @@ func RunAccepted(value automationapplication.RunAccepted) generated.AutomationRu
 func DispatchRun(value automationapplication.DispatchRun) generated.AutomationDispatchRun {
 	return generated.AutomationDispatchRun{
 		DispatchErrorCount: value.DispatchErrorCount,
+		CompletedCount:     value.CompletedCount,
 		EnqueuedCount:      value.EnqueuedCount,
 		FinishedAt:         value.FinishedAt,
 		Id:                 generated.ID(value.ID),

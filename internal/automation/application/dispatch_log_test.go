@@ -28,9 +28,9 @@ func (l *dispatchResultLogger) Warn(_ context.Context, e observabilityport.Runti
 func TestDispatchSummarySeparatesMetadataWritesFromQueuedEvaluations(t *testing.T) {
 	logger := &dispatchResultLogger{}
 	d := &Dispatcher{Logger: logger}
-	d.logDispatchResult(context.Background(), "run", "metadata_match", "manual", dispatchCounts{
-		targetCount: 2, committed: 1, errors: 1,
-	}, false)
+	d.logDispatchResult(context.Background(), "run", "metadata_match", "manual", settleDispatch(dispatchCounts{
+		targetCount: 2, completed: 1, errors: 1,
+	}, nil))
 	if len(logger.infos) != 0 || len(logger.warns) != 1 {
 		t.Fatalf("infos = %+v, warns = %+v", logger.infos, logger.warns)
 	}
@@ -54,12 +54,13 @@ VALUES ('stale-run', 'rss_refresh', 'manual', 'running', CURRENT_TIMESTAMP - INT
 	if err := d.ReapStaleRuns(ctx, 10*time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	d.finishRun(ctx, "stale-run", "rss_refresh", dispatchCounts{targetCount: 1, enqueued: 1}, nil, time.Now())
+	d.finishRun(ctx, "stale-run", "rss_refresh", settleDispatch(dispatchCounts{targetCount: 1, enqueued: 1}, nil), time.Now())
 	var state string
-	if err := db.QueryRowContext(ctx, `SELECT state FROM automation_dispatch_runs WHERE id = 'stale-run'`).Scan(&state); err != nil {
+	var completed *int
+	if err := db.QueryRowContext(ctx, `SELECT state, completed_count FROM automation_dispatch_runs WHERE id = 'stale-run'`).Scan(&state, &completed); err != nil {
 		t.Fatal(err)
 	}
-	if state != "failed" || len(logger.infos) != 0 || len(logger.warns) != 1 || logger.warns[0].OwnerID != "stale-run" {
+	if state != "failed" || completed != nil || len(logger.infos) != 0 || len(logger.warns) != 1 || logger.warns[0].OwnerID != "stale-run" {
 		t.Fatalf("state = %s; infos = %+v, warns = %+v", state, logger.infos, logger.warns)
 	}
 }
@@ -74,7 +75,7 @@ VALUES ('broken-run', 'catalog_refresh', 'manual', 'running', CURRENT_TIMESTAMP)
 	}
 	logger := &dispatchResultLogger{}
 	d := &Dispatcher{DB: db, Logger: logger}
-	d.finishRun(ctx, "broken-run", "catalog_refresh", dispatchCounts{}, errors.New("private upstream context"), time.Now())
+	d.finishRun(ctx, "broken-run", "catalog_refresh", settleDispatch(dispatchCounts{}, errors.New("private upstream context")), time.Now())
 	var state string
 	var failures int
 	if err := db.QueryRowContext(ctx, `SELECT state, dispatch_error_count FROM automation_dispatch_runs WHERE id = 'broken-run'`).Scan(&state, &failures); err != nil {
@@ -105,7 +106,7 @@ VALUES ('live-claim', 'mikan', '2026-summer', 'running', CURRENT_TIMESTAMP, '', 
 	if got, _ := mikan.take(); len(got) != 1 || got[0] != "2026-fall" {
 		t.Fatalf("Mikan season requests = %v", got)
 	}
-	if run.State != "completed" || run.EnqueuedCount != 3 || run.DispatchErrorCount != 0 || len(logger.infos) != 1 ||
+	if run.State != "completed" || !hasCompletedCount(run, 3) || run.EnqueuedCount != 0 || run.MergedCount != 1 || run.DispatchErrorCount != 0 || len(logger.infos) != 1 ||
 		!strings.Contains(logger.infos[0].Message, "3 seasons checked, 1 refreshes already running") {
 		t.Fatalf("run = %+v; infos = %+v", run, logger.infos)
 	}

@@ -11,6 +11,23 @@ func TestAutomationDispatchRunConstraints(t *testing.T) {
 			started_at, finished_at
 		) VALUES ('dispatch-partial', 'rss_refresh', 'scheduled', 'partial', 2, 1, 1,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	p.accept("partial dispatch with inline completion but no queued work", `
+		INSERT INTO automation_dispatch_runs(
+			id, kind, trigger, state, target_count, completed_count, dispatch_error_count,
+			started_at, finished_at
+		) VALUES ('dispatch-partial-inline', 'catalog_refresh', 'scheduled', 'partial', 2, 1, 1,
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	p.reject("failed dispatch with confirmed progress",
+		`INSERT INTO automation_dispatch_runs(
+			id, kind, trigger, state, target_count, completed_count, dispatch_error_count,
+			started_at, finished_at
+		) VALUES ('dispatch-failed-inline', 'catalog_refresh', 'manual', 'failed', 2, 1, 1,
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	p.reject("live dispatch with a terminal count",
+		`INSERT INTO automation_dispatch_runs(id, kind, trigger, state, completed_count)
+		 VALUES ('dispatch-queued-inline', 'catalog_refresh', 'manual', 'queued', 0)`)
+	p.reject("negative completion count",
+		`UPDATE automation_dispatch_runs SET completed_count = -1 WHERE id = 'dispatch-partial-inline'`)
 	p.reject("completed dispatch with errors",
 		`INSERT INTO automation_dispatch_runs(
 			id, kind, trigger, state, target_count, enqueued_count, dispatch_error_count,

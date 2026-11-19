@@ -339,7 +339,7 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 			kind: "automation", table: "automation_dispatch_runs", timeCol: "created_at",
 			state: automationStates.predicate,
 			columns: []string{"id", "kind", "trigger", "state", "target_count", "enqueued_count", "merged_count",
-				"skipped_count", "dispatch_error_count", "started_at", "finished_at", "retention_until"},
+				"skipped_count", "dispatch_error_count", "started_at", "finished_at", "retention_until", "completed_count"},
 		},
 		{
 			// secret_ref is deliberately absent: it is storage lineage for the

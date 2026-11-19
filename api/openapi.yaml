@@ -12514,6 +12514,13 @@ components:
           $ref: '#/components/schemas/AutomationTrigger'
         state:
           $ref: '#/components/schemas/AutomationState'
+        completed_count:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: >-
+            Confirmed inline actions, not queued tasks. Unknown for historical or
+            unconfirmed runs, and not yet available while a run is live.
         target_count:
           type: integer
           minimum: 0
@@ -17512,6 +17519,10 @@ components:
         error_count:
           type: integer
           minimum: 0
+        completed_count:
+          type: integer
+          minimum: 0
+          description: Confirmed inline actions, not queued tasks. Absent when unknown.
         target_count:
           type: integer
           minimum: 0

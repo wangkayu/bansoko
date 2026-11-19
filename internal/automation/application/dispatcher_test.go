@@ -88,24 +88,29 @@ func TestProviderSelectionStoragePersistsDerivedModesAsAuto(t *testing.T) {
 	}
 }
 
-func TestDispatchRoutineOutcome(t *testing.T) {
+func TestSettleDispatch(t *testing.T) {
 	cases := []struct {
 		name        string
 		counts      dispatchCounts
 		err         error
 		wantOutcome string
 		wantCode    string
+		wantState   AutomationStateValue
 	}{
-		{name: "success", wantOutcome: "success", wantCode: "dispatch_completed"},
-		{name: "partial", counts: dispatchCounts{enqueued: 1, errors: 1}, wantOutcome: "warning", wantCode: "dispatch_partial"},
-		{name: "failed counts", counts: dispatchCounts{errors: 1}, wantOutcome: "failure", wantCode: "dispatch_failed"},
-		{name: "run error", err: errors.New("failed"), wantOutcome: "failure", wantCode: "dispatch_failed"},
+		{name: "success", wantState: "completed", wantOutcome: "success", wantCode: "dispatch_completed"},
+		{name: "queued", counts: dispatchCounts{enqueued: 1, errors: 1}, wantState: "partial", wantOutcome: "warning", wantCode: "dispatch_partial"},
+		{name: "merged", counts: dispatchCounts{merged: 1, errors: 1}, wantState: "partial", wantOutcome: "warning", wantCode: "dispatch_partial"},
+		{name: "inline completion", counts: dispatchCounts{completed: 1, errors: 1}, wantState: "partial", wantOutcome: "warning", wantCode: "dispatch_partial"},
+		{name: "only skipped and failed", counts: dispatchCounts{skipped: 1, errors: 1}, wantState: "failed", wantOutcome: "failure", wantCode: "dispatch_failed"},
+		{name: "run error", err: errors.New("failed"), wantState: "failed", wantOutcome: "failure", wantCode: "dispatch_failed"},
+		{name: "run error after inline completion", counts: dispatchCounts{completed: 1}, err: errors.New("failed"), wantState: "partial", wantOutcome: "warning", wantCode: "dispatch_partial"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			outcome, code := dispatchRoutineOutcome("completed", tc.counts, tc.err)
-			if outcome != tc.wantOutcome || code != tc.wantCode {
-				t.Fatalf("got outcome=%q code=%q, want outcome=%q code=%q", outcome, code, tc.wantOutcome, tc.wantCode)
+			result := settleDispatch(tc.counts, tc.err)
+			outcome, code := result.routineOutcome()
+			if result.state != tc.wantState || string(outcome) != tc.wantOutcome || string(code) != tc.wantCode {
+				t.Fatalf("got state=%q outcome=%q code=%q, want state=%q outcome=%q code=%q", result.state, outcome, code, tc.wantState, tc.wantOutcome, tc.wantCode)
 			}
 		})
 	}
@@ -151,7 +156,7 @@ func (r *captureRoutineRecorder) RecordDiagnosticSuccessTx(context.Context, txsc
 func TestRecordObservabilitySuccessfulDispatchClosesAllDispatchEpisodes(t *testing.T) {
 	recorder := &captureRoutineRecorder{}
 	d := &Dispatcher{Recorder: recorder}
-	d.recordObservability(context.Background(), "rss_refresh", "completed", dispatchCounts{}, nil)
+	d.recordObservability(context.Background(), "rss_refresh", settleDispatch(dispatchCounts{}, nil))
 
 	want := observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)
 	if len(recorder.successes) != 1 || recorder.successes[0] != want {
@@ -162,13 +167,13 @@ func TestRecordObservabilitySuccessfulDispatchClosesAllDispatchEpisodes(t *testi
 func TestRecordObservabilityWritesStructuredDispatchCounts(t *testing.T) {
 	recorder := &captureRoutineRecorder{}
 	d := &Dispatcher{Recorder: recorder}
-	d.recordObservability(context.Background(), "rss_refresh", "completed", dispatchCounts{targetCount: 5, enqueued: 4, merged: 1, skipped: 2, errors: 3}, nil)
+	d.recordObservability(context.Background(), "metadata_match", settleDispatch(dispatchCounts{targetCount: 5, completed: 2, enqueued: 4, merged: 1, skipped: 2, errors: 3}, nil))
 
 	var details map[string]int
 	if err := json.Unmarshal(recorder.routine.Details, &details); err != nil {
 		t.Fatalf("details must decode: %v", err)
 	}
-	want := map[string]int{"target_count": 5, "enqueued_count": 4, "merged_count": 1, "skipped_count": 2, "error_count": 3}
+	want := map[string]int{"target_count": 5, "completed_count": 2, "enqueued_count": 4, "merged_count": 1, "skipped_count": 2, "error_count": 3}
 	for key, value := range want {
 		if details[key] != value {
 			t.Fatalf("details[%q]=%d, want %d (details=%v)", key, details[key], value, details)

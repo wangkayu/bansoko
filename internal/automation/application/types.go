@@ -38,6 +38,7 @@ type RunAccepted struct {
 }
 
 type DispatchRun struct {
+	CompletedCount     *int
 	DispatchErrorCount int
 	EnqueuedCount      int
 	FinishedAt         *time.Time

@@ -1001,7 +1001,7 @@ VALUES ('scheduled-completion-run', 'metadata_match', 'scheduled', 'running', CU
 	}
 
 	dispatcher := &Dispatcher{DB: db}
-	dispatcher.finishRun(ctx, "scheduled-completion-run", "metadata_match", dispatchCounts{}, nil, time.Now().UTC())
+	dispatcher.finishRun(ctx, "scheduled-completion-run", "metadata_match", settleDispatch(dispatchCounts{}, nil), time.Now().UTC())
 
 	var state string
 	var exact bool

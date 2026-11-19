@@ -2,21 +2,27 @@ package application
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	catalogapp "bansoko/internal/catalog/application"
 	catalogdomain "bansoko/internal/catalog/domain"
+	observabilityapp "bansoko/internal/observability/application"
+	observabilityport "bansoko/internal/observability/port"
 )
 
 // conditionalCatalogReader serves one entry with an ETag and answers 304 when
 // the refresh sends that ETag back. It records every requested season.
 type conditionalCatalogReader struct {
-	mu      sync.Mutex
-	seasons []string
-	etags   []string
+	mu         sync.Mutex
+	seasons    []string
+	failSeason string
+	etags      []string
 }
 
 func (r *conditionalCatalogReader) ReadSeason(_ context.Context, season string, hints catalogdomain.ReadHints) (catalogdomain.ReadResult, error) {
@@ -24,6 +30,9 @@ func (r *conditionalCatalogReader) ReadSeason(_ context.Context, season string, 
 	r.seasons = append(r.seasons, season)
 	r.etags = append(r.etags, hints.ETag)
 	r.mu.Unlock()
+	if season == r.failSeason {
+		return catalogdomain.ReadResult{}, errors.New("fixture provider unavailable")
+	}
 	etag := `"` + season + `-v1"`
 	if hints.ETag == etag {
 		return catalogdomain.ReadResult{ETag: etag, NotModified: true}, nil
@@ -50,8 +59,8 @@ func runDueCatalogRefresh(t *testing.T, dispatcher *Dispatcher) DispatchRun {
 	}
 	var run DispatchRun
 	if err := dispatcher.DB.QueryRowContext(ctx, `
-SELECT state, target_count, enqueued_count, skipped_count, dispatch_error_count
-FROM automation_dispatch_runs WHERE kind = 'catalog_refresh' ORDER BY created_at DESC LIMIT 1`).Scan(&run.State, &run.TargetCount, &run.EnqueuedCount, &run.SkippedCount, &run.DispatchErrorCount); err != nil {
+SELECT state, target_count, completed_count, enqueued_count, merged_count, skipped_count, dispatch_error_count
+FROM automation_dispatch_runs WHERE kind = 'catalog_refresh' ORDER BY created_at DESC LIMIT 1`).Scan(&run.State, &run.TargetCount, &run.CompletedCount, &run.EnqueuedCount, &run.MergedCount, &run.SkippedCount, &run.DispatchErrorCount); err != nil {
 		t.Fatal(err)
 	}
 	return run
@@ -82,7 +91,7 @@ func TestCatalogRefreshDispatchesCurrentAndNextSeasonConditionally(t *testing.T)
 	wantSeasons := []string{"2026-fall", "2026-summer"}
 
 	first := runDueCatalogRefresh(t, dispatcher)
-	if first.State != "completed" || first.TargetCount != 4 || first.EnqueuedCount != 4 || first.DispatchErrorCount != 0 {
+	if first.State != "completed" || first.TargetCount != 4 || !hasCompletedCount(first, 4) || first.EnqueuedCount != 0 || first.DispatchErrorCount != 0 {
 		t.Fatalf("first catalog_refresh run = %+v", first)
 	}
 	for name, reader := range map[string]*conditionalCatalogReader{"anibt": anibt, "mikan": mikan} {
@@ -103,7 +112,7 @@ func TestCatalogRefreshDispatchesCurrentAndNextSeasonConditionally(t *testing.T)
 	}
 
 	second := runDueCatalogRefresh(t, dispatcher)
-	if second.State != "completed" || second.EnqueuedCount != 4 {
+	if second.State != "completed" || !hasCompletedCount(second, 4) || second.EnqueuedCount != 0 {
 		t.Fatalf("second catalog_refresh run = %+v", second)
 	}
 	for name, reader := range map[string]*conditionalCatalogReader{"anibt": anibt, "mikan": mikan} {
@@ -129,7 +138,7 @@ func TestCatalogRefreshDispatchesCurrentAndNextSeasonConditionally(t *testing.T)
 		t.Fatal(err)
 	}
 	third := runDueCatalogRefresh(t, dispatcher)
-	if third.State != "completed" || third.EnqueuedCount != 2 || third.SkippedCount != 2 {
+	if third.State != "completed" || !hasCompletedCount(third, 2) || third.EnqueuedCount != 0 || third.SkippedCount != 2 {
 		t.Fatalf("opt-out catalog_refresh run = %+v", third)
 	}
 	if seasons, _ := mikan.take(); len(seasons) != 0 {
@@ -143,7 +152,7 @@ func TestCatalogRefreshDispatchesCurrentAndNextSeasonConditionally(t *testing.T)
 	// and 2027-winter; no new preference row re-enables the provider.
 	clock = time.Date(2026, time.November, 2, 12, 0, 0, 0, time.UTC)
 	rolled := runDueCatalogRefresh(t, dispatcher)
-	if rolled.State != "completed" || rolled.EnqueuedCount != 2 || rolled.SkippedCount != 2 {
+	if rolled.State != "completed" || !hasCompletedCount(rolled, 2) || rolled.EnqueuedCount != 0 || rolled.SkippedCount != 2 {
 		t.Fatalf("rolled-over catalog_refresh run = %+v", rolled)
 	}
 	if seasons, _ := mikan.take(); len(seasons) != 0 {
@@ -165,5 +174,60 @@ func TestCatalogRefreshDispatchesCurrentAndNextSeasonConditionally(t *testing.T)
 	}
 	if !nextRunInFuture {
 		t.Fatal("scheduled catalog_refresh did not advance next_run_at by its 12-hour interval")
+	}
+}
+
+func hasCompletedCount(run DispatchRun, want int) bool {
+	return run.CompletedCount != nil && *run.CompletedCount == want
+}
+
+func TestCatalogDispatchProjectsInlinePartialResult(t *testing.T) {
+	db := openDispatcherTestDB(t)
+	ctx := context.Background()
+	catalog := catalogapp.NewService(db, nil)
+	catalog.SetProviderReader(catalogapp.ProviderAniBT, &conditionalCatalogReader{failSeason: "2026-fall"})
+	if _, err := catalog.SetProviderPreference(ctx, catalogapp.ProviderMikan, catalogdomain.Preference{Season: "2026-summer", RefreshEnabled: false}, 0); err != nil {
+		t.Fatal(err)
+	}
+	recorder, err := observabilityapp.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger := &dispatchResultLogger{}
+	d := &Dispatcher{DB: db, CatalogRefresher: catalog, Recorder: recorder, Logger: logger, now: func() time.Time {
+		return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)
+	}}
+	run := runDueCatalogRefresh(t, d)
+	if run.State != "partial" || !hasCompletedCount(run, 1) || run.EnqueuedCount != 0 || run.DispatchErrorCount != 1 || run.SkippedCount != 2 {
+		t.Fatalf("run = %+v", run)
+	}
+	if len(logger.infos) != 0 || len(logger.warns) != 2 {
+		t.Fatalf("infos = %+v; warnings = %+v", logger.infos, logger.warns)
+	}
+	event := logger.warns[1]
+	if event.Outcome != "partial" || event.ReasonCode != string(observabilityport.RoutineResultDispatchPartial) || !strings.Contains(event.Message, "1 seasons checked") {
+		t.Fatalf("run log = %+v", event)
+	}
+	var outcome, code string
+	var checked, queued, failures sql.NullInt64
+	if err := db.QueryRowContext(ctx, `
+SELECT outcome, last_result_code, (details->>'completed_count')::integer,
+       (details->>'enqueued_count')::integer, (details->>'error_count')::integer
+FROM routine_activities WHERE kind = 'automation_dispatch' AND scope_id = 'catalog_refresh'`).Scan(&outcome, &code, &checked, &queued, &failures); err != nil {
+		t.Fatal(err)
+	}
+	if outcome != string(observabilityport.RoutineOutcomeWarning) || code != event.ReasonCode || !checked.Valid || checked.Int64 != 1 || !queued.Valid || queued.Int64 != 0 || !failures.Valid || failures.Int64 != 1 {
+		t.Fatalf("routine = %q/%q, completed=%v queued=%v errors=%v", outcome, code, checked, queued, failures)
+	}
+	var id string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM automation_dispatch_runs WHERE kind = 'catalog_refresh'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail, err := service.GetRun(ctx, id); err != nil || detail.State != "partial" || !hasCompletedCount(detail, 1) {
+		t.Fatalf("run detail = %+v, err = %v", detail, err)
 	}
 }

@@ -267,13 +267,13 @@ func (s *Service) GetRun(ctx context.Context, runID string) (DispatchRun, error)
 	return s.scanDispatchRun(ctx, s.db.QueryRowContext(ctx, dispatchRunSelect+` WHERE id = $1`, runID))
 }
 
-const dispatchRunSelect = `SELECT id, kind, trigger, state, target_count, enqueued_count, merged_count, skipped_count, dispatch_error_count, started_at, finished_at, retention_until FROM automation_dispatch_runs`
+const dispatchRunSelect = `SELECT id, kind, trigger, state, target_count, enqueued_count, merged_count, skipped_count, dispatch_error_count, started_at, finished_at, retention_until, completed_count FROM automation_dispatch_runs`
 
 func (s *Service) scanDispatchRun(ctx context.Context, row *sql.Row) (DispatchRun, error) {
 	var run DispatchRun
 	var kind, trigger, state string
 	var startedAt, finishedAt sql.NullTime
-	if err := row.Scan(&run.ID, &kind, &trigger, &state, &run.TargetCount, &run.EnqueuedCount, &run.MergedCount, &run.SkippedCount, &run.DispatchErrorCount, &startedAt, &finishedAt, &run.RetentionUntil); err != nil {
+	if err := row.Scan(&run.ID, &kind, &trigger, &state, &run.TargetCount, &run.EnqueuedCount, &run.MergedCount, &run.SkippedCount, &run.DispatchErrorCount, &startedAt, &finishedAt, &run.RetentionUntil, &run.CompletedCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DispatchRun{}, &apperrors.NotFound{Resource: "automation_dispatch_run", ID: ""}
 		}

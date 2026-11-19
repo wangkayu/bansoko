@@ -3917,6 +3917,8 @@ type AuthSession struct {
 
 // AutomationDispatchRun defines model for AutomationDispatchRun.
 type AutomationDispatchRun struct {
+	// CompletedCount Confirmed inline actions, not queued tasks. Unknown for historical or unconfirmed runs, and not yet available while a run is live.
+	CompletedCount     *int              `json:"completed_count"`
 	DispatchErrorCount int               `json:"dispatch_error_count"`
 	EnqueuedCount      int               `json:"enqueued_count"`
 	FinishedAt         *time.Time        `json:"finished_at"`
@@ -8898,13 +8900,15 @@ type RoutineActivity struct {
 
 // RoutineActivityDetails defines model for RoutineActivityDetails.
 type RoutineActivityDetails struct {
-	EnqueuedCount *int    `json:"enqueued_count,omitempty"`
-	ErrorCount    *int    `json:"error_count,omitempty"`
-	ItemCount     *int    `json:"item_count,omitempty"`
-	MergedCount   *int    `json:"merged_count,omitempty"`
-	ResultCode    *string `json:"result_code,omitempty"`
-	SkippedCount  *int    `json:"skipped_count,omitempty"`
-	TargetCount   *int    `json:"target_count,omitempty"`
+	// CompletedCount Confirmed inline actions, not queued tasks. Absent when unknown.
+	CompletedCount *int    `json:"completed_count,omitempty"`
+	EnqueuedCount  *int    `json:"enqueued_count,omitempty"`
+	ErrorCount     *int    `json:"error_count,omitempty"`
+	ItemCount      *int    `json:"item_count,omitempty"`
+	MergedCount    *int    `json:"merged_count,omitempty"`
+	ResultCode     *string `json:"result_code,omitempty"`
+	SkippedCount   *int    `json:"skipped_count,omitempty"`
+	TargetCount    *int    `json:"target_count,omitempty"`
 }
 
 // RoutineActivityKind defines model for RoutineActivityKind.

@@ -83,7 +83,7 @@ type dispatchCounts struct {
 	merged      int
 	skipped     int
 	errors      int
-	committed   int // Inline group discoveries or metadata writes, not WorkItems.
+	completed   int // Confirmed inline actions, not WorkItems.
 }
 
 type discoveryPolicy = selectiondomain.DiscoveryPolicy
@@ -297,13 +297,13 @@ VALUES ($1, $2, 'scheduled', 'running', $3, $3::timestamptz + INTERVAL '30 days'
 	// blocks all future dispatches of the same kind (unique constraint).
 	defer func() {
 		if r := recover(); r != nil {
-			d.finishRun(ctx, runID, kind, dispatchCounts{errors: 1}, fmt.Errorf("panic: %v", r), now)
+			d.finishRun(ctx, runID, kind, unconfirmedDispatch(), now)
 			errRet = fmt.Errorf("dispatch %s panic: %v", kind, r)
 		}
 	}()
 
 	counts, dispatchErr := d.runDispatch(ctx, kind, true)
-	d.finishRun(ctx, runID, kind, counts, dispatchErr, now)
+	d.finishRun(ctx, runID, kind, settleDispatch(counts, dispatchErr), now)
 	return dispatchErr
 }
 
@@ -343,13 +343,13 @@ WHERE id = $1 AND state = 'queued'`, runID, now)
 	// blocks all future dispatches of the same kind (unique constraint).
 	defer func() {
 		if r := recover(); r != nil {
-			d.finishRun(ctx, runID, kind, dispatchCounts{errors: 1}, fmt.Errorf("panic: %v", r), now)
+			d.finishRun(ctx, runID, kind, unconfirmedDispatch(), now)
 			errRet = fmt.Errorf("dispatch %s panic: %v", kind, r)
 		}
 	}()
 
 	counts, dispatchErr := d.runDispatch(ctx, kind, false)
-	d.finishRun(ctx, runID, kind, counts, dispatchErr, now)
+	d.finishRun(ctx, runID, kind, settleDispatch(counts, dispatchErr), now)
 	return dispatchErr
 }
 
@@ -374,25 +374,15 @@ func (d *Dispatcher) runDispatch(ctx context.Context, kind string, scheduled boo
 // finishRun records the terminal state at the actual completion time:
 // startedAt is when the run was claimed, and a scheduled run's next_run_at is
 // computed from completion so a slow run does not shorten the next interval.
-func (d *Dispatcher) finishRun(ctx context.Context, runID, kind string, counts dispatchCounts, dispatchErr error, startedAt time.Time) {
+func (d *Dispatcher) finishRun(ctx context.Context, runID, kind string, result dispatchResult, startedAt time.Time) {
 	now := time.Now().UTC()
 	if now.Before(startedAt) {
 		now = startedAt
 	}
-	if dispatchErr != nil && counts.errors == 0 {
-		counts.errors = 1
-	}
-	// The persisted dispatch state is constrained by the work counters. Inline
-	// results use their own facts in the runtime summary.
-	state := "completed"
-	if dispatchErr != nil {
-		state = "failed"
-	} else if counts.errors > 0 {
-		if counts.enqueued+counts.merged > 0 {
-			state = "partial"
-		} else {
-			state = "failed"
-		}
+	counts := result.counts
+	var completed *int
+	if !result.unconfirmed {
+		completed = &counts.completed
 	}
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -411,11 +401,11 @@ func (d *Dispatcher) finishRun(ctx context.Context, runID, kind string, counts d
 	err = tx.QueryRowContext(ctx, `
 UPDATE automation_dispatch_runs
 SET state = $2, target_count = $3, enqueued_count = $4, merged_count = $5,
-    skipped_count = $6, dispatch_error_count = $7,
+    skipped_count = $6, dispatch_error_count = $7, completed_count = $9,
     finished_at = $8, retention_until = $8::timestamptz + INTERVAL '30 days', updated_at = $8
 WHERE id = $1 AND state = 'running'
 RETURNING trigger`,
-		runID, state, counts.targetCount, counts.enqueued, counts.merged, counts.skipped, counts.errors, now).Scan(&trigger)
+		runID, result.state, counts.targetCount, counts.enqueued, counts.merged, counts.skipped, counts.errors, now, completed).Scan(&trigger)
 	if errors.Is(err, sql.ErrNoRows) {
 		return // A recovery path already settled this run.
 	}
@@ -464,30 +454,36 @@ WHERE s.kind = $1`, kind, now); err != nil {
 		})
 		return
 	}
-	d.logDispatchResult(ctx, runID, kind, trigger, counts, dispatchErr != nil)
-	d.recordObservability(ctx, kind, state, counts, dispatchErr)
+	d.logDispatchResult(ctx, runID, kind, trigger, result)
+	d.recordObservability(ctx, kind, result)
 	if d.eventHub != nil {
 		d.eventHub.Publish(events.Event{Target: events.TargetRecords})
 	}
 }
 
-func (d *Dispatcher) recordObservability(ctx context.Context, kind, state string, counts dispatchCounts, dispatchErr error) {
+func (d *Dispatcher) recordObservability(ctx context.Context, kind string, result dispatchResult) {
 	if d.Recorder == nil {
 		return
 	}
-	outcome, resultCode := dispatchRoutineOutcome(state, counts, dispatchErr)
-	scopeID := kind
-	summary := fmt.Sprintf("targets=%d enqueued=%d merged=%d skipped=%d errors=%d",
-		counts.targetCount, counts.enqueued, counts.merged, counts.skipped, counts.errors)
+	outcome, resultCode := result.routineOutcome()
+	counts := result.counts
+	summary := "Automation run outcome could not be confirmed."
+	var details json.RawMessage
+	var err error
 	// Structured counts let the settings surface render a localized summary;
 	// the English key=value summary stays as the machine-stable fallback.
-	details, err := json.Marshal(map[string]int{
-		"target_count":   counts.targetCount,
-		"enqueued_count": counts.enqueued,
-		"merged_count":   counts.merged,
-		"skipped_count":  counts.skipped,
-		"error_count":    counts.errors,
-	})
+	if !result.unconfirmed {
+		summary = fmt.Sprintf("targets=%d completed=%d enqueued=%d merged=%d skipped=%d errors=%d",
+			counts.targetCount, counts.completed, counts.enqueued, counts.merged, counts.skipped, counts.errors)
+		details, err = json.Marshal(map[string]int{
+			"target_count":    counts.targetCount,
+			"completed_count": counts.completed,
+			"enqueued_count":  counts.enqueued,
+			"merged_count":    counts.merged,
+			"skipped_count":   counts.skipped,
+			"error_count":     counts.errors,
+		})
+	}
 	if err != nil {
 		d.logError(ctx, observabilityport.RuntimeEvent{
 			Message:    "automation routine details encoding failed",
@@ -496,15 +492,15 @@ func (d *Dispatcher) recordObservability(ctx context.Context, kind, state string
 			ErrorClass: "observability",
 		})
 	}
-	routineIdentity := observabilityport.AutomationDispatchRoutine(observabilityport.RoutineOutcome(outcome), observabilityport.RoutineResultCode(resultCode))
+	routineIdentity := observabilityport.AutomationDispatchRoutine(outcome, resultCode)
 	if err := d.Recorder.UpsertRoutine(ctx, observabilityport.RoutineRequest{
-		Identity: routineIdentity, ScopeID: scopeID, Summary: summary, Details: details,
+		Identity: routineIdentity, ScopeID: kind, Summary: summary, Details: details,
 	}); err != nil {
 		d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation routine write failed", Operation: "observability", ReasonCode: "routine_write_failed", ErrorClass: "observability"})
 	}
-	if dispatchErr != nil || counts.errors > 0 {
+	if result.state != "completed" {
 		failure := observabilityport.InternalFailure(observabilityport.InternalAutomationDispatch, "")
-		if dispatchErr == nil {
+		if result.state == "partial" {
 			failure.Severity = observabilityport.SeverityWarning
 		}
 		if err := d.Recorder.RecordDiagnosticFailure(ctx, failure); err != nil {
@@ -515,19 +511,6 @@ func (d *Dispatcher) recordObservability(ctx context.Context, kind, state string
 	if err := d.Recorder.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)); err != nil {
 		d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation recovery write failed", Operation: "observability", ReasonCode: "recovery_write_failed", ErrorClass: "observability"})
 	}
-}
-
-func dispatchRoutineOutcome(state string, counts dispatchCounts, dispatchErr error) (string, string) {
-	if dispatchErr != nil {
-		return "failure", "dispatch_failed"
-	}
-	if counts.errors > 0 {
-		if counts.enqueued+counts.merged > 0 {
-			return "warning", "dispatch_partial"
-		}
-		return "failure", "dispatch_failed"
-	}
-	return "success", "dispatch_completed"
 }
 
 func safeDispatchError(err error) string {
@@ -718,7 +701,7 @@ WHERE s.state = 'active'
 		counts.enqueued += c.enqueued
 		counts.merged += c.merged
 		counts.skipped += c.skipped
-		counts.committed++
+		counts.completed++
 	}
 	return counts, nil
 }
@@ -1154,8 +1137,8 @@ WHERE s.state = 'active'
 // unchanged season costs one 304 and rewrites no entries. Unlike the other
 // kinds the target work is executed inline: there are at most four targets and
 // the catalog refresh claim already deduplicates against manual refreshes.
-// For legacy counters, a checked season counts as enqueued, a live refresh as
-// merged, a disabled target as skipped, and an outage as an error.
+// A checked season is complete, a live refresh is merged, a disabled target
+// is skipped, and an outage is an error.
 func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts, error) {
 	var counts dispatchCounts
 	if d.CatalogRefresher == nil {
@@ -1197,7 +1180,7 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 				})
 				continue
 			}
-			counts.enqueued++
+			counts.completed++
 		}
 	}
 	return counts, nil
@@ -1282,7 +1265,7 @@ WHERE m.bgm_work_id IS NULL
 		counts.enqueued += c.enqueued
 		counts.merged += c.merged
 		counts.skipped += c.skipped
-		counts.committed += c.committed
+		counts.completed += c.completed
 	}
 	return counts, nil
 }
@@ -1470,7 +1453,7 @@ FOR UPDATE OF r`,
 		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "warning", event.ReasonCode, event.Message)
 	}
 	d.logInfo(ctx, event)
-	counts.committed++
+	counts.completed++
 	return counts, nil
 }
 

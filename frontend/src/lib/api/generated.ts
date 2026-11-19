@@ -4916,6 +4916,8 @@ export interface components {
             kind: components["schemas"]["AutomationKind"];
             trigger: components["schemas"]["AutomationTrigger"];
             state: components["schemas"]["AutomationState"];
+            /** @description Confirmed inline actions, not queued tasks. Unknown for historical or unconfirmed runs, and not yet available while a run is live. */
+            completed_count?: number | null;
             target_count: number;
             enqueued_count: number;
             merged_count: number;
@@ -6971,6 +6973,8 @@ export interface components {
             result_code?: string;
             item_count?: number;
             error_count?: number;
+            /** @description Confirmed inline actions, not queued tasks. Absent when unknown. */
+            completed_count?: number;
             target_count?: number;
             enqueued_count?: number;
             merged_count?: number;
