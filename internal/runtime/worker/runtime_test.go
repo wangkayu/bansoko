@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -901,6 +902,65 @@ func decodeSingleRuntimeRecord(t *testing.T, output *bytes.Buffer) map[string]an
 		t.Fatalf("decode runtime record: %v; line=%q", err, line)
 	}
 	return record
+}
+
+type claimErrorStore struct {
+	*fakeRuntimeStore
+	claim func() error
+}
+
+func (s claimErrorStore) ClaimDue(context.Context, string, []string, time.Duration) (workitems.Claim, error) {
+	return workitems.Claim{}, s.claim()
+}
+
+func TestRuntimeClaimErrorDuringShutdown(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		cancel     bool
+		claimErr   error
+		wantLogged bool
+	}{
+		{"shutdown cancels claim", true, fmt.Errorf("claim due work item: %w", context.Canceled), false},
+		{"real failure during shutdown", true, errors.New("database connection lost"), true},
+		{"cancellation during normal operation", false, context.Canceled, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			store := &claimErrorStore{fakeRuntimeStore: newFakeRuntimeStore()}
+			rt, err := NewRuntime(store, testRegistry(), map[string]Handler{
+				"rss_refresh": HandlerFunc(func(context.Context, workitems.Claim) (Outcome, error) {
+					return Outcome{}, nil
+				}),
+			}, "worker-claim-shutdown", observabilityapplication.NewJSONRuntimeLogger(&output))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rt.claimCancel()
+			defer rt.cancel()
+			store.claim = func() error {
+				// Cancel after entering the store, as when drain races an in-flight claim.
+				if tc.cancel {
+					rt.claimCancel()
+				}
+				return tc.claimErr
+			}
+			lane := laneWorker{runtime: rt, slots: make(chan struct{}, 1)}
+			lane.slots <- struct{}{}
+			if lane.claimAndExecute(rt.claimCtx, "rss_refresh") || len(lane.slots) != 0 {
+				t.Fatal("failed claim must release the slot without dispatching")
+			}
+			if !tc.wantLogged {
+				if output.Len() != 0 {
+					t.Fatalf("expected no log for shutdown cancellation, got %s", output.String())
+				}
+				return
+			}
+			record := decodeSingleRuntimeRecord(t, &output)
+			if record["level"] != "error" || record["reason_code"] != "claim_failed" {
+				t.Fatalf("expected claim_failed error, got %v", record)
+			}
+		})
+	}
 }
 
 func TestRuntimeFinishFailureIsUnconfirmedWithBoundedStage(t *testing.T) {

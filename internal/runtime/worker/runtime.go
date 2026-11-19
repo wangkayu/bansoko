@@ -492,6 +492,11 @@ func (lw *laneWorker) claimAndExecute(ctx context.Context, kind string) (dispatc
 	if errors.Is(err, workitems.ErrNoDueWork) {
 		return
 	}
+	// Drain cancels the claim context. Keep unrelated claim errors visible even
+	// if they arrive during drain.
+	if ctx.Err() == context.Canceled && errors.Is(err, context.Canceled) {
+		return
+	}
 	if err != nil {
 		lw.runtime.logClaimFailed(ctx)
 		return
