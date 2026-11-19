@@ -29,6 +29,7 @@ import { labelValue } from "../lib/i18n/format";
 import {
   deliveryView,
   entryGroupName,
+  appliedReplacementDetails,
   entryView,
   groupEvents,
   joinMeta,
@@ -363,6 +364,8 @@ function EventsList({
                 key={item.key}
                 entry={record.entry}
                 anime={animeOf(record.entry)}
+                expanded={expanded.has(item.key)}
+                onToggle={() => toggle(item.key)}
                 onOpenAnimeMetadata={onOpenAnimeMetadata}
               />
             );
@@ -601,8 +604,10 @@ function GroupItem({
             <time className="tw:tabular-nums tw:text-muted-foreground" dateTime={entry.occurred_at} title={formatDateTime(entry.occurred_at)}>
               {formatShortDateTime(entry.occurred_at)}
             </time>
-            <span className="tw:min-w-0 tw:break-words">
-              {joinMeta(entry.details?.release_title ?? entryGroupName(entry), messageText(entry)) || subscriptionLogKindLabel(entry.kind)}
+            <span className="tw:min-w-0 tw:wrap-anywhere">
+              {entry.message_code === "replacement_replaced"
+                ? stepText(entry)
+                : joinMeta(entry.details?.release_title ?? entryGroupName(entry), messageText(entry)) || subscriptionLogKindLabel(entry.kind)}
             </span>
           </li>
         ))}
@@ -726,13 +731,18 @@ function BatchDialog({
 function EntryItem({
   entry,
   anime,
+  expanded,
+  onToggle,
   onOpenAnimeMetadata,
 }: {
   entry: BusinessEntry;
   anime?: string;
+  expanded: boolean;
+  onToggle: () => void;
   onOpenAnimeMetadata?: (managedAnimeId: string) => void;
 }) {
   const view = entryView(entry, anime);
+  const replacementDetails = appliedReplacementDetails(entry);
   const code = entry.reason_code?.trim().toLowerCase();
   const managedAnimeId = entry.managed_anime_id;
   const hold = code === "metadata_incomplete" || code === "metadata_hold" ? metadataBlocking(entry.details?.metadata_missing) : undefined;
@@ -744,6 +754,8 @@ function EntryItem({
       tone={stateTone(view.state, entry.message_code === "qb_deletion_unconfirmed" || entry.message_code === "qb_delete_tag_cleanup_failed")}
       time={entry.occurred_at}
       meta={view.meta}
+      expanded={expanded}
+      onToggle={replacementDetails.length > 0 ? onToggle : undefined}
       reason={reason}
       reasonAction={
         hold?.fix && onOpenAnimeMetadata && managedAnimeId ? (
@@ -752,7 +764,15 @@ function EntryItem({
           </Button>
         ) : undefined
       }
-    />
+    >
+      {replacementDetails.length > 0 && (
+        <div className={EXPANDED}>
+          <ul className={cn(SUB_LIST, "tw:min-w-0 tw:wrap-anywhere")}>
+            {replacementDetails.map((detail) => <li key={detail}>{detail}</li>)}
+          </ul>
+        </div>
+      )}
+    </Row>
   );
 }
 

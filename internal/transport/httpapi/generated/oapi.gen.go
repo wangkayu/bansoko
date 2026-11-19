@@ -2395,6 +2395,11 @@ const (
 	SubscriptionLogDetailsMetadataMissingTmdb SubscriptionLogDetailsMetadataMissing = "tmdb"
 )
 
+// Defines values for SubscriptionLogDetailsReplacementTrigger.
+const (
+	SubscriptionLogDetailsReplacementTriggerLibraryReconciliation SubscriptionLogDetailsReplacementTrigger = "library_reconciliation"
+)
+
 // Defines values for SubscriptionLogKind.
 const (
 	SubscriptionLogKindAcquisitionSettled     SubscriptionLogKind = "acquisition_settled"
@@ -9588,6 +9593,12 @@ type SubscriptionLogDetails struct {
 	// ReplacedTargets Replacement result, verdict replace - the versions the candidate replaces, each with the file name and, when the placement records the Release it came from, that Release's subgroup and title.
 	ReplacedTargets *[]LogTargetIdentity `json:"replaced_targets,omitempty"`
 
+	// ReplacementTrigger Present when a completed library reconciliation triggered the applied replacement.
+	ReplacementTrigger *SubscriptionLogDetailsReplacementTrigger `json:"replacement_trigger,omitempty"`
+
+	// ReplacementWinner The version kept when an old managed version was replaced.
+	ReplacementWinner *LogTargetIdentity `json:"replacement_winner,omitempty"`
+
 	// SizeBytes Byte size of the step's subject: the torrent's file list total for download and verification steps, the file for a file result.
 	SizeBytes *int64  `json:"size_bytes,omitempty"`
 	Verdict   *string `json:"verdict,omitempty"`
@@ -9613,6 +9624,9 @@ type SubscriptionLogDetailsEpisodeState string
 
 // SubscriptionLogDetailsMetadataMissing defines model for SubscriptionLogDetails.MetadataMissing.
 type SubscriptionLogDetailsMetadataMissing string
+
+// SubscriptionLogDetailsReplacementTrigger Present when a completed library reconciliation triggered the applied replacement.
+type SubscriptionLogDetailsReplacementTrigger string
 
 // SubscriptionLogEntry defines model for SubscriptionLogEntry.
 type SubscriptionLogEntry struct {

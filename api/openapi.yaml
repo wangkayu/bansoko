@@ -12701,6 +12701,14 @@ components:
           minLength: 1
           maxLength: 1024
           description: Replacement result, verdict keep/retain - base name of the existing version kept.
+        replacement_winner:
+          allOf:
+            - $ref: '#/components/schemas/LogTargetIdentity'
+          description: The version kept when an old managed version was replaced.
+        replacement_trigger:
+          type: string
+          enum: [library_reconciliation]
+          description: Present when a completed library reconciliation triggered the applied replacement.
         replaced_targets:
           type: array
           maxItems: 64

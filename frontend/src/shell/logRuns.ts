@@ -80,6 +80,8 @@ function collectRuns(records: readonly ObservabilityRecord[]): Map<string, Busin
   for (const record of records) {
     if (record.record_type !== "business") continue;
     const entry = record.entry;
+    // A library check is a separate action, even if the download is still open.
+    if (entry.details?.replacement_trigger === "library_reconciliation") continue;
     if (!entry.release_id || RUN_KIND_ORDER[entry.kind] === undefined) continue;
     const list = byRelease.get(entry.release_id) ?? [];
     list.push(entry);
@@ -378,8 +380,24 @@ export function stepText(entry: BusinessEntry): string {
   }
 }
 
+export function appliedReplacementDetails(entry: BusinessEntry): string[] {
+  if (entry.message_code !== "replacement_replaced") return [];
+  const details = entry.details;
+  const targets = details?.replaced_targets;
+  const names = targets?.length ? targets.map(targetLabel) : details?.replaced_files;
+  if (!names?.length) return [];
+  const winner = details?.replacement_winner;
+  return [
+    ...(winner ? [t("log.step.replacementWinner", { version: targetLabel(winner) })] : []),
+    t("log.step.replacementLosers", { versions: joinList(names) }),
+    ...(details?.replacement_trigger === "library_reconciliation" ? [t("log.step.replacementScan")] : []),
+  ];
+}
+
 function replacementText(entry: BusinessEntry): string {
+  const applied = appliedReplacementDetails(entry);
   const text = messageText(entry);
+  if (applied.length > 0) return joinMeta(text, ...applied);
   const targets = entry.details?.replaced_targets;
   if (targets && targets.length > 0) return t("log.step.replacementNames", { text, names: joinList(targets.map(targetLabel)) });
   const keptTarget = entry.details?.kept_target;

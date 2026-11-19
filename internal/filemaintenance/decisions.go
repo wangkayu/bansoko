@@ -48,7 +48,12 @@ type EvaluateRequest struct {
 	// decision digest, so a key whose pool changed (an offset change moved a
 	// file onto it) is decided again.
 	recheck bool
+	// scanEvaluationID is the work item created by completed scan processing.
+	// It is provenance, not an input to comparison or decision identity.
+	scanEvaluationID string
 }
+
+const scanReplacementCause = "scan_replacement_evaluation"
 
 // Typed business codes for evaluate failure conditions. A candidate Release
 // may be evaluated before its first Placement exists; Placement remains an
@@ -824,9 +829,10 @@ WHERE managed_anime_id = $1 AND candidate_release_id = $2 AND coverage_key = $3 
 	coverageRaw, _ := json.Marshal(coverageKeys)
 	causationType := "placement"
 	causationID := candidatePlacementID
-	if causationID == "" {
-		causationType = "release"
-		causationID = input.CandidateRelease
+	if input.scanEvaluationID != "" {
+		causationType, causationID = scanReplacementCause, input.scanEvaluationID
+	} else if causationID == "" {
+		causationType, causationID = "release", input.CandidateRelease
 	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO replacement_decisions
@@ -848,15 +854,15 @@ ON CONFLICT (idempotency_key) DO NOTHING`,
 	if err != nil {
 		return ReplacementDecisionView{}, err
 	}
-	// A replace verdict is only a plan when it is frozen: its one line is
-	// written when it ends, replaced at settlement or not_replaced when it
-	// will never take effect. Every other verdict is final here.
+	// A replace verdict is a plan, not a result. A library scan is only
+	// visible in the journal if settlement later supersedes a placement.
 	message, final, err := admissionReplacementMessage(verdict)
 	if err != nil {
 		return ReplacementDecisionView{}, err
 	}
-	if s.activity != nil && final {
-		details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, input.AnimeID, input.CandidateRelease, key, verdict, pools, candidatePlacementID)
+	if s.activity != nil && final && input.scanEvaluationID == "" {
+		result := replacementResultOf(verdict, pools, candidatePlacementID)
+		details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, input.AnimeID, input.CandidateRelease, key, result)
 		if err != nil {
 			return ReplacementDecisionView{}, err
 		}
@@ -1383,24 +1389,31 @@ func (s *ReplacementDecisionService) appendSettledActivityTx(ctx context.Context
 	if s.activity == nil && s.notifications == nil {
 		return nil
 	}
-	var releaseID, key string
+	var releaseID, key, cause string
 	var poolsRaw []byte
 	if err := tx.QueryRowContext(ctx, `
-SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHERE id = $1`, decision.ID).Scan(&releaseID, &key, &poolsRaw); err != nil {
+SELECT candidate_release_id, coverage_key, pools, COALESCE(causation_type, '')
+FROM replacement_decisions WHERE id = $1`, decision.ID).Scan(&releaseID, &key, &poolsRaw, &cause); err != nil {
 		return fmt.Errorf("read settled replacement decision: %w", err)
 	}
 	var pools []PoolEvidence
 	if err := json.Unmarshal(poolsRaw, &pools); err != nil {
 		return fmt.Errorf("decode settled replacement pools: %w", err)
 	}
+	result := replacementResultOf("replace", pools, decision.CandidatePlacementID)
+	if len(result.replaced) == 0 {
+		return nil
+	}
 	if s.activity == nil {
-		return s.admitReplacementAppliedTx(ctx, tx, decision, releaseID, pools)
+		return s.admitReplacementAppliedTx(ctx, tx, decision, releaseID, result.replaced)
 	}
 	subscriptionID, err := subscriptionIDForAnime(ctx, tx, decision.AnimeID)
 	if err != nil {
 		return fmt.Errorf("read subscription for replacement activity: %w", err)
 	}
-	details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, decision.AnimeID, releaseID, key, "replace", pools, decision.CandidatePlacementID)
+	result.winner = decision.CandidatePlacementID
+	result.fromScan = cause == scanReplacementCause
+	details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, decision.AnimeID, releaseID, key, result)
 	if err != nil {
 		return err
 	}
@@ -1423,19 +1436,13 @@ SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHER
 	}); err != nil {
 		return fmt.Errorf("append settled replacement activity: %w", err)
 	}
-	return s.admitReplacementAppliedTx(ctx, tx, decision, releaseID, pools)
+	return s.admitReplacementAppliedTx(ctx, tx, decision, releaseID, result.replaced)
 }
 
-// admitReplacementAppliedTx admits the replacement_applied notice of one
-// settled replace decision: the winning release plus the old versions it took
-// over. A decision that replaces nothing admits no notice; an anime record
-// that no longer exists has no one to notify.
-func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Context, tx *sql.Tx, decision *decisionRow, releaseID string, pools []PoolEvidence) error {
+// admitReplacementAppliedTx admits a notice for the winning release and the
+// old versions it took over.
+func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Context, tx *sql.Tx, decision *decisionRow, releaseID string, replacedIDs []string) error {
 	if s.notifications == nil {
-		return nil
-	}
-	replacedIDs := replacementResultOf("replace", pools, decision.CandidatePlacementID).replaced
-	if len(replacedIDs) == 0 {
 		return nil
 	}
 	// Existing custom templates keep their variables exactly as before: the old
@@ -1572,21 +1579,21 @@ type supersededDecision struct {
 // effect), nil when it was not admitted or not a replace.
 func staleAdmittedDecisionTx(ctx context.Context, tx *sql.Tx, decisionID, reason string) (*supersededDecision, error) {
 	var decision supersededDecision
-	var verdict string
+	var verdict, cause string
 	var correlation sql.NullString
 	err := tx.QueryRowContext(ctx, `
 UPDATE replacement_decisions
 SET state = 'stale', stale_reason = $2, version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND state = 'admitted'
-RETURNING id, managed_anime_id, candidate_release_id, correlation_id, version, verdict`, decisionID, reason).
-		Scan(&decision.id, &decision.animeID, &decision.releaseID, &correlation, &decision.version, &verdict)
+RETURNING id, managed_anime_id, candidate_release_id, correlation_id, version, verdict, COALESCE(causation_type, '')`, decisionID, reason).
+		Scan(&decision.id, &decision.animeID, &decision.releaseID, &correlation, &decision.version, &verdict, &cause)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if verdict != "replace" {
+	if verdict != "replace" || cause == scanReplacementCause {
 		return nil, nil
 	}
 	decision.correlationID = correlation.String
@@ -1730,7 +1737,11 @@ func (s *ReplacementDecisionService) replacementBusinessHandler() worker.Handler
 		if err := json.Unmarshal(claim.InputSnapshot, &input); err != nil || strings.TrimSpace(input.CandidateReleaseID) == "" {
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "replacement_claim_invalid", Reason: "claim input must carry candidate_release_id"}, nil), nil
 		}
-		views, err := s.EvaluateApplication(ctx, EvaluateRequest{AnimeID: claim.Owner.ID, CandidateRelease: input.CandidateReleaseID})
+		request := EvaluateRequest{AnimeID: claim.Owner.ID, CandidateRelease: input.CandidateReleaseID}
+		if input.Trigger == TriggerGenerationCompleted {
+			request.scanEvaluationID = claim.ID
+		}
+		views, err := s.EvaluateApplication(ctx, request)
 		if err != nil {
 			var business *apperrors.Business
 			if errors.As(err, &business) {

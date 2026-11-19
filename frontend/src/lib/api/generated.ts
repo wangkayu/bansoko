@@ -4981,6 +4981,13 @@ export interface components {
             replaced_files?: string[];
             /** @description Replacement result, verdict keep/retain - base name of the existing version kept. */
             kept_file?: string;
+            /** @description The version kept when an old managed version was replaced. */
+            replacement_winner?: components["schemas"]["LogTargetIdentity"];
+            /**
+             * @description Present when a completed library reconciliation triggered the applied replacement.
+             * @enum {string}
+             */
+            replacement_trigger?: "library_reconciliation";
             /** @description Replacement result, verdict replace - the versions the candidate replaces, each with the file name and, when the placement records the Release it came from, that Release's subgroup and title. */
             replaced_targets?: components["schemas"]["LogTargetIdentity"][];
             /** @description Replacement result, verdict keep/retain - the existing version that beat the candidate, with its file name and, when known, its subgroup and title. */

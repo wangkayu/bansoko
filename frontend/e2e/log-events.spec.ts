@@ -117,6 +117,43 @@ async function assertLongEvent(row: Locator, titleText: string, detailText: stri
 test.describe("日志长消息布局（fixture）", () => {
   test.skip(!fixtureOnly, "fixture-only spec");
 
+  test("独立替换展开后显示双方文件，长文件名不溢出", async ({ page }, testInfo) => {
+    const winner = `${"ExampleKeptVersion".repeat(9)}.mkv`;
+    const loser = `${"ExampleReplacedVersion".repeat(9)}.mkv`;
+    const dialog = await openLog(page, [business("replacement", "replacement_replaced", "2026-11-04T06:03:00Z", {
+      kind: "replacement_decided",
+      subject_id: "decision-1",
+      release_id: "release-1",
+      details: {
+        replacement_winner: { file_name: winner },
+        replaced_targets: [{ file_name: loser }],
+        replacement_trigger: "library_reconciliation",
+      },
+    })]);
+    const row = dialog.locator("[data-event-row]").filter({ hasText: "已替换旧版本" });
+    const details = [`保留：${winner}`, `替换：${loser}`, "触发：核对媒体库文件"]
+      .map((text) => row.getByText(text, { exact: true }));
+    await expect(details[0]!).toHaveCount(0);
+    await row.getByRole("button", { expanded: false }).click();
+    await expect(row.getByRole("button", { expanded: true })).toBeVisible();
+    const rowBox = await row.boundingBox();
+    if (!rowBox) throw new Error("replacement row geometry is unavailable");
+    let bottom = rowBox.y;
+    for (const detail of details) {
+      await expect(detail).toBeVisible();
+      const box = await detail.boundingBox();
+      if (!box) throw new Error("replacement detail geometry is unavailable");
+      expect(box.y).toBeGreaterThanOrEqual(bottom - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+      expect(await detail.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      bottom = box.y + box.height;
+    }
+    expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    await dialog.screenshot({ path: testInfo.outputPath("replacement-file-details.png") });
+    await row.getByRole("button", { expanded: true }).click();
+    await expect(details[0]!).toHaveCount(0);
+  });
+
   test("滚动长事件列表时页签和筛选保持固定", async ({ page }, testInfo) => {
     const dialog = await openLog(page, Array.from({ length: 24 }, (_, index) =>
       business(`created-${index}`, "subscription_created", new Date(Date.UTC(2026, 10, 4, 5, index)).toISOString(), {

@@ -167,17 +167,38 @@ describe("覆盖与替换的身份", () => {
     expect(stepText(displaced)).toBe("原文件已被覆盖 · EP02 [old].mkv · 被重新下载的文件替换 · 被 EP02.mkv 顶替");
   });
 
-  it("a replacement names the version it replaced, with its subgroup and title", () => {
+  it("names both versions and only adds the trigger when recorded", () => {
     const replaced = entry({
       kind: "replacement_decided",
       message_code: "replacement_replaced",
       subject_id: "s1",
       details: {
+        replacement_winner: { file_name: "EP03 [new].mkv", group_name: "ExampleNew" },
         replaced_files: ["EP03.mkv"],
         replaced_targets: [{ file_name: "EP03.mkv", group_name: "OldGroup", release_title: "[OldGroup] Show - 03 [720p]" }],
       },
     });
-    expect(stepText(replaced)).toBe("替换版本：已替换旧版本（EP03.mkv（OldGroup · [OldGroup] Show - 03 [720p]））");
+    const versions = "已替换旧版本 · 保留：EP03 [new].mkv（ExampleNew） · 替换：EP03.mkv（OldGroup · [OldGroup] Show - 03 [720p]）";
+    expect(stepText(replaced)).toBe(versions);
+    expect(stepText({ ...replaced, details: { ...replaced.details, replacement_trigger: "library_reconciliation" } }))
+      .toBe(`${versions} · 触发：核对媒体库文件`);
+  });
+
+  it("keeps a library-check replacement outside the download run for the same release", () => {
+    const steps = download("release-1", 4);
+    const scanned = entry({
+      kind: "replacement_decided",
+      message_code: "replacement_replaced",
+      release_id: "release-1",
+      occurred_at: at(4, 35),
+      details: { replaced_files: ["Old.mkv"], replacement_trigger: "library_reconciliation" },
+    });
+    const rows = groupEvents([...steps, scanned].map(record));
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "record", record: record(scanned) }),
+      expect.objectContaining({ type: "run", steps: expect.arrayContaining(steps) }),
+    ]));
   });
 
   it("falls back to the plain file name for entries written before the identity existed", () => {
@@ -187,7 +208,7 @@ describe("覆盖与替换的身份", () => {
       subject_id: "s2",
       details: { replaced_files: ["EP04.mkv"] },
     });
-    expect(stepText(replaced)).toBe("替换版本：已替换旧版本（EP04.mkv）");
+    expect(stepText(replaced)).toBe("已替换旧版本 · 替换：EP04.mkv");
   });
 });
 

@@ -9,13 +9,13 @@ import (
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/observability/businesslog"
 	"bansoko/internal/persistence/txscope"
+	"bansoko/internal/runtime/worker"
 	"bansoko/internal/testutil/disposabledb"
+	"bansoko/internal/workitems"
 )
 
-// The replacement lifecycle in the journal: a replace decision writes nothing
-// when it is frozen and exactly one line when it ends (replaced at
-// settlement, or not_replaced when it never takes effect); keep, retain,
-// queue and blocked verdicts are final when frozen and write their line then.
+// The business journal logs effects at settlement. Ordinary comparison and
+// failed acquisition outcomes are also visible; no-effect scan work is not.
 
 type lifecycleLine struct {
 	subject, reason, message, cause, dedupe string
@@ -89,11 +89,88 @@ func TestReplaceDecisionLogsOnlyReplacedAtSettlement(t *testing.T) {
 	if got[0] != want {
 		t.Fatalf("replacement line = %+v, want %+v", got[0], want)
 	}
+	var hasTrigger bool
+	if err := db.QueryRow(`SELECT details ? 'replacement_trigger' FROM subscription_log_entries WHERE subject_id=$1`, views[0].ID).Scan(&hasTrigger); err != nil {
+		t.Fatal(err)
+	}
+	if hasTrigger {
+		t.Fatal("ordinary import replacement recorded a library check trigger")
+	}
 	if err := service.SettleForPlacement(ctx, candidate); err != nil {
 		t.Fatal(err)
 	}
 	if again := lifecycleLines(t, db); len(again) != 1 {
 		t.Fatalf("a repeated settle wrote more lines: %+v", again)
+	}
+}
+
+func TestScanReplacementLogsOnlyAppliedEffects(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		oldResolution string
+		wantReplaced  bool
+	}{
+		{name: "empty pool"},
+		{name: "existing version kept", oldResolution: "2160p"},
+		{name: "old placement superseded", oldResolution: "720p", wantReplaced: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openFrozenTestDB(t)
+			defer db.Close()
+			ctx := context.Background()
+			var old string
+			if tc.oldResolution != "" {
+				old = seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
+					Facts{Resolution: tc.oldResolution, Group: "GroupA"}, "2026-07-01T00:00:00Z")
+			}
+			candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
+				Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+			service, _ := lifecycleService(t, db)
+			service.SetBusinessDeliveryEnqueuer(noticeService(t, db))
+			outcome, err := service.EvaluateHandler().Handle(ctx, workitems.Claim{
+				ID: "scan-evaluation-1", Kind: workitems.KindReplacementEvaluate,
+				Owner:         workitems.OwnerRef{Type: workitems.OwnerFileMaintenance, ID: "anime-1"},
+				InputSnapshot: json.RawMessage(`{"candidate_release_id":"release-new","trigger":"` + TriggerGenerationCompleted + `"}`),
+			})
+			if err != nil || outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateSucceeded {
+				t.Fatalf("scan evaluate: %+v, %v", outcome, err)
+			}
+			var verdict, state, cause, causeID string
+			if err := db.QueryRow(`SELECT verdict, state, causation_type, causation_id FROM replacement_decisions WHERE candidate_placement_id=$1`, candidate).
+				Scan(&verdict, &state, &cause, &causeID); err != nil {
+				t.Fatal(err)
+			}
+			if cause != scanReplacementCause || causeID != "scan-evaluation-1" {
+				t.Fatalf("decision = %s/%s caused by %s/%s", verdict, state, cause, causeID)
+			}
+			wantReplaceVerdict := tc.oldResolution == "" || tc.wantReplaced
+			if (verdict == "replace") != wantReplaceVerdict || (wantReplaceVerdict && state != "settled") {
+				t.Fatalf("decision = %s/%s, want settled replace verdict: %t", verdict, state, wantReplaceVerdict)
+			}
+			lines, notices := lifecycleLines(t, db), noticeRows(t, db, "replacement_applied")
+			if !tc.wantReplaced {
+				if len(lines) != 0 || len(notices) != 0 {
+					t.Fatalf("no-effect scan produced activity or notices: %+v, %+v", lines, notices)
+				}
+				if old != "" && placementState(t, db, old) != "active" {
+					t.Fatal("the existing better version must stay active")
+				}
+				return
+			}
+			if placementState(t, db, old) != "superseded" || len(lines) != 1 || lines[0].message != "replacement_replaced" || len(notices) != 1 {
+				t.Fatalf("actual replacement activity and notices: %+v, %+v", lines, notices)
+			}
+			var trigger, winnerFile, winnerTitle, loserFile, loserTitle string
+			if err := db.QueryRow(`SELECT details->>'replacement_trigger', details#>>'{replacement_winner,file_name}',
+       details#>>'{replacement_winner,release_title}', details#>>'{replaced_targets,0,file_name}', details#>>'{replaced_targets,0,release_title}'
+FROM subscription_log_entries WHERE subject_id=$1`, lines[0].subject).Scan(&trigger, &winnerFile, &winnerTitle, &loserFile, &loserTitle); err != nil {
+				t.Fatal(err)
+			}
+			if trigger != "library_reconciliation" || winnerFile != "ep.mkv" || loserFile != "ep.mkv" ||
+				winnerTitle != "[GroupA] Show - 01 [1080p]" || loserTitle != "[GroupA] Show - 01 [720p]" {
+				t.Fatalf("replacement details = %q, %q %q, %q %q", trigger, winnerFile, winnerTitle, loserFile, loserTitle)
+			}
+		})
 	}
 }
 

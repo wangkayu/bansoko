@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { messageText, type BusinessEntry } from "../src/shell/logState";
 import { shouldSkipAuthTests } from "./skip-auth-helper";
 import { anchorNamingAtHarnessLibrary } from "./live-harness-library";
 import {
@@ -24,15 +25,6 @@ import {
 // 行数与 API 条目按同一分组规则对应。入库失败的订阅显示失败行，展开后的入库步骤带
 // 原因。日志页签可读。每个状态截 1280 与 400 两种宽度。
 
-type BusinessEntry = {
-  kind: string;
-  outcome: string;
-  title: string;
-  summary: string;
-  reason_code?: string;
-  release_id?: string | null;
-};
-
 // 一次下载包含的记录类型；只有入库位置或替换版本的序列不算一次下载。
 const RUN_KINDS = new Set([
   "download_changed",
@@ -45,13 +37,16 @@ const RUN_KINDS = new Set([
 ]);
 const CORE_RUN_KINDS = new Set(["download_changed", "artifact_verified", "file_alignment_completed", "file_alignment_failed", "acquisition_settled"]);
 
-/** 事件页签的行数：一次获取一行（每个种子一次获取），其余条目各一行。 */
-function expectedRowCount(entries: BusinessEntry[]): number {
-  const runReleases = new Set(
-    entries.filter((entry) => entry.release_id && CORE_RUN_KINDS.has(entry.kind)).map((entry) => entry.release_id!),
-  );
-  const singles = entries.filter((entry) => !(entry.release_id && RUN_KINDS.has(entry.kind) && runReleases.has(entry.release_id)));
-  return singles.length + runReleases.size;
+/** 一次获取合并为一行，独立的核对替换即使关联同一发布也单独展示。 */
+function expectedRows(entries: BusinessEntry[]) {
+  const runReleases = new Set(entries.flatMap((entry) => (
+    entry.release_id && CORE_RUN_KINDS.has(entry.kind) ? [entry.release_id] : []
+  )));
+  const standalone = entries.filter((entry) => (
+    !entry.release_id || !RUN_KINDS.has(entry.kind) || !runReleases.has(entry.release_id) ||
+    entry.details?.replacement_trigger === "library_reconciliation"
+  ));
+  return { count: standalone.length + runReleases.size, standalone };
 }
 type ObservabilityRecord = { record_type: string; entry?: BusinessEntry };
 
@@ -118,19 +113,19 @@ test.describe("日志（真实链路）", () => {
     await waitForCondition(
       async () => {
         entries = await businessEntries(page, managedID);
-        return entries.some((entry) => entry.kind === "acquisition_settled") && entries.some((entry) => entry.kind === "replacement_decided");
+        return entries.some((entry) => entry.kind === "acquisition_settled");
       },
       60000,
-      "the settled and replacement entries",
+      "the settled acquisition entry",
     );
     await expect(runRow.getByText("已入库", { exact: true })).toBeVisible({ timeout: 30000 });
     // The run row expands to its subgroup and episode steps below.
 
     // Rows follow the API entries under the same grouping: one row per download, singles in order.
-    await expect(logRows(page)).toHaveCount(expectedRowCount(entries), { timeout: 30000 });
-    const singles = entries.filter((entry) => !(entry.release_id && RUN_KINDS.has(entry.kind)));
-    for (const entry of singles) {
-      await expect(logRows(page).filter({ hasText: entry.summary }).first()).toBeVisible();
+    const { count, standalone } = expectedRows(entries);
+    await expect(logRows(page)).toHaveCount(count, { timeout: 30000 });
+    for (const entry of standalone) {
+      await expect(logRows(page).filter({ hasText: messageText(entry) }).first()).toBeVisible();
     }
     // The expanded run lists its steps in order with concrete content.
     await runRow.getByRole("button", { expanded: false }).click();
@@ -138,16 +133,14 @@ test.describe("日志（真实链路）", () => {
     await expect(steps).toBeVisible();
     await expect(steps).toContainText("下载状态变化");
     await expect(steps).toContainText("获取结果");
-    await expect(steps).toContainText(/替换版本：/);
+    await expect(steps).not.toContainText("已替换旧版本");
     await expect(steps).toContainText(/已入库：/);
-    // Readable copy: no internal terms or raw codes, no reason repeated on success rows.
-    const replacement = entries.find((entry) => entry.kind === "replacement_decided")!;
-    expect(replacement.release_id).toBeTruthy();
-    expect(replacement.summary).toMatch(/^替换版本：/);
+    // First import has no old version to replace.
+    expect(entries.some((entry) => entry.message_code === "replacement_replaced")).toBe(false);
     const placement = entries.find((entry) => entry.kind === "placement_changed")!;
-    expect(placement).toMatchObject({ title, summary: "已记录入库位置" });
+    expect(placement).toMatchObject({ anime_title: title, message_code: "placement_recorded" });
     expect(placement.release_id).toBeTruthy();
-    expect(entries.find((entry) => entry.kind === "metadata_applied")?.summary).toBe("已关联 Bangumi、TMDB");
+    expect(entries.find((entry) => entry.kind === "metadata_applied")).toMatchObject({ message_code: "metadata_applied" });
     const list = logDialog(page).getByRole("list", { name: "事件列表" });
     await expect(list.getByText(/洗版|BGM\/TMDB|：(queue|keep|retain|replace|blocked)$|未知原因|原因：/)).toHaveCount(0);
     await expect(list.getByText("订阅记录", { exact: true })).toHaveCount(0);
@@ -191,7 +184,7 @@ test.describe("日志（真实链路）", () => {
     expect(alignment.outcome).toBe("failure");
     expect(alignment.reason_code?.toLowerCase()).toBe("target_parent_invalid");
     expect(failedEntries.find((entry) => entry.kind === "acquisition_settled")?.outcome).toBe("failure");
-    await expect(logRows(page)).toHaveCount(expectedRowCount(failedEntries), { timeout: 30000 });
+    await expect(logRows(page)).toHaveCount(expectedRows(failedEntries).count, { timeout: 30000 });
     await expect(logDialog(page).getByText(/未知原因/)).toHaveCount(0);
     await captureWidths(page, testInfo, "log-records-failure");
 

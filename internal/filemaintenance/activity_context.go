@@ -53,7 +53,7 @@ WHERE r.id = $1`, releaseID).Scan(&groupName, &releaseTitle, &coverageKeys)
 // versions the candidate replaces, which existing version is kept, or how
 // many versions of the episode remain. It also returns the Release id to link
 // the entry to (empty when the candidate is not a stored Release).
-func replacementActivityDetailsTx(ctx context.Context, tx *sql.Tx, animeID, releaseID, key, verdict string, pools []PoolEvidence, candidatePlacementID string) (json.RawMessage, string, error) {
+func replacementActivityDetailsTx(ctx context.Context, tx *sql.Tx, animeID, releaseID, key string, result replacementResult) (json.RawMessage, string, error) {
 	values, found, err := releaseRunContextFoundTx(ctx, tx, releaseID)
 	if err != nil {
 		return nil, "", err
@@ -61,8 +61,19 @@ func replacementActivityDetailsTx(ctx context.Context, tx *sql.Tx, animeID, rele
 	if !found {
 		releaseID = ""
 	}
-	result := replacementResultOf(verdict, pools, candidatePlacementID)
 	step := map[string]any{}
+	if result.winner != "" {
+		targets, err := placementTargetsTx(ctx, tx, []string{result.winner})
+		if err != nil {
+			return nil, "", err
+		}
+		if len(targets) == 1 {
+			step["replacement_winner"] = targets[0]
+		}
+	}
+	if result.fromScan {
+		step["replacement_trigger"] = "library_reconciliation"
+	}
 	if len(result.replaced) > 0 {
 		names, err := placementFileNamesTx(ctx, tx, result.replaced)
 		if err != nil {
@@ -111,6 +122,9 @@ WHERE p.managed_anime_id = $1 AND p.state = 'active' AND pc.observation_key = $2
 
 // replacementResult is what one key decision actually did, as placement ids.
 type replacementResult struct {
+	// winner and fromScan are set only for an applied replacement.
+	winner   string
+	fromScan bool
 	// replaced are the versions the candidate replaces (verdict replace).
 	replaced []string
 	// kept is the existing version that beat the candidate (keep/retain).
