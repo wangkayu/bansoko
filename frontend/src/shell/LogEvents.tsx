@@ -296,7 +296,7 @@ function EventsList({
       else next.add(key);
       return next;
     });
-  const animeOf = (entry: BusinessEntry) => (hideAnime ? undefined : entry.anime_title || animeNames.get(entry.managed_anime_id));
+  const animeOf = (entry: BusinessEntry) => hideAnime ? undefined : entry.subject_display || entry.anime_title || (entry.managed_anime_id ? animeNames.get(entry.managed_anime_id) : undefined);
 
   if (query.error) {
     return (
@@ -734,19 +734,20 @@ function EntryItem({
 }) {
   const view = entryView(entry, anime);
   const code = entry.reason_code?.trim().toLowerCase();
+  const managedAnimeId = entry.managed_anime_id;
   const hold = code === "metadata_incomplete" || code === "metadata_hold" ? metadataBlocking(entry.details?.metadata_missing) : undefined;
   const reason = hold ? hold.long : view.reason;
   return (
     <Row
       title={view.title}
       result={view.result}
-      tone={stateTone(view.state)}
+      tone={stateTone(view.state, entry.message_code === "qb_deletion_unconfirmed" || entry.message_code === "qb_delete_tag_cleanup_failed")}
       time={entry.occurred_at}
       meta={view.meta}
       reason={reason}
       reasonAction={
-        hold?.fix && onOpenAnimeMetadata ? (
-          <Button size="sm" variant="link" className="tw:flex-none" onClick={() => onOpenAnimeMetadata(entry.managed_anime_id)}>
+        hold?.fix && onOpenAnimeMetadata && managedAnimeId ? (
+          <Button size="sm" variant="link" className="tw:flex-none" onClick={() => onOpenAnimeMetadata(managedAnimeId)}>
             {hold.fix.label}
           </Button>
         ) : undefined

@@ -14,7 +14,7 @@ import (
 	application13 "bansoko/internal/anime/oneshot/application"
 	application7 "bansoko/internal/anime/ownership/application"
 	application10 "bansoko/internal/artifact/application"
-	"bansoko/internal/catalog/adapter"
+	adapter2 "bansoko/internal/catalog/adapter"
 	application8 "bansoko/internal/configuration/application"
 	application2 "bansoko/internal/download/application"
 	"bansoko/internal/downloadcompletion"
@@ -23,7 +23,7 @@ import (
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/filemanager"
 	application3 "bansoko/internal/fileoperation/application"
-	adapter2 "bansoko/internal/identitymetadata/adapter"
+	"bansoko/internal/identitymetadata/adapter"
 	"bansoko/internal/metadata/matcher"
 	application5 "bansoko/internal/observability/application"
 	"bansoko/internal/observability/port"
@@ -41,7 +41,7 @@ import (
 
 // Injectors from wire.go:
 
-func initializePluginRuntime(db *sql.DB, secretStore application.SecretStore, secretResolver application.SecretResolver, workStore *workitems.Store, logger port.RuntimeLogger, downloadService *application2.Service, fileOperationService *application3.Service, rssService *application4.Service, observabilityService *application5.Service, posterConnections adapter2.ConnectionSource, posterClientResolver adapter2.HTTPClientResolver, metadataSecrets adapter2.SecretResolver, episodeTitleQueries *namingfacts.Querier) (*pluginRuntime, error) {
+func initializePluginRuntime(db *sql.DB, secretStore application.SecretStore, secretResolver application.SecretResolver, workStore *workitems.Store, logger port.RuntimeLogger, downloadService *application2.Service, fileOperationService *application3.Service, rssService *application4.Service, observabilityService *application5.Service, posterConnections adapter.ConnectionSource, posterClientResolver adapter.HTTPClientResolver, metadataSecrets adapter.SecretResolver, episodeTitleQueries *namingfacts.Querier) (*pluginRuntime, error) {
 	mainPluginRuntime, err := providePluginRuntime(db, secretStore, secretResolver, workStore, logger, downloadService, fileOperationService, rssService, observabilityService, posterConnections, posterClientResolver, metadataSecrets, episodeTitleQueries)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func initializeCoreApplicationGraph(db *sql.DB, workStore *workitems.Store, http
 	return mainCoreApplicationGraph, nil
 }
 
-func initializeAutomationGraph(db *sql.DB, workStore *workitems.Store, eventHub *events.Hub, catalogDBSource adapter.DBConnectionSource, metadataMatcher *matcher.Matcher, observabilityService *application5.Service, logger port.RuntimeLogger, animeService *application9.Service, ownershipService *application7.Service, draftService *application6.Service, configService *application8.Service) (*automationGraph, error) {
+func initializeAutomationGraph(db *sql.DB, workStore *workitems.Store, eventHub *events.Hub, catalogDBSource adapter2.DBConnectionSource, metadataMatcher *matcher.Matcher, observabilityService *application5.Service, logger port.RuntimeLogger, animeService *application9.Service, ownershipService *application7.Service, draftService *application6.Service, configService *application8.Service) (*automationGraph, error) {
 	mainAutomationGraph, err := provideAutomationGraph(db, workStore, eventHub, catalogDBSource, configService, metadataMatcher, observabilityService, logger, animeService, ownershipService, draftService)
 	if err != nil {
 		return nil, err
@@ -94,9 +94,9 @@ func initializeFileMaintenanceService(db *sql.DB, fileMaintenanceGraph2 *fileMai
 	return fileMaintenanceService
 }
 
-func initializeHTTPServer(db *sql.DB, access *application12.Service, eventsHub *events.Hub, draft httpapi.DraftService, ownership httpapi.OwnershipService, readmodel httpapi.ReadmodelService, releaseRetry httpapi.ReleaseRetryService, oneshoot *application13.Service, catalog httpapi.CatalogService, seedSearch httpapi.SeedSearchService, connections httpapi.ConnectionConfigService, manualRetry httpapi.ManualRetryService, automation httpapi.AutomationService, globalSections httpapi.GlobalSectionService, metadataSearch httpapi.MetadataSearchService, observability httpapi.ObservabilityService, diagnosticRecorder port.Recorder, embeddedUpdate httpapi.EmbeddedUpdateService, reconciliation httpapi.ReconciliationService, fileMaintenance httpapi.FileMaintenanceService, environment serverEnvironment, skipAuth serverSkipAuth, frontendDir serverFrontendDir, maintenanceGate httpapi.MaintenanceGate, readinessChecker *readiness.Checker, runtimeLogger httpapi.RuntimeLogger, owner *application8.Service, plugin *pluginRuntime, candidateFactsRepo facts.Repository, posterConnections adapter2.ConnectionSource, posterClientResolver adapter2.HTTPClientResolver, fileManager httpapi.FileManagerService) (*httpapi.Server, error) {
+func initializeHTTPServer(db *sql.DB, access *application12.Service, eventsHub *events.Hub, draft httpapi.DraftService, ownership httpapi.OwnershipService, readmodel httpapi.ReadmodelService, releaseRetry httpapi.ReleaseRetryService, oneshoot *application13.Service, catalog httpapi.CatalogService, seedSearch httpapi.SeedSearchService, connections httpapi.ConnectionConfigService, manualRetry httpapi.ManualRetryService, automation httpapi.AutomationService, globalSections httpapi.GlobalSectionService, metadataSearch httpapi.MetadataSearchService, observability httpapi.ObservabilityService, activityWriter port.ActivityWriter, diagnosticRecorder port.Recorder, embeddedUpdate httpapi.EmbeddedUpdateService, reconciliation httpapi.ReconciliationService, fileMaintenance httpapi.FileMaintenanceService, environment serverEnvironment, skipAuth serverSkipAuth, frontendDir serverFrontendDir, maintenanceGate httpapi.MaintenanceGate, readinessChecker *readiness.Checker, runtimeLogger httpapi.RuntimeLogger, owner *application8.Service, plugin *pluginRuntime, candidateFactsRepo facts.Repository, posterConnections adapter.ConnectionSource, posterClientResolver adapter.HTTPClientResolver, fileManager httpapi.FileManagerService) (*httpapi.Server, error) {
 	mainHttpServerBase := provideHTTPServerBase(db, access, eventsHub, draft, ownership, readmodel, releaseRetry, oneshoot, catalog, seedSearch, connections, manualRetry, automation, globalSections, metadataSearch, observability, diagnosticRecorder, embeddedUpdate, reconciliation, fileMaintenance, environment, skipAuth, frontendDir, maintenanceGate, readinessChecker, runtimeLogger)
-	qbManagementService := provideQBManagementService(owner)
+	qbManagementService := provideQBManagementService(owner, activityWriter, eventsHub, runtimeLogger)
 	mediaRecognitionService := provideMediaRecognitionService()
 	torrentParseService := provideTorrentParseService()
 	candidateFactsService := provideCandidateFactsService(candidateFactsRepo)

@@ -25,7 +25,7 @@ func (s *Server) ownershipService(w http.ResponseWriter, r *http.Request) Owners
 }
 
 func mapSubscriptionDeleteInput(value generated.SubscriptionDelete) ownershipapplication.SubscriptionDeleteInput {
-	return ownershipapplication.SubscriptionDeleteInput{ExpectedVersion: int64(value.ExpectedVersion)}
+	return ownershipapplication.SubscriptionDeleteInput{ExpectedVersion: int64(value.ExpectedVersion), OperationBatchID: value.OperationBatchId}
 }
 
 // ListAnime returns the managed anime list for direct catalog navigation.

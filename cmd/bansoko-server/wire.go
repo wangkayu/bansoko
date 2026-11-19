@@ -178,6 +178,7 @@ func initializeHTTPServer(
 	globalSections httpapi.GlobalSectionService,
 	metadataSearch httpapi.MetadataSearchService,
 	observability httpapi.ObservabilityService,
+	activityWriter observabilityport.ActivityWriter,
 	diagnosticRecorder observabilityport.Recorder,
 	embeddedUpdate httpapi.EmbeddedUpdateService,
 	reconciliation httpapi.ReconciliationService,

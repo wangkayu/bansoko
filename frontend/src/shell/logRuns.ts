@@ -157,6 +157,11 @@ export function groupEvents(allRecords: readonly ObservabilityRecord[]): EventIt
     }
     // A batch head is the timeline row of its detail entries; it never joins
     // the adjacent-signature groups.
+    if (entry.source === "manual") {
+      flush();
+      items.push({ type: "record", key: `business:${entry.id}`, record });
+      continue;
+    }
     if (entry.kind === "release_batch_processed") {
       flush();
       items.push({ type: "batch", key: `batch:${entry.id}`, entry });
@@ -497,7 +502,11 @@ export function entryView(entry: BusinessEntry, anime: string | undefined): Entr
   const message = messageText(entry);
   const offsetAligned = entry.message_code === "offset_aligned";
   const result = offsetAligned ? t("log.entryResult.offsetAligned") : message;
-  const label = subscriptionLogKindLabel(entry.kind);
+  const count = entry.subject_type === "operation_batch" ? entry.details?.item_count : undefined;
+  const label = joinMeta(
+    subscriptionLogKindLabel(entry.kind),
+    count ? t("log.operationBatchCount", { n: count }) : undefined,
+  );
   const title =
     entry.kind === "release_processed"
       ? joinMeta(anime, entry.details?.release_title ?? entryGroupName(entry) ?? label)
@@ -506,14 +515,18 @@ export function entryView(entry: BusinessEntry, anime: string | undefined): Entr
         : joinMeta(anime, entryGroupName(entry), label);
   const state = entryState(entry);
   let reason: string | undefined;
-  if (state === "failure") reason = reasonView(entry.reason_code)?.text;
+  if (state === "failure" && entry.source !== "manual") reason = reasonView(entry.reason_code)?.text;
   else if (entry.kind === "release_processed" && state === "info") reason = knownReasonLabel(entry.reason_code);
   if (reason === result) reason = undefined;
   return {
     state,
     title,
     result,
-    meta: offsetAligned ? message : (policyChangeText(entry) ?? discoveryOutcomeText(entry) ?? batchCountsText(entry)),
+    meta: offsetAligned
+      ? message
+      : entry.details?.data_delete_requested
+        ? t("log.dataDeleteRequested")
+        : (policyChangeText(entry) ?? discoveryOutcomeText(entry) ?? batchCountsText(entry)),
     reason,
     technical: state === "failure" ? (entry.details?.reason_detail ?? undefined) : undefined,
   };

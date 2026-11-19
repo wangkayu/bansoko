@@ -4,6 +4,7 @@ import (
 	animeapplication "bansoko/internal/anime/application"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"bansoko/internal/apperrors"
 	"bansoko/internal/events"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/persistence/txscope"
 )
 
 // CleanupAnimeLocalData deletes the complete local business/config/runtime
@@ -49,6 +51,9 @@ func (s *Service) CleanupAnimeLocalData(ctx context.Context, managedAnimeID stri
 	if input.ExpectedLifecycleEpoch < 1 {
 		return &apperrors.Business{Status: 422, Code: "LOCAL_CLEANUP_EPOCH_REQUIRED", Message: "The expected retired lifecycle epoch is required."}
 	}
+	if err := validateOperationBatchID(input.OperationBatchID); err != nil {
+		return err
+	}
 	requestHash, err := localCleanupRequestHash(managedAnimeID, input.ExpectedLifecycleEpoch, input.Confirmation)
 	if err != nil {
 		return err
@@ -59,6 +64,17 @@ func (s *Service) CleanupAnimeLocalData(ctx context.Context, managedAnimeID stri
 		return fmt.Errorf("begin local cleanup: %w", err)
 	}
 	defer tx.Rollback()
+
+	// The retired title is immutable. Read it without taking an extra lock, so
+	// the cleanup function keeps its lock order and a replay can find no row.
+	var animeTitle string
+	if s.activityWriter != nil {
+		err := tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(btrim(title_override), ''), title)
+FROM managed_anime WHERE id = $1 AND lifecycle_state = 'retired'`, managedAnimeID).Scan(&animeTitle)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read cleanup subject title: %w", err)
+		}
+	}
 
 	// One owner-held call performs the replay check, the retired/epoch CAS, the
 	// replay-record write and the complete leaf-first delete atomically.
@@ -74,6 +90,16 @@ SELECT cleanup_managed_anime_local_data($1, $2, $3, $4)`,
 	if err := json.Unmarshal(result, &receipt); err != nil {
 		return fmt.Errorf("decode local cleanup result: %w", err)
 	}
+	if receipt.Status == "performed" && s.activityWriter != nil {
+		if err := s.activityWriter.AppendTx(ctx, txscope.Wrap(tx), summarizeOperationBatch(input.OperationBatchID, observabilityport.ActivityRecord{
+			Kind: string(observabilityport.ActivityKindLocalRecordsCleaned), Outcome: "success",
+			ReasonCode: "local_cleanup_performed", SubjectType: "managed_anime", SubjectID: managedAnimeID,
+			SubjectVersion: input.ExpectedLifecycleEpoch, SubjectDisplay: animeTitle,
+			MessageCode: observabilityport.MessageLocalRecordsCleaned,
+		})); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit local cleanup: %w", err)
 	}
@@ -84,7 +110,7 @@ SELECT cleanup_managed_anime_local_data($1, $2, $3, $4)`,
 			OwnerType: "managed_anime", OwnerID: managedAnimeID,
 		})
 	}
-	s.publishInvalidations(events.TargetSubscribed, events.TargetCatalog, events.TargetRSS)
+	s.publishInvalidations(events.TargetSubscribed, events.TargetCatalog, events.TargetRSS, events.TargetRecords)
 	return nil
 }
 

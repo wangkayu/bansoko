@@ -38,7 +38,20 @@ const (
 	ActivityKindFileAlignmentCompleted ActivityKind = "file_alignment_completed"
 	ActivityKindFileAlignmentFailed    ActivityKind = "file_alignment_failed"
 	ActivityKindAcquisitionSettled     ActivityKind = "acquisition_settled"
+	ActivityKindSubscriptionRetired    ActivityKind = "subscription_retired"
+	ActivityKindLocalRecordsCleaned    ActivityKind = "local_records_cleaned"
+	ActivityKindQBTaskDeleted          ActivityKind = "qb_task_deleted"
 )
+
+// IsGlobalActivityKind reports which events do not depend on a live subscription.
+func IsGlobalActivityKind(kind ActivityKind) bool {
+	switch kind {
+	case ActivityKindSubscriptionRetired, ActivityKindLocalRecordsCleaned, ActivityKindQBTaskDeleted:
+		return true
+	default:
+		return false
+	}
+}
 
 // AcquisitionRunEntry describes one kind in the acquisition timeline. Rank
 // orders entries sharing a timestamp; Core marks an entry that makes the
@@ -164,6 +177,11 @@ const (
 	// MessageOldVersionDeleteFailed is a deletion that gave up; the reason is
 	// the entry's reason_code.
 	MessageOldVersionDeleteFailed MessageCode = "old_version_delete_failed"
+	MessageSubscriptionRetired    MessageCode = "subscription_retired"
+	MessageLocalRecordsCleaned    MessageCode = "local_records_cleaned"
+	MessageQBTaskDeleted          MessageCode = "qb_task_deleted"
+	MessageQBDeletionUnconfirmed  MessageCode = "qb_deletion_unconfirmed"
+	MessageQBDeleteTagCleanupFail MessageCode = "qb_delete_tag_cleanup_failed"
 )
 
 // MessageParamType is the scalar type of one message param.
@@ -283,6 +301,11 @@ var (
 		{Code: MessageOldVersionDeleted, Kind: ActivityKindCleanupCompleted},
 		{Code: MessageOldVersionKept, Kind: ActivityKindCleanupCompleted},
 		{Code: MessageOldVersionDeleteFailed, Kind: ActivityKindCleanupFailed},
+		{Code: MessageSubscriptionRetired, Kind: ActivityKindSubscriptionRetired},
+		{Code: MessageLocalRecordsCleaned, Kind: ActivityKindLocalRecordsCleaned},
+		{Code: MessageQBTaskDeleted, Kind: ActivityKindQBTaskDeleted},
+		{Code: MessageQBDeletionUnconfirmed, Kind: ActivityKindQBTaskDeleted},
+		{Code: MessageQBDeleteTagCleanupFail, Kind: ActivityKindQBTaskDeleted},
 	}
 	messageSpecIndex = func() map[MessageCode]MessageSpec {
 		index := make(map[MessageCode]MessageSpec, len(messageSpecs))

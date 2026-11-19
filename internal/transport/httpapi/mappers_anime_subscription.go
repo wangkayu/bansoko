@@ -18,6 +18,7 @@ func mapLocalDataCleanupInput(value generated.LocalDataCleanup) ownershipapplica
 	return ownershipapplication.LocalDataCleanupInput{
 		ExpectedLifecycleEpoch: int64(value.ExpectedLifecycleEpoch),
 		Confirmation:           string(value.Confirmation),
+		OperationBatchID:       value.OperationBatchId,
 	}
 }
 

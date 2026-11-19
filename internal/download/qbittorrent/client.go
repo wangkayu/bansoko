@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"bansoko/internal/download/domain"
+	"bansoko/internal/observability/outbound"
 )
 
 type Client struct {
@@ -1138,8 +1139,10 @@ func (c Client) postTorrentAction(ctx context.Context, path, hash string) error 
 	return nil
 }
 
-// DeleteTorrent removes a torrent from qBittorrent. When deleteFiles is true
-// the downloaded data is also removed; otherwise only the task is removed.
+// ErrDeleteUnconfirmed means the delete POST did not return a response.
+var ErrDeleteUnconfirmed = errors.New("qBittorrent delete result was not confirmed")
+
+// DeleteTorrent requests removal of a torrent, optionally with its downloaded data.
 func (c Client) DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error {
 	if strings.TrimSpace(hash) == "" {
 		return errors.New("qB torrent hash is required")
@@ -1157,6 +1160,9 @@ func (c Client) DeleteTorrent(ctx context.Context, hash string, deleteFiles bool
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := doRequest(client, request)
 	if err != nil {
+		if _, transportFailure := outbound.FailureOf(err); transportFailure {
+			return fmt.Errorf("request qB delete: %w: %w", ErrDeleteUnconfirmed, err)
+		}
 		return fmt.Errorf("request qB delete: %w", err)
 	}
 	defer response.Body.Close()

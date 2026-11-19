@@ -4085,14 +4085,14 @@ export interface components {
         /** @enum {string} */
         AutomationState: "queued" | "running" | "completed" | "partial" | "failed";
         /** @enum {string} */
-        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "release_batch_processed" | "download_changed" | "artifact_verified" | "import_waiting_config" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
+        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "release_batch_processed" | "download_changed" | "artifact_verified" | "import_waiting_config" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled" | "subscription_retired" | "local_records_cleaned" | "qb_task_deleted";
         /** @enum {string} */
         SubscriptionLogOutcome: "info" | "success" | "failure";
         /**
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_batch_first" | "release_batch_reevaluated" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_batch_first" | "release_batch_reevaluated" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed" | "subscription_retired" | "local_records_cleaned" | "qb_task_deleted" | "qb_deletion_unconfirmed" | "qb_delete_tag_cleanup_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -4135,10 +4135,10 @@ export interface components {
             skipped?: number;
         };
         /**
-         * @description Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+         * @description The anime's subscription, a one-shot download, or a standalone manual operation.
          * @enum {string}
          */
-        SubscriptionLogSource: "subscription" | "one_shot";
+        SubscriptionLogSource: "subscription" | "one_shot" | "manual";
         /** @enum {string} */
         ObservabilityRecordState: "in_progress" | "success" | "failure" | "info";
         /** @description Formal anime owner. The id is the sole formal owner identity. Provider refs, custom RSS locators/URLs, labels, titles, and other external attributes are not owner identity and may collide across owners. */
@@ -4929,6 +4929,8 @@ export interface components {
             retention_until: string;
         };
         SubscriptionLogDetails: {
+            /** @description Whether the downloader was asked to delete the data as well as the task. */
+            data_delete_requested?: boolean;
             reason_code?: string;
             reason_detail?: string;
             item_count?: number;
@@ -5003,8 +5005,10 @@ export interface components {
         };
         SubscriptionLogEntry: {
             id: components["schemas"]["ID"];
-            subscription_id: components["schemas"]["ID"];
-            managed_anime_id: components["schemas"]["ID"];
+            subscription_id: components["schemas"]["ID"] | null;
+            managed_anime_id: components["schemas"]["ID"] | null;
+            /** @description Display name captured when a standalone manual operation occurred. */
+            subject_display?: string;
             /** @description The anime's current display title, read with the entry (empty when the anime is gone). */
             anime_title: string;
             source: components["schemas"]["SubscriptionLogSource"];
@@ -5710,6 +5714,7 @@ export interface components {
         /** @description CAS guard for irreversible retirement. The expected_version is the current Subscription version; a mismatch returns 409 so a stale client cannot retire an instance another editor just changed. */
         SubscriptionDelete: {
             expected_version: components["schemas"]["Version"];
+            operation_batch_id?: components["schemas"]["ManualOperationBatchID"];
         };
         /** @description Explicit, separately authorized physical local cleanup of one RETIRED ManagedAnime's local records. The fixed confirmation string prevents an accidental destructive call; expected_lifecycle_epoch is the CAS guard against a stale retired generation. */
         LocalDataCleanup: {
@@ -5717,7 +5722,10 @@ export interface components {
             expected_lifecycle_epoch: number;
             /** @enum {string} */
             confirmation: "delete-local-data";
+            operation_batch_id?: components["schemas"]["ManualOperationBatchID"];
         };
+        /** @description Optional shared identifier for one manual batch. Changes only how committed results are summarized in the event timeline. */
+        ManualOperationBatchID: string;
         ReleaseReevaluationResult: {
             managed_anime_id: components["schemas"]["ID"];
             /** @enum {boolean} */

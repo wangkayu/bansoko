@@ -12,6 +12,8 @@ import (
 	"bansoko/internal/apperrors"
 	"bansoko/internal/configuration/domain"
 	"bansoko/internal/download/qbittorrent"
+	"bansoko/internal/events"
+	observabilityport "bansoko/internal/observability/port"
 )
 
 // QBManagementService is the qBittorrent operations management boundary. It
@@ -19,9 +21,12 @@ import (
 // mutates the DownloadTask owner truth. Every call resolves credentials by
 // connection_id so the dialog can target any configured qBittorrent instance.
 type QBManagementService struct {
-	owner   *Service
-	http    *http.Client
-	timeout time.Duration
+	owner          *Service
+	http           *http.Client
+	timeout        time.Duration
+	activityWriter observabilityport.ActivityWriter
+	eventHub       *events.Hub
+	logger         observabilityport.RuntimeLogger
 }
 
 // NewQBManagementService constructs a management service backed by the same
@@ -30,6 +35,11 @@ type QBManagementService struct {
 // it nil so each call uses a fresh cookie-jar client.
 func NewQBManagementService(owner *Service, http *http.Client) QBManagementService {
 	return QBManagementService{owner: owner, http: http, timeout: 20 * time.Second}
+}
+
+func (s QBManagementService) WithOperationEvents(writer observabilityport.ActivityWriter, hub *events.Hub, logger observabilityport.RuntimeLogger) QBManagementService {
+	s.activityWriter, s.eventHub, s.logger = writer, hub, logger
+	return s
 }
 
 func (s QBManagementService) client(ctx context.Context, connectionID string) (qbittorrent.Client, error) {
@@ -431,23 +441,33 @@ func (s QBManagementService) DeleteTorrent(ctx context.Context, connectionID, ha
 	if err != nil {
 		return mapQBError(err)
 	}
-	target := qbittorrent.TorrentInfo{Hash: hash}
+	var target qbittorrent.TorrentInfo
 	for _, item := range items {
 		if strings.EqualFold(item.Hash, hash) {
 			target = item
 			break
 		}
 	}
+	if target.Hash == "" {
+		// Keep the in-flight hash guard even if this read does not list the task.
+		target.Hash = hash
+		if records.inFlight.of(target) == "" {
+			return nil
+		}
+	}
 	if records.inFlight.of(target) != "" {
 		return &apperrors.Business{Status: http.StatusConflict, Code: "QB_TORRENT_IN_USE", Message: "the torrent belongs to a download that is still being processed"}
 	}
 	if err := client.DeleteTorrent(ctx, hash, deleteFiles); err != nil {
+		if errors.Is(err, qbittorrent.ErrDeleteUnconfirmed) {
+			return s.unconfirmedQBDeletion(ctx, connectionID, target, deleteFiles)
+		}
 		return mapQBError(err)
 	}
 	// qBittorrent applies the delete asynchronously. Cleaning while the task is
 	// still listed would read it as a live reference and keep its tag.
 	if err := client.ConfirmTorrentDeleted(ctx, hash); err != nil {
-		return mapQBError(err)
+		return s.unconfirmedQBDeletion(ctx, connectionID, target, deleteFiles)
 	}
 	// The deleted target's own system tags go into the same guarded cleanup:
 	// an unknown-origin torrent (record reclaimed or reset away) would
@@ -459,8 +479,10 @@ func (s QBManagementService) DeleteTorrent(ctx context.Context, connectionID, ha
 		}
 	}
 	if err := client.CleanupTags(ctx, append(records.systemTags(target), carried...)); err != nil {
-		return mapQBError(err)
+		s.recordQBDeletion(ctx, connectionID, target, deleteFiles, observabilityport.MessageQBDeleteTagCleanupFail)
+		return &apperrors.BadRequest{Code: "QB_DELETE_TAG_CLEANUP_FAILED", Message: "The download task was deleted, but tag cleanup failed."}
 	}
+	s.recordQBDeletion(ctx, connectionID, target, deleteFiles, observabilityport.MessageQBTaskDeleted)
 	return nil
 }
 

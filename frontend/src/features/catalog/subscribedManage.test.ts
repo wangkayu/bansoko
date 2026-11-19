@@ -24,6 +24,7 @@ function item(overrides: {
   instanceLabel?: string | null;
   state?: AnimeListItem["subscription"]["state"];
   lifecycle?: "active" | "retired";
+  lifecycleEpoch?: number;
   showSeason?: number | null;
   rssHealth?: "ready" | "degraded" | "failed" | null;
   episodes?: number[];
@@ -42,7 +43,7 @@ function item(overrides: {
       instance_label: overrides.instanceLabel ?? null,
       state: overrides.state ?? "active",
       lifecycle_state: overrides.lifecycle ?? "active",
-      lifecycle_epoch: 1,
+      lifecycle_epoch: overrides.lifecycleEpoch ?? 1,
       version: 7,
       new_releases_only: false,
       ignore_multi_video_releases: false,
@@ -225,6 +226,26 @@ describe("同作品相邻分组与排序", () => {
     ] as const) {
       expect(orderManageRows(rows, sort).map(({ row }) => row.key)).toEqual(["d1", "d2"]);
     }
+  });
+});
+
+describe("已退订视图", () => {
+  const rows = manageRowsFrom([
+    item({ id: "live-a", title: "药屋少女的呢喃 第三季", origin: "anibt", originEntryRef: "anibt:kh", state: "active", createdAt: "2026-10-05T00:00:00Z" }),
+    item({ id: "live-s", title: "致不灭的你 第三季", origin: "mikan", originEntryRef: "mikan:fn", state: "stopped", createdAt: "2026-09-12T00:00:00Z" }),
+    item({ id: "old", title: "迦楠大人的白给是恶魔级", origin: "anibt", originEntryRef: "anibt:kn", state: "stopped", lifecycle: "retired", lifecycleEpoch: 3, createdAt: "2026-09-08T00:00:00Z" }),
+  ]);
+
+  it("只列已退订行；在管状态不混入 retired 行", () => {
+    expect(filterManageRows(rows, { ...emptyManageFilters, state: "retired" }).map((row) => row.key)).toEqual(["old"]);
+    expect(filterManageRows(rows, emptyManageFilters).map((row) => row.key)).toEqual(["live-a", "live-s"]);
+    expect(filterManageRows(rows, { ...emptyManageFilters, state: "stopped" }).map((row) => row.key)).toEqual(["live-s"]);
+  });
+
+  it("携带清理 CAS 需要的 retired lifecycle epoch", () => {
+    expect(rows[2].retired).toBe(true);
+    expect(rows[2].lifecycleEpoch).toBe(3);
+    expect(rows[0].lifecycleEpoch).toBe(1);
   });
 });
 

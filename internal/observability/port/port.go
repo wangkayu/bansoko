@@ -163,11 +163,16 @@ type Recorder interface {
 	RecordDiagnosticSuccessTx(context.Context, txscope.Tx, DiagnosticSuccessRequest) error
 }
 
+// OperationBatchSubject counts committed members of one manual subscription action.
+// The owner must call AppendTx only on the initial transition, never on replay.
+const OperationBatchSubject = "operation_batch"
+
 // ActivityRecord is the bounded, typed envelope for durable business history.
-// Optional lineage and legacy owner columns remain nullable while existing owners migrate.
+// Both owner IDs are empty for a global operation, which has no live owner link.
 type ActivityRecord struct {
 	SubscriptionID  string
 	ManagedAnimeID  string
+	SubjectDisplay  string
 	Kind            string
 	Outcome         string
 	ReasonCode      string

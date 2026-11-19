@@ -31,8 +31,8 @@ var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 var activityOutcomes = map[string]struct{}{"info": {}, "success": {}, "failure": {}}
 
 // AppendTx validates and persists one Activity. The entry carries a message
-// code of the closed catalog and its scalar params, never display text; the
-// unique (subscription, dedupe key) keeps replays idempotent.
+// code of the closed catalog and its scalar params. Standalone entries dedupe;
+// manual batch summaries count first transitions inside the owner transaction.
 func (s *Service) AppendTx(ctx context.Context, scope txscope.Tx, record observabilityport.ActivityRecord) error {
 	tx := scope.SQLTx()
 	if tx == nil {
@@ -52,25 +52,32 @@ func (s *Service) AppendTx(ctx context.Context, scope txscope.Tx, record observa
 	if !record.OccurredAt.IsZero() {
 		occurredAt = record.OccurredAt.UTC()
 	}
+	conflict := `ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`
+	if record.SubjectType == observabilityport.OperationBatchSubject {
+		details = []byte(`{"item_count":1}`)
+		conflict = `ON CONFLICT (dedupe_key) WHERE subscription_id IS NULL DO UPDATE
+SET details = jsonb_set(subscription_log_entries.details, '{item_count}',
+    to_jsonb((subscription_log_entries.details->>'item_count')::bigint + 1))`
+	} else if record.SubscriptionID == "" {
+		conflict = `ON CONFLICT (dedupe_key) WHERE subscription_id IS NULL DO NOTHING`
+	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO subscription_log_entries(
     id, subscription_id, managed_anime_id, kind, outcome, message_code, message_params,
     rss_source_id, release_id, group_ref, details, dedupe_key, reason_code,
     subject_type, subject_id, subject_version, correlation_id, causation_type, causation_id,
-    batch_key, occurred_at, retention_until
+    batch_key, occurred_at, retention_until, subject_display
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, ''), $11, $12, $13,
+VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, ''), $11, $12, $13,
         $14, $15, $16, NULLIF($17, ''), NULLIF($18, ''), NULLIF($19, ''), NULLIF($20, ''),
         COALESCE($21::timestamptz, CURRENT_TIMESTAMP),
-        -- Replacement counts from the fact time (the table caps it there), so a
-        -- late-derived entry is kept no longer than one written in-stage.
-        COALESCE($21::timestamptz, CURRENT_TIMESTAMP) + INTERVAL '30 days')
-ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`,
+        COALESCE($21::timestamptz, CURRENT_TIMESTAMP) + INTERVAL '30 days', NULLIF($22, ''))
+`+conflict,
 		uuid.NewString(), record.SubscriptionID, record.ManagedAnimeID, record.Kind,
 		record.Outcome, string(record.MessageCode), params, record.RSSSourceID, record.ReleaseID,
 		record.GroupRef, details, dedupeKey, record.ReasonCode, record.SubjectType,
 		record.SubjectID, record.SubjectVersion, record.CorrelationID, record.CausationType,
-		record.CausationID, record.BatchKey, occurredAt)
+		record.CausationID, record.BatchKey, occurredAt, record.SubjectDisplay)
 	if err != nil {
 		return fmt.Errorf("append activity: %w", err)
 	}
@@ -86,6 +93,7 @@ ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`,
 // detail keys) stay reject-only: those are produced by code, and a bad value
 // there is a programming error.
 func sanitizeActivity(record observabilityport.ActivityRecord) observabilityport.ActivityRecord {
+	record.SubjectDisplay = strings.TrimSpace(sanitizeFreeText(record.SubjectDisplay, 512))
 	if len(record.MessageParams) > 0 {
 		params := make(map[string]any, len(record.MessageParams))
 		for name, value := range record.MessageParams {
@@ -211,8 +219,27 @@ func validateActivity(record observabilityport.ActivityRecord) error {
 	if _, ok := activityOutcomes[record.Outcome]; !ok {
 		return fmt.Errorf("activity outcome %q is not allowlisted", record.Outcome)
 	}
+	if record.SubjectType == observabilityport.OperationBatchSubject &&
+		((record.MessageCode != observabilityport.MessageSubscriptionRetired && record.MessageCode != observabilityport.MessageLocalRecordsCleaned) ||
+			record.Outcome != "success" || record.SubjectVersion != 1 || record.SubjectDisplay != "" || record.DedupeKey != "" || record.StableResultKey != "" || len(record.Details) != 0) {
+		return errors.New("invalid manual batch activity")
+	}
+	if observabilityport.IsGlobalActivityKind(observabilityport.ActivityKind(record.Kind)) {
+		if record.SubscriptionID != "" || record.ManagedAnimeID != "" || record.RSSSourceID != "" || record.ReleaseID != "" || record.BatchKey != "" {
+			return errors.New("global activity cannot have subscription lineage")
+		}
+	} else {
+		if record.SubjectDisplay != "" {
+			return errors.New("subscription activity cannot have a global subject display")
+		}
+		if err := validateIdentifierOrBounded("subscription ID", record.SubscriptionID, maxIdentityLength); err != nil {
+			return err
+		}
+		if err := validateIdentifierOrBounded("managed anime ID", record.ManagedAnimeID, maxIdentityLength); err != nil {
+			return err
+		}
+	}
 	for label, value := range map[string]string{
-		"subscription ID": record.SubscriptionID, "managed anime ID": record.ManagedAnimeID,
 		"reason code": record.ReasonCode, "subject type": record.SubjectType, "subject ID": record.SubjectID,
 	} {
 		if err := validateIdentifierOrBounded(label, value, maxIdentityLength); err != nil {

@@ -87,8 +87,8 @@ type pluginRuntime struct {
 	templateService *templatecatalogapplication.Service
 }
 
-func provideQBManagementService(owner *configurationapplication.Service) httpapi.QBManagementService {
-	return configurationapplication.NewQBManagementService(owner, nil)
+func provideQBManagementService(owner *configurationapplication.Service, writer observabilityport.ActivityWriter, hub *events.Hub, logger httpapi.RuntimeLogger) httpapi.QBManagementService {
+	return configurationapplication.NewQBManagementService(owner, nil).WithOperationEvents(writer, hub, logger)
 }
 
 func provideMediaRecognitionService() httpapi.MediaRecognitionService {

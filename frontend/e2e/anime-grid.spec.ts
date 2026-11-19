@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 import { workspaceConfiguration } from "../src/features/workspace/configuration";
 import type {
   AnimeConfigCandidate,
@@ -1481,6 +1482,155 @@ test.describe("AnimeGrid", () => {
     const titleTextBox = await row.locator("td").nth(1).locator("span").first().boundingBox();
     expect(titleTextBox!.x + titleTextBox!.width).toBeLessThanOrEqual(originCellBox!.x);
     expect(titleBox!.width).toBeGreaterThan(160);
+  });
+
+  test("已退订视图 only cleans local records, with each instance's lifecycle epoch and own idempotency key", async ({ page }, testInfo) => {
+    const liveTitle = "药屋少女的呢喃 第三季";
+    const retiredTitleA = "迦楠大人的白给是恶魔级";
+    const retiredTitleB = "弱弱老师";
+    const state = fixtureStateFor(page);
+    addSubscription(state, {
+      managed_anime: { id: "manage-live", title: liveTitle, title_override: null, version: 1 },
+      subscription: {
+        id: "manage-live-subscription",
+        managed_anime_id: "manage-live",
+        created_at: "2026-10-05T00:00:00Z",
+        entry_season: "2026-fall",
+        origin: "anibt",
+        origin_entry_ref: "anibt:manage-live",
+        instance_label: null,
+        state: "active",
+        lifecycle_state: "active",
+        lifecycle_epoch: 1,
+        version: 1,
+        new_releases_only: false,
+        ignore_multi_video_releases: false,
+      },
+      metadata: {
+        managed_anime_id: "manage-live",
+        bgm: null,
+        tmdb: null,
+        title_override: null,
+        total_episodes: 24,
+        season: 3,
+        version: 1,
+      },
+      metadata_hold: { held: false, missing: [] },
+      broadcast_day: "none",
+      episode_progress: { episodes: [1, 2, 3], total: 24, done: false },
+    });
+    for (const [id, title, epoch, createdAt] of [
+      ["manage-retired-a", retiredTitleA, 2, "2026-09-08T00:00:00Z"],
+      ["manage-retired-b", retiredTitleB, 5, "2026-09-01T00:00:00Z"],
+    ] as const) {
+      addSubscription(state, {
+        managed_anime: { id, title, title_override: null, version: 1 },
+        subscription: {
+          id: `subscription-${id}`,
+          managed_anime_id: id,
+          created_at: createdAt,
+          entry_season: "2026-summer",
+          origin: "anibt",
+          origin_entry_ref: `anibt:${id}`,
+          instance_label: null,
+          state: "stopped",
+          lifecycle_state: "retired",
+          lifecycle_epoch: epoch,
+          version: 3,
+          new_releases_only: false,
+          ignore_multi_video_releases: false,
+        },
+        metadata: {
+          managed_anime_id: id,
+          bgm: null,
+          tmdb: null,
+          title_override: null,
+          total_episodes: 12,
+          season: 1,
+          version: 1,
+        },
+        metadata_hold: { held: false, missing: [] },
+        broadcast_day: "none",
+        episode_progress: { episodes: [1, 2, 3], total: 12, done: false },
+      });
+    }
+
+    await enterApp(page);
+    const cleanups: Array<{ id: string; body: unknown; key: string | undefined }> = [];
+    await page.route("**/api/v1/anime/*/local-data", async (route) => {
+      const request = route.request();
+      if (request.method() !== "DELETE") return fulfillMethodNotAllowed(route, "DELETE");
+      const id = new URL(request.url()).pathname.split("/").at(-2) ?? "";
+      cleanups.push({ id, body: request.postDataJSON(), key: request.headers()["idempotency-key"] });
+      // Mirror the server: only this owner's local graph disappears from the list.
+      const index = state.subscriptions.findIndex((item) => item.managed_anime.id === id);
+      if (index >= 0) state.subscriptions.splice(index, 1);
+      await route.fulfill({ status: 204 });
+    });
+
+    await selectSubscribed(page);
+    await page.getByRole("button", { name: t("grid.manage.entry"), exact: true }).first().click();
+    const dialog = page.getByRole("dialog", { name: t("grid.manage.title") });
+    await expect(dialog.getByText(liveTitle, { exact: true })).toBeVisible();
+    // 默认在管视图不混入已退订行。
+    await expect(dialog.getByText(retiredTitleA, { exact: true })).toHaveCount(0);
+
+    const stateFilters = dialog.getByRole("radiogroup", { name: t("grid.manage.stateAria") });
+    const retiredFilter = stateFilters.getByRole("radio", { name: new RegExp(t("grid.manage.stateRetired")) });
+    await retiredFilter.click();
+    await expect(dialog.getByText(retiredTitleA, { exact: true })).toBeVisible();
+    await expect(dialog.getByText(retiredTitleB, { exact: true })).toBeVisible();
+    await expect(dialog.getByText(liveTitle, { exact: true })).toHaveCount(0);
+    // 新增第五个筛选项后，筛选组仍整个落在弹窗内，页面无横向溢出。
+    const [dialogBox, retiredBox, viewport] = await Promise.all([
+      dialog.boundingBox(),
+      retiredFilter.boundingBox(),
+      page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight, scrollWidth: document.documentElement.scrollWidth })),
+    ]);
+    expect(retiredBox).not.toBeNull();
+    expect(retiredBox!.x + retiredBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 1);
+    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width);
+    // 已退订视图只给清理动作；退订入口不存在，清理与退订互相独立。
+    await expect(dialog.getByRole("button", { name: t("grid.manage.remove") })).toHaveCount(0);
+    const cleanup = dialog.getByRole("button", { name: t("grid.manage.cleanup") });
+    await expect(cleanup).toBeDisabled();
+    await dialog.getByRole("checkbox", { name: t("grid.manage.selectAll") }).click();
+    await expect(cleanup).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath("retired-filter.png"), fullPage: true, animations: "disabled" });
+    // A local, real-render snapshot of this view (no hand-written prototype): the
+    // browser lane's live DOM after the component rendered, for opening locally.
+    await writeFile(testInfo.outputPath("retired-filter.html"), await page.content());
+
+    await cleanup.click();
+    const confirm = page.getByRole("alertdialog", { name: t("grid.manage.cleanupTitle", { n: 2 }) });
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText(t("grid.manage.cleanupLine1"));
+    await expect(confirm).toContainText(t("grid.manage.cleanupLine2"));
+    await expect(confirm).toContainText(retiredTitleA);
+    await expect(confirm).toContainText(retiredTitleB);
+    const confirmBox = (await confirm.boundingBox())!;
+    expect(confirmBox.x).toBeGreaterThanOrEqual(0);
+    expect(confirmBox.y).toBeGreaterThanOrEqual(0);
+    expect(confirmBox.x + confirmBox.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(confirmBox.y + confirmBox.height).toBeLessThanOrEqual(viewport.height + 1);
+    await page.screenshot({ path: testInfo.outputPath("retired-cleanup-confirm.png"), fullPage: true, animations: "disabled" });
+
+    await confirm.getByRole("button", { name: t("grid.manage.cleanupConfirm") }).click();
+    await expect(page.getByText(t("grid.manage.cleanedToast", { n: 2 }), { exact: true })).toBeVisible();
+    expect(cleanups).toHaveLength(2);
+    const batchId = (cleanups[0].body as { operation_batch_id?: string }).operation_batch_id;
+    expect(batchId).toEqual(expect.any(String));
+    expect(cleanups.map((call) => ({ id: call.id, body: call.body }))).toEqual(
+      expect.arrayContaining([
+        { id: "manage-retired-a", body: { expected_lifecycle_epoch: 2, confirmation: "delete-local-data", operation_batch_id: batchId } },
+        { id: "manage-retired-b", body: { expected_lifecycle_epoch: 5, confirmation: "delete-local-data", operation_batch_id: batchId } },
+      ]),
+    );
+    expect(cleanups.every((call) => Boolean(call.key))).toBe(true);
+    expect(new Set(cleanups.map((call) => call.key)).size).toBe(2);
+    // 清理成功后列表重读：两个已退订行消失，在管视图不受影响。
+    await expect(dialog.getByText(retiredTitleA, { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText(retiredTitleB, { exact: true })).toHaveCount(0);
   });
 
   test("shows the four current catalog sections", async ({ page }) => {

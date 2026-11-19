@@ -39,15 +39,18 @@ export const ACTIVITY_KINDS = [
   "file_alignment_failed",
   "group_changed",
   "import_waiting_config",
+  "local_records_cleaned",
   "metadata_applied",
   "placement_changed",
   "policy_changed",
+  "qb_task_deleted",
   "release_batch_processed",
   "release_processed",
   "replacement_decided",
   "rss_new_content",
   "subscription_created",
   "subscription_resumed",
+  "subscription_retired",
   "subscription_started",
   "subscription_stopped",
 ] as const;
@@ -120,6 +123,11 @@ export const MESSAGE_CODES = [
   "old_version_deleted",
   "old_version_kept",
   "old_version_delete_failed",
+  "subscription_retired",
+  "local_records_cleaned",
+  "qb_task_deleted",
+  "qb_deletion_unconfirmed",
+  "qb_delete_tag_cleanup_failed",
 ] as const;
 
 export const MESSAGE_PARAM_MAX_LENGTH = 256;
@@ -181,4 +189,9 @@ export const MESSAGE_SPECS = {
   "old_version_deleted": { kind: "cleanup_completed", params: [] },
   "old_version_kept": { kind: "cleanup_completed", params: [] },
   "old_version_delete_failed": { kind: "cleanup_failed", params: [] },
+  "subscription_retired": { kind: "subscription_retired", params: [] },
+  "local_records_cleaned": { kind: "local_records_cleaned", params: [] },
+  "qb_task_deleted": { kind: "qb_task_deleted", params: [] },
+  "qb_deletion_unconfirmed": { kind: "qb_task_deleted", params: [] },
+  "qb_delete_tag_cleanup_failed": { kind: "qb_task_deleted", params: [] },
 } as const;

@@ -229,7 +229,7 @@ func animeTitleMatch(managed, pattern string) string {
 
 // entryTextMatch: one of the entry's frozen display facts matches.
 func entryTextMatch(x, pattern string) string {
-	return fmt.Sprintf("(%[1]s.details->>'release_title' ILIKE %[2]s OR %[1]s.details->>'file_name' ILIKE %[2]s OR %[1]s.details->>'group_name' ILIKE %[2]s)", x, pattern)
+	return fmt.Sprintf("(%[1]s.subject_display ILIKE %[2]s OR %[1]s.details->>'release_title' ILIKE %[2]s OR %[1]s.details->>'file_name' ILIKE %[2]s OR %[1]s.details->>'group_name' ILIKE %[2]s)", x, pattern)
 }
 
 // businessSearchPredicate selects business entries matching the search: the

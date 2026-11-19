@@ -33,6 +33,9 @@ func (s *Service) DeleteAnimeSubscription(ctx context.Context, managedAnimeID st
 	if s.oneShotMarkers == nil {
 		return errors.New("one-shot marker repository is not configured")
 	}
+	if err := validateOperationBatchID(input.OperationBatchID); err != nil {
+		return err
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		err := s.deleteAnimeSubscriptionAttempt(ctx, managedAnimeID, input)
 		if errors.Is(err, workitems.ErrRetirementContention) && attempt == 4 {
@@ -65,13 +68,13 @@ func (s *Service) deleteAnimeSubscriptionAttempt(ctx context.Context, managedAni
 		return err
 	}
 
-	var lifecycleState string
+	var lifecycleState, animeTitle string
 	var fenceEpoch int64
 	err = tx.QueryRowContext(ctx, `
-SELECT lifecycle_state, fence_epoch
+SELECT lifecycle_state, fence_epoch, COALESCE(NULLIF(btrim(title_override), ''), title)
 FROM managed_anime
 WHERE id = $1
-FOR UPDATE`, managedAnimeID).Scan(&lifecycleState, &fenceEpoch)
+FOR UPDATE`, managedAnimeID).Scan(&lifecycleState, &fenceEpoch, &animeTitle)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &apperrors.NotFound{Resource: "managed_anime", ID: managedAnimeID}
 	}
@@ -128,11 +131,6 @@ FOR UPDATE`, managedAnimeID).Scan(&subscriptionID, &subscriptionVersion)
 	if s.notifications != nil {
 		// The notice row names no managed anime (retirement fences new rows
 		// that name it); the anime travels in the payload.
-		var animeTitle string
-		if err := tx.QueryRowContext(ctx, `
-SELECT COALESCE(NULLIF(title_override, ''), title) FROM managed_anime WHERE id = $1`, managedAnimeID).Scan(&animeTitle); err != nil {
-			return fmt.Errorf("read retired anime title: %w", err)
-		}
 		if err := s.admitSubscriptionChangeTx(ctx, tx, subscriptionID, subscriptionVersion, managedAnimeID, animeTitle, plugintargetport.SubscriptionRetired); err != nil {
 			return err
 		}
@@ -148,6 +146,16 @@ SET lifecycle_state = 'retired',
 WHERE id = $1 AND lifecycle_state = 'active' AND fence_epoch = $2`, managedAnimeID, fenceEpoch, subscriptionVersion); err != nil {
 		return fmt.Errorf("write managed anime retirement fact: %w", err)
 	}
+	if s.activityWriter != nil {
+		if err := s.activityWriter.AppendTx(ctx, txscope.Wrap(tx), summarizeOperationBatch(input.OperationBatchID, observabilityport.ActivityRecord{
+			Kind: string(observabilityport.ActivityKindSubscriptionRetired), Outcome: "success",
+			ReasonCode: "subscription_retired", SubjectType: "managed_anime", SubjectID: managedAnimeID,
+			SubjectVersion: fenceEpoch + 1, SubjectDisplay: animeTitle,
+			MessageCode: observabilityport.MessageSubscriptionRetired,
+		})); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit managed anime retirement: %w", err)
 	}
@@ -156,7 +164,7 @@ WHERE id = $1 AND lifecycle_state = 'active' AND fence_epoch = $2`, managedAnime
 		Component: "anime_ownership", Operation: "subscription_retire", Outcome: "success", ReasonCode: "subscription_retired",
 		OwnerType: "managed_anime", OwnerID: managedAnimeID,
 	})
-	s.publishInvalidations(events.TargetSubscribed, events.TargetCatalog, events.TargetRSS)
+	s.publishInvalidations(events.TargetSubscribed, events.TargetCatalog, events.TargetRSS, events.TargetRecords)
 	return nil
 }
 

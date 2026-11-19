@@ -188,6 +188,8 @@ export const enErrorCopy = {
   QB_AUTH_FAILED: "Download client sign-in failed. Check the username and password.",
   QB_REQUEST_FAILED: "The download client is not responding. Try again later.",
   QB_TORRENT_IN_USE: "This task can't be deleted until post-processing finishes.",
+  QB_DELETION_UNCONFIRMED: "Could not confirm deletion. Check the download client.",
+  QB_DELETE_TAG_CLEANUP_FAILED: "The download task was deleted, but tag cleanup failed.",
   ONE_SHOT_CALLER_INVALID: "This torrent does not support one-time download",
   ONE_SHOT_ID_REQUIRED: BAD_REQUEST,
   LIVE_REFRESH_EXISTS: "Already refreshing. Try again later.",

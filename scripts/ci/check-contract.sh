@@ -388,7 +388,7 @@ end
   "AutomationIntervalUnit" => %w[minute hour day],
   "AutomationState" => %w[queued running completed partial failed],
   "SubscriptionLogOutcome" => %w[info success failure],
-  "SubscriptionLogSource" => %w[subscription one_shot],
+  "SubscriptionLogSource" => %w[subscription one_shot manual],
   "ObservabilityRecordState" => %w[in_progress success failure info],
   "RoutineActivityKind" => %w[catalog_refresh provider_refresh rss_refresh metadata_match automation_dispatch retention_pass file_manager_operation],
   "RoutineActivityScopeKind" => %w[global automation provider subscription rss_source component],
@@ -448,6 +448,7 @@ assert_enum.call("SubscriptionLogKind", %w[
   group_changed policy_changed rss_new_content release_processed release_batch_processed
   download_changed artifact_verified import_waiting_config placement_changed replacement_decided cleanup_completed cleanup_failed
   file_alignment_completed file_alignment_failed acquisition_settled
+  subscription_retired local_records_cleaned qb_task_deleted
 ])
 abort "GroupAction action enum drifted" unless schemas.fetch("GroupAction").fetch("properties").fetch("action").fetch("enum") == %w[force_include force_exclude restore_auto]
 

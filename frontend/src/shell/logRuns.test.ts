@@ -35,6 +35,27 @@ function download(release: string, minute: number, source: BusinessEntry["source
 }
 
 describe("groupEvents", () => {
+  it("keeps standalone manual operations and their results distinct", () => {
+    const manual = { subscription_id: null, managed_anime_id: null, anime_title: "", source: "manual" } as const;
+    const removed = entry({ ...manual, subject_display: "Example EP02", kind: "qb_task_deleted", outcome: "failure",
+      message_code: "qb_delete_tag_cleanup_failed", details: { data_delete_requested: true } });
+    const items = groupEvents([record(removed), record({ ...removed, id: "other", subject_display: "Example EP03" })]);
+    expect(items.map((item) => item.type)).toEqual(["record", "record"]);
+    expect(entryView(removed, removed.subject_display)).toMatchObject({
+      title: "Example EP02 · 删除下载任务",
+      result: "下载任务已删除，标签清理失败",
+      meta: "已请求同时删除下载数据",
+    });
+  });
+  it("labels a manual batch with its committed item count", () => {
+    const batch = entry({ subscription_id: null, managed_anime_id: null, anime_title: "", source: "manual",
+      kind: "local_records_cleaned", outcome: "success", message_code: "local_records_cleaned",
+      subject_type: "operation_batch", details: { item_count: 2 } });
+    expect(entryView(batch, undefined)).toMatchObject({
+      title: "清理本地记录 · 已完成 2 项",
+      result: "已清理本地记录，未改动下载数据和媒体文件",
+    });
+  });
   it("one download is one run row with steps in ascending time", () => {
     const items = groupEvents(download("r-1", 40).map(record));
     expect(items).toHaveLength(1);

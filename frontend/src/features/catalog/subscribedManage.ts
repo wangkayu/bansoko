@@ -7,11 +7,15 @@ import { seasonIndex } from "./season";
 // (anibt / mikan / 自定义), 季度 = the provider season catalog page the instance
 // was created from, frozen at creation. Search-created and custom instances have
 // no season; mikan 2026-spring and anibt 2026-spring are different batches, so
-// the two filters intersect instead of merging into one column value.
+// the two filters intersect instead of merging into one column value. Retired
+// instances are their own 已退订 view: they never mix into a live state's rows
+// or batch targets, and that view's only batch action is local-record cleanup.
 
 export type ManageOrigin = "anibt" | "mikan" | "custom";
 export type ManageState = "pending" | "active" | "stopped";
-export type ManageStateFilter = "all" | ManageState;
+/** "retired" is the separate 已退订 view: lifecycle_state, not Subscription.state.
+ *  Live states never list retired rows, and the retired view lists only them. */
+export type ManageStateFilter = "all" | ManageState | "retired";
 export type ManageProgressFilter = "all" | "doing" | "done" | "none";
 export type ManageOriginFilter = "all" | ManageOrigin;
 /** "all" | "none" (no season) | a canonical YYYY-term present in the rows. */
@@ -32,6 +36,8 @@ export interface ManageRow {
   state: ManageState;
   /** lifecycle_state === "retired": read-only, every batch action skips it. */
   retired: boolean;
+  /** The retired generation the local-data cleanup CAS carries. */
+  lifecycleEpoch: number;
   /** The subscription version the CAS patches and the delete carry. */
   version: number;
   rssHealth?: "ready" | "degraded" | "failed";
@@ -61,6 +67,7 @@ export function manageRowsFrom(items: AnimeListItem[]): ManageRow[] {
     showSeason: item.metadata.season ?? undefined,
     state: item.subscription.state,
     retired: item.subscription.lifecycle_state === "retired",
+    lifecycleEpoch: item.subscription.lifecycle_epoch,
     version: item.subscription.version,
     rssHealth: item.rss_health ?? undefined,
     progress: item.episode_progress ?? undefined,
@@ -117,7 +124,14 @@ export const emptyManageFilters: ManageFilters = {
 export function filterManageRows(rows: ManageRow[], filters: ManageFilters): ManageRow[] {
   const query = filters.query.trim().toLowerCase();
   return rows.filter((row) => {
-    if (filters.state !== "all" && row.state !== filters.state) return false;
+    // 已退订 is its own view; live states never mix retired rows into their counts
+    // or batch targets, and the retired view lists nothing else.
+    if (filters.state === "retired") {
+      if (!row.retired) return false;
+    } else {
+      if (row.retired) return false;
+      if (filters.state !== "all" && row.state !== filters.state) return false;
+    }
     switch (filters.progress) {
       case "done":
         if (!manageCompleted(row)) return false;

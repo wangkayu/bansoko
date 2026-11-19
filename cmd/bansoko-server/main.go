@@ -745,6 +745,7 @@ func runServe(args []string) {
 		metadataSearcher,
 		observabilityService,
 		observabilityService,
+		observabilityService,
 		embeddedUpdateService,
 		reconciliationService,
 		fileMaintenanceService,

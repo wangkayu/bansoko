@@ -10,7 +10,8 @@ type LocalDataCleanupInput struct {
 	ExpectedLifecycleEpoch int64
 	// Confirmation is the fixed acknowledgement string from the contract. It
 	// makes the destructive command impossible to trigger accidentally.
-	Confirmation string
+	Confirmation     string
+	OperationBatchID *string
 }
 
 // LocalDataCleanupConfirmation is the exact acknowledgement every local

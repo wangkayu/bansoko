@@ -10487,6 +10487,9 @@ components:
         - file_alignment_completed
         - file_alignment_failed
         - acquisition_settled
+        - subscription_retired
+        - local_records_cleaned
+        - qb_task_deleted
     SubscriptionLogOutcome:
       type: string
       enum: [info, success, failure]
@@ -10554,6 +10557,11 @@ components:
         - old_version_deleted
         - old_version_kept
         - old_version_delete_failed
+        - subscription_retired
+        - local_records_cleaned
+        - qb_task_deleted
+        - qb_deletion_unconfirmed
+        - qb_delete_tag_cleanup_failed
     SubscriptionLogMessageParams:
       type: object
       additionalProperties: false
@@ -10613,10 +10621,9 @@ components:
           description: Files the collision policy left in place.
     SubscriptionLogSource:
       type: string
-      enum: [subscription, one_shot]
+      enum: [subscription, one_shot, manual]
       description: >-
-        Where the entry's work came from: the anime's subscription, or a
-        one-shot download (its temporary anime and subscription).
+        The anime's subscription, a one-shot download, or a standalone manual operation.
     ObservabilityRecordState:
       type: string
       enum: [in_progress, success, failure, info]
@@ -12530,6 +12537,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        data_delete_requested:
+          type: boolean
+          description: Whether the downloader was asked to delete the data as well as the task.
         reason_code:
           type: string
           minLength: 1
@@ -12754,9 +12764,18 @@ components:
         id:
           $ref: '#/components/schemas/ID'
         subscription_id:
-          $ref: '#/components/schemas/ID'
+          allOf:
+            - $ref: '#/components/schemas/ID'
+          nullable: true
         managed_anime_id:
-          $ref: '#/components/schemas/ID'
+          allOf:
+            - $ref: '#/components/schemas/ID'
+          nullable: true
+        subject_display:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Display name captured when a standalone manual operation occurred.
         anime_title:
           type: string
           maxLength: 512
@@ -14546,6 +14565,8 @@ components:
       properties:
         expected_version:
           $ref: '#/components/schemas/Version'
+        operation_batch_id:
+          $ref: '#/components/schemas/ManualOperationBatchID'
     LocalDataCleanup:
       type: object
       additionalProperties: false
@@ -14563,6 +14584,12 @@ components:
         confirmation:
           type: string
           enum: [delete-local-data]
+        operation_batch_id:
+          $ref: '#/components/schemas/ManualOperationBatchID'
+    ManualOperationBatchID:
+      type: string
+      pattern: '^[A-Za-z0-9-]{8,64}$'
+      description: Optional shared identifier for one manual batch. Changes only how committed results are summarized in the event timeline.
     ReleaseReevaluationResult:
       type: object
       additionalProperties: false

@@ -70,8 +70,8 @@ func TestMessageCatalogIsWellFormed(t *testing.T) {
 			paramTypes[param.Name] = param.Type
 		}
 	}
-	if len(ActivityKinds()) != 20 {
-		t.Errorf("expected 20 journal kinds, got %d: %v", len(ActivityKinds()), ActivityKinds())
+	if len(ActivityKinds()) != 23 {
+		t.Errorf("expected 23 journal kinds, got %d: %v", len(ActivityKinds()), ActivityKinds())
 	}
 	if IsActivityKind("rss_refresh_failed") {
 		t.Error("rss_refresh_failed is retired")

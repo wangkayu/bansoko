@@ -187,6 +187,8 @@ export const errorCopy = {
   QB_AUTH_FAILED: "下载器登录失败，请检查用户名和密码",
   QB_REQUEST_FAILED: "下载器没有响应，请稍后重试",
   QB_TORRENT_IN_USE: "后处理完成前不能删除该任务",
+  QB_DELETION_UNCONFIRMED: "未能确认任务是否已删除，请查看下载器",
+  QB_DELETE_TAG_CLEANUP_FAILED: "下载任务已删除，标签清理失败",
   ONE_SHOT_CALLER_INVALID: "该种子不支持一次性下载",
   ONE_SHOT_ID_REQUIRED: BAD_REQUEST,
   LIVE_REFRESH_EXISTS: "正在刷新，请稍后再试",

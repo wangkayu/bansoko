@@ -88,13 +88,13 @@ func validRecordSourceRank(rank int) bool {
 var businessRecordColumns = []string{"id", "subscription_id", "managed_anime_id", "kind", "outcome", "occurred_at",
 	"message_code", "message_params", "rss_source_id", "release_id", "group_ref", "details", "reason_code",
 	"subject_type", "subject_id", "subject_version", "correlation_id", "causation_type",
-	"causation_id", "dedupe_key", "retention_until", "batch_key"}
+	"causation_id", "dedupe_key", "retention_until", "batch_key", "subject_display"}
 
 // businessComputedMembers are the derived members of the business entry
 // contract, evaluated over the row aliased "src".
 var businessComputedMembers = [][2]string{
 	{"anime_title", `COALESCE((SELECT left(COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title), 512) FROM managed_anime ma WHERE ma.id = src.managed_anime_id), '')`},
-	{"source", `COALESCE((SELECT CASE WHEN sub.origin = 'oneshot' THEN 'one_shot' ELSE 'subscription' END FROM subscriptions sub WHERE sub.id = src.subscription_id), 'subscription')`},
+	{"source", `CASE WHEN src.subscription_id IS NULL THEN 'manual' ELSE COALESCE((SELECT CASE WHEN sub.origin = 'oneshot' THEN 'one_shot' ELSE 'subscription' END FROM subscriptions sub WHERE sub.id = src.subscription_id), 'subscription') END`},
 	// A release_batch_processed head carries live outcome counts of its detail
 	// entries; evaluations may still be running, so the counts only grow. The
 	// reason breakdown narrows to the filtered verdict, whose reasons are the

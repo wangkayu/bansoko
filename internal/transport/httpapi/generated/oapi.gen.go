@@ -2393,15 +2393,18 @@ const (
 	SubscriptionLogKindFileAlignmentFailed    SubscriptionLogKind = "file_alignment_failed"
 	SubscriptionLogKindGroupChanged           SubscriptionLogKind = "group_changed"
 	SubscriptionLogKindImportWaitingConfig    SubscriptionLogKind = "import_waiting_config"
+	SubscriptionLogKindLocalRecordsCleaned    SubscriptionLogKind = "local_records_cleaned"
 	SubscriptionLogKindMetadataApplied        SubscriptionLogKind = "metadata_applied"
 	SubscriptionLogKindPlacementChanged       SubscriptionLogKind = "placement_changed"
 	SubscriptionLogKindPolicyChanged          SubscriptionLogKind = "policy_changed"
+	SubscriptionLogKindQbTaskDeleted          SubscriptionLogKind = "qb_task_deleted"
 	SubscriptionLogKindReleaseBatchProcessed  SubscriptionLogKind = "release_batch_processed"
 	SubscriptionLogKindReleaseProcessed       SubscriptionLogKind = "release_processed"
 	SubscriptionLogKindReplacementDecided     SubscriptionLogKind = "replacement_decided"
 	SubscriptionLogKindRssNewContent          SubscriptionLogKind = "rss_new_content"
 	SubscriptionLogKindSubscriptionCreated    SubscriptionLogKind = "subscription_created"
 	SubscriptionLogKindSubscriptionResumed    SubscriptionLogKind = "subscription_resumed"
+	SubscriptionLogKindSubscriptionRetired    SubscriptionLogKind = "subscription_retired"
 	SubscriptionLogKindSubscriptionStarted    SubscriptionLogKind = "subscription_started"
 	SubscriptionLogKindSubscriptionStopped    SubscriptionLogKind = "subscription_stopped"
 )
@@ -2428,6 +2431,7 @@ const (
 	SubscriptionLogMessageCodeImportWaitingBindingBgm       SubscriptionLogMessageCode = "import_waiting_binding_bgm"
 	SubscriptionLogMessageCodeImportWaitingBindingTmdb      SubscriptionLogMessageCode = "import_waiting_binding_tmdb"
 	SubscriptionLogMessageCodeImportWaitingTemplateVariable SubscriptionLogMessageCode = "import_waiting_template_variable"
+	SubscriptionLogMessageCodeLocalRecordsCleaned           SubscriptionLogMessageCode = "local_records_cleaned"
 	SubscriptionLogMessageCodeMetadataApplied               SubscriptionLogMessageCode = "metadata_applied"
 	SubscriptionLogMessageCodeOffsetAligned                 SubscriptionLogMessageCode = "offset_aligned"
 	SubscriptionLogMessageCodeOldVersionDeleteFailed        SubscriptionLogMessageCode = "old_version_delete_failed"
@@ -2437,6 +2441,9 @@ const (
 	SubscriptionLogMessageCodePlacementRecorded             SubscriptionLogMessageCode = "placement_recorded"
 	SubscriptionLogMessageCodePlacementReleased             SubscriptionLogMessageCode = "placement_released"
 	SubscriptionLogMessageCodePlacementsExcluded            SubscriptionLogMessageCode = "placements_excluded"
+	SubscriptionLogMessageCodeQbDeleteTagCleanupFailed      SubscriptionLogMessageCode = "qb_delete_tag_cleanup_failed"
+	SubscriptionLogMessageCodeQbDeletionUnconfirmed         SubscriptionLogMessageCode = "qb_deletion_unconfirmed"
+	SubscriptionLogMessageCodeQbTaskDeleted                 SubscriptionLogMessageCode = "qb_task_deleted"
 	SubscriptionLogMessageCodeReleaseAccepted               SubscriptionLogMessageCode = "release_accepted"
 	SubscriptionLogMessageCodeReleaseAcquisitionFailed      SubscriptionLogMessageCode = "release_acquisition_failed"
 	SubscriptionLogMessageCodeReleaseAdoptedExisting        SubscriptionLogMessageCode = "release_adopted_existing"
@@ -2461,6 +2468,7 @@ const (
 	SubscriptionLogMessageCodeRulesChanged                  SubscriptionLogMessageCode = "rules_changed"
 	SubscriptionLogMessageCodeSubscriptionCreated           SubscriptionLogMessageCode = "subscription_created"
 	SubscriptionLogMessageCodeSubscriptionResumed           SubscriptionLogMessageCode = "subscription_resumed"
+	SubscriptionLogMessageCodeSubscriptionRetired           SubscriptionLogMessageCode = "subscription_retired"
 	SubscriptionLogMessageCodeSubscriptionStarted           SubscriptionLogMessageCode = "subscription_started"
 	SubscriptionLogMessageCodeSubscriptionStopped           SubscriptionLogMessageCode = "subscription_stopped"
 	SubscriptionLogMessageCodeUnknownFileReleased           SubscriptionLogMessageCode = "unknown_file_released"
@@ -2475,6 +2483,7 @@ const (
 
 // Defines values for SubscriptionLogSource.
 const (
+	SubscriptionLogSourceManual       SubscriptionLogSource = "manual"
 	SubscriptionLogSourceOneShot      SubscriptionLogSource = "one_shot"
 	SubscriptionLogSourceSubscription SubscriptionLogSource = "subscription"
 )
@@ -5910,6 +5919,9 @@ type LoadBusinessPresetInput struct {
 type LocalDataCleanup struct {
 	Confirmation           LocalDataCleanupConfirmation `json:"confirmation"`
 	ExpectedLifecycleEpoch int64                        `json:"expected_lifecycle_epoch"`
+
+	// OperationBatchId Optional shared identifier for one manual batch. Changes only how committed results are summarized in the event timeline.
+	OperationBatchId *ManualOperationBatchID `json:"operation_batch_id,omitempty"`
 }
 
 // LocalDataCleanupConfirmation defines model for LocalDataCleanup.Confirmation.
@@ -5955,6 +5967,9 @@ type ManagedAnime struct {
 	TitleOverride *string `json:"title_override"`
 	Version       Version `json:"version"`
 }
+
+// ManualOperationBatchID Optional shared identifier for one manual batch. Changes only how committed results are summarized in the event timeline.
+type ManualOperationBatchID = string
 
 // ManualRetryInput defines model for ManualRetryInput.
 type ManualRetryInput struct {
@@ -9382,6 +9397,9 @@ type SubscriptionLifecycleState string
 // SubscriptionDelete CAS guard for irreversible retirement. The expected_version is the current Subscription version; a mismatch returns 409 so a stale client cannot retire an instance another editor just changed.
 type SubscriptionDelete struct {
 	ExpectedVersion Version `json:"expected_version"`
+
+	// OperationBatchId Optional shared identifier for one manual batch. Changes only how committed results are summarized in the event timeline.
+	OperationBatchId *ManualOperationBatchID `json:"operation_batch_id,omitempty"`
 }
 
 // SubscriptionDuplicateInput The display-only label of the copy. Required and non-empty; not unique.
@@ -9396,8 +9414,11 @@ type SubscriptionLogDetails struct {
 
 	// ChangedSections Settings change: which rules sections the save actually changed, compared with the stored values in the same transaction.
 	ChangedSections *[]SubscriptionLogDetailsChangedSections `json:"changed_sections,omitempty"`
-	EpisodeShape    *SubscriptionLogDetailsEpisodeShape      `json:"episode_shape,omitempty"`
-	EpisodeState    *SubscriptionLogDetailsEpisodeState      `json:"episode_state,omitempty"`
+
+	// DataDeleteRequested Whether the downloader was asked to delete the data as well as the task.
+	DataDeleteRequested *bool                               `json:"data_delete_requested,omitempty"`
+	EpisodeShape        *SubscriptionLogDetailsEpisodeShape `json:"episode_shape,omitempty"`
+	EpisodeState        *SubscriptionLogDetailsEpisodeState `json:"episode_state,omitempty"`
 
 	// Episodes Episode numbers of a download run step, ascending and unique: the frozen batch plan of the release's media fact snapshot (the same projection the execution records use). Absent when the plan covers no numbered TV episode.
 	Episodes          *[]int  `json:"episodes,omitempty"`
@@ -9496,7 +9517,7 @@ type SubscriptionLogEntry struct {
 	GroupRef       *string                 `json:"group_ref"`
 	Id             ID                      `json:"id"`
 	Kind           SubscriptionLogKind     `json:"kind"`
-	ManagedAnimeId ID                      `json:"managed_anime_id"`
+	ManagedAnimeId *ID                     `json:"managed_anime_id"`
 
 	// MessageCode The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
 	MessageCode SubscriptionLogMessageCode `json:"message_code"`
@@ -9512,12 +9533,15 @@ type SubscriptionLogEntry struct {
 	RetentionUntil time.Time `json:"retention_until"`
 	RssSourceId    *ID       `json:"rss_source_id"`
 
-	// Source Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
-	Source         SubscriptionLogSource `json:"source"`
-	SubjectId      *string               `json:"subject_id"`
-	SubjectType    *string               `json:"subject_type"`
-	SubjectVersion *int64                `json:"subject_version"`
-	SubscriptionId ID                    `json:"subscription_id"`
+	// Source The anime's subscription, a one-shot download, or a standalone manual operation.
+	Source SubscriptionLogSource `json:"source"`
+
+	// SubjectDisplay Display name captured when a standalone manual operation occurred.
+	SubjectDisplay *string `json:"subject_display,omitempty"`
+	SubjectId      *string `json:"subject_id"`
+	SubjectType    *string `json:"subject_type"`
+	SubjectVersion *int64  `json:"subject_version"`
+	SubscriptionId *ID     `json:"subscription_id"`
 }
 
 // SubscriptionLogKind defines model for SubscriptionLogKind.
@@ -9562,7 +9586,7 @@ type SubscriptionLogMessageParams struct {
 // SubscriptionLogOutcome defines model for SubscriptionLogOutcome.
 type SubscriptionLogOutcome string
 
-// SubscriptionLogSource Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+// SubscriptionLogSource The anime's subscription, a one-shot download, or a standalone manual operation.
 type SubscriptionLogSource string
 
 // SubscriptionOrigin The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.

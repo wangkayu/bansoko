@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  cleanupAnimeLocalData,
   deleteAnimeSubscription,
   isVersionConflict,
   listAnime,
+  newUUID,
   patchAnimeSubscription,
   toUserMessage,
 } from "../../lib/api/client";
@@ -103,6 +105,13 @@ function progressCell(row: ManageRow): { text: string; done: boolean; ratio?: nu
   };
 }
 
+/** The row's state pill: lifecycle wins over the frozen Subscription.state, so a
+ *  retired row reads 已退订 instead of the state it stopped in. */
+function statePillOf(row: ManageRow): { tone: "online" | "info" | "muted"; label: string } {
+  if (row.retired) return { tone: "muted", label: t("grid.manage.stateRetired") };
+  return { tone: STATE_PILL_TONE[row.state], label: t(STATE_LABEL_KEY[row.state]) };
+}
+
 export function SubscribedManageDialog({
   onClose,
   onMutated,
@@ -116,6 +125,7 @@ export function SubscribedManageDialog({
   const [filters, setFilters] = useState<ManageFilters>(emptyManageFilters);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [confirmingCleanup, setConfirmingCleanup] = useState(false);
   const [batching, setBatching] = useState(false);
 
   const rows = useMemo(() => manageRowsFrom(list.data ?? []), [list.data]);
@@ -125,9 +135,14 @@ export function SubscribedManageDialog({
 
   const counts = useMemo(() => {
     const base: Record<ManageState, number> = { active: 0, stopped: 0, pending: 0 };
-    for (const row of rows) base[row.state] += 1;
+    for (const row of rows) {
+      if (!row.retired) base[row.state] += 1;
+    }
     return base;
   }, [rows]);
+  const retiredCount = useMemo(() => rows.filter((row) => row.retired).length, [rows]);
+  const liveCount = rows.length - retiredCount;
+  const isRetiredView = filters.state === "retired";
   const originOptions = useMemo(() => manageOriginOptions(rows), [rows]);
   const seasonChoices = useMemo(() => manageSeasonOptions(rows), [rows]);
   const doneCount = useMemo(() => rows.filter(manageCompleted).length, [rows]);
@@ -184,20 +199,70 @@ export function SubscribedManageDialog({
   const pauseBlocked =
     pauseTargets.length === 0 && selectedRows.some((row) => row.state === "pending" && !row.retired);
   const removeTargets = selectedRows.filter((row) => !row.retired);
+  const cleanupTargets = selectedRows.filter((row) => row.retired);
+
+  /** Switching between the live list and 已退订 clears the selection: a batch
+   *  action belongs to the view it was selected in, never to both at once. */
+  function changeState(next: ManageStateFilter) {
+    if ((filters.state === "retired") !== (next === "retired")) setSelected(new Set());
+    setFilters((current) => ({ ...current, state: next }));
+  }
+
+  /** Cleanup is separate from unsubscribing: every selected retired instance
+   *  carries its own lifecycle epoch (CAS) and its own Idempotency-Key. Partial
+   *  success is reported as exact counts, and failed rows stay selected so a
+   *  retry starts from what is left. qB torrents/data and library files are
+   *  never touched by this command. */
+  async function runCleanup() {
+    if (cleanupTargets.length === 0 || batching) return;
+    const batchId = cleanupTargets.length > 1 ? newUUID() : undefined;
+    setBatching(true);
+    const results = await Promise.allSettled(
+      cleanupTargets.map((row) =>
+        cleanupAnimeLocalData(
+          row.key,
+          {
+            expected_lifecycle_epoch: row.lifecycleEpoch,
+            confirmation: "delete-local-data",
+            ...(batchId ? { operation_batch_id: batchId } : {}),
+          },
+          newUUID(),
+        ),
+      ),
+    );
+    setBatching(false);
+    const ok = results.filter((result) => result.status === "fulfilled").length;
+    const failed = cleanupTargets.length - ok;
+    const failedKeys = new Set(
+      cleanupTargets
+        .filter((_, index) => results[index].status === "rejected")
+        .map((row) => row.key),
+    );
+    setSelected(failedKeys);
+    await list.refetch();
+    onMutated();
+    if (failed === 0) {
+      toast.success(t("grid.manage.cleanedToast", { n: ok }));
+    } else {
+      toast.error(t("grid.manage.cleanupPartFailed", { ok, failed }));
+    }
+  }
 
   const batchSummary =
     selectedRows.length === 0
       ? t("grid.manage.selNone")
-      : (() => {
-          const selCounts: Record<ManageState, number> = { active: 0, stopped: 0, pending: 0 };
-          for (const row of selectedRows) selCounts[row.state] += 1;
-          return t("grid.manage.selInfoStates", {
-            n: selectedRows.length,
-            active: selCounts.active,
-            stopped: selCounts.stopped,
-            pending: selCounts.pending,
-          });
-        })();
+      : isRetiredView
+        ? t("grid.manage.selRetired", { n: selectedRows.length })
+        : (() => {
+            const selCounts: Record<ManageState, number> = { active: 0, stopped: 0, pending: 0 };
+            for (const row of selectedRows) selCounts[row.state] += 1;
+            return t("grid.manage.selInfoStates", {
+              n: selectedRows.length,
+              active: selCounts.active,
+              stopped: selCounts.stopped,
+              pending: selCounts.pending,
+            });
+          })();
 
   return (
     <Dialog
@@ -221,39 +286,53 @@ export function SubscribedManageDialog({
               {t("grid.manage.clearSel")}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="primary"
-            loading={batching}
-            disabled={startTargets.length === 0}
-            onClick={() =>
-              runBatch(
-                { ok: "grid.manage.startedToast", partFailed: "grid.manage.batchPartFailed" },
-                startTargets,
-                (row) => patchAnimeSubscription(row.key, { expected_version: row.version, state: "active" }),
-              )
-            }
-          >
-            {t("grid.manage.start")}
-          </Button>
-          <Button
-            size="sm"
-            loading={batching}
-            disabled={pauseTargets.length === 0}
-            title={pauseBlocked ? t("grid.manage.pauseBlocked") : undefined}
-            onClick={() =>
-              runBatch(
-                { ok: "grid.manage.pausedToast", partFailed: "grid.manage.batchPartFailed" },
-                pauseTargets,
-                (row) => patchAnimeSubscription(row.key, { expected_version: row.version, state: "stopped" }),
-              )
-            }
-          >
-            {t("grid.manage.pause")}
-          </Button>
-          <Button size="sm" variant="danger" disabled={removeTargets.length === 0} onClick={() => setConfirmingRemove(true)}>
-            {t("grid.manage.remove")}
-          </Button>
+          {isRetiredView ? (
+            <Button
+              size="sm"
+              variant="danger"
+              loading={batching}
+              disabled={cleanupTargets.length === 0}
+              onClick={() => setConfirmingCleanup(true)}
+            >
+              {t("grid.manage.cleanup")}
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="primary"
+                loading={batching}
+                disabled={startTargets.length === 0}
+                onClick={() =>
+                  runBatch(
+                    { ok: "grid.manage.startedToast", partFailed: "grid.manage.batchPartFailed" },
+                    startTargets,
+                    (row) => patchAnimeSubscription(row.key, { expected_version: row.version, state: "active" }),
+                  )
+                }
+              >
+                {t("grid.manage.start")}
+              </Button>
+              <Button
+                size="sm"
+                loading={batching}
+                disabled={pauseTargets.length === 0}
+                title={pauseBlocked ? t("grid.manage.pauseBlocked") : undefined}
+                onClick={() =>
+                  runBatch(
+                    { ok: "grid.manage.pausedToast", partFailed: "grid.manage.batchPartFailed" },
+                    pauseTargets,
+                    (row) => patchAnimeSubscription(row.key, { expected_version: row.version, state: "stopped" }),
+                  )
+                }
+              >
+                {t("grid.manage.pause")}
+              </Button>
+              <Button size="sm" variant="danger" disabled={removeTargets.length === 0} onClick={() => setConfirmingRemove(true)}>
+                {t("grid.manage.remove")}
+              </Button>
+            </>
+          )}
         </div>
       }
     >
@@ -265,12 +344,13 @@ export function SubscribedManageDialog({
             aria-label={t("grid.manage.stateAria")}
             size="toolbar"
             value={filters.state}
-            onValueChange={(state) => setFilters((current) => ({ ...current, state }))}
+            onValueChange={changeState}
             options={[
-              { value: "all", label: t("grid.manage.stateAll"), count: rows.length, tone: "primary" },
+              { value: "all", label: t("grid.manage.stateAll"), count: liveCount, tone: "primary" },
               { value: "active", label: t("anime.state.active"), count: counts.active, tone: "primary" },
               { value: "stopped", label: t("anime.state.stopped"), count: counts.stopped, tone: "primary" },
               { value: "pending", label: t("anime.state.pending"), count: counts.pending, tone: "primary" },
+              { value: "retired", label: t("grid.manage.stateRetired"), count: retiredCount, tone: "primary" },
             ]}
           />
         </div>
@@ -420,6 +500,7 @@ export function SubscribedManageDialog({
             <tbody>
               {ordered.map(({ row, grouped }) => {
                 const progress = progressCell(row);
+                const statePill = statePillOf(row);
                 return (
                   <tr
                     key={row.key}
@@ -466,7 +547,7 @@ export function SubscribedManageDialog({
                       {row.showSeason === undefined ? "—" : t("grid.manage.showSeasonLabel", { n: row.showSeason })}
                     </td>
                     <td className="tw:px-2">
-                      <StatePill tone={STATE_PILL_TONE[row.state]}>{t(STATE_LABEL_KEY[row.state])}</StatePill>
+                      <StatePill tone={statePill.tone}>{statePill.label}</StatePill>
                     </td>
                     <td className="tw:px-2">
                       {row.rssHealth ? (
@@ -522,11 +603,42 @@ export function SubscribedManageDialog({
           onConfirm={() => {
             setConfirmingRemove(false);
             setSelected(new Set());
+            const batchId = removeTargets.length > 1 ? newUUID() : undefined;
             void runBatch(
               { ok: "grid.manage.removedToast", partFailed: "grid.manage.batchPartFailed" },
               removeTargets,
-              (row) => deleteAnimeSubscription(row.key, { expected_version: row.version }),
+              (row) => deleteAnimeSubscription(row.key, {
+                expected_version: row.version,
+                ...(batchId ? { operation_batch_id: batchId } : {}),
+              }),
             );
+          }}
+        />
+      )}
+      {confirmingCleanup && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setConfirmingCleanup(false);
+          }}
+          title={t("grid.manage.cleanupTitle", { n: cleanupTargets.length })}
+          description={
+            <ConfirmLines
+              lines={[
+                t("grid.manage.cleanupLine1"),
+                ...cleanupTargets
+                  .slice(0, 5)
+                  .map((row) => (row.instanceLabel ? withNote(row.title, row.instanceLabel) : row.title)),
+                ...(cleanupTargets.length > 5 ? [t("grid.manage.cleanupMore", { n: cleanupTargets.length })] : []),
+                t("grid.manage.cleanupLine2"),
+              ]}
+            />
+          }
+          confirmLabel={t("grid.manage.cleanupConfirm")}
+          danger
+          onConfirm={() => {
+            setConfirmingCleanup(false);
+            void runCleanup();
           }}
         />
       )}
@@ -583,8 +695,8 @@ function ManageMobileRow({
               {row.instanceLabel}
             </span>
           )}
-          <StatePill tone={STATE_PILL_TONE[row.state]} className="tw:ml-auto tw:flex-none">
-            {t(STATE_LABEL_KEY[row.state])}
+          <StatePill tone={statePillOf(row).tone} className="tw:ml-auto tw:flex-none">
+            {statePillOf(row).label}
           </StatePill>
         </div>
         <div className="tw:mt-0.5 tw:truncate tw:text-xs tw:text-muted-foreground tw:tabular-nums">{meta}</div>
