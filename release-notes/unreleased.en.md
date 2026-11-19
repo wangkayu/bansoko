@@ -22,6 +22,7 @@
 
 ## Fixed
 
+- The event log reports a replacement only when an old version was actually replaced. Expand the event to see the kept and replaced versions and whether a library check triggered the replacement.
 - Automation run records and logs distinguish completed catalog checks from queued work and show confirmed results even when some tasks fail.
 - Interrupted automation runs with no confirmed result show as unconfirmed rather than failed in settings and logs.
 - Runtime logs distinguish network, package verification, and local storage failures during update preparation without exposing request URLs or file paths.
