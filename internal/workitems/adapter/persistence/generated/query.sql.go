@@ -516,13 +516,13 @@ func (q *Queries) DeleteOneShotReleases(ctx context.Context, releaseID string) e
 
 const deleteOneShotSubscriptionLogEntries = `-- name: DeleteOneShotSubscriptionLogEntries :exec
 DELETE FROM subscription_log_entries
-WHERE subscription_id = $1
+WHERE subscription_id = $1::text
 `
 
 // DeleteOneShotSubscriptionLogEntries
 //
 //	DELETE FROM subscription_log_entries
-//	WHERE subscription_id = $1
+//	WHERE subscription_id = $1::text
 func (q *Queries) DeleteOneShotSubscriptionLogEntries(ctx context.Context, subscriptionID string) error {
 	_, err := q.db.ExecContext(ctx, deleteOneShotSubscriptionLogEntries, subscriptionID)
 	return err

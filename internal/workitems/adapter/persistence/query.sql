@@ -415,7 +415,7 @@ WHERE id = sqlc.arg(rss_source_id);
 
 -- name: DeleteOneShotSubscriptionLogEntries :exec
 DELETE FROM subscription_log_entries
-WHERE subscription_id = sqlc.arg(subscription_id);
+WHERE subscription_id = sqlc.arg(subscription_id)::text;
 
 -- name: DeleteOneShotProviderGroupSelections :exec
 DELETE FROM provider_group_selections

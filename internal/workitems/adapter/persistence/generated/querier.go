@@ -150,7 +150,7 @@ type Querier interface {
 	//DeleteOneShotSubscriptionLogEntries
 	//
 	//  DELETE FROM subscription_log_entries
-	//  WHERE subscription_id = $1
+	//  WHERE subscription_id = $1::text
 	DeleteOneShotSubscriptionLogEntries(ctx context.Context, subscriptionID string) error
 	//DeleteOneShotSubscriptions
 	//

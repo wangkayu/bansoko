@@ -34,7 +34,7 @@ func TestQBManagementDeleteOperationEventsPostgres(t *testing.T) {
 			var deletes atomic.Int32
 			qb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
-				case "/api/v2/auth/login":
+				case "/api/v2/auth/login": // qBittorrent WebUI login
 					_, _ = w.Write([]byte("Ok."))
 				case "/api/v2/torrents/info":
 					if deletes.Load() == 0 {
