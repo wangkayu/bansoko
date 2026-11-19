@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/jackett"
@@ -23,9 +24,12 @@ import (
 // search. A fetch that fails is NOT cached — the next search retries it — and
 // never fails the search: the rows then simply carry no categories.
 
-// jackettCapsCacheBound caps the cache's site count so a hostile or broken
-// aggregate inventing fresh indexer ids cannot grow memory without limit.
-const jackettCapsCacheBound = 256
+const (
+	jackettCapsCacheBound = 256
+	jackettCapsWorkers    = 4
+	jackettCapsBudget     = 2 * time.Second
+	jackettCapsSiteBudget = 750 * time.Millisecond
+)
 
 type jackettCapsCache struct {
 	mu      sync.Mutex
@@ -58,51 +62,98 @@ func (c *jackettCapsCache) put(key string, names map[string]string) {
 // per search, so the cache lives here rather than on the reader.
 var jackettCaps = newJackettCapsCache()
 
-// resolveSeedCategories fills every item's caps-resolved categories. It is a
-// display-fact enrichment: any failure leaves the item without categories.
+type jackettCapsLookup struct {
+	id    string
+	names map[string]string
+}
+
+// resolveSeedCategories treats caps as display evidence. Cache hits do not
+// consume worker slots, and cold sites share a budget independent of the search.
 func (s HTTPJackettSearcher) resolveSeedCategories(ctx context.Context, client *http.Client, items []acquisitiondomain.FeedItem) {
-	fetched := make(map[string]map[string]string, 4)
-	for index := range items {
-		item := &items[index]
+	bySite := make(map[string]*jackettCapsLookup)
+	var misses []*jackettCapsLookup
+	endpointKey := strings.TrimRight(strings.TrimSpace(s.Endpoint), "/") + "\x00"
+	for _, item := range items {
 		if len(item.SeedCategoryIDs) == 0 || item.SourceSite == nil {
 			continue
 		}
-		indexerID := item.SourceSite.ID
-		names, attempted := fetched[indexerID]
-		if !attempted {
-			names = s.fetchIndexerCaps(ctx, client, indexerID)
-			fetched[indexerID] = names
-		}
-		if len(names) == 0 {
+		id := item.SourceSite.ID
+		if _, seen := bySite[id]; seen {
 			continue
 		}
-		categories := make([]acquisitiondomain.SeedCategory, 0, len(item.SeedCategoryIDs))
-		seen := make(map[string]struct{}, len(item.SeedCategoryIDs))
-		for _, id := range item.SeedCategoryIDs {
-			name := strings.TrimSpace(names[id])
-			if name == "" {
+		names, cached := jackettCaps.get(endpointKey + id)
+		lookup := &jackettCapsLookup{id: id, names: names}
+		bySite[id] = lookup
+		if !cached {
+			misses = append(misses, lookup)
+		}
+	}
+	if len(misses) > 0 {
+		s.resolveColdCaps(ctx, client, endpointKey, misses)
+	}
+	for index := range items {
+		item := &items[index]
+		if item.SourceSite != nil {
+			if lookup := bySite[item.SourceSite.ID]; lookup != nil {
+				item.SeedCategories = selectJackettCategories(item.SeedCategoryIDs, lookup.names)
+			}
+		}
+	}
+}
+
+func (s HTTPJackettSearcher) resolveColdCaps(ctx context.Context, client *http.Client, endpointKey string, misses []*jackettCapsLookup) {
+	ctx, cancel := context.WithTimeout(ctx, jackettCapsBudget)
+	defer cancel()
+	pending := make(chan *jackettCapsLookup, len(misses))
+	for _, lookup := range misses {
+		pending <- lookup
+	}
+	close(pending)
+
+	var workers sync.WaitGroup
+	for range min(jackettCapsWorkers, len(misses)) {
+		workers.Go(func() {
+			for lookup := range pending {
+				if ctx.Err() != nil {
+					return
+				}
+				siteCtx, cancelSite := context.WithTimeout(ctx, jackettCapsSiteBudget)
+				lookup.names = s.fetchIndexerCaps(siteCtx, client, lookup.id, endpointKey+lookup.id)
+				cancelSite()
+			}
+		})
+	}
+	workers.Wait()
+}
+
+func selectJackettCategories(ids []string, names map[string]string) []acquisitiondomain.SeedCategory {
+	if len(ids) == 0 || len(names) == 0 {
+		return nil
+	}
+	var categories []acquisitiondomain.SeedCategory
+	seen := make(map[string]struct{}, min(len(ids), acquisitiondomain.MaxSeedCategories))
+	for _, id := range ids {
+		if name := names[id]; name != "" {
+			if _, duplicate := seen[id]; duplicate {
 				continue
 			}
-			if _, ok := seen[id]; ok {
-				continue
-			}
-			seen[id] = struct{}{}
 			category := acquisitiondomain.SeedCategory{ID: id, Name: name}
 			if err := category.Validate(); err != nil {
 				continue
 			}
+			seen[id] = struct{}{}
 			categories = append(categories, category)
+			if len(categories) == acquisitiondomain.MaxSeedCategories {
+				break
+			}
 		}
-		item.SeedCategories = categories
 	}
+	return categories
 }
 
-// fetchIndexerCaps reads one indexer's caps and returns its category id → name
-// map. The cache key is the credential-free endpoint plus the indexer id: the
-// API key is request-only and never keys state. Every failure — transport,
-// status, protocol error, undecodable body — returns nil and is not cached.
-func (s HTTPJackettSearcher) fetchIndexerCaps(ctx context.Context, client *http.Client, indexerID string) map[string]string {
-	cacheKey := strings.TrimRight(strings.TrimSpace(s.Endpoint), "/") + "\x00" + indexerID
+// The cache key is the credential-free endpoint and indexer ID. Failed reads
+// return nil without caching so a subsequent search can retry them.
+func (s HTTPJackettSearcher) fetchIndexerCaps(ctx context.Context, client *http.Client, indexerID, cacheKey string) map[string]string {
 	if names, ok := jackettCaps.get(cacheKey); ok {
 		return names
 	}

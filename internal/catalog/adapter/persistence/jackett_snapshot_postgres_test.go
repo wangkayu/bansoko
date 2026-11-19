@@ -2,6 +2,8 @@ package persistence
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -76,7 +78,11 @@ func TestJackettSearchSnapshotPersistsPTFactsOutsideContentHash(t *testing.T) {
 	enriched[0].Leechers = &leechers
 	enriched[0].DownloadFactor = &downloadFactor
 	enriched[0].UploadFactor = &uploadFactor
-	enriched[0].Categories = []acquisitiondomain.SeedCategory{{ID: "5071", Name: "Anime/RAW"}}
+	for i := range acquisitiondomain.MaxSeedCategories {
+		enriched[0].Categories = append(enriched[0].Categories, acquisitiondomain.SeedCategory{
+			ID: fmt.Sprintf("%d", 6000-i), Name: fmt.Sprintf("Category %d", i),
+		})
+	}
 	plainHash, err := catalogdomain.CanonicalFeedSnapshotContentHash(plain)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +120,7 @@ func TestJackettSearchSnapshotPersistsPTFactsOutsideContentHash(t *testing.T) {
 	if fact.DownloadFactor == nil || *fact.DownloadFactor != 0.0 || fact.UploadFactor == nil || *fact.UploadFactor != 2.0 {
 		t.Fatalf("billing factors did not round trip: %+v", fact)
 	}
-	if len(fact.Categories) != 1 || fact.Categories[0].ID != "5071" || fact.Categories[0].Name != "Anime/RAW" {
+	if !slices.Equal(fact.Categories, enriched[0].Categories) {
 		t.Fatalf("categories did not round trip: %+v", fact.Categories)
 	}
 

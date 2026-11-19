@@ -30,6 +30,9 @@ func (s SeedSourceSite) Validate() error {
 	return nil
 }
 
+// MaxSeedCategories is the per-seed category limit of the persisted feed snapshot.
+const MaxSeedCategories = 32
+
 // SeedCategory is one tracker category of a Jackett search result: the
 // torznab `category` attribute id resolved to its name through the indexer
 // caps. It is display evidence on the seed's second line, never a filter, a
