@@ -1,5 +1,8 @@
 ## New
 
+- Default rules now let you choose a preferred title for new subscriptions. The default keeps the current title. If the selected title is unavailable when matching first completes, the current title is kept. Existing subscriptions are unaffected.
+- View episode lists directly from existing TMDB or Bangumi links in program settings, one-shot downloads, and the file manager, without matching again.
+
 - AniBT, Mikan, and Custom catalogs now have a List view. Filter by title, status, format, or availability, then read synopses, browse torrents, or subscribe in bulk. Select a poster in the synopsis to enlarge it.
 
 - Telegram notification templates can add URL buttons with button(target, label) in the body. Telegram shows one button per row below the message; Lark and webhook messages are unchanged.
@@ -11,6 +14,8 @@
 - Library import completion and execution failure notifications support original file-name attributes through frt.*. File displacement notifications can show both files using frt.* and taker.frt.*.
 
 ## Improved
+
+- The rule for files with unrecognized episode numbers has moved to Subscription policy → Default rules. Existing settings and behavior are unchanged.
 
 - Select a title in the catalog list to open its settings. Saving or subscribing updates the list in place. On phones, the original title sits beside the main title, and synopsis, browse, and quick subscribe no longer take up a separate row.
 - On phones, the Subscribed page keeps status filters, title filtering, and management on one row. Tap the filter icon to reveal the text field.

@@ -1636,7 +1636,12 @@ export function listAnimeTMDBSeasonEpisodes(managedAnimeID: string, season: numb
   return request(`/anime/${encodePathSegment(managedAnimeID)}/tmdb/seasons/${season}/episodes`, { method: "GET" });
 }
 
-/** Read-only episodes of one season of a TMDB work returned by metadata search, before any binding. */
+/** Read-only season catalog for a TMDB TV work, regardless of any saved binding. */
+export function listTMDBWorkSeasons(workID: string): Promise<TMDBSeasonList> {
+  return request(`/metadata/tmdb/works/${encodePathSegment(workID)}/seasons`, { method: "GET" });
+}
+
+/** Read-only episodes of one season of a TMDB work. */
 export function listTMDBCandidateEpisodes(workID: string, season: number): Promise<TMDBSeasonEpisodeList> {
   return request(`/metadata/tmdb/works/${encodePathSegment(workID)}/seasons/${season}/episodes`, { method: "GET" });
 }

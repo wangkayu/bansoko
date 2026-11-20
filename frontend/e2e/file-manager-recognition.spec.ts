@@ -9,6 +9,7 @@ import type {
 import { t } from "./copy";
 import { isPhoneLayout } from "./catalog-nav";
 import { mockSignedIn } from "./session";
+import { bindTMDB, boundTMDBCandidate, checkBoundEpisodes, mockBoundEpisodes } from "./bound-episodes";
 
 // The recognition window's file actions (load metadata / set file numbering)
 // act on the preview rows, so they sit in a toolbar directly above that list
@@ -149,6 +150,21 @@ async function mockReads(page: Page) {
 
 test.describe("file manager recognition actions", () => {
   test.skip(!fixtureOnly, "fixture 模式的 HTTP mock 才能直达识别窗口");
+
+  test("browses bound episodes from file recognition", async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 740 });
+    await mockReads(page);
+    await page.route("**/api/v1/metadata/search?**", (route) => getOnly(route, {
+      provider: "tmdb", query: "示例作品", candidates: [boundTMDBCandidate],
+    }));
+    const reads = await mockBoundEpisodes(page);
+    await page.goto("/#/?tool=files&path=%2Fmedia%2Fanime");
+    await page.getByRole("checkbox", { name: t("fileManager.browse.selectAll") }).click();
+    await page.getByRole("button", { name: t("fileManager.selection.recognize") }).click();
+    const dialog = page.getByRole("dialog", { name: t("fileManager.recognize.title") });
+    await bindTMDB(page, dialog);
+    await checkBoundEpisodes(page, dialog, reads, `recognition-${testInfo.project.name}`);
+  });
 
   test("keeps both file actions in a toolbar above the preview rows", async ({ page }, testInfo) => {
     await mockReads(page);

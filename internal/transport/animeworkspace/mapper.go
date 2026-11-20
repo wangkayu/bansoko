@@ -100,6 +100,9 @@ func mapWorkspaceMetadata(value animeapplication.AnimeMetadata) generated.AnimeM
 			Season:    value.TMDB.Season,
 		}
 	}
+	if value.InitialTitlePending {
+		result.InitialTitlePending = &value.InitialTitlePending
+	}
 	result.TitleSuggestions = MapTitleSuggestions(value.TitleSuggestions)
 	return result
 }

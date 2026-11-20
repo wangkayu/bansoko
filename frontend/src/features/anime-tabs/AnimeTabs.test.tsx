@@ -1143,6 +1143,10 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
+      if (url.includes("/config/global-sections")) {
+        return new Response(JSON.stringify([{ section_name: "subscription_title", value: { source: "tmdb_cn" } }]),
+          { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (url.includes("/metadata/search")) {
         return new Response(
           JSON.stringify({
@@ -1151,6 +1155,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
                 provider: "tmdb",
                 provider_work_id: "265010",
                 title: "匹配到的番名",
+                title_cn: "匹配到的番名",
                 media_kind: "tv",
                 details_status: "available",
                 seasons: [{ season_number: 1, name: "第一季", episode_count: 12, air_date: "2024-01-01", is_special: false }],
@@ -1178,6 +1183,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
             managed_anime_id: "anime-1",
             bgm: null,
             tmdb: null,
+            title_override: JSON.parse(String(init.body)).title_override,
             version: metadataVersion,
             ...(reevaluated === null ? {} : { reevaluated_releases: reevaluated }),
           }),
@@ -1346,7 +1352,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(reevaluateCalls(fetchMock)).toHaveLength(0);
   });
 
-  it("标题：没有固定标题的旧数据显示订阅时的标题，不算未保存；绑定保存时一并写入", async () => {
+  it("标题：旧数据显示订阅时的标题，不随绑定保存隐式写入", async () => {
     const fetchMock = stubMetadataPatchFetch();
     const workspace = workspaceFixture();
     workspace.metadata = { managed_anime_id: "anime-1", bgm: { work_id: "486109" }, tmdb: null, title_override: null, version: 5 };
@@ -1357,7 +1363,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.bangumi") }) }));
     clickFooterSave();
     await waitFor(() => expect(metadataPatchBodies(fetchMock)).toHaveLength(1));
-    expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ title_override: "测试番" });
+    expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ title_override: null });
   });
 
   it("类型行：只有剧集与电影两项；选电影由 footer 保存并安排重评估", async () => {
@@ -1393,7 +1399,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       expected_version: 3,
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
-      title_override: "测试番",
+      title_override: null,
       media_kind: "movie",
       total_episodes: null,
       year: null,
@@ -1450,7 +1456,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       expected_version: 5,
       bgm: null,
       tmdb: null,
-      title_override: "测试番",
+      title_override: null,
       media_kind: "tv",
       total_episodes: null,
       year: null,
@@ -1565,7 +1571,6 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     fireEvent.click(within(titleRegion()).getByRole("button", { name: t("act.cancel") }));
 
     const dialog = await confirmTmdbMatch();
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: alsoSetTitleName }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
@@ -1585,7 +1590,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
   }
   const alsoSetTitleName = t("forms.alsoSetTitle", { title: "匹配到的番名" });
 
-  it("TMDB 匹配确认：标题仍是来源标题时勾选预选，绑定与标题由一次保存一起上送；取消勾选则标题不动", async () => {
+  it("TMDB 首次匹配：预选指定来源，取消勾选仍明确保存保留标题的决定", async () => {
     for (const checked of [true, false]) {
       const fetchMock = stubMetadataPatchFetch();
       const workspace = workspaceFixture();
@@ -1593,14 +1598,14 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
         managed_anime_id: "anime-1",
         bgm: null,
         tmdb: null,
-        title_suggestions: [{ source: "provider", text: "测试番" }],
+        initial_title_pending: true,
         version: 1,
       };
       const { unmount } = renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
 
       const dialog = await confirmTmdbMatch();
       const box = within(dialog).getByRole("checkbox", { name: alsoSetTitleName });
-      expect(box).toBeChecked();
+      await waitFor(() => expect(box).toBeChecked());
       if (!checked) fireEvent.click(box);
       fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -1728,7 +1733,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ total_episodes: null });
   });
 
-  it("绑定保存回传 title_override 现值（省略会被服务端当清空）", async () => {
+  it("绑定保存不写标题，空 title_override 表示保留存量标题", async () => {
     const fetchMock = stubMetadataPatchFetch();
     const workspace = workspaceFixture();
     workspace.metadata = {
@@ -1748,7 +1753,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
 
     const bodies = metadataPatchBodies(fetchMock);
     expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toEqual({ expected_version: 4, bgm: null, tmdb: null, title_override: "保留我", media_kind: null, total_episodes: null, year: null, season: null });
+    expect(bodies[0]).toEqual({ expected_version: 4, bgm: null, tmdb: null, title_override: null, media_kind: null, total_episodes: null, year: null, season: null });
   });
 
   it("保存失败：footer 报出失败的部分，改动保持未保存", async () => {
@@ -1800,7 +1805,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       expected_version: 3,
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
-      title_override: "保留我",
+      title_override: null,
       media_kind: null,
       total_episodes: null,
       year: null,

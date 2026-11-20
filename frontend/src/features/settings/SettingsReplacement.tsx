@@ -5,15 +5,11 @@ import { useEffect, useState } from "react";
 import { toast } from "../../ui/toast";
 import {
   ApiError,
-  getFileEffectPolicyDefault,
   getReplacementPolicyDefault,
-  saveFileEffectPolicyDefault,
   saveReplacementPolicyDefault,
   toUserMessage,
-  type FileEffectPolicyDefaultView,
 } from "../../lib/api/client";
 import { fileMaintenanceKeys } from "../../lib/queryKeys";
-import { useSavePart } from "../../lib/saveParts";
 import { ConflictBlock } from "../../ui";
 import {
   admissionOptions,
@@ -43,12 +39,7 @@ export function SettingsReplacement({ onDirtyChange }: { onDirtyChange?: (dirty:
   );
 }
 
-// "Files with unrecognized episodes" is its own section with its own nav entry; it relates to the
-//   naming templates' "unknown content" section without depending on the replacement policy.
 const noop = () => {};
-export function SettingsUnclassified({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
-  return <UnclassifiedSection onDirtyChange={onDirtyChange ?? noop} />;
-}
 
 function ReplacementSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const queryClient = useQueryClient();
@@ -144,86 +135,6 @@ function ReplacementSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean)
 
 
         </>
-      )}
-    </section>
-  );
-}
-
-const routeLabels = (): Record<FileEffectPolicyDefaultView["unclassified_route"], { label: string; hint: string }> => ({
-  skip: { label: t("file.unclassified.skip"), hint: t("settings.replacement.unclassified.skipHint") },
-  route: { label: t("file.unclassified.route"), hint: t("settings.replacement.unclassified.routeHint") },
-});
-
-function UnclassifiedSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
-  const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: fileMaintenanceKeys.fileEffectDefault, queryFn: getFileEffectPolicyDefault });
-  const data = query.data;
-  const [route, setRoute] = useState<FileEffectPolicyDefaultView["unclassified_route"]>();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-  const [conflict, setConflict] = useState<number>();
-  const dirty = !!data && route !== undefined && route !== data.unclassified_route;
-
-  useEffect(() => {
-    if (data && !dirty) setRoute(data.unclassified_route);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- version identifies the server value
-  }, [data?.version]);
-  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  // Edited in place: the selection is a draft, committed by the settings dialog footer's single save.
-  async function save() {
-    if (!data || !route) return { ok: true as const };
-    setSaving(true);
-    setError(undefined);
-    setConflict(undefined);
-    try {
-      const saved = await saveFileEffectPolicyDefault({ expected_version: data.version, unclassified_route: route });
-      queryClient.setQueryData(fileMaintenanceKeys.fileEffectDefault, saved);
-      setRoute(saved.unclassified_route);
-      return { ok: true as const, message: t("settings.replacement.unclassified.saved") };
-    } catch (cause) {
-      const version = conflictVersion(cause);
-      if (version !== undefined) setConflict(version);
-      setError(toUserMessage(cause, t("settings.replacement.unclassified.saveFailed")));
-      return { ok: false as const };
-    } finally {
-      setSaving(false);
-    }
-  }
-  useSavePart("unclassified", { count: dirty ? 1 : 0, label: t("file.unclassifiedTitle"), busy: saving, save });
-
-  async function refreshAfterConflict() {
-    setConflict(undefined);
-    setError(undefined);
-    const fresh = await query.refetch();
-    if (fresh.data) setRoute(fresh.data.unclassified_route);
-  }
-
-  return (
-    <section className="settings-policy-section" aria-label={t("file.unclassifiedTitle")}>
-      <div className="settings-policy-header">
-        <div>
-          <h2 className="settings-policy-title text-title">{t("file.unclassifiedTitle")}</h2>
-          <p className="settings-policy-description text-caption">{t("settings.replacement.unclassified.description")}</p>
-        </div>
-      </div>
-      {conflict !== undefined ? (
-        <ConflictBlock currentVersion={conflict} message={error} onRefresh={() => void refreshAfterConflict()} />
-      ) : (
-        error && <Alert tone="error" title={error} />
-      )}
-      {query.isLoading && (
-        <StateBlock kind="busy" title={t("settings.replacement.unclassified.loading")} />
-      )}
-      {query.error && <Alert tone="error" title={toUserMessage(query.error, t("settings.replacement.unclassified.loadFailed"))} />}
-      {route && (
-        <div className="settings-policy-card">
-          <div className="settings-replacement-field">
-            <Select label={t("settings.replacement.unclassified.selectLabel")} value={route} options={(Object.keys(routeLabels()) as (keyof ReturnType<typeof routeLabels>)[]).map((value) => ({ value, label: routeLabels()[value].label }))} disabled={saving} onChange={(value) => setRoute(value)} />
-          </div>
-          <p className="settings-policy-card-description text-caption">{routeLabels()[route].hint}</p>
-        </div>
       )}
     </section>
   );

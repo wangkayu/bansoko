@@ -19,6 +19,7 @@ import { animeFilesView } from "./fixtures/animeFilesView";
 import { isPhoneLayout, selectBrowseSection, selectSubscribed } from "./catalog-nav";
 import { joinList, t } from "./copy";
 import { mockSignedIn } from "./session";
+import { bindTMDB, boundTMDBCandidate, checkBoundEpisodes, mockBoundEpisodes } from "./bound-episodes";
 
 // This suite is a deterministic fixture UI contract. Live provider evidence is
 // kept in live-smoke.spec.ts so online data cannot invalidate fixture assertions.
@@ -2441,6 +2442,87 @@ test.describe("AnimeGrid", () => {
     await matchDialog.getByRole("button", { name: "确认匹配", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "清除 TMDB 条目 关联" })).toBeVisible();
     await expect(dialog.locator('.metadata-card a[href="https://www.themoviedb.org/tv/265010"]')).toContainText(t("forms.seasonN", { n: "2" }));
+  });
+
+  test("previews keeping the current title on the first manual match", async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 740 });
+    await enterApp(page);
+    await page.route("**/api/v1/config/global-sections", (route) => route.fulfill({ json: [{
+      section_name: "subscription_title", schema_version: "subscription-title-v1", value: { source: "tmdb_cn" }, version: 1, saved: true,
+    }] }));
+    await mockCandidateSearch(page, [{ ...boundTMDBCandidate, title_cn: boundTMDBCandidate.title }]);
+    const config = await openConfigFromCard(page, await openProvider(page, "Mikan"));
+    const titleRow = config.getByRole("region", { name: t("tabs.metadata.title"), exact: true });
+    const currentTitle = (await titleRow.locator(".title-row-value").textContent())!.trim();
+    await config.getByRole("button", { name: t("forms.matchProvider", { provider: "TMDB" }), exact: true }).click();
+    const match = page.getByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }), exact: true });
+    await match.getByRole("button", { name: t("forms.search"), exact: true }).click();
+    await match.getByRole("option", { name: /北岸来信/ }).click();
+    const choice = match.getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: boundTMDBCandidate.title }) });
+    await expect(choice).toBeChecked();
+    await expect(match.getByText(t("forms.matchResultTitle", { title: boundTMDBCandidate.title }), { exact: true })).toBeVisible();
+    await choice.click();
+    const preview = match.getByText(t("forms.matchResultTitle", { title: currentTitle }), { exact: true });
+    await expect(preview).toBeVisible();
+    await preview.scrollIntoViewIfNeeded();
+    const [dialogBox, previewBox] = await Promise.all([match.boundingBox(), preview.boundingBox()]);
+    if (!dialogBox || !previewBox) throw new Error("title preview has no layout box");
+    expect(previewBox.x).toBeGreaterThanOrEqual(dialogBox.x);
+    expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+    expect(await match.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    await match.screenshot({ path: testInfo.outputPath("initial-match-keep-title.png") });
+    await match.getByRole("button", { name: t("forms.confirmMatch"), exact: true }).click();
+    await expect(titleRow).toContainText(currentTitle);
+    const binding = config.getByRole("region", { name: t("forms.tmdb"), exact: true });
+    await expect(binding.getByRole("link")).toHaveAttribute("href", "https://www.themoviedb.org/tv/265010");
+  });
+
+  test("browses bound episodes from programme configuration", async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 740 });
+    await enterApp(page);
+    await mockCandidateSearch(page, [boundTMDBCandidate]);
+    const reads = await mockBoundEpisodes(page);
+    const dialog = await openConfigFromCard(page, await openProvider(page, "Mikan"));
+    await bindTMDB(page, dialog);
+    await checkBoundEpisodes(page, dialog, reads, `programme-${testInfo.project.name}`);
+  });
+
+  test("browses bound episodes from one-shot configuration", async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 740 });
+    await enterApp(page);
+    await openProvider(page, "AniBT");
+    await mockCandidateSearch(page, [boundTMDBCandidate]);
+    const reads = await mockBoundEpisodes(page);
+    const scope = { provider: "anibt", provider_entry_ref: "anibt:stellar-mail-ella", provider_group_ref: "fixture" };
+    const feed = { snapshot_id: "snapshot-one", snapshot_version: 1, content_hash: "fixture-seed-list" };
+    const seedTitle = "[测试字幕组] 星际邮差艾拉 - 01";
+    await page.route("**/api/v1/catalog/providers/anibt/entries/*/groups:discover", (route) => route.fulfill({ json: {
+      ...scope, snapshot_version: 1, groups: [{ group_ref: "fixture", display_name: "测试字幕组" }],
+    } }));
+    await page.route("**/api/v1/catalog/providers/anibt/entries/*/rss?group_ref=fixture", (route) => route.fulfill({ json: {
+      ...scope, ...feed, group_ref: "fixture", freshness: "fresh", seeds: [],
+    } }));
+    await page.route("**/api/v1/anime/rss-list-view", (route) => route.fulfill({ json: {
+      mode: "current_input", config_identity: "fixture", metadata_hold: { held: false, missing: [] },
+      versions: { parser: "p", evaluator: "e", renderer: "r", safety: "s", torrent_parser: "t" },
+      unused_feed_identities: [], truncated: false, limit_per_group: 100,
+      groups: [{
+        scope, display_name: "测试字幕组", selection: { effective_selected: true, selection_mode: "auto" },
+        offset: { value: 0, editable: true }, feed: { ...feed, state: "fresh" }, items: [{
+          snapshot_id: feed.snapshot_id, stable_seed_key: "seed-one", seed: { title: seedTitle, locator_display: "https://example.invalid/01.torrent" },
+          torrent: { state: "available" }, evaluation: { state: "evaluated", verdict: "accepted_pending_download" },
+          files: [], download_action: { allowed: true, kind: "one_shot" },
+        }],
+      }],
+    } }));
+    await page.getByRole("button", { name: t("grid.list.entry"), exact: true }).click();
+    const list = page.getByRole("dialog", { name: t("grid.list.title", { source: "AniBT" }) });
+    await list.getByRole("button", { name: t("grid.list.browseFor", { title: "星际邮差艾拉" }) }).click();
+    const dialog = page.getByRole("dialog", { name: t("oneshot.title"), exact: true });
+    await dialog.getByRole("checkbox", { name: seedTitle, exact: true }).click();
+    await dialog.getByRole("button", { name: t("oneshot.nextWithCount", { n: 1 }), exact: true }).click();
+    await bindTMDB(page, dialog);
+    await checkBoundEpisodes(page, dialog, reads, `oneshot-${testInfo.project.name}`);
   });
 
   test("browses a TMDB candidate's EP list before the candidate is selected", async ({ page }, testInfo) => {

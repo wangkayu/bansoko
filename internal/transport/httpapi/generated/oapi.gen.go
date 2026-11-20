@@ -1058,6 +1058,7 @@ const (
 	GlobalSectionNameReleaseRules         GlobalSectionName = "release_rules"
 	GlobalSectionNameSubgroups            GlobalSectionName = "subgroups"
 	GlobalSectionNameSubscriptionDefaults GlobalSectionName = "subscription_defaults"
+	GlobalSectionNameSubscriptionTitle    GlobalSectionName = "subscription_title"
 	GlobalSectionNameTagFilters           GlobalSectionName = "tag_filters"
 )
 
@@ -2538,6 +2539,15 @@ const (
 	SubscriptionStateStopped SubscriptionState = "stopped"
 )
 
+// Defines values for SubscriptionTitleSource.
+const (
+	SubscriptionTitleSourceBgm          SubscriptionTitleSource = "bgm"
+	SubscriptionTitleSourceBgmCn        SubscriptionTitleSource = "bgm_cn"
+	SubscriptionTitleSourceKeep         SubscriptionTitleSource = "keep"
+	SubscriptionTitleSourceTmdbCn       SubscriptionTitleSource = "tmdb_cn"
+	SubscriptionTitleSourceTmdbOriginal SubscriptionTitleSource = "tmdb_original"
+)
+
 // Defines values for SystemHealthDatabase.
 const (
 	SystemHealthDatabaseHealthy SystemHealthDatabase = "healthy"
@@ -3648,8 +3658,11 @@ type AnimeListItemRssHealth string
 
 // AnimeMetadata defines model for AnimeMetadata.
 type AnimeMetadata struct {
-	Bgm            *NullableBGMBinding `json:"bgm"`
-	ManagedAnimeId ID                  `json:"managed_anime_id"`
+	Bgm *NullableBGMBinding `json:"bgm"`
+
+	// InitialTitlePending True in the workspace while a new subscription has not settled its title; absent means false.
+	InitialTitlePending *bool `json:"initial_title_pending,omitempty"`
+	ManagedAnimeId      ID    `json:"managed_anime_id"`
 
 	// MediaKind Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no acquisition that has not settled (an import waiting for configuration included): a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
 	MediaKind *AnimeMetadataMediaKind `json:"media_kind"`
@@ -3708,7 +3721,7 @@ type AnimeMetadataPatch struct {
 	// Season Complete owner value of the naming season (anime.season; 0 is the specials season): null or an omitted field clears it, a value replaces it. It never rewrites the TMDB tuple, and the TMDB tuple never rewrites it.
 	Season *int `json:"season"`
 
-	// TitleOverride The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. It is the owner's choice: clearing or replacing a binding, a metadata match and a TMDB rename never change it. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates.
+	// TitleOverride The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. Sending the same text is an explicit decision to keep it and ends pending automatic initial naming. Refreshing or replacing a binding cannot change the title on its own. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates.
 	TitleOverride *string              `json:"title_override"`
 	Tmdb          *NullableTMDBBinding `json:"tmdb"`
 
@@ -5785,7 +5798,7 @@ type GlobalSectionInput struct {
 	Value map[string]interface{} `json:"value"`
 }
 
-// GlobalSectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
+// GlobalSectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value. subscription_title (schema subscription-title-v1, value SubscriptionTitle) is Global-only and read when a new subscription first settles its title.
 type GlobalSectionName string
 
 // GlobalSectionView defines model for GlobalSectionView.
@@ -5794,7 +5807,7 @@ type GlobalSectionView struct {
 	Saved         bool   `json:"saved"`
 	SchemaVersion string `json:"schema_version"`
 
-	// SectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
+	// SectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value. subscription_title (schema subscription-title-v1, value SubscriptionTitle) is Global-only and read when a new subscription first settles its title.
 	SectionName GlobalSectionName `json:"section_name"`
 
 	// Value The stored section object.
@@ -6178,6 +6191,9 @@ type MetadataSearchCandidate struct {
 	// SuggestedSeason Optional season suggestion. Direct searches select it only from the returned seasons; automatic searches use the season resolved by the matching pipeline, including an existing binding or an explicitly mapped special season 0.
 	SuggestedSeason *int   `json:"suggested_season"`
 	Title           string `json:"title"`
+
+	// TitleCn Provider's zh-CN title without the display-title fallback; omitted when unavailable.
+	TitleCn *string `json:"title_cn,omitempty"`
 
 	// Year The work's year as the provider reports it: TMDB first_air_date (TV) or release_date (movie), Bangumi date. Absent when the provider gives no usable date; never defaulted.
 	Year *int `json:"year,omitempty"`
@@ -9759,6 +9775,14 @@ type SubscriptionPatchState string
 
 // SubscriptionState User intent of the Subscription. pending (not started) is the creation state: the configuration is fully editable but nothing runs (no refresh, evaluation, acquisition or notification, manual commands included). pending -> active (patchAnimeSubscription with state active) is the first start and behaves like a new subscription: its first refresh discovers and evaluates the feed. active <-> stopped is stop/resume; the first refresh after a resume only records a baseline. There is no pending -> stopped transition and nothing returns to pending.
 type SubscriptionState string
+
+// SubscriptionTitle defines model for SubscriptionTitle.
+type SubscriptionTitle struct {
+	Source SubscriptionTitleSource `json:"source"`
+}
+
+// SubscriptionTitleSource defines model for SubscriptionTitle.Source.
+type SubscriptionTitleSource string
 
 // SystemHealth defines model for SystemHealth.
 type SystemHealth struct {
@@ -13362,6 +13386,9 @@ type ServerInterface interface {
 
 	// (POST /metadata/search/automatic)
 	SearchMetadataAutomatically(w http.ResponseWriter, r *http.Request)
+
+	// (GET /metadata/tmdb/works/{work_id}/seasons)
+	ListTMDBWorkSeasons(w http.ResponseWriter, r *http.Request, workId string)
 
 	// (GET /metadata/tmdb/works/{work_id}/seasons/{season}/episodes)
 	ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workId string, season int)
@@ -18709,6 +18736,37 @@ func (siw *ServerInterfaceWrapper) SearchMetadataAutomatically(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// ListTMDBWorkSeasons operation middleware
+func (siw *ServerInterfaceWrapper) ListTMDBWorkSeasons(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "work_id" -------------
+	var workId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "work_id", r.PathValue("work_id"), &workId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "work_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTMDBWorkSeasons(w, r, workId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTMDBCandidateEpisodes operation middleware
 func (siw *ServerInterfaceWrapper) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request) {
 
@@ -21159,6 +21217,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/bgm/works/{work_id}/episodes", wrapper.ListBGMCandidateEpisodes)
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/search", wrapper.SearchMetadata)
 	m.HandleFunc("POST "+options.BaseURL+"/metadata/search/automatic", wrapper.SearchMetadataAutomatically)
+	m.HandleFunc("GET "+options.BaseURL+"/metadata/tmdb/works/{work_id}/seasons", wrapper.ListTMDBWorkSeasons)
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/tmdb/works/{work_id}/seasons/{season}/episodes", wrapper.ListTMDBCandidateEpisodes)
 	m.HandleFunc("GET "+options.BaseURL+"/naming-vars", wrapper.GetNamingVars)
 	m.HandleFunc("PUT "+options.BaseURL+"/naming-vars/active", wrapper.ActivateNamingVarsVersion)

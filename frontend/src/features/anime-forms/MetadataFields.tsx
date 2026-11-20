@@ -5,10 +5,11 @@ import { t } from "../../lib/i18n";
 import { metadataSearcher } from "../../lib/metadata/searcher";
 import { metadataEpisodeLoader } from "../../lib/metadata/episodeLoader";
 import { useAuthedImage } from "../../lib/useAuthedImage";
+import { matchTitleChoice, type MatchTitleOffer } from "../../lib/metadata/preferredTitle";
 import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { SegmentedControl, Button, Field, Input } from "../../ui";
 import { Checkbox, Dialog, Select, type SelectOption } from "../../ui/base";
-import { MetadataEpisodeDialog } from "./MetadataEpisodeDialog";
+import { MetadataEpisodeDialog, type MetadataEpisodeBinding } from "./MetadataEpisodeDialog";
 
 // The metadata binding fact rows: the resting state is only "linked ID with an external link /
 // unmatched + clear". Search matching lives in MetadataMatchDialog (opened through a controlled
@@ -107,12 +108,8 @@ export function MetadataFields({
    * 其余以可点击标签显示在搜索框下方。缺省时弹窗行为不变。
    */
   matchQueryCandidates?: readonly string[];
-  /**
-   * Gives the TMDB match dialog an "also set the title" choice. current is the title in effect,
-   * provider the title the subscription's source gave: the choice is pre-checked only while they
-   * match. When checked, the confirm passes the chosen title as onChange's third argument.
-   */
-  titleOffer?: { current: string; provider: string };
+  /** Lets a subscription editor confirm a title along with the binding. */
+  titleOffer?: MatchTitleOffer;
   /** 确认匹配时传出所选作品名（本地化名优先，退回原名）；手动输入 TMDB ID 没有作品名，不触发。 */
   onMatchTitle?: (title: string) => void;
   /**
@@ -121,6 +118,8 @@ export function MetadataFields({
    */
   onMatchCandidate?: (candidate: MetadataCandidate) => void;
 }) {
+  const [episodeBinding, setEpisodeBinding] = useState<MetadataEpisodeBinding>();
+  const { bgm, tmdb } = value;
   const season = value.season ?? null;
   // The kind the server resolves with: the stored kind, else the bound TMDB kind it backfills, else tv.
   const resolvedKind = mediaKind ?? value.tmdb?.media_kind ?? "tv";
@@ -147,6 +146,7 @@ export function MetadataFields({
         selected={value.bgm ? { workId: value.bgm.work_id } : undefined}
         onClear={() => onChange({ ...value, bgm: null })}
         onMatch={() => onMatchProviderChange?.("bgm")}
+        onBrowse={bgm ? () => setEpisodeBinding({ provider: "bgm", workId: bgm.work_id, title }) : undefined}
       />
       <MetadataBindingRow
         idPrefix={`${idPrefix}-tmdb`}
@@ -162,6 +162,9 @@ export function MetadataFields({
           changeTMDB({ ...value, tmdb: null, season: null, year: null, total_episodes: null }, value.tmdb?.media_kind)
         }
         onMatch={() => onMatchProviderChange?.("tmdb")}
+        onBrowse={tmdb?.media_kind === "tv" ? () => setEpisodeBinding({
+          provider: "tmdb", workId: tmdb.work_id, season: tmdb.season, title,
+        }) : undefined}
       />
       {onSaveMediaKind && directEdit && (
         <DirectMediaKindRow
@@ -226,6 +229,9 @@ export function MetadataFields({
           onSaveTotalEpisodes={onSaveTotalEpisodes}
         />
       )}
+      {episodeBinding && (
+        <MetadataEpisodeDialog binding={episodeBinding} loader={episodeLoader} onClose={() => setEpisodeBinding(undefined)} />
+      )}
       {matchProvider !== undefined && onMatchProviderChange && (
         <MetadataMatchDialog
           provider={matchProvider}
@@ -239,8 +245,10 @@ export function MetadataFields({
           titleOffer={titleOffer}
           preferredSeason={season ?? undefined}
           onClose={() => onMatchProviderChange(undefined)}
-          onSelectBGM={(candidate) => {
-            onChange({ ...value, bgm: { work_id: candidate.workId } });
+          onSelectBGM={(candidate, title) => {
+            const next = { ...value, bgm: { work_id: candidate.workId } };
+            if (title === undefined) onChange(next);
+            else onChange(next, undefined, title);
             reportMatchTitle(candidate);
             onMatchCandidate?.(candidate);
             onMatchProviderChange(undefined);
@@ -297,16 +305,19 @@ function MetadataBindingRow({
   readOnly = false,
   onClear,
   onMatch,
+  onBrowse,
 }: {
   idPrefix: string;
   provider: MetadataProvider;
   label: string;
   selected?: SelectedMetadata;
-  /** A read-only workspace: no match/clear buttons render, only the bound values. */
+  /** A read-only workspace can browse but cannot change bindings. */
   readOnly?: boolean;
   onClear: () => void;
   onMatch?: () => void;
+  onBrowse?: () => void;
 }) {
+  const providerName = provider === "bgm" ? t("forms.providerBangumi") : t("forms.providerTmdb");
   return (
     <section className="metadata-card" aria-labelledby={`${idPrefix}-label`}>
       <div className="metadata-header">
@@ -332,9 +343,17 @@ function MetadataBindingRow({
           <span className="metadata-status-warning text-caption">{t("forms.unmatched")}</span>
         )}
         <div className="metadata-actions">
+          {onBrowse && (
+            <Button size="sm" variant="ghost" className="metadata-bound-episodes" onClick={onBrowse}
+              aria-label={t("forms.browseBoundEpisodes", { provider: providerName })}>
+              <ListOrdered className="metadata-icon" aria-hidden="true" />
+              <span>{t("forms.boundEpisodes")}</span>
+            </Button>
+          )}
           {!readOnly && onMatch && (
-            <Button size="sm" variant="secondary" onClick={onMatch}>
-              {t("forms.matchProvider", { provider: provider === "bgm" ? t("forms.providerBangumi") : t("forms.providerTmdb") })}
+            <Button size="sm" variant="secondary" onClick={onMatch} aria-label={t("forms.matchProvider", { provider: providerName })}>
+              <Search className="metadata-icon" aria-hidden="true" />
+              {t("forms.matchAction")}
             </Button>
           )}
           {!readOnly && selected && (
@@ -979,11 +998,11 @@ function MetadataMatchDialog({
   queryCandidates?: readonly string[];
   searcher: MetadataSearcher;
   episodeLoader?: MetadataEpisodeLoader;
-  titleOffer?: { current: string; provider: string };
+  titleOffer?: MatchTitleOffer;
   /** The season row's staging preference for manual selection; automatic matching uses its resolved season first. */
   preferredSeason?: number;
   onClose: () => void;
-  onSelectBGM: (candidate: MetadataCandidate) => void;
+  onSelectBGM: (candidate: MetadataCandidate, title?: string) => void;
   onSelectTMDB: (candidate: MetadataCandidate, mediaKind: "tv" | "movie", season: number, title?: string) => void;
 }) {
   const [query, setQuery] = useState(title.trim() ? title : (queryCandidates?.[0] ?? ""));
@@ -1000,8 +1019,7 @@ function MetadataMatchDialog({
   // Enter by ID (TMDB only).
   const [manualId, setManualId] = useState("");
   const [manualError, setManualError] = useState<string>();
-  // "Also set the title" (TMDB only): pre-checked only while the title is still the provider's.
-  const [setTitle, setSetTitle] = useState(false);
+  const [titleChoice, setTitleChoice] = useState<boolean>();
 
   async function search(queryOverride = query, automatic = false) {
     const nextQuery = queryOverride.trim();
@@ -1047,16 +1065,14 @@ function MetadataMatchDialog({
     pick({ provider: "tmdb", workId: id, title: t("forms.manualTmdbTitle", { id }), detailsStatus: "not_applicable", mediaKind: "tv", suggestedSeason: 1 });
   }
 
-  // The picked work's name (localized first, else original); an ID entry has none.
-  const offeredTitle =
-    provider === "tmdb" && titleOffer && selected && selected.detailsStatus !== "not_applicable"
-      ? selected.title.trim() || selected.originalTitle?.trim() || ""
-      : "";
+  const offer = titleOffer && selected ? matchTitleChoice(selected, titleOffer) : undefined;
+  const offeredTitle = offer?.title ?? "";
   const titleOffered = offeredTitle !== "" && offeredTitle !== titleOffer?.current.trim();
+  const setTitle = titleChoice ?? offer?.checked ?? false;
 
   function pick(candidate: MetadataCandidate) {
     setSelected(candidate);
-    setSetTitle(titleOffer !== undefined && titleOffer.current.trim() === titleOffer.provider.trim());
+    setTitleChoice(undefined);
     const kind = candidate.mediaKind ?? "tv";
     setMediaKind(kind);
     const realSeasonNumbers = new Set((candidate.seasons ?? []).map((season) => season.seasonNumber));
@@ -1093,12 +1109,13 @@ function MetadataMatchDialog({
 
   function confirm() {
     if (!selected) return;
+    const decidedTitle = titleOffered && setTitle ? offeredTitle : titleOffer?.initial ? titleOffer.current : undefined;
     if (provider === "bgm") {
-      onSelectBGM(selected);
+      onSelectBGM(selected, decidedTitle);
       return;
     }
     if (!seasonValid) return;
-    onSelectTMDB(selected, mediaKind, mediaKind === "movie" ? 0 : seasonParsed, titleOffered && setTitle ? offeredTitle : undefined);
+    onSelectTMDB(selected, mediaKind, mediaKind === "movie" ? 0 : seasonParsed, decidedTitle);
   }
 
   return (
@@ -1271,11 +1288,13 @@ function MetadataMatchDialog({
                 {t("forms.seasonInvalid")}
               </p>
             )}
-            {titleOffered && (
-              <Checkbox checked={setTitle} onCheckedChange={setSetTitle}>
-                {t("forms.alsoSetTitle", { title: offeredTitle })}
-              </Checkbox>
-            )}
+          </div>
+        )}
+
+        {titleOffer && titleOffered && (
+          <div className="metadata-match-selected">
+            <Checkbox checked={setTitle} onCheckedChange={setTitleChoice}>{t("forms.alsoSetTitle", { title: offeredTitle })}</Checkbox>
+            <p className="text-caption text-muted tw:break-words">{t("forms.matchResultTitle", { title: setTitle ? offeredTitle : titleOffer.current })}</p>
           </div>
         )}
 

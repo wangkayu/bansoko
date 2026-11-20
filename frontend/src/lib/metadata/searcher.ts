@@ -6,6 +6,7 @@ function toCandidate(c: import("../api/client").MetadataSearchCandidate): Metada
     provider: c.provider,
     workId: c.provider_work_id,
     title: c.title,
+    titleCN: c.title_cn,
     originalTitle: c.original_title,
     overview: c.overview,
     posterUrl: c.poster_url,

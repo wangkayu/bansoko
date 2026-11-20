@@ -16,13 +16,10 @@ import { mockSignedIn } from "./session";
 
 const fixtureOnly = process.env.BANSOKO_E2E_FIXTURES === "1";
 
-// 产品实际 15 个分区（SettingsDialog categories 的用户可见中文入口，
-// 按 sidebar 分组顺序排列：服务 2 + 订阅策略 4 + 站点 3 + 系统 6）。
-// 「同集多版本」与「未识别集数」是各自独立的分区。
-// 「命名变量」当前版本隐藏（恢复时加回「默认规则」之后，见 SettingsDialog.tsx）。
+// 设置侧栏的可见入口，按分组及显示顺序排列。
 const CATEGORY_GROUPS: { group: string; labels: string[] }[] = [
   { group: "服务", labels: ["服务连接", "下载与入库"] },
-  { group: "订阅策略", labels: ["默认规则", "同集多版本", "未识别集数", "订阅数量与对齐"] },
+  { group: "订阅策略", labels: ["默认规则", "同集多版本", "订阅数量与对齐"] },
   { group: "站点", labels: ["AniBT 配置", "Mikan 配置", "隐藏的番剧"] },
   { group: "系统", labels: ["账户", "自动任务", "通知", "版本与升级", "解析组件", "数据备份", "API 令牌"] },
 ];
@@ -128,9 +125,14 @@ async function mockSettingsReads(page: Page) {
           },
           { section_name: "file_effect", schema_version: "v1", value: { operation: "hardlink", collision_policy: "versioned" }, version: 1, saved: false },
           { section_name: "download_completion", schema_version: "download-completion-v2", value: { action: "seed" }, version: 1, saved: false },
+          { section_name: "subscription_defaults", schema_version: "subscription-defaults-v1", value: { ignore_multi_video_releases: false }, version: 1, saved: false },
+          { section_name: "subscription_title", schema_version: "subscription-title-v1", value: { source: "keep" }, version: 1, saved: false },
         ] satisfies GlobalSectionView[]),
       }),
     ),
+  );
+  await page.route("**/api/v1/file-maintenance/file-effect/default", (route) =>
+    getOnly(route, () => route.fulfill({ json: { unclassified_route: "skip", version: 1 } })),
   );
   // 标题解析行的候选值来自这份固定词表；默认值两行为空时也照常展示。
   await page.route("**/api/v1/config/tag-filters/title-vocabulary", (route) =>
@@ -430,7 +432,7 @@ test.describe("settings dialog", () => {
     await expect(page.locator("main")).toBeAttached();
   });
 
-  test("桌面端展示 section sidebar，十五个分区齐全", async ({ page }) => {
+  test("桌面端按分组展示设置侧栏", async ({ page }) => {
     test.skip(isMobile(page), "手机是两级导航，另有用例覆盖");
     const nav = page.getByRole("navigation", { name: "设置分类" });
     await expect(nav).toBeVisible({ timeout: 10000 });
@@ -877,6 +879,50 @@ test.describe("settings fixture coverage", () => {
     expect(await titleRow.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     await titleRow.scrollIntoViewIfNeeded();
     await editDialog.screenshot({ path: testInfo.outputPath("rules-tag-filter-candidates.png") });
+  });
+
+  test("默认规则末尾两张卡独立编辑且弹窗不溢出", async ({ page }, testInfo) => {
+    test.skip(!fixtureOnly, "使用隔离设置数据");
+    if (isMobile(page)) await page.setViewportSize({ width: 320, height: 640 });
+    await mockSignedIn(page);
+    await mockSettingsReads(page);
+    const writes: unknown[] = [];
+    let setting = { section_name: "subscription_title", schema_version: "subscription-title-v1", value: { source: "keep" }, version: 1, saved: false };
+    await page.route("**/api/v1/config/global-sections", (route) => route.fulfill({ json: [
+      { section_name: "subscription_defaults", schema_version: "subscription-defaults-v1", value: { ignore_multi_video_releases: false }, version: 1, saved: false }, setting,
+    ] }));
+    await page.route("**/api/v1/config/global-sections/subscription_title", (route) => {
+      const input = route.request().postDataJSON();
+      writes.push(input);
+      setting = { ...setting, value: input.value, version: 2, saved: true };
+      return route.fulfill({ json: setting });
+    });
+    await page.route("**/api/v1/file-maintenance/file-effect/default", (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: { unclassified_route: "skip", version: 1 } });
+      const input = route.request().postDataJSON();
+      writes.push(input);
+      return route.fulfill({ json: { unclassified_route: input.unclassified_route, version: 2 } });
+    });
+    await page.goto("/#/settings/rules");
+    const cards = page.locator(".settings-shared-list > li");
+    await expect(cards.getByRole("heading")).toHaveText(["忽略多视频文件种子", "新订阅标题", "命名规则", "未识别集数的文件"]);
+    await expect(cards.nth(1)).toContainText("不修改标题");
+    for (const [index, option] of [[1, "TMDB 原名"], [3, "按「未知内容」命名整理"]] as const) {
+      await cards.nth(index).getByRole("button", { name: "编辑" }).click();
+      const edit = page.getByRole("dialog", { name: /^编辑/ });
+      const box = (await edit.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(-1);
+      expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+      expect(await edit.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      await edit.screenshot({ path: testInfo.outputPath(`default-rule-edit-${index}.png`) });
+      await edit.getByRole("combobox").click();
+      await page.getByRole("option", { name: option, exact: true }).click();
+      expect(writes).toHaveLength(index === 1 ? 0 : 1);
+      await edit.getByRole("button", { name: "保存", exact: true }).click();
+      await expect(edit).toBeHidden();
+      await expect(cards.nth(index)).toContainText(option);
+    }
+    expect(writes).toEqual([{ schema_version: "subscription-title-v1", value: { source: "tmdb_original" } }, { expected_version: 1, unclassified_route: "route" }]);
   });
 
   test("语言大卡拖动预览保持原卡片尺寸", async ({ page }, testInfo) => {

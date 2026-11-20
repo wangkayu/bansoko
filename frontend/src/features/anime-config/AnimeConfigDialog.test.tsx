@@ -27,6 +27,7 @@ function footerCloseButton(): HTMLElement {
 vi.mock("../../lib/api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/api/client")>()),
   getBusinessPreset: vi.fn(async () => (await import("../../testing/businessPreset")).preset),
+  listGlobalSections: vi.fn(async () => []),
   loadBusinessPresetIntoDraft: vi.fn(async (draft: AnimeDraft, reset?: boolean) => {
     const { loadDraftFromBusinessPreset, preset } = await import("../../testing/businessPreset");
     return loadDraftFromBusinessPreset(draft, preset, reset);

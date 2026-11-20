@@ -113,6 +113,38 @@ func (s *Server) SearchMetadataAutomatically(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// ListTMDBWorkSeasons lists the seasons of a TMDB TV work without requiring a saved binding.
+func (s *Server) ListTMDBWorkSeasons(w http.ResponseWriter, r *http.Request, workID string) {
+	service := s.metadataService(w, r)
+	if service == nil {
+		return
+	}
+	if !candidateWorkIDValid(workID) {
+		writeError(w, r, metadataSearchInvalid(generated.ErrorDetail{
+			Code: "WORK_ID_INVALID", Message: "work_id must be a positive decimal id.",
+		}))
+		return
+	}
+	seasons, err := service.TMDBWorkSeasons(r.Context(), workID)
+	if err != nil {
+		writeError(w, r, metadataUnavailable())
+		return
+	}
+	result := generated.TMDBSeasonList{Seasons: make([]generated.TMDBSeason, 0, len(seasons))}
+	for _, season := range seasons {
+		mapped := generated.TMDBSeason{Season: season.SeasonNumber, EpisodeCount: season.EpisodeCount}
+		if season.Name != "" {
+			mapped.Name = &season.Name
+		}
+		if season.AirDate != "" {
+			mapped.AirDate = &season.AirDate
+		}
+		result.Seasons = append(result.Seasons, mapped)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r.Context(), http.StatusOK, result)
+}
+
 // ListTMDBCandidateEpisodes lists one season of an arbitrary TMDB TV work
 // returned by metadata search. Read-only and independent of any anime binding.
 func (s *Server) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workID string, season int) {
@@ -232,6 +264,9 @@ func mapMetadataCandidates(candidates []identitymetadatadomain.SearchCandidate) 
 			MediaKind:      mediaKind,
 			DetailsStatus:  generated.MetadataDetailsStatus(candidate.DetailsStatus),
 			Score:          float32(candidate.Score),
+		}
+		if titleCN := strings.TrimSpace(candidate.Native.TitleCN); titleCN != "" {
+			value.TitleCn = &titleCN
 		}
 		if strings.TrimSpace(candidate.OriginalTitle) != "" {
 			originalTitle := candidate.OriginalTitle

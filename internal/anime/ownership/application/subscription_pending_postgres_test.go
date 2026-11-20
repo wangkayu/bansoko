@@ -123,6 +123,62 @@ func TestPendingSubscriptionStartsOnlyByStart(t *testing.T) {
 	}
 }
 
+func TestInitialTitleUsesPreferenceAtStartAndRespectsOwner(t *testing.T) {
+	db := animetest.OpenTestDB(t)
+	service := ownershipNewTestService(t, db, &ownershipFakeFetcher{})
+	ctx := context.Background()
+	checkTitle := func(id, want string, pending bool) {
+		t.Helper()
+		var title string
+		var gotPending bool
+		if err := db.QueryRowContext(ctx, `SELECT title_override, initial_title_pending FROM managed_anime WHERE id = $1`, id).Scan(&title, &gotPending); err != nil {
+			t.Fatal(err)
+		}
+		if title != want || gotPending != pending {
+			t.Fatalf("title = %q, pending = %v; want %q, %v", title, gotPending, want, pending)
+		}
+	}
+	create := func(key string, start bool) generated.SubscribeResult {
+		t.Helper()
+		result, err := service.SubscribeAnime(ctx, generated.SubscribeAnimeInput{Draft: ownershipTestDraft(t), Start: &start}, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	start := func(id string) {
+		t.Helper()
+		if _, err := service.PatchAnimeSubscription(ctx, id, SubscriptionPatchInput{ExpectedVersion: 1, State: subscriptiondomain.SubscriptionActive}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO metadata_work_titles (provider, media_kind, work_id, original_title) VALUES ('tmdb', 'tv', 'tmdb-456', 'Native Name')`); err != nil {
+		t.Fatal(err)
+	}
+	checkTitle(create("title-default-no-replacement", true).ManagedAnime.Id, "Test Show", false)
+	pending := create("title-preference-at-start", false).ManagedAnime.Id
+	manual := create("title-owner-kept-same-text", false).ManagedAnime.Id
+	checkTitle(pending, "Test Show", true)
+	draft := ownershipTestDraft(t)
+	if _, err := service.PatchAnimeMetadata(ctx, manual, generated.AnimeMetadataPatch{
+		ExpectedVersion: 1, Bgm: draft.Metadata.Bgm, Tmdb: draft.Metadata.Tmdb, TitleOverride: &draft.Title,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO global_config_sections (section_name, schema_version, value) VALUES ('subscription_title', 'subscription-title-v1', '{"source":"tmdb_original"}')`); err != nil {
+		t.Fatal(err)
+	}
+	start(manual)
+	checkTitle(manual, "Test Show", false)
+	start(pending)
+	checkTitle(pending, "Native Name", false)
+	checkTitle(create("title-immediate-activation", true).ManagedAnime.Id, "Native Name", false)
+	if _, err := db.ExecContext(ctx, `UPDATE global_config_sections SET value = '{"source":"tmdb_cn"}' WHERE section_name = 'subscription_title'`); err != nil {
+		t.Fatal(err)
+	}
+	checkTitle(create("title-no-source-fallback", true).ManagedAnime.Id, "Test Show", false)
+}
+
 // Subscribing with start is active at once, and a pending subscription can be
 // retired through the ordinary unsubscribe path.
 func TestSubscribeWithStartIsActiveAndPendingRetires(t *testing.T) {

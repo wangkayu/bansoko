@@ -33,7 +33,7 @@ const (
 // GlobalOnlySectionOrder lists the generic Global sections that have no
 // per-anime override; the Global settings list shows them after the
 // rules-owner sections.
-var GlobalOnlySectionOrder = []string{SectionDownloadTimeouts, SectionMetadataRefresh, SectionMetadataHold}
+var GlobalOnlySectionOrder = []string{SectionDownloadTimeouts, SectionMetadataRefresh, SectionMetadataHold, SectionSubscriptionTitle}
 
 // DownloadTimeouts is the complete download_timeouts value.
 type DownloadTimeouts struct {

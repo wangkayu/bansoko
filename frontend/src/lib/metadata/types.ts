@@ -15,6 +15,7 @@ export interface MetadataCandidate {
   provider: MetadataProvider;
   workId: string;
   title: string;
+  titleCN?: string;
   originalTitle?: string;
   posterUrl?: string;
   mediaKind?: "tv" | "movie";
@@ -50,5 +51,6 @@ export interface MetadataEpisode {
   section?: "main" | "special";
 }
 
-/** Read-only candidate reference. Browsing never selects the candidate or changes the apply-season editor. */
-export type MetadataEpisodeLoader = (candidate: MetadataCandidate, season?: number) => Promise<MetadataEpisode[]>;
+export type MetadataEpisodeWork = Pick<MetadataCandidate, "provider" | "workId" | "title">;
+
+export type MetadataEpisodeLoader = (work: MetadataEpisodeWork, season?: number) => Promise<MetadataEpisode[]>;

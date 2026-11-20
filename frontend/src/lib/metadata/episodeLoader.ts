@@ -1,12 +1,10 @@
 import { listBGMCandidateEpisodes, listTMDBCandidateEpisodes } from "../api/client";
 import type { MetadataEpisode, MetadataEpisodeLoader } from "./types";
 
-// Candidate EP reference reads the same providers the match dialog searches.
-// It is read-only and independent of any existing anime binding; the server
-// keeps it out of the naming episode-title cache.
-export const apiMetadataEpisodeLoader: MetadataEpisodeLoader = async (candidate, season) => {
-  if (candidate.provider === "tmdb") {
-    const result = await listTMDBCandidateEpisodes(candidate.workId, season ?? 1);
+// Both search candidates and current bindings are browsed by provider work ID.
+export const apiMetadataEpisodeLoader: MetadataEpisodeLoader = async (work, season) => {
+  if (work.provider === "tmdb") {
+    const result = await listTMDBCandidateEpisodes(work.workId, season ?? 1);
     return result.episodes.map(
       (episode): MetadataEpisode => ({
         episode: episode.episode,
@@ -15,7 +13,7 @@ export const apiMetadataEpisodeLoader: MetadataEpisodeLoader = async (candidate,
       }),
     );
   }
-  const result = await listBGMCandidateEpisodes(candidate.workId);
+  const result = await listBGMCandidateEpisodes(work.workId);
   return result.episodes.map(
     (episode): MetadataEpisode => ({
       episode: episode.episode,

@@ -32,6 +32,14 @@ func TestMetadataMatchCompletesOnceAndReleasesWaitingRelease(t *testing.T) {
 	ctx := context.Background()
 	insertMetadataSubscriptionFixture(t, db, "anime-meta-complete", "sub-meta-complete", "Show")
 	if _, err := db.ExecContext(ctx, `
+UPDATE managed_anime SET initial_title_pending = true WHERE id = 'anime-meta-complete';
+INSERT INTO global_config_sections (section_name, schema_version, value)
+VALUES ('subscription_title', 'subscription-title-v1', '{"source":"tmdb_original"}');
+INSERT INTO metadata_work_titles(provider, media_kind, work_id, title_cn, original_title)
+VALUES ('tmdb', 'movie', '456', '不是首选', 'Original Show');`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
 INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title)
 VALUES ('source-meta-complete', 'sub-meta-complete', 'custom_rss', 'https://example.test/rss', 'https://example.test/rss', 'Custom', 'Show')`); err != nil {
 		t.Fatal(err)
@@ -81,6 +89,15 @@ FROM anime_metadata WHERE managed_anime_id = 'anime-meta-complete'`).Scan(&bgm, 
 	}
 	if bgm != "bgm-123" || tmdb != "456" || kind != "movie" || season != 0 || version != 2 {
 		t.Fatalf("unexpected matched metadata: %q %q %q %d v%d", bgm, tmdb, kind, season, version)
+	}
+	var fixedTitle string
+	var titlePending bool
+	if err := db.QueryRowContext(ctx, `
+SELECT title_override, initial_title_pending FROM managed_anime WHERE id = 'anime-meta-complete'`).Scan(&fixedTitle, &titlePending); err != nil {
+		t.Fatal(err)
+	}
+	if fixedTitle != "Original Show" || titlePending {
+		t.Fatalf("first completed match saved title %q, pending=%v", fixedTitle, titlePending)
 	}
 	var releaseWorkItems, heldReleases int
 	if err := db.QueryRowContext(ctx, `

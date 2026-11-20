@@ -115,10 +115,14 @@ WHERE managed_anime_id = $1`,
 		titleOverrideValue = *patch.TitleOverride
 	}
 	var storedTitleOverride sql.NullString
+	var initialTitlePending bool
 	if err := tx.QueryRowContext(ctx, `
-UPDATE managed_anime SET title_override = COALESCE($2, title_override) WHERE id = $1
-RETURNING title_override`,
-		managedAnimeID, titleOverrideValue).Scan(&storedTitleOverride); err != nil {
+UPDATE managed_anime
+SET title_override = COALESCE($2, title_override),
+    initial_title_pending = initial_title_pending AND $2::text IS NULL AND NOT $3
+WHERE id = $1
+RETURNING title_override, initial_title_pending`,
+		managedAnimeID, titleOverrideValue, change.bindings && patch.BGM != nil && patch.TMDB != nil).Scan(&storedTitleOverride, &initialTitlePending); err != nil {
 		return AnimeMetadata{}, fmt.Errorf("save anime title: %w", err)
 	}
 	// A change to anything but the title re-evaluates the releases not yet
@@ -170,6 +174,7 @@ RETURNING title_override`,
 		BGM:                 animeapplication.ApplicationBGMFromDomain(domainBGM),
 		TMDB:                animeapplication.ApplicationTMDBFromDomain(domainTMDB),
 		TitleOverride:       nullStringPtr(storedTitleOverride),
+		InitialTitlePending: initialTitlePending,
 		TotalEpisodes:       animeapplication.CloneInt(patch.TotalEpisodes),
 		MediaKind:           animeapplication.CloneString(nextMediaKind),
 		Year:                animeapplication.CloneInt(patch.Year),

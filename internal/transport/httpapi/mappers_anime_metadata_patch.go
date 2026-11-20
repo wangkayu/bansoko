@@ -68,6 +68,9 @@ func mapMetadataPatchResult(value animeapplication.AnimeMetadata) (generated.Ani
 		Season:         cloneRulesPreviewInt(value.Season),
 		Version:        generated.Version(value.Version),
 	}
+	if value.InitialTitlePending {
+		result.InitialTitlePending = &value.InitialTitlePending
+	}
 	result.ReevaluatedReleases = cloneRulesPreviewInt(value.ReevaluatedReleases)
 	if value.BGM != nil {
 		result.Bgm = &generated.NullableBGMBinding{WorkId: value.BGM.WorkID}

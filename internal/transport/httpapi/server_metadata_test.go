@@ -34,6 +34,10 @@ func (s *metadataSearchSpy) SearchMetadataAutomatically(_ context.Context, input
 	return s.auto, nil
 }
 
+func (s *metadataSearchSpy) TMDBWorkSeasons(context.Context, string) ([]identitymetadatadomain.SearchSeason, error) {
+	return nil, nil
+}
+
 func (s *metadataSearchSpy) TMDBCandidateEpisodes(context.Context, string, int) ([]identitymetadatadomain.CandidateEpisode, error) {
 	return []identitymetadatadomain.CandidateEpisode{}, nil
 }
@@ -267,6 +271,7 @@ func defaultInt(value *int, fallback int) int {
 }
 
 type candidateEpisodeSearch struct {
+	seasons   []identitymetadatadomain.SearchSeason
 	tmdb, bgm []identitymetadatadomain.CandidateEpisode
 	err       error
 	workID    string
@@ -281,6 +286,11 @@ func (s *candidateEpisodeSearch) SearchMetadataAutomatically(context.Context, id
 	return nil, nil
 }
 
+func (s *candidateEpisodeSearch) TMDBWorkSeasons(_ context.Context, workID string) ([]identitymetadatadomain.SearchSeason, error) {
+	s.workID = workID
+	return s.seasons, s.err
+}
+
 func (s *candidateEpisodeSearch) TMDBCandidateEpisodes(_ context.Context, workID string, season int) ([]identitymetadatadomain.CandidateEpisode, error) {
 	s.workID, s.season = workID, season
 	return s.tmdb, s.err
@@ -289,6 +299,38 @@ func (s *candidateEpisodeSearch) TMDBCandidateEpisodes(_ context.Context, workID
 func (s *candidateEpisodeSearch) BGMCandidateEpisodes(_ context.Context, workID string) ([]identitymetadatadomain.CandidateEpisode, error) {
 	s.workID = workID
 	return s.bgm, s.err
+}
+
+func TestTMDBWorkSeasons(t *testing.T) {
+	service := &candidateEpisodeSearch{seasons: []identitymetadatadomain.SearchSeason{
+		{SeasonNumber: 0, Name: "特别篇", EpisodeCount: 2},
+		{SeasonNumber: 2, EpisodeCount: 12, AirDate: "2026-10-01"},
+	}}
+	server := &Server{deps: Dependencies{MetadataSearch: service}}
+	read := func(id string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		server.ListTMDBWorkSeasons(recorder, httptest.NewRequest(http.MethodGet, "/metadata/tmdb/works/"+id+"/seasons", nil), id)
+		return recorder
+	}
+	if recorder := read("0123"); recorder.Code != http.StatusUnprocessableEntity || service.workID != "" {
+		t.Fatalf("invalid work ID: status %d, queried %q", recorder.Code, service.workID)
+	}
+	recorder := read("265010")
+	if recorder.Code != http.StatusOK || service.workID != "265010" || recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("status %d, queried %q, headers %v", recorder.Code, service.workID, recorder.Header())
+	}
+	var body generated.TMDBSeasonList
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Seasons) != 2 || body.Seasons[0].Season != 0 || body.Seasons[0].Name == nil || *body.Seasons[0].Name != "特别篇" ||
+		body.Seasons[1].Season != 2 || body.Seasons[1].EpisodeCount != 12 || body.Seasons[1].AirDate == nil || *body.Seasons[1].AirDate != "2026-10-01" {
+		t.Fatalf("unexpected seasons: %+v", body.Seasons)
+	}
+	service.err = errors.New("provider down")
+	if recorder := read("265010"); recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable: status %d", recorder.Code)
+	}
 }
 
 func TestTMDBCandidateEpisodesMapTheSeasonAndRejectBadWorkIDs(t *testing.T) {

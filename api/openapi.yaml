@@ -1829,6 +1829,35 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /metadata/tmdb/works/{work_id}/seasons:
+    get:
+      tags: [Metadata]
+      operationId: listTMDBWorkSeasons
+      x-scope: read
+      description: >-
+        List the seasons of a TMDB TV work by work ID, including season 0
+        (specials). Read-only and independent of any saved binding. Cached
+        on the server for one hour; an unknown work returns an empty list.
+      parameters:
+        - name: work_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]{0,11}$'
+      responses:
+        '200':
+          description: The work's seasons.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TMDBSeasonList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /metadata/tmdb/works/{work_id}/seasons/{season}/episodes:
     get:
       tags: [Metadata]
@@ -10190,8 +10219,19 @@ components:
         business snapshot. subscription_defaults (schema
         subscription-defaults-v1, value GlobalSubscriptionDefaults) is the
         one-time-input default new drafts copy at creation; existing
-        subscriptions keep their own value.
-      enum: [subgroups, parser, release_rules, file_rules, naming_rules, file_effect, tag_filters, download_completion, download_timeouts, metadata_refresh, metadata_hold, subscription_defaults]
+        subscriptions keep their own value. subscription_title (schema
+        subscription-title-v1, value SubscriptionTitle) is Global-only and
+        read when a new subscription first settles its title.
+      enum: [subgroups, parser, release_rules, file_rules, naming_rules, file_effect, tag_filters, download_completion, download_timeouts, metadata_refresh, metadata_hold, subscription_defaults, subscription_title]
+    SubscriptionTitle:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source:
+          type: string
+          enum: [keep, tmdb_cn, tmdb_original, bgm_cn, bgm]
+          default: keep
     GlobalSectionView:
       type: object
       additionalProperties: false
@@ -10905,6 +10945,9 @@ components:
           nullable: true
           minLength: 1
           maxLength: 512
+        initial_title_pending:
+          type: boolean
+          description: True in the workspace while a new subscription has not settled its title; absent means false.
         title_suggestions:
           type: array
           items:
@@ -13981,9 +14024,10 @@ components:
           description: >-
             The anime's fixed title (anime.title_override). A value replaces
             it in the same version step as the bindings; null or an omitted
-            field keeps the stored title. It cannot be cleared. It is the
-            owner's choice: clearing or replacing a binding, a metadata match
-            and a TMDB rename never change it. The subscription's library
+            field keeps the stored title. It cannot be cleared. Sending the
+            same text is an explicit decision to keep it and ends pending
+            automatic initial naming. Refreshing or replacing a binding cannot
+            change the title on its own. The subscription's library
             files are named from the current title, so a changed title
             renames them. title_suggestions on the workspace metadata lists
             the candidates.
@@ -19334,6 +19378,9 @@ components:
           type: string
         title:
           type: string
+        title_cn:
+          type: string
+          description: Provider's zh-CN title without the display-title fallback; omitted when unavailable.
         original_title:
           type: string
         overview:

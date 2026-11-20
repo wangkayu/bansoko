@@ -565,6 +565,7 @@ func runServe(args []string) {
 			episodetitle.SourceTMDB: tmdbEpisodes,
 			episodetitle.SourceBGM:  bgmEpisodes,
 		},
+		SeasonClients:  map[episodetitle.Source]episodetitle.SeasonClient{episodetitle.SourceTMDB: tmdbEpisodes},
 		SectionClients: map[episodetitle.Source]episodetitle.SectionedClient{episodetitle.SourceBGM: bgmEpisodes},
 	})
 	metadataSearcher.SetEpisodeListLookup(candidateEpisodeLookup)

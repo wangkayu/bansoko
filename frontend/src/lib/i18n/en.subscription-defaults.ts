@@ -10,5 +10,14 @@ export const enSubscriptionDefaultsCopy = {
   summaryLabel: "New subscriptions",
   on: "On",
   off: "Off",
+  preferredTitle: {
+    title: "New subscription title",
+    source: "Preferred source",
+    keep: "Do not change the title",
+    tmdb_cn: "TMDB Chinese title",
+    tmdb_original: "TMDB original title",
+    bgm_cn: "Bangumi Chinese title",
+    bgm: "Bangumi original title",
+  },
   description: "The default for new subscriptions; existing subscriptions are unaffected and keep their own switch in their rules",
 } as const satisfies CopyShape<typeof subscriptionDefaultsCopy>;

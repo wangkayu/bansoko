@@ -426,6 +426,18 @@ WHERE id = $1`, subscriptionID, string(patch.State), resumed); err != nil {
 		return Subscription{}, fmt.Errorf("save subscription: %w", err)
 	}
 	if started {
+		settled, replacement, err := animeapplication.SettleInitialTitleTx(ctx, tx, managedAnimeID)
+		if err != nil {
+			return Subscription{}, err
+		}
+		if settled {
+			if _, err := tx.ExecContext(ctx, `UPDATE anime_metadata SET version = version + 1, updated_at = NOW() WHERE managed_anime_id = $1`, managedAnimeID); err != nil {
+				return Subscription{}, fmt.Errorf("version initial title decision: %w", err)
+			}
+		}
+		if replacement != nil {
+			animeTitle = *replacement
+		}
 		// The first start schedules what a subscribe that starts at once
 		// schedules: one initial refresh per eligible source (custom, or a
 		// selected available provider group). Provider discovery runs after

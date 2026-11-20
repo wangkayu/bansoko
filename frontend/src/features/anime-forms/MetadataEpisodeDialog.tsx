@@ -1,41 +1,70 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { toUserMessage } from "../../lib/api/client";
+import { listTMDBWorkSeasons, toUserMessage, type TMDBSeasonList } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
-import type { MetadataCandidate, MetadataEpisode, MetadataEpisodeLoader } from "../../lib/metadata/types";
+import type { MetadataCandidate, MetadataEpisode, MetadataEpisodeLoader, MetadataEpisodeWork } from "../../lib/metadata/types";
 import { Button, Input, StateBlock } from "../../ui";
 import { Dialog, Select } from "../../ui/base";
 
-// Candidate-level, read-only reference. Its season and filter are deliberately local: neither
-// browsing nor closing can select the work or change MetadataMatchDialog's apply-season editor.
-export function MetadataEpisodeDialog({
-  candidate,
-  loader,
-  onClose,
-}: {
-  candidate: MetadataCandidate;
+export type MetadataEpisodeBinding = Pick<MetadataEpisodeWork, "workId" | "title"> & (
+  { provider: "bgm" } | { provider: "tmdb"; season: number }
+);
+
+type EpisodeDialogProps = {
   loader: MetadataEpisodeLoader;
   onClose: () => void;
-}) {
-  const initialSeason = candidate.suggestedSeason ?? candidate.seasons?.[0]?.seasonNumber ?? 1;
+} & ({ candidate: MetadataCandidate; binding?: never } | { binding: MetadataEpisodeBinding; candidate?: never });
+
+// Browsing keeps the selected season and filter local, independent of matching and saved settings.
+export function MetadataEpisodeDialog({ candidate, binding, loader, onClose }: EpisodeDialogProps) {
+  const work = binding ?? candidate;
+  const boundSeason = binding?.provider === "tmdb" ? binding.season : undefined;
+  const boundTMDBWorkID = binding?.provider === "tmdb" ? binding.workId : undefined;
+  const initialSeason = boundSeason ?? candidate?.suggestedSeason ?? candidate?.seasons?.[0]?.seasonNumber ?? 1;
   const [season, setSeason] = useState(String(initialSeason));
   const [filter, setFilter] = useState("");
   const [episodes, setEpisodes] = useState<MetadataEpisode[]>([]);
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string>();
   const [reloadTick, setReloadTick] = useState(0);
-  const isTMDB = candidate.provider === "tmdb";
+  const isTMDB = work.provider === "tmdb";
+  const [catalogue, setCatalogue] = useState<TMDBSeasonList["seasons"]>([]);
+  const [catalogueFailed, setCatalogueFailed] = useState(false);
+  const [catalogueRetry, setCatalogueRetry] = useState(0);
+
+  useEffect(() => {
+    if (boundTMDBWorkID === undefined) return;
+    let active = true;
+    setCatalogueFailed(false);
+    listTMDBWorkSeasons(boundTMDBWorkID).then(
+      (result) => { if (active) setCatalogue(result.seasons); },
+      () => { if (active) setCatalogueFailed(true); },
+    );
+    return () => { active = false; };
+  }, [boundTMDBWorkID, catalogueRetry]);
+
+  const seasonOptions = boundSeason === undefined
+    ? (candidate?.seasons ?? []).map((item) => ({
+        value: String(item.seasonNumber),
+        label: t("forms.seasonOption", { n: item.seasonNumber, name: item.name || t("forms.unnamed"), count: item.episodeCount }),
+      }))
+    : [...new Set([boundSeason, ...catalogue.map((item) => item.season)])].sort((a, b) => a - b).map((number) => {
+        const name = number === 0 ? t("forms.seasonSpecials")
+          : catalogue.find((item) => item.season === number)?.name || t("forms.seasonN", { n: number });
+        return { value: String(number), label: number === boundSeason ? t("forms.boundSeasonOption", { season: name }) : name };
+      });
 
   useEffect(() => {
     let active = true;
     setPending(true);
+    setEpisodes([]);
     setError(undefined);
-    loader(candidate, candidate.provider === "tmdb" ? Number(season) : undefined)
+    loader(work, isTMDB ? Number(season) : undefined)
       .then((result) => {
         if (active) setEpisodes(result);
       })
       .catch((cause: unknown) => {
-        if (active) setError(toUserMessage(cause, t("forms.episodeLoadFailed")));
+        if (active) setError(toUserMessage(cause, t(binding ? "forms.boundEpisodeLoadFailed" : "forms.episodeLoadFailed")));
       })
       .finally(() => {
         if (active) setPending(false);
@@ -43,7 +72,7 @@ export function MetadataEpisodeDialog({
     return () => {
       active = false;
     };
-  }, [candidate, loader, reloadTick, season]);
+  }, [binding, isTMDB, loader, reloadTick, season, work]);
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -75,11 +104,11 @@ export function MetadataEpisodeDialog({
       fixedHeight
       bodyLayout="fill"
       focusTitle
-      title={t("forms.episodeListTitle")}
-      description={`${candidate.title} · ${isTMDB ? "TMDB" : "Bangumi"}`}
+      title={t(binding ? "forms.boundEpisodeTitle" : "forms.episodeListTitle")}
+      description={[work.title, isTMDB ? "TMDB" : "Bangumi"].filter(Boolean).join(" · ")}
       footer={
         <>
-          <span className="metadata-episode-readonly">{t("forms.episodeReadonly")}</span>
+          <span className="metadata-episode-readonly">{t(binding ? "forms.boundEpisodeReadonly" : "forms.episodeReadonly")}</span>
           <Button onClick={onClose}>{t("ui.close")}</Button>
         </>
       }
@@ -93,15 +122,12 @@ export function MetadataEpisodeDialog({
                 label={t("forms.browseSeason")}
                 value={season}
                 onChange={setSeason}
-                options={(candidate.seasons ?? []).map((item) => ({
-                  value: String(item.seasonNumber),
-                  label: t("forms.seasonOption", { n: item.seasonNumber, name: item.name || t("forms.unnamed"), count: item.episodeCount }),
-                }))}
+                options={seasonOptions}
               />
             </label>
           )}
           <Input
-            aria-label={t("forms.episodeFilter")}
+            aria-label={t(binding ? "forms.boundEpisodeFilter" : "forms.episodeFilter")}
             placeholder={t("forms.episodeFilterPlaceholder")}
             leadingIcon={<Search aria-hidden="true" />}
             value={filter}
@@ -113,7 +139,17 @@ export function MetadataEpisodeDialog({
             {t("forms.episodeShown", { shown: shown.length, total: episodes.length })}
           </span>
         </div>
-        <p className="metadata-episode-hint">{isTMDB ? t("forms.episodeBrowseHint") : t("forms.episodeBrowseHintBgm")}</p>
+        {catalogueFailed && (
+          <div className="metadata-episode-catalogue-error">
+            <span role="status">{t("forms.seasonCatalogueLoadFailed")}</span>
+            <Button size="sm" variant="ghost" onClick={() => setCatalogueRetry((value) => value + 1)}>{t("act.retry")}</Button>
+          </div>
+        )}
+        <p className="metadata-episode-hint">
+          {binding
+            ? t(isTMDB ? "forms.boundEpisodeHintTmdb" : "forms.boundEpisodeHintBgm")
+            : t(isTMDB ? "forms.episodeBrowseHint" : "forms.episodeBrowseHintBgm")}
+        </p>
         <div className="metadata-episode-head" aria-hidden="true">
           <span>{t("forms.episodeColumn")}</span><span>{t("forms.episodeTitleColumn")}</span><span>{t("forms.episodeDateColumn")}</span>
         </div>

@@ -52,11 +52,12 @@ type Subscription struct {
 }
 
 type AnimeMetadata struct {
-	ManagedAnimeID string       `json:"managed_anime_id"`
-	BGM            *BGMBinding  `json:"bgm"`
-	TMDB           *TMDBBinding `json:"tmdb"`
-	TitleOverride  *string      `json:"title_override"`
-	TotalEpisodes  *int         `json:"total_episodes"`
+	ManagedAnimeID      string       `json:"managed_anime_id"`
+	BGM                 *BGMBinding  `json:"bgm"`
+	TMDB                *TMDBBinding `json:"tmdb"`
+	TitleOverride       *string      `json:"title_override"`
+	InitialTitlePending bool         `json:"initial_title_pending,omitempty"`
+	TotalEpisodes       *int         `json:"total_episodes"`
 	// MediaKind pins the naming branch selector (tv | movie); nil means
 	// unset. The TMDB tuple above stays exactly the binding the matcher wrote.
 	MediaKind *string `json:"media_kind"`

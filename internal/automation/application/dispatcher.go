@@ -1156,7 +1156,7 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 
 	var lockedSubscriptionID, lockedTitle, subscriptionState string
 	if err := tx.QueryRowContext(ctx, `
-	SELECT s.id, ma.title, s.state
+	SELECT s.id, COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title), s.state
 	FROM subscriptions s
 	JOIN managed_anime ma ON ma.id = s.managed_anime_id
 	WHERE s.managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Scan(&lockedSubscriptionID, &lockedTitle, &subscriptionState); err != nil {
@@ -1191,6 +1191,15 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 
 	// If metadata is now complete, enqueue release_evaluate for waiting_metadata releases.
 	if plan.Merged.Complete() {
+		_, replacement, err := animeapp.SettleInitialTitleTx(ctx, tx, managedAnimeID)
+		if err != nil {
+			return counts, err
+		}
+		if replacement != nil && *replacement != lockedTitle {
+			if err := animeapp.RequestConfigScanTx(ctx, tx, managedAnimeID); err != nil {
+				return counts, err
+			}
+		}
 		relRows, err := tx.QueryContext(ctx, `
 SELECT r.id, r.version
 FROM releases r

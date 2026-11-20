@@ -17,6 +17,8 @@ import {
 import { DescriptionList, ConflictBlock, StatePill, TagInput } from "../../ui";
 import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
 import { NamingTemplatesCard } from "./NamingTemplatesCard";
+import { UnclassifiedRuleCard } from "./UnclassifiedRuleCard";
+import { preferredTitleOptions, preferredTitleSource } from "../../lib/metadata/preferredTitle";
 import { sectionSourceLabel } from "./sectionBadge";
 import { TagRowEditor } from "../anime-forms/TagRowEditor";
 import { ANIBT_ROW_VOCABULARY, titleRowVocabulary } from "../../lib/tagRowVocabulary";
@@ -86,6 +88,14 @@ const ruleSections = (): {
         value: v.ignore_multi_video_releases === true ? t("subscriptionDefaults.on") : t("subscriptionDefaults.off"),
       },
     ],
+  },
+  {
+    name: "subscription_title",
+    title: t("subscriptionDefaults.preferredTitle.title"),
+    summary: (value) => [{
+      label: t("subscriptionDefaults.preferredTitle.source"),
+      value: t(`subscriptionDefaults.preferredTitle.${preferredTitleSource(value.source)}`),
+    }],
   },
 ];
 
@@ -201,6 +211,7 @@ export function SettingsRules() {
             );
           })}
           <NamingTemplatesCard />
+          <UnclassifiedRuleCard />
         </ul>
       </section>
 
@@ -260,6 +271,7 @@ function SectionEditDialog({
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={t("settings.rules.editTitle", { title })}
       dirty={dirty}
+      busy={busy}
       footer={(requestClose) => (
         <>
           <Button variant="ghost" disabled={busy} onClick={requestClose}>{t("settings.rules.cancel")}</Button>
@@ -280,6 +292,7 @@ function SectionEditDialog({
         {view.section_name === "file_rules" && <FileRulesForm value={view.value} busy={busy} onSave={onSave} />}
         {view.section_name === "tag_filters" && <TagFiltersForm value={view.value} busy={busy} onSave={onSave} onDirty={() => setDirty(true)} />}
         {view.section_name === "subscription_defaults" && <SubscriptionDefaultsForm value={view.value} busy={busy} onSave={onSave} />}
+        {view.section_name === "subscription_title" && <SubscriptionTitleForm value={view.value} busy={busy} onSave={onSave} onDirty={() => setDirty(true)} />}
       </div>
     </SettingsEditDialog>
   );
@@ -446,6 +459,18 @@ function SubscriptionDefaultsForm({ value, busy, onSave }: FormProps) {
         onCheckedChange={setEnabled}
       />
       <p className="tw:text-xs tw:text-muted-foreground">{t("anime.ignoreMultiVideo.help")}</p>
+    </form>
+  );
+}
+
+function SubscriptionTitleForm({ value, busy, onSave, onDirty }: FormProps & { onDirty: () => void }) {
+  const [source, setSource] = useState(preferredTitleSource(value.source));
+  return (
+    <form id="section-edit-form" className="settings-shared-grid" onSubmit={(event) => { event.preventDefault(); onSave({ source }); }}>
+      <Select label={t("subscriptionDefaults.preferredTitle.source")} value={source} options={preferredTitleOptions()} disabled={busy} onChange={(next) => {
+        setSource(next);
+        onDirty();
+      }} />
     </form>
   );
 }

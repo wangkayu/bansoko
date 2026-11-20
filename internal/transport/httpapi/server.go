@@ -180,8 +180,8 @@ type GlobalSectionService interface {
 type MetadataSearchService interface {
 	SearchMetadata(ctx context.Context, provider, query string, limit int) ([]identitymetadatadomain.SearchCandidate, error)
 	SearchMetadataAutomatically(ctx context.Context, input identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error)
-	// TMDBCandidateEpisodes and BGMCandidateEpisodes are read-only candidate
-	// reference reads; they never change a candidate or a binding.
+	// These work-level reads never change a candidate or a binding.
+	TMDBWorkSeasons(ctx context.Context, workID string) ([]identitymetadatadomain.SearchSeason, error)
 	TMDBCandidateEpisodes(ctx context.Context, workID string, season int) ([]identitymetadatadomain.CandidateEpisode, error)
 	BGMCandidateEpisodes(ctx context.Context, workID string) ([]identitymetadatadomain.CandidateEpisode, error)
 }

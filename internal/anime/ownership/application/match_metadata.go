@@ -348,6 +348,10 @@ FROM anime_metadata WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Sca
 				return MetadataMatchResult{}, err
 			}
 			if plan.Merged.Complete() {
+				// The explicit match endpoint applies bindings, not a title choice.
+				if _, err := tx.ExecContext(ctx, `UPDATE managed_anime SET initial_title_pending = false WHERE id = $1 AND initial_title_pending`, managedAnimeID); err != nil {
+					return MetadataMatchResult{}, fmt.Errorf("keep title after explicit match: %w", err)
+				}
 				if err := s.scheduleMetadataReleaseEvaluation(ctx, tx, managedAnimeID); err != nil {
 					return MetadataMatchResult{}, err
 				}

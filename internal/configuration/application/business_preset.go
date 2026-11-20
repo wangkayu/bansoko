@@ -83,8 +83,9 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	// download_timeouts is Global-only and frozen into the acquisition limits;
 	// metadata_refresh only drives the background sweep; metadata_hold is live
 	// admission policy every evaluation reads; subscription_defaults is a
-	// one-time-input default outside the snapshot and its digest.
-	rows, err := tx.QueryContext(ctx, `SELECT section_name, schema_version, value, version FROM global_config_sections WHERE section_name NOT IN ('tag_filters', 'download_completion', 'replacement', 'parser_policy', 'file_effect_policy', 'download_timeouts', 'metadata_refresh', 'metadata_hold', 'subscription_defaults')`)
+	// one-time-input default outside the snapshot and its digest. The title
+	// preference is read only when the new subscription first settles its title.
+	rows, err := tx.QueryContext(ctx, `SELECT section_name, schema_version, value, version FROM global_config_sections WHERE section_name NOT IN ('tag_filters', 'download_completion', 'replacement', 'parser_policy', 'file_effect_policy', 'download_timeouts', 'metadata_refresh', 'metadata_hold', 'subscription_defaults', 'subscription_title')`)
 	if err != nil {
 		return result, err
 	}

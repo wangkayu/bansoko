@@ -22,6 +22,7 @@ type SearchService struct {
 // EpisodeListLookup reads provider episode lists for candidate browsing.
 // *episodetitle.Lookup implements it.
 type EpisodeListLookup interface {
+	Seasons(ctx context.Context, source episodetitle.Source, workID string) ([]episodetitle.Season, error)
 	Season(ctx context.Context, key episodetitle.Key, bypassCache bool) (episodetitle.List, error)
 	SectionedEpisodes(ctx context.Context, key episodetitle.Key, bypassCache bool) (episodetitle.SectionedList, error)
 }
@@ -92,6 +93,25 @@ func (s *SearchService) SearchMetadataAutomatically(ctx context.Context, input i
 	candidates := []identitymetadatadomain.SearchCandidate{*candidate}
 	s.recordTitles(ctx, candidates, nil)
 	return candidates, nil
+}
+
+// TMDBWorkSeasons reads the cached season catalog independently of any binding.
+func (s *SearchService) TMDBWorkSeasons(ctx context.Context, workID string) ([]identitymetadatadomain.SearchSeason, error) {
+	if s.episodes == nil {
+		return nil, errors.New("candidate episode lookup is not configured")
+	}
+	seasons, err := s.episodes.Seasons(ctx, episodetitle.SourceTMDB, workID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]identitymetadatadomain.SearchSeason, 0, len(seasons))
+	for _, season := range seasons {
+		result = append(result, identitymetadatadomain.SearchSeason{
+			SeasonNumber: season.Number, Name: season.Name, AirDate: season.AirDate,
+			EpisodeCount: season.EpisodeCount, IsSpecial: season.Number == 0,
+		})
+	}
+	return result, nil
 }
 
 // TMDBCandidateEpisodes lists one season of an arbitrary TMDB TV work. It is

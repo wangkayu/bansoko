@@ -1,5 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AnimeDraft, TitleSuggestion } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
@@ -28,7 +29,13 @@ const { matchedWork } = vi.hoisted(() => ({
 vi.mock("../../lib/api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/api/client")>()),
   searchMetadata: vi.fn(async () => ({ provider: "tmdb" as const, query: "", candidates: [matchedWork] })),
+  listGlobalSections: vi.fn(async () => []),
 }));
+
+function renderWithQuery(view: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{view}</QueryClientProvider>);
+}
 
 function draftFixture(): AnimeDraft {
   return {
@@ -56,7 +63,7 @@ function renderDraftTab(suggestions: TitleSuggestion[] | undefined) {
     observedGroups: [],
     onDiscovered: () => {},
   };
-  render(<MetadataTab host={host} draftTitleSuggestions={suggestions} />);
+  renderWithQuery(<MetadataTab host={host} draftTitleSuggestions={suggestions} />);
   return onDraftChange;
 }
 
@@ -74,7 +81,7 @@ describe("MetadataTab 草稿标题候选", () => {
 
     fireEvent.click(badges[0]!);
     expect(onDraftChange).toHaveBeenCalledTimes(1);
-    expect(onDraftChange.mock.calls[0]![0]).toMatchObject({ title: "候选甲", title_override: null });
+    expect(onDraftChange.mock.calls[0]![0]).toMatchObject({ title: "候选甲", title_override: "候选甲" });
     expect(within(region).queryByRole("textbox")).not.toBeInTheDocument();
   });
 
@@ -136,7 +143,7 @@ describe("候选自带的标题", () => {
       };
       return <MetadataTab host={host} />;
     }
-    render(<Harness />);
+    renderWithQuery(<Harness />);
 
     fireEvent.click(screen.getByRole("button", { name: t("forms.matchProvider", { provider: t("forms.providerTmdb") }) }));
     const dialog = await screen.findByRole("dialog");

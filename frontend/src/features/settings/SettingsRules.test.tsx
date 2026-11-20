@@ -96,6 +96,7 @@ function stubFetch(sections: GlobalSectionView[], stubs: ParserDefaultStub = {})
     }
     if (url.includes("/parser-catalog")) return jsonResponse(catalog);
     if (url.includes("/config/naming-templates")) return jsonResponse(namingLibrary);
+    if (url.includes("/file-maintenance/file-effect/default")) return jsonResponse({ unclassified_route: "skip", version: 1 });
     if (init?.method === "PUT" && url.includes("/config/global-sections/")) {
       const requestBody = JSON.parse(String(init.body)) as { schema_version: string; value: unknown };
       const name = url.slice(url.lastIndexOf("/") + 1) as GlobalSectionView["section_name"];
@@ -287,7 +288,7 @@ describe("SettingsRules 解析规则卡：解析器与集数识别规则", () =>
     expect(within(card).getByText("第 (\\d+) 话")).toBeInTheDocument();
     expect(within(card).queryByRole("radiogroup")).not.toBeInTheDocument();
     // Episode rules and file filters, plus the naming templates card that is always present.
-    expect(screen.getAllByRole("button", { name: t("settings.rules.edit") })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: t("settings.rules.edit") })).toHaveLength(4);
 
     const dialog = await openEditor();
     expect(within(dialog).getByRole("radio", { name: t("policy.parser.kindRegex") })).toHaveAttribute("aria-checked", "true");

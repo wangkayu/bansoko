@@ -109,6 +109,53 @@ function clickMatch(provider: "bgm" | "tmdb") {
 }
 
 describe("MetadataFields 绑定事实行", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("按当前 TMDB 绑定打开第 0 季，季目录失败不挡住分集读取", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ code: "METADATA_PROVIDER_UNAVAILABLE" }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ seasons: [{ season: 0, episode_count: 1 }, { season: 2, name: "第二季", episode_count: 2 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const episodeLoader = vi.fn<MetadataEpisodeLoader>().mockResolvedValue([{ episode: 1, title: "冬日来信" }]);
+    const onChange = vi.fn();
+    render(<MetadataFields idPrefix="test" value={{ season: 1, tmdb: { work_id: "265010", media_kind: "tv", season: 0 } }}
+      onChange={onChange} episodeLoader={episodeLoader} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(episodeLoader).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: t("forms.browseBoundEpisodes", { provider: "TMDB" }) }));
+    const browser = within(await screen.findByRole("dialog", { name: t("forms.boundEpisodeTitle") }));
+    expect(await browser.findByText("冬日来信")).toBeInTheDocument();
+    expect(episodeLoader).toHaveBeenCalledTimes(1);
+    expect(episodeLoader).toHaveBeenCalledWith(expect.objectContaining({ provider: "tmdb", workId: "265010" }), 0);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/metadata/tmdb/works/265010/seasons");
+    expect(browser.getByRole("combobox", { name: t("forms.browseSeason") })).toHaveTextContent(t("forms.boundSeasonOption", { season: t("forms.seasonSpecials") }));
+    expect(await browser.findByRole("status")).toHaveTextContent(t("forms.seasonCatalogueLoadFailed"));
+    fireEvent.click(browser.getByRole("button", { name: t("act.retry") }));
+    await userEvent.click(browser.getByRole("combobox", { name: t("forms.browseSeason") }));
+    expect(await screen.findByRole("option", { name: "第二季" })).toBeInTheDocument();
+    expect(episodeLoader).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("从 Bangumi 当前绑定浏览正片和特别篇，TMDB 电影没有入口", async () => {
+    const episodeLoader = vi.fn<MetadataEpisodeLoader>().mockResolvedValue([
+      { episode: 1, title: "正片第一集", section: "main" }, { episode: 1, title: "特别篇第一集", section: "special" },
+    ]);
+    const onChange = vi.fn();
+    render(<MetadataFields idPrefix="test" value={{ bgm: { work_id: "486109" }, tmdb: { work_id: "265010", media_kind: "movie", season: 0 } }}
+      onChange={onChange} episodeLoader={episodeLoader} />);
+    expect(screen.queryByRole("button", { name: t("forms.browseBoundEpisodes", { provider: "TMDB" }) })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("forms.browseBoundEpisodes", { provider: "Bangumi" }) }));
+    const browser = within(await screen.findByRole("dialog", { name: t("forms.boundEpisodeTitle") }));
+    expect(await browser.findByRole("heading", { name: /正片/ })).toBeInTheDocument();
+    expect(browser.getByRole("heading", { name: /SP/ })).toBeInTheDocument();
+    expect(browser.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(episodeLoader).toHaveBeenCalledTimes(1);
+    expect(episodeLoader).toHaveBeenCalledWith(expect.objectContaining({ provider: "bgm", workId: "486109" }), undefined);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("常态只显示未匹配事实与清除，不再有内联搜索区", () => {
     render(<Controlled searcher={searcherReturning([])} />);
 
@@ -201,7 +248,7 @@ describe("MetadataMatchDialog", () => {
 
   it("候选选中前即可浏览 EP，浏览季号不会写入匹配设置", async () => {
     const onChange = vi.fn();
-    const episodeLoader = vi.fn(async (_candidate: MetadataCandidate, season?: number) => [
+    const episodeLoader = vi.fn(async (_work: Parameters<MetadataEpisodeLoader>[0], season?: number) => [
       { episode: 1, title: `第${season}季第一集`, airDate: "2025-01-01" },
     ]);
     render(<Controlled searcher={searcherReturning([tmdbCandidate])} episodeLoader={episodeLoader} onChange={onChange} />);
@@ -236,7 +283,7 @@ describe("MetadataMatchDialog", () => {
 
   it("BGM 直接浏览条目 EP，按正片与 SP 分组且没有季度选择", async () => {
     const onChange = vi.fn();
-    const episodeLoader = vi.fn(async (_candidate: MetadataCandidate, _season?: number) => [
+    const episodeLoader = vi.fn(async (_work: Parameters<MetadataEpisodeLoader>[0], _season?: number) => [
       { episode: 1, title: "正片第一集", section: "main" as const },
       { episode: 1, title: "特别篇第一集", section: "special" as const },
     ]);
@@ -724,7 +771,7 @@ describe("MetadataMatchDialog 检索词候选与作品名回传", () => {
 });
 
 describe("MetadataMatchDialog 同时改标题", () => {
-  function renderOffer(candidate: MetadataCandidate, titleOffer: { current: string; provider: string }, onChange = vi.fn()) {
+  function renderOffer(candidate: MetadataCandidate, titleOffer: NonNullable<React.ComponentProps<typeof MetadataFields>["titleOffer"]>, onChange = vi.fn()) {
     render(
       <MetadataFields
         idPrefix="test"
@@ -749,7 +796,7 @@ describe("MetadataMatchDialog 同时改标题", () => {
   it("没有中文名时用原名；确认时作为 onChange 第三个参数传出", async () => {
     const onChange = renderOffer(
       { ...tmdbCandidate, title: "", originalTitle: "Original Name" },
-      { current: "来源标题", provider: "来源标题" },
+      { current: "来源标题", initial: true, source: "tmdb_original" },
     );
     const dialog = await pickCandidate();
     const box = within(dialog).getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: "Original Name" }) });
@@ -759,7 +806,7 @@ describe("MetadataMatchDialog 同时改标题", () => {
   });
 
   it("中文名与原名都为空时不显示，确认不带标题", async () => {
-    const onChange = renderOffer({ ...tmdbCandidate, title: "", originalTitle: "" }, { current: "来源标题", provider: "来源标题" });
+    const onChange = renderOffer({ ...tmdbCandidate, title: "", originalTitle: "" }, { current: "来源标题", initial: false, source: "tmdb_cn" });
     const dialog = await pickCandidate();
     expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));

@@ -830,6 +830,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metadata/tmdb/works/{work_id}/seasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the seasons of a TMDB TV work by work ID, including season 0 (specials). Read-only and independent of any saved binding. Cached on the server for one hour; an unknown work returns an empty list. */
+        get: operations["listTMDBWorkSeasons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metadata/tmdb/works/{work_id}/seasons/{season}/episodes": {
         parameters: {
             query?: never;
@@ -3971,10 +3988,17 @@ export interface components {
             checked_at: string;
         };
         /**
-         * @description One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
+         * @description One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value. subscription_title (schema subscription-title-v1, value SubscriptionTitle) is Global-only and read when a new subscription first settles its title.
          * @enum {string}
          */
-        GlobalSectionName: "subgroups" | "parser" | "release_rules" | "file_rules" | "naming_rules" | "file_effect" | "tag_filters" | "download_completion" | "download_timeouts" | "metadata_refresh" | "metadata_hold" | "subscription_defaults";
+        GlobalSectionName: "subgroups" | "parser" | "release_rules" | "file_rules" | "naming_rules" | "file_effect" | "tag_filters" | "download_completion" | "download_timeouts" | "metadata_refresh" | "metadata_hold" | "subscription_defaults" | "subscription_title";
+        SubscriptionTitle: {
+            /**
+             * @default keep
+             * @enum {string}
+             */
+            source: "keep" | "tmdb_cn" | "tmdb_original" | "bgm_cn" | "bgm";
+        };
         GlobalSectionView: {
             section_name: components["schemas"]["GlobalSectionName"];
             schema_version: string;
@@ -4229,6 +4253,8 @@ export interface components {
             /** @description Owner-edited season that naming reads as anime.season (and anime.season_folder, anime.season_path, ep.s00e00); 0 is the specials season. NULL means unset: the season composites render empty and ep.s00e00 renders the episode alone (E07). The shipped TV directory template keeps anime.season_folder as its own folder level, so a season-less render refuses (naming_fact_missing_anime_season_folder). It is independent of the TMDB binding: tmdb.season stays the bound TMDB season used for TMDB episode lookups, and editing one never changes the other. Confirming a TMDB match in the UI fills it with the matched season only while it is unset; nothing is stored until the owner saves. */
             season?: number | null;
             title_override?: string | null;
+            /** @description True in the workspace while a new subscription has not settled its title; absent means false. */
+            initial_title_pending?: boolean;
             /** @description Read-only title candidates, present on the workspace read: the cached titles of the bound works and the provider title, every non-empty one in the order tmdb_cn, tmdb_original, bgm_cn, bgm, provider. Nothing is fetched; duplicates are not removed. */
             title_suggestions?: components["schemas"]["TitleSuggestion"][];
             /** @description Present on the metadata patch response only: how many releases not yet submitted the same transaction scheduled for re-evaluation. Absent when the patch changed only the title. */
@@ -5495,7 +5521,7 @@ export interface components {
             year?: number | null;
             /** @description Complete owner value of the naming season (anime.season; 0 is the specials season): null or an omitted field clears it, a value replaces it. It never rewrites the TMDB tuple, and the TMDB tuple never rewrites it. */
             season?: number | null;
-            /** @description The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. It is the owner's choice: clearing or replacing a binding, a metadata match and a TMDB rename never change it. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates. */
+            /** @description The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. Sending the same text is an explicit decision to keep it and ends pending automatic initial naming. Refreshing or replacing a binding cannot change the title on its own. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates. */
             title_override?: string | null;
         };
         /** @description The complete unsaved metadata value an owner_draft RSS list read previews with: the AnimeMetadataPatch fields without expected_version, with the same complete-value semantics (null or an omitted field clears, except title_override, where null keeps the fixed title). It replaces the persisted metadata for the read only. The read consumes title_override (anime.title_override), year (anime.year), season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the bound season carried as naming evidence, and the metadata hold) and media_kind (the media kind of episode parsing, filled from the tmdb media_kind by the same rule as the patch). total_episodes is validated but does not change a preview. No value is filled from network metadata. */
@@ -7801,6 +7827,8 @@ export interface components {
             provider: "bgm" | "tmdb";
             provider_work_id: string;
             title: string;
+            /** @description Provider's zh-CN title without the display-title fallback; omitted when unavailable. */
+            title_cn?: string;
             original_title?: string;
             overview?: string;
             /** @description Server-local proxy path for the candidate poster: /api/v1/images/poster/{bgm_id}
@@ -10343,6 +10371,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listTMDBWorkSeasons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The work's seasons. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TMDBSeasonList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
         };
     };
     listTMDBCandidateEpisodes: {

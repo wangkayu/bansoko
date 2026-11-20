@@ -636,12 +636,10 @@ FOR UPDATE`, key).Scan(&existingHash, &existingSnapshot, &existingManagedAnimeID
 		return SubscribeResult{}, fmt.Errorf("read provider catalog title: %w", err)
 	}
 	fixedTitle := animeapplication.FixedTitle(draft.Title, draft.TitleOverride)
-	// The anime's title is fixed at subscribe: the draft's title override, else
-	// its title (prefilled with the provider title). It never follows a later
-	// provider or metadata title; only an owner edit changes it.
+	initialTitlePending := draft.TitleOverride == nil
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO managed_anime(id, title, title_override, provider_title)
-VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(providerTitle)); err != nil {
+INSERT INTO managed_anime(id, title, title_override, provider_title, initial_title_pending)
+VALUES ($1, $2, $3, $4, $5)`, animeID, title, fixedTitle, nullableOptionalText(providerTitle), initialTitlePending); err != nil {
 		return SubscribeResult{}, fmt.Errorf("create managed anime: %w", err)
 	}
 	subscriptionID := uuid.NewString()
@@ -653,6 +651,18 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 	if err != nil {
 		return SubscribeResult{}, err
 	}
+	if initialTitlePending && initialState == subscriptiondomain.SubscriptionActive {
+		settled, replacement, err := animeapplication.SettleInitialTitleTx(ctx, tx, animeID)
+		if err != nil {
+			return SubscribeResult{}, err
+		}
+		initialTitlePending = !settled
+		if replacement != nil {
+			fixedTitle = replacement
+		}
+	}
+	metadata.InitialTitlePending = initialTitlePending
+	metadata.TitleOverride = cloneString(fixedTitle)
 	if frozenBusinessRevision != nil {
 		if err := verifyBusinessProgramsTx(ctx, tx, *frozenBusinessRevision.Business); err != nil {
 			return SubscribeResult{}, err

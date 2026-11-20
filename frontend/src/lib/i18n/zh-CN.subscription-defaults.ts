@@ -7,5 +7,14 @@ export const subscriptionDefaultsCopy = {
   summaryLabel: "新订阅默认",
   on: "开启",
   off: "关闭",
+  preferredTitle: {
+    title: "新订阅标题",
+    source: "首选来源",
+    keep: "不修改标题",
+    tmdb_cn: "TMDB 中文标题",
+    tmdb_original: "TMDB 原名",
+    bgm_cn: "Bangumi 中文标题",
+    bgm: "Bangumi 原名",
+  },
   description: "新建订阅时的默认值；已有订阅不受影响，仍可在各订阅的规则里单独修改",
 } as const;

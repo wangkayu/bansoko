@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "../../ui/toast";
 import {
   isVersionConflict,
+  listGlobalSections,
   patchAnimeMetadata,
   toUserMessage,
   type AnimeMetadata,
@@ -11,6 +13,8 @@ import {
   type TitleSuggestion,
 } from "../../lib/api/client";
 import type { MetadataCandidate } from "../../lib/metadata/types";
+import { preferredTitleSource, type MatchTitleOffer } from "../../lib/metadata/preferredTitle";
+import { configKeys } from "../../lib/queryKeys";
 import { boundTitleSuggestions, candidateTitleSuggestions, savedTitleSuggestions } from "./candidateTitles";
 import { metadataDraftFromOwner, valuesEqual } from "../../lib/draft";
 import { useSavePart } from "../../lib/saveParts";
@@ -121,7 +125,7 @@ function TitleRow({
       setError(t("tabs.metadata.titleRequired"));
       return;
     }
-    if (trimmed !== value) onChange(trimmed);
+    onChange(trimmed);
     setEditing(false);
     setError(undefined);
   }
@@ -206,6 +210,11 @@ function TitleRow({
 
 // --- Candidate titles -----------------------------------------------------------------
 
+function usePreferredTitle(enabled: boolean) {
+  const query = useQuery({ queryKey: configKeys.globalSections, queryFn: listGlobalSections, enabled });
+  return preferredTitleSource(query.data?.find((section) => section.section_name === "subscription_title")?.value.source);
+}
+
 function useMatchedTitleSuggestions() {
   const [matched, setMatched] = useState<Record<string, TitleSuggestion[]>>({});
   const recordMatch = useCallback((candidate: MetadataCandidate) => {
@@ -241,7 +250,7 @@ function MetadataTabView({
   /** mediaKind / title are given when the change also sets them (a match confirm); store all in one update. */
   onValueChange: (next: AnimeMetadataDraft, mediaKind?: "tv" | "movie", title?: string) => void;
   /** The match dialog's "also set the title" choice (current title and the provider's). */
-  titleOffer?: { current: string; provider: string };
+  titleOffer?: MatchTitleOffer;
   onTotalEpisodesChange: (total: number | null) => void;
   onMediaKindChange: (next: "tv" | "movie") => void;
   mediaKind?: "tv" | "movie" | null;
@@ -304,6 +313,7 @@ function DraftMetadataTab({
 }) {
   const { draft, onDraftChange } = host;
   const { matched, recordMatch } = useMatchedTitleSuggestions();
+  const source = usePreferredTitle(matchProvider !== undefined);
   // A draft's title defaults to the site title; subscribing writes it as the fixed title (title_override wins).
   const draftTitle = draft.title_override?.trim() || draft.title;
   const titleSuggestions = [...(suggestions ?? []), ...boundTitleSuggestions(matched, draft.metadata)];
@@ -316,7 +326,7 @@ function DraftMetadataTab({
           idPrefix="draft"
           value={draftTitle}
           suggestions={titleSuggestions}
-          onChange={(title) => onDraftChange({ ...draft, title, title_override: null })}
+          onChange={(title) => onDraftChange({ ...draft, title, title_override: title })}
         />
       }
       searchTitle={draftTitle}
@@ -326,9 +336,9 @@ function DraftMetadataTab({
       onValueChange={(metadata, mediaKind, title) => {
         const next = mediaKind ? { ...metadata, media_kind: mediaKind } : metadata;
         if (title === undefined) setMetadata(next);
-        else onDraftChange({ ...draft, metadata: next, title, title_override: null });
+        else onDraftChange({ ...draft, metadata: next, title, title_override: title });
       }}
-      titleOffer={{ current: draftTitle, provider: suggestions?.find((item) => item.source === "provider")?.text ?? "" }}
+      titleOffer={{ current: draftTitle, initial: !draft.title_override, source }}
       onTotalEpisodesChange={(total) => setMetadata({ ...draft.metadata, total_episodes: total })}
       onMediaKindChange={(next) => setMetadata({ ...draft.metadata, media_kind: next })}
       mediaKind={draft.metadata.media_kind}
@@ -343,23 +353,20 @@ function DraftMetadataTab({
 
 type OwnerMetadataEdit = {
   metadata: AnimeMetadataDraft;
-  /** The fixed title (non-empty); sent as title_override on save. */
-  titleOverride: string;
+  /** Only staged title decisions belong here, including explicitly keeping the same text. */
+  titleOverride?: string;
   mediaKind: "tv" | "movie" | null;
 };
 
-/** The fixed title lives in title_override, written at subscribing. When older data has it empty, the title at subscribe time is the fallback. */
-function ownerEditFrom(metadata: AnimeMetadata, baseTitle: string): OwnerMetadataEdit {
+function ownerEditFrom(metadata: AnimeMetadata): OwnerMetadataEdit {
   return {
     metadata: metadataDraftFromOwner(metadata),
-    titleOverride: metadata.title_override?.trim() || baseTitle,
     mediaKind: metadata.media_kind ?? null,
   };
 }
 
-function normalizedTitle(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
+function normalizedTitle(value: string | null | undefined): string | null {
+  return value?.trim() || null;
 }
 
 /** The unsaved field count (title, Bangumi, TMDB, media kind, year, season and total episodes each count as one). */
@@ -405,21 +412,24 @@ function OwnerMetadataTab({
 }) {
   const { animeID, workspace, onChanged } = host;
   const baseTitle = workspace.managed_anime.title;
-  const saved = useMemo(() => ownerEditFrom(workspace.metadata, baseTitle), [workspace.metadata, baseTitle]);
+  const saved = useMemo(() => ownerEditFrom(workspace.metadata), [workspace.metadata]);
   const { edit, setEdit, baseline, markSaved } = useOwnerEdit<OwnerMetadataEdit>(saved, editEqual);
   const { matched, recordMatch } = useMatchedTitleSuggestions();
+  const source = usePreferredTitle(!readOnly && matchProvider !== undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
   // Between a successful save and the re-read, the CAS version follows the server's response.
-  const [savedVersion, setSavedVersion] = useState<{ base: number; next: number }>();
-  const metadataVersion =
-    savedVersion && savedVersion.base === workspace.metadata.version ? savedVersion.next : workspace.metadata.version;
+  const [savedResponse, setSavedResponse] = useState<{ base: number; value: AnimeMetadata }>();
+  const metadata = savedResponse?.base === workspace.metadata.version ? savedResponse.value : workspace.metadata;
+  const metadataVersion = metadata.version;
+  const savedTitle = normalizedTitle(metadata.title_override) ?? baseTitle;
+  const initial = metadata.initial_title_pending === true;
 
   const count = !readOnly && edit && baseline ? metadataChangeCount(baseline, edit) : 0;
 
   // Unsaved metadata serves only the RSS preview: saving and discarding still go through the footer's single save.
-  const preview = count > 0 && edit ? metadataPreviewFromEdit(edit) : undefined;
+  const preview = count > 0 && edit ? metadataPreviewFromEdit({ ...edit, titleOverride: edit.titleOverride ?? savedTitle }) : undefined;
   const previewKey = preview ? JSON.stringify(preview) : "";
   useEffect(() => {
     onPreviewChange?.(previewKey ? (JSON.parse(previewKey) as AnimeMetadataPreview) : undefined);
@@ -438,8 +448,8 @@ function OwnerMetadataTab({
         expected_version: metadataVersion,
         ...metadataPreviewFromEdit(edit),
       });
-      setSavedVersion({ base: workspace.metadata.version, next: result.version });
-      markSaved(edit);
+      setSavedResponse({ base: workspace.metadata.version, value: result });
+      markSaved({ ...edit, titleOverride: undefined });
       onChanged();
       const message =
         result.reevaluated_releases === undefined
@@ -465,7 +475,7 @@ function OwnerMetadataTab({
   }
 
   if (!edit) return <StateBlock kind="busy" title={t("tabs.metadata.reading")} />;
-  const effectiveTitle = normalizedTitle(edit.titleOverride) ?? baseTitle;
+  const effectiveTitle = normalizedTitle(edit.titleOverride) ?? savedTitle;
   const titleSuggestions = [
     ...savedTitleSuggestions(workspace.metadata.title_suggestions, saved.metadata, edit.metadata),
     ...boundTitleSuggestions(matched, edit.metadata),
@@ -476,10 +486,12 @@ function OwnerMetadataTab({
       title={
         <TitleRow
           idPrefix="owner"
-          value={readOnly ? (normalizedTitle(saved.titleOverride) ?? baseTitle) : effectiveTitle}
+          value={readOnly ? savedTitle : effectiveTitle}
           readOnly={readOnly}
           suggestions={titleSuggestions}
-          onChange={(titleOverride) => setEdit({ ...edit, titleOverride })}
+          onChange={(titleOverride) => setEdit({ ...edit,
+            titleOverride: initial || titleOverride !== savedTitle ? titleOverride : undefined,
+          })}
         />
       }
       searchTitle={effectiveTitle}
@@ -498,7 +510,8 @@ function OwnerMetadataTab({
       }
       titleOffer={{
         current: effectiveTitle,
-        provider: workspace.metadata.title_suggestions?.find((item) => item.source === "provider")?.text ?? "",
+        initial: initial && edit.titleOverride === undefined,
+        source,
       }}
       onTotalEpisodesChange={(total) => setEdit({ ...edit, metadata: { ...edit.metadata, total_episodes: total } })}
       onMediaKindChange={(mediaKind) => setEdit({ ...edit, mediaKind })}

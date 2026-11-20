@@ -57,6 +57,7 @@ var SectionSchemaVersions = map[string]string{
 	SectionMetadataHold: MetadataHoldSchemaVersion,
 
 	SectionSubscriptionDefaults: SubscriptionDefaultsSchemaVersion,
+	SectionSubscriptionTitle:    SubscriptionTitleSchemaVersion,
 }
 
 // ComponentVersions identifies the versioned pure components. Preview and
@@ -115,6 +116,8 @@ func DefaultSectionValue(section string) (any, error) {
 		return DefaultMetadataHoldRules(), nil
 	case SectionSubscriptionDefaults:
 		return DefaultSubscriptionDefaults(), nil
+	case SectionSubscriptionTitle:
+		return SubscriptionTitle{Source: SubscriptionTitleKeep}, nil
 	default:
 		return nil, fmt.Errorf("unknown section %q", section)
 	}
@@ -460,6 +463,8 @@ func ValidateSectionValueWithVars(section string, raw json.RawMessage, vars map[
 		return ValidateMetadataHoldJSON(raw)
 	case SectionSubscriptionDefaults:
 		return ValidateSubscriptionDefaultsJSON(raw)
+	case SectionSubscriptionTitle:
+		return ValidateSubscriptionTitleJSON(raw)
 	case SectionSubtitleRules:
 		return fmt.Errorf("subtitle_rules section has been retired")
 	case SectionNamingRules:

@@ -2614,7 +2614,13 @@ h1, h2, h3, h4, h5, h6 {
 .metadata-card { border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); padding: 0.5rem 0.75rem; }
 .metadata-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .metadata-title { color: hsl(var(--foreground)); font-weight: 500; }
-.metadata-actions { margin-left: auto; display: flex; align-items: center; gap: 0.25rem; }
+.metadata-actions { margin-left: auto; display: flex; flex: none; align-items: center; gap: 0.25rem; white-space: nowrap; }
+.metadata-bound-episodes { flex: none; gap: 0.25rem; color: hsl(var(--muted-foreground)); }
+.metadata-bound-episodes:hover { color: hsl(var(--primary)); }
+@media (width <= 40rem) {
+  .metadata-bound-episodes { width: 2.5rem; min-height: 2.5rem; padding-inline: 0; }
+  .metadata-bound-episodes span { display: none; }
+}
 .metadata-icon { width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
 .metadata-row-value { color: hsl(var(--foreground)); }
 .metadata-row-error { margin: 0.25rem 0 0; color: hsl(var(--status-offline)); }
@@ -2691,6 +2697,7 @@ h1, h2, h3, h4, h5, h6 {
 .metadata-episode-filter { min-width: 12rem; flex: 1; }
 .metadata-episode-count { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; white-space: nowrap; }
 .metadata-episode-hint { margin: 0; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted) / 0.16); padding: 0.5rem 1.25rem; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; }
+.metadata-episode-catalogue-error { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0 1rem; color: hsl(var(--status-offline)); font-size: 0.75rem; }
 .metadata-episode-head,
 .metadata-episode-row { display: grid; grid-template-columns: 4rem minmax(0, 1fr) 6rem; align-items: center; gap: 0.875rem; }
 .metadata-episode-head { flex: none; border-bottom: 1px solid hsl(var(--border)); padding: 0.5rem 1.25rem; color: hsl(var(--muted-foreground)); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.06em; }

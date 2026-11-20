@@ -207,6 +207,7 @@ required_paths = {
   "/naming-vars/imports" => ["post"],
   "/metadata/search" => ["get"],
   "/metadata/search/automatic" => ["post"],
+  "/metadata/tmdb/works/{work_id}/seasons" => ["get"],
   "/metadata/tmdb/works/{work_id}/seasons/{season}/episodes" => ["get"],
   "/metadata/bgm/works/{work_id}/episodes" => ["get"],
   "/parse/release-title" => ["post"],

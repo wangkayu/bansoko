@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReplacementPolicyDefaultView } from "../../lib/api/client";
-import { SettingsReplacement, SettingsUnclassified } from "./SettingsReplacement";
+import { SettingsReplacement } from "./SettingsReplacement";
+import { UnclassifiedRuleCard } from "./UnclassifiedRuleCard";
 import { SaveHarness } from "./saveHarness.test-utils";
 import { t } from "../../lib/i18n";
 import { compareItemName } from "../replacement/compareCopy";
@@ -134,22 +135,22 @@ describe("SettingsReplacement", () => {
     expect(screen.getByRole("button", { name: t("settings.replacement.saveAria") })).toBeDisabled();
   });
 
-  it("saves the unclassified-file default through the footer save, independently of the replacement default", async () => {
-    renderPage(undefined, SettingsUnclassified);
-    // The buttons render before the data does; wait for the loaded control itself.
-    const select = await screen.findByLabelText(t("settings.replacement.unclassified.selectLabel"));
-    const footerSave = () => screen.getByRole("button", { name: t("act.save") });
-    expect(footerSave()).toBeDisabled();
-    // Open the select and choose the other option: only the draft changes.
-    await userEvent.click(select);
+  it("saves the unclassified-file default in its edit dialog, independently of replacement", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><ul><UnclassifiedRuleCard /></ul></QueryClientProvider>);
+    await screen.findByText(t("file.unclassified.skip"));
+    await userEvent.click(screen.getByRole("button", { name: t("settings.rules.edit") }));
+    const dialog = within(await screen.findByRole("dialog"));
+    const save = dialog.getByRole("button", { name: t("settings.rules.save") });
+    expect(save).toBeDisabled();
+    await userEvent.click(dialog.getByLabelText(t("settings.replacement.unclassified.selectLabel")));
     await userEvent.click(await screen.findByRole("option", { name: t("file.unclassified.route") }));
-    expect(await screen.findByText(t("act.unsavedCount", { n: 1 }))).toBeInTheDocument();
     expect(routePuts).toHaveLength(0);
-    fireEvent.click(footerSave());
+    fireEvent.click(save);
     await waitFor(() => expect(routePuts).toEqual([{ expected_version: 1, unclassified_route: "route" }]));
     expect(replacementPuts).toHaveLength(0);
     const { toast } = await import("sonner");
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("settings.replacement.unclassified.saved")));
-    await waitFor(() => expect(footerSave()).toBeDisabled());
+    expect(await screen.findByText(t("file.unclassified.route"))).toBeInTheDocument();
   });
 });
