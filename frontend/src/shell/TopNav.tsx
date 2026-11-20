@@ -7,11 +7,11 @@ import {
   CalendarDays,
   ClipboardList,
   Compass,
+  Download,
   FolderOpen,
   History,
   Layers,
   Menu,
-  MonitorPlay,
   Search,
   Settings,
 } from "lucide-react";
@@ -258,7 +258,7 @@ export function TopNav({
                 onClick={openQBManager}
                 className="top-nav-icon-btn"
               >
-                <MonitorPlay width={18} height={18} />
+                <Download width={18} height={18} />
               </button>
               <button
                 type="button"
@@ -482,7 +482,7 @@ function PhoneTabBar({
         <span>{t("nav.discover")}</span>
       </button>
       <button type="button" className="tabbar-item" onClick={onOpenQBManager}>
-        <MonitorPlay width={20} height={20} aria-hidden />
+        <Download width={20} height={20} aria-hidden />
         <span>{t("nav.download")}</span>
       </button>
       <button type="button" className="tabbar-item" onClick={onOpenMore}>

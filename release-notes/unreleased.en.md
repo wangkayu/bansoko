@@ -10,6 +10,8 @@
 
 ## Improved
 
+- The downloader entry and dialog now use the same download icon. Transfer speeds use arrows without duplicate icons.
+
 - The log dialog separates business events from runtime logs. Search retained logs across restarts, or select “View this task” on a warning to see what happened before and after it. Files rotate at midnight UTC or 10 MiB, with about 30 MiB retained for up to seven days. If disk storage is unavailable, the dialog shows recent in-memory records.
 - System-default notification templates now follow the reviewed copy: subscription start no longer repeats the work title in the body and only a start may include available work links; release discovery shows its source site, source-specific tags and a safe release-details link; download failures show the reason before the release title and available details link; download-submitted notices stay concise and omit work links. Download and library-import notices use “Group,” not “Original file group.” Version replacement continues to list release title, group and original pre-import file name for each version. Custom templates and frozen notifications are unchanged.
 

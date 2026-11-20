@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Server,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { toast } from "../../ui/toast";
 
@@ -325,7 +324,7 @@ export function QBManagerDialog({
       focusTitle
       title={
         <span className="tw:inline-flex tw:items-center tw:gap-2">
-          <PlayCircle size={14} />
+          <Download size={14} aria-hidden />
           <span>{t("qb.title")}</span>
         </span>
       }
@@ -535,18 +534,8 @@ function ServerStatusBar({ status }: { status: QBittorrentServerStatus }) {
               : t("qb.connected")
             : t("qb.disconnected")}
         </StatePill>
-        {down && (
-          <span className="tw:inline-flex tw:items-center tw:gap-1.5">
-            <Download size={14} />
-            <span>↓{down}</span>
-          </span>
-        )}
-        {up && (
-          <span className="tw:inline-flex tw:items-center tw:gap-1.5">
-            <Upload size={14} />
-            <span>↑{up}</span>
-          </span>
-        )}
+        {down && <span>↓{down}</span>}
+        {up && <span>↑{up}</span>}
         {free && <span>{t("qb.available", { size: free })}</span>}
       </div>
     </div>
