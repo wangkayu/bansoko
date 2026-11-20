@@ -138,6 +138,73 @@ test.describe("browse synopsis reader", () => {
     expect(boxes.img!.w).toBe(boxes.container!.w);
     expect(boxes.panel.width).toBeGreaterThan(boxes.container!.w * 3);
   });
+
+  test("enlarges the catalog poster and keeps the list position", async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 650 });
+    const workspace = seasonFixture();
+    workspace.items.unshift(...Array.from({ length: 24 }, (_, index) => ({
+      ...workspace.items[0], title: `星屑测试条目 ${index}`, original_title: null,
+      provider_entry_ref: `anibt:fixture-${index}`, cover_url: null,
+    })));
+    await mockReaderShell(page, workspace);
+    await page.goto("/?season=2026-fall");
+    await selectBrowseSection(page, "anibt");
+    await page.getByRole("button", { name: t("grid.list.entry"), exact: true }).click();
+    const list = page.getByRole("dialog", { name: t("grid.list.title", { source: "AniBT" }) });
+    const filter = list.getByRole("searchbox");
+    const available = list.getByRole("button", { name: t("grid.availableOnly"), exact: true });
+    await filter.fill('星屑 -"测试条目 0"');
+    const row = list.locator("[data-catalog-row]").filter({ hasText: "星屑邮递员" });
+    await expect(list.locator("[data-catalog-row]")).toHaveCount(24);
+    await expect(row.getByRole("button")).toHaveText([t("grid.list.synopsis"), t("grid.card.browse"), t("anime.subscribe")]);
+    const [filterBox, availableBox] = await Promise.all([filter.boundingBox(), available.boundingBox()]);
+    if (testInfo.project.name === "mobile") {
+      expect(availableBox!.y).toBeCloseTo(filterBox!.y);
+      expect(availableBox!.height).toBeCloseTo(filterBox!.height);
+      expect(availableBox!.x).toBeGreaterThan(filterBox!.x + filterBox!.width);
+      const [statusBox, formatBox] = await Promise.all([
+        list.getByRole("radiogroup", { name: t("grid.statsAria") }).boundingBox(),
+        list.getByRole("combobox", { name: t("grid.list.format") }).boundingBox(),
+      ]);
+      expect(formatBox!.y).toBeCloseTo(statusBox!.y);
+      expect(statusBox!.y).toBeGreaterThan(filterBox!.y + filterBox!.height);
+    } else {
+      expect(availableBox!.x + availableBox!.width).toBeLessThan(filterBox!.x);
+    }
+    const scroll = list.locator("[data-catalog-list]");
+    await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    const checked = row.getByRole("checkbox");
+    await checked.click();
+    const offset = await scroll.evaluate((element) => element.scrollTop);
+    expect(offset).toBeGreaterThan(0);
+    expect(await scroll.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    const score = (await row.locator("[data-catalog-score]").boundingBox())!;
+    const detail = (await row.locator("[data-catalog-detail]").boundingBox())!;
+    expect(score.y).toBeGreaterThanOrEqual(detail.y + detail.height - 1);
+    await list.screenshot({ path: testInfo.outputPath("catalog-list.png"), animations: "disabled" });
+    await row.getByRole("button", { name: t("grid.card.viewSynopsisFor", { title: "星屑邮递员" }) }).click();
+    const synopsis = page.getByRole("dialog", { name: "星屑邮递员", exact: true });
+    const zoomButton = synopsis.getByRole("button", { name: t("grid.card.synopsis.zoomPoster") });
+    const thumbnail = synopsis.locator(".synopsis-poster img");
+    await expect(zoomButton).toBeVisible();
+    const src = await thumbnail.getAttribute("src");
+    const thumbnailBox = (await thumbnail.boundingBox())!;
+    await zoomButton.click();
+    const zoom = page.getByRole("dialog", { name: t("grid.card.synopsis.posterTitle", { title: "星屑邮递员" }) });
+    const large = zoom.getByRole("img", { name: "星屑邮递员" });
+    await expect(large).toHaveAttribute("src", src!);
+    await expect(large).toHaveCSS("object-fit", "contain");
+    const image = (await large.boundingBox())!;
+    expect(Math.min(image.width, image.height)).toBeGreaterThan(thumbnailBox.height * 2);
+    expect(image.y + image.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+    await zoom.screenshot({ path: testInfo.outputPath("poster-enlarged.png"), animations: "disabled" });
+    await zoom.getByRole("button", { name: t("ui.close"), exact: true }).click();
+    await expect(zoomButton).toBeFocused();
+    await synopsis.getByRole("button", { name: t("ui.close"), exact: true }).first().click();
+    await expect(filter).toHaveValue('星屑 -"测试条目 0"');
+    await expect(checked).toBeChecked();
+    expect(await scroll.evaluate((element) => element.scrollTop)).toBe(offset);
+  });
 });
 
 test.describe("browse subscription badge", () => {

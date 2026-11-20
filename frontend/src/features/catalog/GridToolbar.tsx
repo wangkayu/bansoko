@@ -13,17 +13,23 @@ export function FilterInput({
   onChange,
   autoFocus,
   className,
+  placeholder,
+  hint,
 }: {
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
   className?: string;
+  placeholder?: string;
+  hint?: string;
 }) {
   return (
     <Input
       type="search"
       aria-label={t("grid.filter")}
-      placeholder={t("grid.filterPlaceholder")}
+      placeholder={placeholder ?? t("grid.filterPlaceholder")}
+      aria-description={hint}
+      title={hint}
       leadingIcon={<ListFilter className="tw:size-4" />}
       fullWidth={className === undefined}
       className={className}

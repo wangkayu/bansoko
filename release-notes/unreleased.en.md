@@ -1,5 +1,7 @@
 ## New
 
+- AniBT, Mikan, and Custom catalogs now have a List view. Filter by title, status, format, or availability, then read synopses, browse torrents, or subscribe in bulk. Select a poster in the synopsis to enlarge it.
+
 - Telegram notification templates can add URL buttons with button(target, label) in the body. Telegram shows one button per row below the message; Lark and webhook messages are unchanged.
 
 - Keyword search (Jackett) results show tracker categories, seeder/leecher counts and a billing label (free, percent discount, upload multiplier) on the second line. Category names come from each indexer's caps and are omitted when unreadable without affecting the search; a zero leecher count and standard (1/1) billing are not shown.

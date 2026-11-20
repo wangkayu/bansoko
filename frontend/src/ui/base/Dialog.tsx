@@ -3,7 +3,7 @@ import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { currentDialogOpener, installDialogFocusReturn } from "./focusReturn";
-import { LAYER, LayerContext, useLayerZIndex } from "./layers";
+import { LAYER, LayerContext, POPUP_OFFSET, useLayerZIndex } from "./layers";
 import { t } from "../../lib/i18n";
 import "./base.css";
 
@@ -287,7 +287,11 @@ export function Dialog({
   const overlayDismisses = dismissOnOverlay ?? !blocking;
   const draggable = tier === "S" && !blocking;
   const dragHandlers = useSheetDrag({ enabled: draggable, open, popupRef, onRequestClose });
-  const zIndex = blocking ? LAYER.blocking : parentLayer >= LAYER.top ? LAYER.nested : LAYER.top;
+  // A third dialog (e.g. list → synopsis → poster) must also sit above its parent's popups.
+  const zIndex = blocking ? LAYER.blocking
+    : parentLayer < LAYER.top ? LAYER.top
+    : parentLayer < LAYER.nested ? LAYER.nested
+    : Math.min(parentLayer + POPUP_OFFSET + 1, LAYER.blocking - POPUP_OFFSET - 1);
 
   return (
     <BaseDialog.Root

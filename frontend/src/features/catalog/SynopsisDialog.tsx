@@ -77,6 +77,7 @@ export function SynopsisDialog({
     refetchOnWindowFocus: false,
   });
   const [tab, setTab] = useState<"summary" | "original">("summary");
+  const [zoomedPoster, setZoomedPoster] = useState<string>();
   const data = query.data;
   const split = splitSynopsis(data?.synopsis);
   const chips: string[] = [];
@@ -113,7 +114,7 @@ export function SynopsisDialog({
       title={<span className="synopsis-title">{entry.title}</span>}
       headerStart={
         <div className="synopsis-poster">
-          <Poster entry={entry} />
+          <Poster entry={entry} onZoom={setZoomedPoster} />
         </div>
       }
       description={
@@ -209,6 +210,16 @@ export function SynopsisDialog({
         </div>
       ) : (
         <div className="synopsis-text">{data.synopsis}</div>
+      )}
+      {zoomedPoster && (
+        <Dialog open tier="M" focusTitle bodyLayout="fill"
+          title={t("grid.card.synopsis.posterTitle", { title: entry.title })}
+          onRequestClose={() => setZoomedPoster(undefined)}>
+          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:items-center tw:justify-center tw:p-4">
+            <img src={zoomedPoster} alt={entry.title}
+              className="tw:h-[min(65dvh,48rem)] tw:w-full tw:object-contain" />
+          </div>
+        </Dialog>
       )}
     </Dialog>
   );

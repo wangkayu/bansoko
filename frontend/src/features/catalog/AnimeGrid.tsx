@@ -58,6 +58,7 @@ const SubscribedManageDialogEntry = lazyEntry(
   () => import("./SubscribedManageDialog"),
   (module) => module.SubscribedManageDialog,
 );
+const CatalogListDialogEntry = lazyEntry(() => import("./CatalogListDialog"), (module) => module.CatalogListDialog);
 
 // AnimeGrid — the product's entry screen. Four columns:
 //   Subscribed — the operations surface: wide instance cards (poster left + info right) carrying the
@@ -185,6 +186,9 @@ export function AnimeGrid() {
   // The subscribed wall's bulk-management dialog: opened from the toolbar, mounted
   // only while open so the lazy chunk loads on first use.
   const [manageOpen, setManageOpen] = useState(false);
+  const listScope = tab === "custom" ? tab : `${tab}:${season}`;
+  const [openListScope, setOpenListScope] = useState<string>();
+  const listOpen = tab !== "all" && openListScope === listScope;
 
   const queryClient = useQueryClient();
   const catalog = useCatalog(tab, season);
@@ -277,12 +281,17 @@ export function AnimeGrid() {
   // "Browse seeds": view the seeds and naming results read-only, and start a one-shot download in
 //   the same place. The task flow lives in component state (not on the route); each open remounts by
 //   sequence so the previous step's selections are never carried in.
-  const [seedTarget, setSeedTarget] = useState<{ key: string; entry: CatalogEntryView; seq: number } | null>(null);
+  const [seedTarget, setSeedTarget] = useState<{ key: string; entry: CatalogEntryView; seq: number; listScope?: string } | null>(null);
   const seedSeqRef = useRef(0);
-  function openBrowseSeeds(entry: CatalogEntryView) {
+  function openBrowseSeeds(entry: CatalogEntryView, fromList = false) {
     seedSeqRef.current += 1;
-    setSeedTarget({ key: catalogRowKey(entry), entry, seq: seedSeqRef.current });
+    setSeedTarget({ key: catalogRowKey(entry), entry, seq: seedSeqRef.current, listScope: fromList ? listScope : undefined });
   }
+
+  useEffect(() => {
+    setOpenListScope((current) => current === listScope ? current : undefined);
+    setSeedTarget((current) => current?.listScope && current.listScope !== listScope ? null : current);
+  }, [listScope]);
 
   const { open: openRouteDialog } = routeDialogs;
   const restoreConfigKey = configRow?.key;
@@ -674,6 +683,16 @@ export function AnimeGrid() {
       {t("grid.manage.entry")}
     </Button>
   );
+  const listButton = tab !== "all" && (
+    <Button
+      className="tw:flex-none" size={isPhone ? "icon" : "md"}
+      aria-label={t("grid.list.entry")} title={t("grid.list.entry")}
+      onClick={() => setOpenListScope(listScope)}
+    >
+      <ListChecks aria-hidden className="tw:size-4" />
+      {!isPhone && t("grid.list.entry")}
+    </Button>
+  );
 
   // The toolbar: one line, no card chrome (from the top-bar review). Sticks on desktop; on phones the
 //   browse column collapses it while scrolling, and the subscribed wall never sticks.
@@ -688,7 +707,7 @@ export function AnimeGrid() {
           options={browseSegOptions()}
         />
       )}
-      {(browsable || chips || showFilter || addPresetButton) && (
+      {(browsable || chips || showFilter || addPresetButton || listButton) && (
         <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
           {browsable && <SeasonPicker value={season} onChange={setSeason} />}
           {chips}
@@ -705,6 +724,7 @@ export function AnimeGrid() {
             {showFilter && <FilterToggle open={filterFieldOpen} onToggle={togglePhoneFilter} />}
             {availableToggle}
             {refreshButton}
+            {listButton}
             {manageButton}
           </div>
         </div>
@@ -728,6 +748,7 @@ export function AnimeGrid() {
       end={
         <>
           {statusLine}
+          {listButton}
           {refreshButton}
           {addPresetButton}
         </>
@@ -737,6 +758,23 @@ export function AnimeGrid() {
       {showFilter && <FilterInput value={query} onChange={updateQuery} className="tw:w-56" />}
       {availableToggle}
     </ToolbarRow>
+  );
+
+  const seedDialog = seedTarget && (
+    <Suspense fallback={null}>
+      <OneShotDialogEntry
+        key={`${seedTarget.key}#${seedTarget.seq}`}
+        open
+        entry={seedTarget.entry}
+        onClose={() => setSeedTarget(null)}
+        onBack={seedTarget.listScope ? () => setSeedTarget(null) : undefined}
+        onOpenRecords={() => {
+          setSeedTarget(null);
+          if (seedTarget.listScope) setOpenListScope(undefined);
+          routeDialogs.open({ record: ROUTE_RECORD_LIST, record_segment: "one_shot" });
+        }}
+      />
+    </Suspense>
   );
 
   return (
@@ -844,20 +882,21 @@ export function AnimeGrid() {
         </Suspense>
       )}
 
-      {seedTarget && (
+      {listOpen && (
         <Suspense fallback={null}>
-          <OneShotDialogEntry
-            key={`${seedTarget.key}#${seedTarget.seq}`}
-            open
-            entry={seedTarget.entry}
-            onClose={() => setSeedTarget(null)}
-            onOpenRecords={() => {
-              setSeedTarget(null);
-              routeDialogs.open({ record: ROUTE_RECORD_LIST, record_segment: "one_shot" });
-            }}
-          />
+          <CatalogListDialogEntry
+            key={listScope} source={tab} season={season} entries={shownRows.map(({ entry }) => entry)}
+            loading={loading} error={error ?? (snapshot?.status === "error" ? snapshot.errorMessage ?? t("grid.siteRefreshFailed") : undefined)}
+            onReload={() => void (snapshot?.status === "error" && !error ? refresh() : catalog.refetch())}
+            onClose={() => setOpenListScope(undefined)} onBrowse={(entry) => openBrowseSeeds(entry, true)}
+            onSubscribed={invalidateCatalog}
+          >
+            {seedTarget?.listScope === listScope && seedDialog}
+          </CatalogListDialogEntry>
         </Suspense>
       )}
+
+      {!seedTarget?.listScope && seedDialog}
 
       {addOpen && (
         <Suspense fallback={null}>

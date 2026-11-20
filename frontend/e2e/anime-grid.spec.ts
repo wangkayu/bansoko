@@ -1207,6 +1207,67 @@ test.describe("AnimeGrid", () => {
     test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
   });
 
+  test("subscribes from the catalog list and keeps only its failed row selected", async ({ page }) => {
+    await enterApp(page);
+    await openProvider(page, "AniBT");
+    const requests: { url: string; body: { revision: number; start: boolean } }[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/subscribe")) {
+        requests.push({ url: request.url(), body: request.postDataJSON() });
+      }
+    });
+    await page.route("**/api/v1/anime-config-candidates/candidate-3/subscribe", (route) => {
+      if (requests.filter(({ url }) => url.endsWith("/candidate-3/subscribe")).length > 1) return route.fallback();
+      return route.fulfill({ status: 409, json: { code: "VERSION_CONFLICT", message: "changed", current_version: 2 } });
+    });
+    await page.route("**/api/v1/catalog/providers/anibt/entries/*/groups:discover", (route) => route.fulfill({
+      json: {
+        provider: "anibt", provider_entry_ref: "anibt:stellar-mail-ella", snapshot_version: 1,
+        groups: [{ group_ref: "fixture", display_name: "测试字幕组" }],
+      },
+    }));
+    const openList = () => page.getByRole("button", { name: t("grid.list.entry"), exact: true }).click();
+    await openList();
+    const list = page.getByRole("dialog", { name: t("grid.list.title", { source: "AniBT" }) });
+    const rows = list.locator("[data-catalog-row]");
+    await expect(rows).toHaveCount(2);
+    const available = list.getByRole("button", { name: t("grid.availableOnly"), exact: true });
+    await available.click();
+    await expect(rows).toHaveCount(1);
+    await available.click();
+    await list.getByRole("checkbox", { name: t("grid.list.selectAll") }).click();
+    await list.getByRole("button", { name: t("grid.list.browseFor", { title: "星际邮差艾拉" }) }).click();
+    const seeds = page.getByRole("dialog", { name: t("oneshot.title") });
+    await expect(seeds.getByText("测试字幕组", { exact: true })).toBeVisible();
+    await seeds.getByRole("button", { name: t("act.back"), exact: true }).click();
+    const submit = async (n: number, start: boolean) => {
+      await list.getByRole("button", { name: t("grid.list.batchCount", { n }), exact: true }).click();
+      const confirm = page.getByRole("alertdialog", { name: t("grid.list.confirmTitle", { n }) });
+      const checkbox = confirm.getByRole("checkbox", { name: t("grid.list.start") });
+      await expect(checkbox).not.toBeChecked();
+      if (start) await checkbox.click();
+      await confirm.getByRole("button", { name: t("grid.list.confirm"), exact: true }).click();
+    };
+    await submit(2, false);
+    await expect(list.getByText(t("config.validation.versionConflict"), { exact: false })).toBeVisible();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.getByRole("checkbox")).toBeChecked();
+    await submit(1, true);
+    await expect(rows).toHaveCount(0);
+    expect(requests.map(({ body }) => body)).toEqual([
+      { revision: 1, start: false }, { revision: 1, start: false }, { revision: 1, start: true },
+    ]);
+    expect(requests[2].url).toBe(requests[1].url);
+    await list.getByRole("button", { name: t("ui.close"), exact: true }).click();
+    for (const [provider, label] of [["mikan", "Mikan"], ["custom", t("grid.tabCustom")]] as const) {
+      await selectBrowseSection(page, provider);
+      await openList();
+      const dialog = page.getByRole("dialog", { name: t("grid.list.title", { source: label }) });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: t("ui.close"), exact: true }).click();
+    }
+  });
+
   test("deletes an unselected group's complete file unit within desktop and phone viewports", async ({ page }, testInfo) => {
     const deleteRequests: { body: unknown; key: string | undefined }[] = [];
     await page.route("**/api/v1/anime/fixture-files/files", (route) =>
