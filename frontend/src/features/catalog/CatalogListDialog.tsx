@@ -195,7 +195,7 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
       </div>
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto" data-catalog-list>
         {failures.length > 0 && <ul className="tw:grid tw:gap-1 tw:border-b tw:border-border tw:px-4 tw:py-2 tw:text-sm" aria-live="polite">
-          {failures.map(({ key, title, message }) => <li key={key} className="tw:wrap-anywhere"><strong>{title}：</strong>{message}</li>)}
+          {failures.map(({ key, title, message }) => <li key={key} className="tw:wrap-anywhere"><strong>{title}: </strong>{message}</li>)}
         </ul>}
         {loading ? <StateBlock kind="busy" title={t("grid.loading")} /> : error ? (
           <StateBlock kind="error" title={error} action={<Button size="sm" onClick={onReload}>{t("grid.retry")}</Button>} />
