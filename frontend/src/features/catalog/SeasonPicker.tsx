@@ -33,16 +33,17 @@ export function SeasonPicker({
 
   return (
     <div className="season-picker">
-      <Button size="icon" variant="ghost" aria-label={t("grid.seasonPrev")} onClick={() => onChange(shiftSeason(value, -1))}>
+      <Button className="season-picker-step" size="icon" variant="ghost" aria-label={t("grid.seasonPrev")} onClick={() => onChange(shiftSeason(value, -1))}>
         <ChevronLeft className="season-picker-icon" />
       </Button>
       <Select
+        className="season-picker-trigger"
         label={t("grid.seasonPick")}
         value={value}
         options={seasons.map((season) => ({ value: season, label: seasonLabel(season) }))}
         onChange={pick}
       />
-      <Button size="icon" variant="ghost" aria-label={t("grid.seasonNext")} onClick={() => onChange(shiftSeason(value, 1))}>
+      <Button className="season-picker-step" size="icon" variant="ghost" aria-label={t("grid.seasonNext")} onClick={() => onChange(shiftSeason(value, 1))}>
         <ChevronRight className="season-picker-icon" />
       </Button>
     </div>

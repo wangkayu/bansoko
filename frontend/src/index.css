@@ -981,6 +981,19 @@ h1, h2, h3, h4, h5, h6 {
 .season-picker { display: flex; align-items: center; gap: 0.25rem; }
 .season-picker-icon { width: 0.875rem; height: 0.875rem; color: hsl(var(--muted-foreground)); }
 
+.catalog-browse-toolbar { container: catalog-browse-toolbar / inline-size; }
+/* Reserve room for four full-sized actions; English season labels need more space. */
+@container catalog-browse-toolbar (width < 22.25rem) {
+  .season-picker-step { display: none; }
+}
+@container catalog-browse-toolbar (width < 24.5rem) {
+  .season-picker-step:lang(en) { display: none; }
+}
+@container catalog-browse-toolbar (width < 20rem) {
+  .season-picker-trigger:lang(en) { padding-inline: 0.25rem; column-gap: 0.25rem; }
+  .catalog-browse-actions:lang(en) { column-gap: 0.25rem; }
+}
+
 .settings-connections { display: grid; gap: 2rem; }
 .settings-connections-section { display: grid; gap: 0.75rem; }
 .settings-connections-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }

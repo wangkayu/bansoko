@@ -702,11 +702,11 @@ export function AnimeGrid() {
         />
       )}
       {(browsable || chips || showFilter || addPresetButton || listButton) && (
-        <div className={cn("tw:flex tw:min-w-0 tw:items-center", tab === "all" ? "tw:gap-1.5" : "tw:flex-wrap tw:gap-2")}>
+        <div className={cn("tw:flex tw:min-w-0 tw:items-center", tab === "all" ? "tw:gap-1.5" : "tw:flex-wrap tw:gap-2", browsable && "catalog-browse-toolbar")}>
           {browsable && <SeasonPicker value={season} onChange={setSeason} />}
           {chips}
           {addPresetButton}
-          <div className={cn("tw:ml-auto tw:flex tw:flex-none tw:items-center", tab === "all" ? "tw:gap-1.5" : "tw:gap-2")}>
+          <div className={cn("tw:ml-auto tw:flex tw:flex-none tw:items-center", tab === "all" ? "tw:gap-1.5" : "tw:gap-2", browsable && "catalog-browse-actions")}>
             {showFilter && <FilterToggle open={filterFieldOpen} onToggle={togglePhoneFilter} />}
             {availableToggle}
             {refreshButton}

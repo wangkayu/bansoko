@@ -1802,10 +1802,48 @@ test.describe("AnimeGrid", () => {
     }
   });
 
+  test("keeps the discover actions beside the season picker on narrow phones", async ({ page }, testInfo) => {
+    const phone = testInfo.project.name === "mobile";
+    await enterApp(page);
+    for (const site of ["AniBT", "Mikan"] as const) {
+      if (phone) await page.setViewportSize({ width: 320, height: 760 });
+      await openProvider(page, site);
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      const prev = page.getByRole("button", { name: t("grid.seasonPrev"), exact: true });
+      const next = page.getByRole("button", { name: t("grid.seasonNext"), exact: true });
+      const season = page.getByRole("combobox", { name: t("grid.seasonPick"), exact: true });
+      await expect(season).toBeVisible();
+      if (phone) {
+        await expect(prev).toBeHidden();
+        await expect(next).toBeHidden();
+        const actions = [t("grid.filter"), t("grid.availableOnly"), t("grid.refreshSite", { site }), t("grid.list.entry")]
+          .map(name => page.getByRole("button", { name, exact: true }));
+        const seasonBox = (await season.boundingBox())!;
+        let right = seasonBox.x + seasonBox.width;
+        for (const action of actions) {
+          await expect(action).toBeVisible();
+          const box = (await action.boundingBox())!;
+          expect(box.y).toBeCloseTo(seasonBox.y, 0);
+          expect(box.x).toBeGreaterThan(right);
+          expect(box.width).toBe(36);
+          expect(box.height).toBe(36);
+          right = box.x + box.width;
+        }
+        expect(right).toBeCloseTo(304, 0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+        await page.screenshot({ path: testInfo.outputPath(`discover-${site}-320.png`), animations: "disabled" });
+        await page.setViewportSize({ width: 390, height: 760 });
+      }
+      await expect(prev).toBeVisible();
+      await expect(next).toBeVisible();
+    }
+  });
+
   test("keeps the season picked from the dropdown on the browse toolbar", async ({ page }) => {
     // Regression: touch-picking a season made the Select report a stray null, writing season=null
     // to the address and dropping the page back to the current season.
     test.skip(!isPhoneLayout(page), "触屏选择只在手机布局下出现");
+    await page.setViewportSize({ width: 320, height: 760 });
     await enterApp(page);
     await openProvider(page, "AniBT");
     const seasonOf = () => new URLSearchParams(new URL(page.url()).hash.split("?")[1] ?? "").get("season");
