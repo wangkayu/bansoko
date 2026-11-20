@@ -1207,6 +1207,94 @@ test.describe("AnimeGrid", () => {
     test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
   });
 
+  test("edits from the catalog list and starts the subscription from its notice", async ({ page }, testInfo) => {
+    const phone = testInfo.project.name === "mobile";
+    if (phone) await page.setViewportSize({ width: 320, height: 720 });
+    await enterApp(page);
+    await openProvider(page, "AniBT");
+    await page.getByRole("button", { name: t("grid.list.entry"), exact: true }).click();
+    const title = "星际邮差艾拉";
+    const list = page.getByRole("dialog", { name: t("grid.list.title", { source: "AniBT" }), exact: true });
+    const openConfig = list.getByRole("button", { name: title, exact: true });
+    const row = list.locator("[data-catalog-row]").filter({ has: page.getByRole("button", { name: title, exact: true }) });
+    const actions = row.locator("[data-catalog-actions]");
+    const alias = row.getByText("星間配達人エラ", { exact: true });
+    await expect(alias).toBeVisible();
+    const [titleBox, aliasBox, actionBox, rowBox] = await Promise.all([
+      openConfig.boundingBox(), alias.boundingBox(), actions.boundingBox(), row.boundingBox(),
+    ]);
+    expect(titleBox && aliasBox && actionBox && rowBox).toBeTruthy();
+    expect(actionBox!.x + actionBox!.width).toBeLessThan(rowBox!.x + rowBox!.width);
+    if (phone) {
+      expect(aliasBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width - 1);
+      expect(aliasBox!.y).toBeLessThan(titleBox!.y + titleBox!.height);
+      expect(actionBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height - 1);
+      expect(actionBox!.height).toBe(28);
+    } else {
+      await expect(list.getByRole("columnheader", { name: t("grid.list.actions") })).toBeVisible();
+      expect(aliasBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height - 1);
+    }
+    await page.screenshot({ path: testInfo.outputPath("catalog-list.png"), animations: "disabled" });
+
+    const picked = list.getByRole("checkbox", { name: t("grid.manage.selectRow", { title: "雾港来信" }), exact: true });
+    await picked.click();
+    let reads = 0;
+    const isCatalogRead = (url: string) => /\/catalog\/providers\/anibt\/seasons\/[^/?]+$/.test(url);
+    page.on("request", (request) => { if (request.method() === "GET" && isCatalogRead(request.url())) reads++; });
+    const config = page.getByRole("dialog", { name: title, exact: true });
+    const close = config.getByRole("button", { name: t("act.close"), exact: true }).last();
+    const subscribe = config.getByRole("button", { name: t("anime.subscribe"), exact: true });
+    await openConfig.click();
+    await expect(subscribe).toBeEnabled();
+    await expect(config.getByRole("checkbox", { name: t("grid.list.start") })).toHaveCount(0);
+    await close.click();
+    await expect(config).toBeHidden();
+    expect(reads).toBe(0);
+    await expect(picked).toBeChecked();
+
+    await openConfig.click();
+    await config.getByRole("button", { name: t("tabs.metadata.editTitleAria"), exact: true }).click();
+    const field = config.getByRole("textbox", { name: t("tabs.metadata.title"), exact: true });
+    const edited = `${title}（草稿）`;
+    await field.fill(edited);
+    await field.press("Enter");
+    const refreshed = page.waitForResponse((response) => isCatalogRead(response.url()));
+    await config.getByRole("button", { name: t("config.saveButton"), exact: true }).click();
+    expect((await refreshed).ok()).toBe(true);
+    await close.click();
+    await expect(config).toBeHidden();
+    await openConfig.click();
+    await expect(config.getByText(edited, { exact: true })).toBeVisible();
+    const activated = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/subscribe"));
+    await subscribe.click();
+    const activation = await activated;
+    expect(activation.request().postDataJSON()).not.toHaveProperty("start");
+    const result = await activation.json() as SubscribeResult;
+    expect(result.subscription.state).toBe("pending");
+    await expect(config).toBeHidden();
+    await expect(openConfig).toHaveCount(0);
+    await expect(picked).toBeChecked();
+    const start = list.getByRole("button", { name: t("anime.start"), exact: true });
+    await start.click({ trial: true });
+    const notice = list.locator("[data-sonner-toast]").filter({ has: page.getByRole("button", { name: t("anime.start"), exact: true }) });
+    const [noticeBox, filtersBox, footerBox] = await Promise.all([
+      notice.boundingBox(), list.getByRole("radiogroup", { name: t("grid.statsAria") }).boundingBox(), list.locator("footer").boundingBox(),
+    ]);
+    expect(noticeBox && filtersBox && footerBox).toBeTruthy();
+    expect(noticeBox!.y).toBeGreaterThan(filtersBox!.y + filtersBox!.height);
+    expect(noticeBox!.y + noticeBox!.height).toBeLessThan(footerBox!.y);
+    await page.screenshot({ path: testInfo.outputPath("catalog-list-start-notice.png"), animations: "disabled" });
+    const started = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/anime/${result.managed_anime.id}/subscription`));
+    await start.click();
+    expect((await started).status()).toBe(200);
+    await expect(list.getByText(t("anime.started"), { exact: true })).toBeVisible();
+    await expect(picked).toBeChecked();
+    await list.getByRole("radio", { name: /^已订阅/ }).click();
+    await openConfig.click();
+    await expect(config.locator(".anime-config-dialog-footer-owner")).toBeVisible();
+    await expect(config.getByRole("button", { name: t("anime.start"), exact: true })).toHaveCount(0);
+  });
+
   test("subscribes from the catalog list and keeps only its failed row selected", async ({ page }) => {
     await enterApp(page);
     await openProvider(page, "AniBT");
@@ -1785,7 +1873,9 @@ test.describe("AnimeGrid", () => {
     await expect(card.getByText("进击的巨人", { exact: true })).toBeVisible();
   });
 
-  test("manages the subscribed lifecycle from the library tab", async ({ page }) => {
+  test("manages the subscribed lifecycle from the library tab", async ({ page }, testInfo) => {
+    const phone = testInfo.project.name === "mobile";
+    if (phone) await page.setViewportSize({ width: 320, height: 720 });
     await enterApp(page);
     const card = await openProvider(page, "AniBT");
     await subscribeCard(card);
@@ -1813,6 +1903,28 @@ test.describe("AnimeGrid", () => {
     await expect(chip("pending")).toContainText("0");
     await expect(chip("active")).toContainText("1");
     await expect(chip("stopped")).toContainText("0");
+    if (phone) {
+      const filter = page.getByRole("button", { name: t("grid.filter"), exact: true });
+      const manage = page.getByRole("button", { name: t("grid.manage.entry"), exact: true });
+      await expect(manage).toHaveText("");
+      const [groupBox, filterBox, manageBox] = await Promise.all([
+        chips.boundingBox(), filter.boundingBox(), manage.boundingBox(),
+      ]);
+      expect(groupBox && filterBox && manageBox).toBeTruthy();
+      expect(groupBox!.y).toBeCloseTo(filterBox!.y, 0);
+      expect(manageBox!.y).toBeCloseTo(filterBox!.y, 0);
+      expect(groupBox!.x + groupBox!.width).toBeLessThan(filterBox!.x);
+      expect(filterBox!.x + filterBox!.width).toBeLessThan(manageBox!.x);
+      expect(manageBox!.x + manageBox!.width).toBeLessThanOrEqual(320);
+      expect(await chips.evaluate((el) => el.parentElement!.scrollWidth <= el.parentElement!.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("subscribed-toolbar.png"), animations: "disabled" });
+      await filter.click();
+      const search = page.getByRole("searchbox", { name: t("grid.filter"), exact: true });
+      await expect(search).toBeVisible();
+      expect((await search.boundingBox())!.y).toBeGreaterThanOrEqual(filterBox!.y + filterBox!.height);
+      await filter.click();
+      await expect(search).toHaveCount(0);
+    }
 
     // 管理动作（停止/启动、结束订阅）收在卡片右上 ⋯ 菜单里（10-19 卡片重设计），
     // 卡面只有整卡打开配置一个目标。

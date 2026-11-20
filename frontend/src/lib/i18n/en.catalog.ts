@@ -57,6 +57,7 @@ export const enGridCopy = {
     format: "Release format",
     allFormats: "All formats",
     feed: "Releases",
+    actions: "Actions",
     synopsis: "Synopsis",
     browseFor: "Browse torrents for {title}",
     subscribeFor: "Subscribe to {title}",

@@ -20,7 +20,7 @@ import { catalogRowKey } from "./visibleRows";
 import { applyStatsFilter, statsCounts, type StatsFilter } from "../../lib/stats";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/base/controls";
-import { Segmented } from "../../ui/base";
+import { Segmented, Tooltip } from "../../ui/base";
 import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { isOneOf, ROUTE_ANIME_TABS, ROUTE_RECORD_LIST, useRouteDialogs, type RouteAnimeTab } from "../../shell/routeDialogs";
 import { CATALOG_FILTER_QUERY_KEY, rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
@@ -648,23 +648,13 @@ export function AnimeGrid() {
     </Button>
   );
   const statusLine = snapshotStatus && <StatusLine {...snapshotStatus} />;
-  // The wall's state filter is the manager's segment group at the toolbar's 36px, wearing the
-  // secondary buttons' card surface — on desktop it shares their row, on phones it owns the
-  // first line. 全部 is the explicit reset.
   const chips = tab === "all" && rows.length > 0 && (
-    <div
-      className={cn(
-        // Phone: the group takes its own line so every state stays visible; a narrower
-        // phone scrolls it instead of clipping. Desktop shares the row with the actions.
-        "tw:flex tw:min-w-0 tw:overflow-x-auto tw:[scrollbar-width:none]",
-        isPhone ? "tw:w-full tw:flex-none" : "tw:flex-1",
-      )}
-    >
+    <div className="tw:flex tw:min-w-0 tw:flex-1 tw:overflow-x-auto tw:[scrollbar-width:none]">
       <Segmented<StatsFilter | "all">
         aria-label={t("grid.statsAria")}
         size="toolbar-lg"
         frame="card"
-        className="tw:flex-none"
+        className="tw:flex-none tw:phone:[&>[role=radio]]:px-1.5 tw:phone:[&>[role=radio]]:text-xs tw:max-[374px]:[&>[role=radio]]:px-0.5! tw:max-[374px]:[&>[role=radio]]:gap-0.5"
         value={statsFilter ?? "all"}
         onValueChange={setStatsFilter}
         options={[
@@ -677,12 +667,16 @@ export function AnimeGrid() {
     </div>
   );
   // The subscribed wall's bulk-management entry (filters + batch start/pause/remove).
-  const manageButton = tab === "all" && (
-    <Button className="tw:flex-none" onClick={() => setManageOpen(true)}>
+  const manageTrigger = (
+    <Button className="tw:flex-none" size={isPhone ? "icon" : "md"}
+      aria-label={t("grid.manage.entry")} onClick={() => setManageOpen(true)}>
       <ListChecks aria-hidden className="tw:size-4" />
-      {t("grid.manage.entry")}
+      {!isPhone && t("grid.manage.entry")}
     </Button>
   );
+  const manageButton = tab === "all" && (isPhone
+    ? <Tooltip content={t("grid.manage.entry")}>{manageTrigger}</Tooltip>
+    : manageTrigger);
   const listButton = tab !== "all" && (
     <Button
       className="tw:flex-none" size={isPhone ? "icon" : "md"}
@@ -708,19 +702,11 @@ export function AnimeGrid() {
         />
       )}
       {(browsable || chips || showFilter || addPresetButton || listButton) && (
-        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
+        <div className={cn("tw:flex tw:min-w-0 tw:items-center", tab === "all" ? "tw:gap-1.5" : "tw:flex-wrap tw:gap-2")}>
           {browsable && <SeasonPicker value={season} onChange={setSeason} />}
           {chips}
           {addPresetButton}
-          <div
-            className={cn(
-              "tw:ml-auto tw:flex tw:flex-none tw:items-center tw:gap-2",
-              // The wall's state group owns the phone's first line; its actions take the
-              // second one end to end (title filter left, 管理 right) instead of floating as
-              // a pair in the corner.
-              chips && "tw:w-full tw:justify-between",
-            )}
-          >
+          <div className={cn("tw:ml-auto tw:flex tw:flex-none tw:items-center", tab === "all" ? "tw:gap-1.5" : "tw:gap-2")}>
             {showFilter && <FilterToggle open={filterFieldOpen} onToggle={togglePhoneFilter} />}
             {availableToggle}
             {refreshButton}

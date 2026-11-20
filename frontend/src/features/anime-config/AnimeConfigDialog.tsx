@@ -25,6 +25,7 @@ import {
   type PreviewFeedSnapshotRef,
   type ProviderGroupDiscoveryGroup,
   type RSSListObservationRef,
+  type SubscribeResult,
 } from "../../lib/api/client";
 import { draftChangeCount, draftPreviewable, validateDraft, valuesEqual } from "../../lib/draft";
 import { CandidateAlreadyActivated, CandidateNotReady, CandidateVersionConflict, CandidateWorkingDuplicate } from "../../lib/candidate/port";
@@ -121,6 +122,7 @@ export function AnimeConfigDialog({
   entry,
   sourceLabel,
   onSubscribed,
+  onDraftSaved,
   onCandidateStateChanged = () => {},
   onOpenExisting,
   initialTab,
@@ -135,7 +137,8 @@ export function AnimeConfigDialog({
   provider: CatalogProvider;
   entry: CatalogEntryView;
   sourceLabel: string;
-  onSubscribed: () => void;
+  onSubscribed: (result: SubscribeResult) => void;
+  onDraftSaved?: () => void;
   /** Refresh catalog after an activation conflict without closing the dialog. */
   onCandidateStateChanged?: () => void;
   /** A subscribe was refused because the provider entry already has one live subscription (stale
@@ -211,9 +214,9 @@ export function AnimeConfigDialog({
     danger: true,
   });
 
-  const handleSubscribed = useCallback(() => {
+  const handleSubscribed = useCallback((result: SubscribeResult) => {
     draftDirtyRef.current = false;
-    onSubscribed();
+    onSubscribed(result);
     onOpenChange(false);
   }, [onOpenChange, onSubscribed]);
 
@@ -322,6 +325,7 @@ export function AnimeConfigDialog({
               provider={provider}
               entry={entry}
               onSubscribed={handleSubscribed}
+              onDraftSaved={onDraftSaved}
               onCandidateStateChanged={onCandidateStateChanged}
               onOpenExisting={
                 onOpenExisting
@@ -594,6 +598,7 @@ function DraftBody({
   provider,
   entry,
   onSubscribed,
+  onDraftSaved,
   onCandidateStateChanged,
   onOpenExisting,
   onDirtyChange,
@@ -604,7 +609,8 @@ function DraftBody({
 }: {
   provider: CatalogProvider;
   entry: CatalogEntryView;
-  onSubscribed: () => void;
+  onSubscribed: (result: SubscribeResult) => void;
+  onDraftSaved?: () => void;
   /** Activation conflicts invalidate the catalog without closing this draft dialog. */
   onCandidateStateChanged: () => void;
   onOpenExisting?: (managedAnimeID: string) => void;
@@ -761,6 +767,7 @@ function DraftBody({
       applyCandidate(updated);
       setSaveConflict(undefined);
       toast.success(t("config.overwritten"));
+      onDraftSaved?.();
     } catch (cause) {
       if (cause instanceof CandidateVersionConflict) {
         setSaveConflict({ currentVersion: cause.currentVersion });
@@ -918,6 +925,7 @@ function DraftBody({
         applyCandidate(created);
         toast.success(t("config.saved"));
       }
+      onDraftSaved?.();
     } catch (cause) {
       reportSaveError(cause);
     } finally {
@@ -984,8 +992,12 @@ function DraftBody({
       const attempt = activationAttemptRef.current;
       const result = await candidateStore.subscribe(attempt.candidateId, attempt.expectedVersion, attempt.idempotencyKey, { revision: targetRevision });
       activationAttemptRef.current = null;
-      announceSubscribed(result, entry.title, () => Promise.all([queryClient.invalidateQueries({ queryKey: catalogKeys.all }), queryClient.invalidateQueries({ queryKey: animeKeys.list })]).then(() => undefined));
-      onSubscribed();
+      announceSubscribed(result, entry.title, () => Promise.all([
+        queryClient.invalidateQueries({ queryKey: catalogKeys.all }),
+        queryClient.invalidateQueries({ queryKey: animeKeys.list }),
+        queryClient.invalidateQueries({ queryKey: animeKeys.workspace(result.managed_anime.id) }),
+      ]));
+      onSubscribed(result);
     } catch (cause) {
       if (cause instanceof CandidateAlreadyActivated) {
         onCandidateStateChanged();

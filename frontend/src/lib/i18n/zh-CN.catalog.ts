@@ -56,6 +56,7 @@ export const gridCopy = {
     format: "播出形式",
     allFormats: "全部形式",
     feed: "片源",
+    actions: "操作",
     synopsis: "简介",
     browseFor: "浏览《{title}》的种子",
     subscribeFor: "订阅《{title}》",

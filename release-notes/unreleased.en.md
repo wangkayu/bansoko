@@ -12,6 +12,9 @@
 
 ## Improved
 
+- Select a title in the catalog list to open its settings. Saving or subscribing updates the list in place. On phones, the original title sits beside the main title, and synopsis, browse, and quick subscribe no longer take up a separate row.
+- On phones, the Subscribed page keeps status filters, title filtering, and management on one row. Tap the filter icon to reveal the text field.
+
 - The desktop service status entry uses a waveform icon with a status dot. Open it to see individual connections and why any service needs attention.
 
 - Browse and search poster cards use compact Subscribed and Ended badges. Badges sit below the weekday or rating when shown, or on the first line otherwise.

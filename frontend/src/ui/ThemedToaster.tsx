@@ -7,11 +7,18 @@ import type { ReactElement } from "react";
 // over modal dialog footers (save → subscribe), and while a modal is open the
 // toast lives in the inert app root, so it swallowed the click on the footer's
 // primary action.
-export function ThemedToaster(): ReactElement {
+export function ThemedToaster({ inCatalogList = false }: { inCatalogList?: boolean } = {}): ReactElement {
   const { resolvedTheme } = useTheme();
   return (
     <Toaster
-      position="top-center"
+      // Expose the list's copy while its focus trap is active.
+      className={inCatalogList ? "catalog-list-toaster" : "tw:[:root:has(.catalog-list-toaster)_&]:hidden"}
+      style={inCatalogList ? { position: "absolute" } : undefined}
+      // Keep the list's filters and batch footer clear of actionable notices.
+      position={inCatalogList ? "bottom-center" : "top-center"}
+      offset={inCatalogList ? { bottom: 80 } : undefined}
+      mobileOffset={inCatalogList ? { bottom: 80 } : undefined}
+      visibleToasts={inCatalogList ? 1 : undefined}
       theme={resolvedTheme === "dark" ? "dark" : "light"}
       toastOptions={{
         style: {
