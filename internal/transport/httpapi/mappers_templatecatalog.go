@@ -24,7 +24,10 @@ func mapNotificationTemplateCatalog(catalog templatecatalogapplication.Notificat
 }
 
 func mapNotificationTemplatePreview(preview templatecatalogapplication.NotificationTemplatePreview) generated.NotificationTemplatePreview {
-	attachments := generated.NotificationTemplatePreviewAttachments{Links: []generated.NotificationTemplatePreviewLink{}}
+	attachments := generated.NotificationTemplatePreviewAttachments{
+		Links:   []generated.NotificationTemplatePreviewLink{},
+		Buttons: mapNotificationButtons(preview.Attachments.Buttons),
+	}
 	if preview.Attachments.Image != nil {
 		attachments.Image = &generated.NotificationTemplatePreviewImage{
 			Source: generated.NotificationTemplatePreviewImageSource(preview.Attachments.Image.Source),
@@ -115,6 +118,7 @@ func mapNotificationTemplatePresentation(presentation notifypresent.Presentation
 			Text:         presentation.Telegram.Text,
 			Title:        presentation.Telegram.Title,
 			BodyParts:    telegramParts,
+			Buttons:      mapNotificationButtons(presentation.Telegram.Buttons),
 			TextUnits:    presentation.Telegram.TextUnits,
 			ImageOmitted: presentation.Telegram.ImageOmitted,
 			Truncated:    presentation.Telegram.Truncated,
@@ -134,6 +138,16 @@ func mapNotificationTemplatePresentation(presentation notifypresent.Presentation
 			},
 		},
 	}
+}
+
+func mapNotificationButtons(buttons []notification.Button) []generated.NotificationTemplatePreviewButton {
+	mapped := make([]generated.NotificationTemplatePreviewButton, 0, len(buttons))
+	for _, button := range buttons {
+		mapped = append(mapped, generated.NotificationTemplatePreviewButton{
+			Provider: generated.NotificationTemplatePreviewButtonProvider(button.Provider), Label: button.Label, Url: button.URL,
+		})
+	}
+	return mapped
 }
 
 func mapNotificationBodyPart(text string, link *notification.Link) generated.NotificationTemplatePreviewBodyPart {

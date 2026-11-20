@@ -20,9 +20,10 @@ type outboundMessage struct {
 	Body  string
 	// Parts is the body in template order. Channels that can show inline
 	// links render it; Body is the same content as one text string.
-	Parts []notification.BodyPart
-	Image *outboundImage
-	Links []notification.Link
+	Parts   []notification.BodyPart
+	Image   *outboundImage
+	Links   []notification.Link
+	Buttons []notification.Button
 }
 
 type outboundImage struct {
@@ -58,7 +59,7 @@ func (h *PluginDeliverHandler) prepareOutboundMessage(ctx context.Context, row d
 	}
 	message := outboundMessage{
 		Title: snapshot.Title, Body: notification.PlainText(snapshot.Parts),
-		Parts: snapshot.Parts, Links: notification.Links(snapshot.Parts),
+		Parts: snapshot.Parts, Links: notification.Links(snapshot.Parts), Buttons: snapshot.Buttons,
 	}
 	if snapshot.Image != nil {
 		message.Image = h.resolveOutboundImage(ctx, snapshot.Image.request(), snapshot.Image.URL)
@@ -81,6 +82,7 @@ func (h *PluginDeliverHandler) resolveOutboundMessage(ctx context.Context, row d
 	message := outboundMessage{Title: title, Body: rendered.Body, Parts: rendered.BodyParts}
 	attachments := rendered.Attachments
 	message.Links = attachments.Links
+	message.Buttons = attachments.Buttons
 	if !attachments.Image {
 		return message, nil
 	}

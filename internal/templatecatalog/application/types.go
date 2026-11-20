@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"bansoko/internal/notifypresent"
+	"bansoko/internal/templatecatalog/notification"
 )
 
 // NotificationTriggerKind identifies one supported notification event.
@@ -129,8 +130,9 @@ type NotificationTemplatePreviewLink struct {
 }
 
 type NotificationTemplatePreviewAttachments struct {
-	Image *NotificationTemplatePreviewImage
-	Links []NotificationTemplatePreviewLink
+	Image   *NotificationTemplatePreviewImage
+	Links   []NotificationTemplatePreviewLink
+	Buttons []notification.Button
 }
 
 // NotificationTemplatePreviewBodyPart is one inline piece of the preview body:

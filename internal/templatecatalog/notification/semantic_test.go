@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -200,5 +201,55 @@ func TestStandaloneSubtitleListRepeatsLabelAndOmitsEmptyLine(t *testing.T) {
 	message, _ = RenderMessage(TriggerFileOperationCompleted, "title", body, facts)
 	if !message.Valid() || strings.Contains(message.Body, "字幕：") || !strings.Contains(message.Body, "文件：") || !strings.Contains(message.Body, "目录：") {
 		t.Fatalf("empty subtitle list = %q / %+v", message.Body, message.Errors)
+	}
+}
+
+func TestURLButtonsAreOrderedAndStayOutsideTheBody(t *testing.T) {
+	const body = "first\n{{showIf(anime.group)}}{{button(\n  bgm.link, 'Bangumi'\n)}}\n{{button(release.link, '发布页')}}{{button('https://example.com/notes', '说明')}}\n{{link(bgm.link, '正文链接')}}\n{{button(download.link, '下载')}}"
+	for _, group := range []string{"", "Example Group"} {
+		facts := map[string]any{
+			"anime.group": group, "bgm.id": "123", "release.link": "https://example.com/release",
+			"download.link": "https://example.com/download?passkey=private",
+		}
+		message, ok := RenderMessage(TriggerDownloadSubmitted, "Title", body, facts)
+		if !ok || !message.Valid() || message.Body != "first\n正文链接" || PlainText(message.BodyParts) != message.Body {
+			t.Fatalf("group %q: message = %+v", group, message)
+		}
+		want := []Button{
+			{Provider: "release", Label: "发布页", URL: "https://example.com/release"},
+			{Provider: "custom", Label: "说明", URL: "https://example.com/notes"},
+		}
+		if group != "" {
+			want = append([]Button{{Provider: "bgm", Label: "Bangumi", URL: "https://bgm.tv/subject/123"}}, want...)
+		}
+		if !slices.Equal(message.Attachments.Buttons, want) || len(message.Attachments.Links) != 1 {
+			t.Fatalf("group %q: attachments = %+v", group, message.Attachments)
+		}
+	}
+}
+
+func TestURLButtonRejectsInvalidArgumentsAndPlacement(t *testing.T) {
+	for _, source := range []string{
+		"{{button(bgm.link)}}",
+		"{{button(bgm.link, '   ')}}",
+		"{{button(bgm.link, anime.title)}}",
+		"{{button(anime.title, '标题')}}",
+		"{{button('javascript:alert(1)', '打开')}}",
+		"{{button('https://example.com/?token=private', '打开')}}",
+		"{{if(anime.group, button(bgm.link, '打开'), '')}}",
+		"{{showIf(button(bgm.link, '打开'))}}正文",
+		"{{showIf(anime.group)}}{{button(bgm.link)}}",
+	} {
+		errors, _ := Compile(TriggerDownloadSubmitted, "Title", source)
+		if len(errors) != 1 {
+			t.Errorf("Compile(%q): errors = %+v", source, errors)
+		}
+		message, _ := RenderMessage(TriggerDownloadSubmitted, "Title", source, map[string]any{})
+		if message.Valid() || len(message.Attachments.Buttons) != 0 {
+			t.Errorf("RenderMessage(%q): message = %+v", source, message)
+		}
+	}
+	if errors, _ := Compile(TriggerDownloadSubmitted, "{{button(bgm.link, '打开')}}", "Body"); len(errors) != 1 || errors[0].Field != FieldTitle {
+		t.Fatalf("button in title: errors = %+v", errors)
 	}
 }

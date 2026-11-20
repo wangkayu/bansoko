@@ -18678,7 +18678,7 @@ components:
       properties:
         name:
           type: string
-          enum: [coalesce, defaultIfEmpty, lower, upper, replace, if, eq, showIf, link, image]
+          enum: [coalesce, defaultIfEmpty, lower, upper, replace, if, eq, showIf, link, button, image]
         description:
           type: string
           minLength: 1
@@ -18896,10 +18896,25 @@ components:
         url:
           type: string
           format: uri
+    NotificationTemplatePreviewButton:
+      type: object
+      additionalProperties: false
+      required: [provider, label, url]
+      properties:
+        provider:
+          type: string
+          enum: [bgm, tmdb, anibt, mikan, download, release, custom]
+        label:
+          type: string
+          minLength: 1
+          maxLength: 128
+        url:
+          type: string
+          format: uri
     NotificationTemplatePreviewAttachments:
       type: object
       additionalProperties: false
-      required: [image, links]
+      required: [image, links, buttons]
       properties:
         image:
           allOf:
@@ -18909,6 +18924,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NotificationTemplatePreviewLink'
+        buttons:
+          type: array
+          description: URL buttons requested in template order. Only Telegram displays them.
+          items:
+            $ref: '#/components/schemas/NotificationTemplatePreviewButton'
     NotificationTemplatePreviewBodyPart:
       type: object
       additionalProperties: false
@@ -19000,7 +19020,7 @@ components:
     NotificationTemplatePreviewTelegram:
       type: object
       additionalProperties: false
-      required: [mode, text, title, body_parts, text_units, image_omitted, truncated]
+      required: [mode, text, title, body_parts, buttons, text_units, image_omitted, truncated]
       properties:
         mode:
           type: string
@@ -19021,6 +19041,11 @@ components:
           description: The channel-fitted body with its inline links.
           items:
             $ref: '#/components/schemas/NotificationTemplatePreviewBodyPart'
+        buttons:
+          type: array
+          description: Inline keyboard URL buttons, one per row, in display order.
+          items:
+            $ref: '#/components/schemas/NotificationTemplatePreviewButton'
         text_units:
           type: integer
           description: Length of text in UTF-16 code units, the unit Telegram counts.

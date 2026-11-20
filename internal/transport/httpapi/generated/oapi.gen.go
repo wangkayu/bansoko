@@ -1357,6 +1357,17 @@ const (
 	NotificationTemplatePreviewLanguageVersionBansokoTemplate1 NotificationTemplatePreviewLanguageVersion = "bansoko-template-1"
 )
 
+// Defines values for NotificationTemplatePreviewButtonProvider.
+const (
+	NotificationTemplatePreviewButtonProviderAnibt    NotificationTemplatePreviewButtonProvider = "anibt"
+	NotificationTemplatePreviewButtonProviderBgm      NotificationTemplatePreviewButtonProvider = "bgm"
+	NotificationTemplatePreviewButtonProviderCustom   NotificationTemplatePreviewButtonProvider = "custom"
+	NotificationTemplatePreviewButtonProviderDownload NotificationTemplatePreviewButtonProvider = "download"
+	NotificationTemplatePreviewButtonProviderMikan    NotificationTemplatePreviewButtonProvider = "mikan"
+	NotificationTemplatePreviewButtonProviderRelease  NotificationTemplatePreviewButtonProvider = "release"
+	NotificationTemplatePreviewButtonProviderTmdb     NotificationTemplatePreviewButtonProvider = "tmdb"
+)
+
 // Defines values for NotificationTemplatePreviewFeishuElementTag.
 const (
 	NotificationTemplatePreviewFeishuElementTagA    NotificationTemplatePreviewFeishuElementTag = "a"
@@ -2591,6 +2602,7 @@ const (
 
 // Defines values for TemplateFunctionName.
 const (
+	TemplateFunctionNameButton         TemplateFunctionName = "button"
 	TemplateFunctionNameCoalesce       TemplateFunctionName = "coalesce"
 	TemplateFunctionNameDefaultIfEmpty TemplateFunctionName = "defaultIfEmpty"
 	TemplateFunctionNameEq             TemplateFunctionName = "eq"
@@ -6707,8 +6719,10 @@ type NotificationTemplatePreviewLanguageVersion string
 
 // NotificationTemplatePreviewAttachments defines model for NotificationTemplatePreviewAttachments.
 type NotificationTemplatePreviewAttachments struct {
-	Image *NotificationTemplatePreviewImage `json:"image"`
-	Links []NotificationTemplatePreviewLink `json:"links"`
+	// Buttons URL buttons requested in template order. Only Telegram displays them.
+	Buttons []NotificationTemplatePreviewButton `json:"buttons"`
+	Image   *NotificationTemplatePreviewImage   `json:"image"`
+	Links   []NotificationTemplatePreviewLink   `json:"links"`
 }
 
 // NotificationTemplatePreviewBodyPart defines model for NotificationTemplatePreviewBodyPart.
@@ -6719,6 +6733,16 @@ type NotificationTemplatePreviewBodyPart struct {
 	// Text Literal text, or the label when link is present.
 	Text string `json:"text"`
 }
+
+// NotificationTemplatePreviewButton defines model for NotificationTemplatePreviewButton.
+type NotificationTemplatePreviewButton struct {
+	Label    string                                    `json:"label"`
+	Provider NotificationTemplatePreviewButtonProvider `json:"provider"`
+	Url      string                                    `json:"url"`
+}
+
+// NotificationTemplatePreviewButtonProvider defines model for NotificationTemplatePreviewButton.Provider.
+type NotificationTemplatePreviewButtonProvider string
 
 // NotificationTemplatePreviewFeishu defines model for NotificationTemplatePreviewFeishu.
 type NotificationTemplatePreviewFeishu struct {
@@ -6798,6 +6822,9 @@ type NotificationTemplatePreviewPresentation struct {
 type NotificationTemplatePreviewTelegram struct {
 	// BodyParts The channel-fitted body with its inline links.
 	BodyParts []NotificationTemplatePreviewBodyPart `json:"body_parts"`
+
+	// Buttons Inline keyboard URL buttons, one per row, in display order.
+	Buttons []NotificationTemplatePreviewButton `json:"buttons"`
 
 	// ImageOmitted An image was requested but the caption exceeds the photo limit, so the message is sent without it.
 	ImageOmitted bool `json:"image_omitted"`

@@ -138,6 +138,7 @@ func RenderMessage(trigger, titleTemplate, bodyTemplate string, facts map[string
 	// the links a channel may emit. The links come from the same render that
 	// produced the text.
 	attachments.Links = Links(body.parts)
+	attachments.Buttons = body.attachments.Buttons
 	message := Message{
 		Title:       title.text,
 		Body:        PlainText(body.parts),
@@ -370,7 +371,7 @@ type callExpression struct {
 }
 
 func (e callExpression) evaluate(facts map[string]any) (string, bool, []Warning) {
-	if e.name == ImageVariable || e.name == "link" {
+	if e.name == ImageVariable || e.name == "link" || e.name == buttonFunction {
 		var warnings []Warning
 		if len(e.args) > 0 {
 			if target, ok := e.args[0].(variableExpression); ok {
@@ -488,7 +489,7 @@ func renderText(source string, facts map[string]any, known map[string]bool, fiel
 		result := renderTextSegment(source, segment, facts, known, field)
 		builder.WriteString(result.text)
 		parts = append(parts, result.parts...)
-		mergeFirstImage(&attachments, result.attachments)
+		attachments.mergeLine(result.attachments)
 		errors = append(errors, result.errors...)
 		warnings = append(warnings, result.warnings...)
 	}
@@ -632,16 +633,24 @@ func renderTextSegment(source string, segment templateSourceSegment, facts map[s
 					mergeFirstImage(&attachments, lineAttachments)
 				}
 				dropLine(&builder, &parts, final)
-			} else if facts != nil && !gateHasValue(gate, facts) {
-				dropLine(&builder, &parts, final)
 			} else {
-				result, drop := renderLine(source, rest, cursor+restOffset, final, facts, known, field)
-				mergeFirstImage(&attachments, result.attachments)
-				appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
+				visible := facts == nil || gateHasValue(gate, facts)
+				lineFacts := facts
+				if !visible {
+					lineFacts = nil // Validate the hidden source without resolving its facts.
+				}
+				result, drop := renderLine(source, rest, cursor+restOffset, final, lineFacts, known, field)
+				if visible {
+					attachments.mergeLine(result.attachments)
+					appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
+				} else {
+					errors = append(errors, result.errors...)
+					dropLine(&builder, &parts, final)
+				}
 			}
 		} else {
 			result, drop := renderLine(source, line, cursor, final, facts, known, field)
-			mergeFirstImage(&attachments, result.attachments)
+			attachments.mergeLine(result.attachments)
 			appendLine(&builder, &parts, &errors, &warnings, result, drop, final)
 		}
 		remaining = remaining[consumed:]
@@ -773,7 +782,7 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 				mergeFirstImage(&attachments, image)
 			}
 		}
-		text, link, exprWarnings, exprError := evaluateExpressionNode(inner, facts, known)
+		text, link, button, exprWarnings, exprError := evaluateExpressionNode(inner, facts, known, field)
 		if exprError != nil {
 			errors = append(errors, SourceError{
 				Code:    exprError.code,
@@ -784,6 +793,8 @@ func renderPlainLine(source, remaining string, cursor int, facts map[string]any,
 			})
 		} else {
 			switch {
+			case button != nil:
+				attachments.Buttons = append(attachments.Buttons, *button)
 			case link == nil:
 				appendText(text)
 			case field == FieldTitle:
@@ -1008,34 +1019,37 @@ type expressionError struct {
 }
 
 func evaluateExpression(inner string, facts map[string]any, known map[string]bool) (string, []Warning, *expressionError) {
-	text, _, warnings, err := evaluateExpressionNode(inner, facts, known)
+	text, _, _, warnings, err := evaluateExpressionNode(inner, facts, known, FieldBody)
 	return text, warnings, err
 }
 
-// evaluateExpressionNode evaluates one expression. A link(...) call returns its
-// resolved link instead of text, so the caller keeps it at the template
-// position; every other expression is text.
-func evaluateExpressionNode(inner string, facts map[string]any, known map[string]bool) (string, *Link, []Warning, *expressionError) {
+// evaluateExpressionNode returns text, an inline link, or a message-level URL button.
+func evaluateExpressionNode(inner string, facts map[string]any, known map[string]bool, field Field) (string, *Link, *Button, []Warning, *expressionError) {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {
-		return "", nil, nil, &expressionError{code: "empty_expression", message: "表达式不能为空。"}
+		return "", nil, nil, nil, &expressionError{code: "empty_expression", message: "表达式不能为空。"}
 	}
 	expr, err := parseExpression(trimmed)
 	if err != nil {
-		return "", nil, nil, &expressionError{code: "invalid_expression", message: err.Error()}
+		return "", nil, nil, nil, &expressionError{code: "invalid_expression", message: err.Error()}
 	}
 	if err := validateExpression(expr, known); err != nil {
-		return "", nil, nil, &expressionError{code: "invalid_expression", message: err.Error()}
+		return "", nil, nil, nil, &expressionError{code: "invalid_expression", message: err.Error()}
 	}
-	if call, ok := expr.(callExpression); ok && call.name == "link" {
-		var warnings []Warning
-		if target, ok := call.args[0].(variableExpression); ok {
-			_, _, warnings = target.evaluate(facts)
+	if call, ok := expr.(callExpression); ok && (call.name == "link" || call.name == buttonFunction) {
+		if call.name == buttonFunction && field != FieldBody {
+			return "", nil, nil, nil, &expressionError{code: "invalid_expression", message: "button 只能用于正文。"}
 		}
-		return "", resolveLink(call, facts), warnings, nil
+		link := resolveLink(call, facts)
+		_, _, warnings := call.evaluate(facts)
+		if call.name == "link" || link == nil {
+			return "", link, nil, warnings, nil
+		}
+		button := Button(*link)
+		return "", nil, &button, warnings, nil
 	}
 	text, _, warnings := expr.evaluate(facts)
-	return text, nil, warnings, nil
+	return text, nil, nil, warnings, nil
 }
 
 // resolveLink turns a validated link(...) call into its channel-neutral link.
@@ -1074,10 +1088,13 @@ func validateExpression(expr templateExpression, known map[string]bool) error {
 		if len(node.args) < def.minArgs || (def.maxArgs >= 0 && len(node.args) > def.maxArgs) {
 			return fmt.Errorf("函数 %s 的参数数量无效", node.name)
 		}
-		if node.name == "link" || node.name == ImageVariable {
+		if node.name == "link" || node.name == buttonFunction || node.name == ImageVariable {
 			return validateAttachmentCall(node, known)
 		}
 		for _, arg := range node.args {
+			if child, ok := arg.(callExpression); ok && child.name == buttonFunction {
+				return fmt.Errorf("button 不能作为其他函数的参数")
+			}
 			if err := validateExpression(arg, known); err != nil {
 				return err
 			}
@@ -1090,8 +1107,8 @@ func validateAttachmentCall(node callExpression, known map[string]bool) error {
 	target := node.args[0]
 	switch value := target.(type) {
 	case variableExpression:
-		if node.name == "link" && !isLinkVariable(value.name) {
-			return fmt.Errorf("link 的第一个参数必须是链接变量或安全 URL 字面量")
+		if node.name != ImageVariable && !isLinkVariable(value.name) {
+			return fmt.Errorf("%s 的第一个参数必须是链接变量或安全 URL 字面量", node.name)
 		}
 		if node.name == ImageVariable && !isImageVariable(value.name) {
 			return fmt.Errorf("image 的参数必须是图片变量或安全 HTTPS URL 字面量")
@@ -1100,20 +1117,20 @@ func validateAttachmentCall(node callExpression, known map[string]bool) error {
 			return fmt.Errorf("当前事件不支持变量 %q", value.name)
 		}
 	case literalExpression:
-		safe := SafeExternalURL(value.value, node.name == ImageVariable)
 		if node.name == ImageVariable {
-			safe = SafeExternalImageURL(value.value)
-		}
-		if safe == "" {
-			return fmt.Errorf("附件地址必须是安全的%s URL，且不能包含凭据", map[string]string{"link": "", ImageVariable: " HTTPS"}[node.name])
+			if SafeExternalImageURL(value.value) == "" {
+				return fmt.Errorf("附件地址必须是安全的 HTTPS URL，且不能包含凭据")
+			}
+		} else if SafeExternalURL(value.value, false) == "" {
+			return fmt.Errorf("附件地址必须是安全的 URL，且不能包含凭据")
 		}
 	default:
 		return fmt.Errorf("附件目标必须是变量或 URL 字面量")
 	}
-	if node.name == "link" {
+	if node.name != ImageVariable {
 		label, ok := node.args[1].(literalExpression)
 		if !ok || !validLinkLabel(label.value) {
-			return fmt.Errorf("link 的第二个参数必须是非空文字标签")
+			return fmt.Errorf("%s 的第二个参数必须是非空文字标签", node.name)
 		}
 	}
 	return nil

@@ -25,11 +25,12 @@ type Image struct {
 // Message is the channel-neutral input. Parts is the body in template order;
 // Body is the same content as one plain-text string.
 type Message struct {
-	Title string
-	Body  string
-	Parts []notification.BodyPart
-	Image *Image
-	Links []notification.Link
+	Title   string
+	Body    string
+	Parts   []notification.BodyPart
+	Image   *Image
+	Links   []notification.Link
+	Buttons []notification.Button
 }
 
 // Presentation is every channel's rendering of one Message.
@@ -68,10 +69,11 @@ const (
 // that carries it. Text is the final HTML: the caption for sendPhoto or the
 // message text for sendMessage.
 type TelegramPresentation struct {
-	Mode  string
-	Text  string
-	Title string
-	Parts []notification.BodyPart
+	Mode    string
+	Text    string
+	Title   string
+	Parts   []notification.BodyPart
+	Buttons []notification.Button
 	// TextUnits is the next payload's UTF-16 length after fitting.
 	TextUnits int
 	// ImageOmitted reports that an image was requested but the caption is over
@@ -87,7 +89,7 @@ func Telegram(message Message) TelegramPresentation {
 	full := TelegramHTML(message)
 	fullUnits := TelegramTextUnits(full)
 	if message.Image != nil && fullUnits <= TelegramCaptionLimit {
-		return TelegramPresentation{Mode: TelegramModePhoto, Text: full, TextUnits: fullUnits, Title: message.Title, Parts: telegramDisplayParts(message)}
+		return TelegramPresentation{Mode: TelegramModePhoto, Text: full, TextUnits: fullUnits, Title: message.Title, Parts: telegramDisplayParts(message), Buttons: message.Buttons}
 	}
 	truncated := fullUnits > TelegramTextLimit
 	text := full
@@ -100,6 +102,7 @@ func Telegram(message Message) TelegramPresentation {
 		Text:         text,
 		Title:        message.Title,
 		Parts:        telegramDisplayParts(message),
+		Buttons:      message.Buttons,
 		TextUnits:    TelegramTextUnits(text),
 		ImageOmitted: message.Image != nil,
 		Truncated:    truncated,

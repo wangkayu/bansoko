@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"bansoko/internal/notifypresent"
+	"bansoko/internal/templatecatalog/notification"
 )
 
 type telegramRequestMode struct {
@@ -38,11 +39,11 @@ func (h *PluginDeliverHandler) buildTelegramMessageRequest(ctx context.Context, 
 		if message.Image.Placeholder {
 			mode.Image = "placeholder"
 		}
-		req, err := buildTelegramPhotoRequest(ctx, chatID, token, presentation.Text, message.Image)
+		req, err := buildTelegramPhotoRequest(ctx, chatID, token, presentation.Text, message.Image, telegramKeyboard(presentation.Buttons))
 		return req, mode, err
 	}
 	mode := telegramRequestMode{Method: "sendMessage"}
-	req, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, presentation.Text)
+	req, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, presentation.Text, telegramKeyboard(presentation.Buttons))
 	return req, mode, err
 }
 
@@ -50,7 +51,7 @@ func (h *PluginDeliverHandler) buildTelegramMessageRequest(ctx context.Context, 
 // input. outboundImage.Data stays local to delivery; presentation never needs
 // image bytes.
 func presentMessage(message outboundMessage) notifypresent.Message {
-	presented := notifypresent.Message{Title: message.Title, Body: message.Body, Parts: message.Parts, Links: message.Links}
+	presented := notifypresent.Message{Title: message.Title, Body: message.Body, Parts: message.Parts, Links: message.Links, Buttons: message.Buttons}
 	if message.Image != nil {
 		presented.Image = &notifypresent.Image{Source: message.Image.Source, URL: message.Image.URL, Placeholder: message.Image.Placeholder}
 	}
@@ -73,7 +74,27 @@ func telegramCredentials(row deliveryRow, secretValue string) (chatID, token str
 	return config.ChatID, *secret.BotToken, nil
 }
 
-func buildTelegramPhotoRequest(ctx context.Context, chatID, token, caption string, image *outboundImage) (*http.Request, error) {
+type telegramURLButton struct {
+	Text string `json:"text"`
+	URL  string `json:"url"`
+}
+
+type telegramInlineKeyboard struct {
+	Rows [][]telegramURLButton `json:"inline_keyboard"`
+}
+
+func telegramKeyboard(buttons []notification.Button) *telegramInlineKeyboard {
+	if len(buttons) == 0 {
+		return nil
+	}
+	keyboard := &telegramInlineKeyboard{Rows: make([][]telegramURLButton, 0, len(buttons))}
+	for _, button := range buttons {
+		keyboard.Rows = append(keyboard.Rows, []telegramURLButton{{Text: button.Label, URL: button.URL}})
+	}
+	return keyboard
+}
+
+func buildTelegramPhotoRequest(ctx context.Context, chatID, token, caption string, image *outboundImage, keyboard *telegramInlineKeyboard) (*http.Request, error) {
 	if image == nil {
 		return nil, errors.New("telegram photo is missing")
 	}
@@ -81,9 +102,13 @@ func buildTelegramPhotoRequest(ctx context.Context, chatID, token, caption strin
 		if !validNotificationImageURL(image.URL) {
 			return nil, errors.New("telegram image URL is invalid")
 		}
-		payload, _ := json.Marshal(map[string]string{
-			"chat_id": chatID, "photo": image.URL, "caption": caption, "parse_mode": "HTML",
-		})
+		payload, _ := json.Marshal(struct {
+			ChatID      string                  `json:"chat_id"`
+			Photo       string                  `json:"photo"`
+			Caption     string                  `json:"caption"`
+			ParseMode   string                  `json:"parse_mode"`
+			ReplyMarkup *telegramInlineKeyboard `json:"reply_markup,omitempty"`
+		}{ChatID: chatID, Photo: image.URL, Caption: caption, ParseMode: "HTML", ReplyMarkup: keyboard})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.telegram.org/bot"+token+"/sendPhoto", bytes.NewReader(payload))
 		if err != nil {
 			return nil, errors.New("telegram request is invalid")
@@ -98,6 +123,12 @@ func buildTelegramPhotoRequest(ctx context.Context, chatID, token, caption strin
 	writer := multipart.NewWriter(&body)
 	for name, value := range map[string]string{"chat_id": chatID, "caption": caption, "parse_mode": "HTML"} {
 		if err := writer.WriteField(name, value); err != nil {
+			return nil, errors.New("telegram multipart request is invalid")
+		}
+	}
+	if keyboard != nil {
+		markup, _ := json.Marshal(keyboard)
+		if err := writer.WriteField("reply_markup", string(markup)); err != nil {
 			return nil, errors.New("telegram multipart request is invalid")
 		}
 	}
@@ -119,10 +150,13 @@ func buildTelegramPhotoRequest(ctx context.Context, chatID, token, caption strin
 	return req, nil
 }
 
-func buildTelegramHTMLMessageRequest(ctx context.Context, chatID, token, text string) (*http.Request, error) {
-	payload, _ := json.Marshal(map[string]string{
-		"chat_id": chatID, "text": text, "parse_mode": "HTML",
-	})
+func buildTelegramHTMLMessageRequest(ctx context.Context, chatID, token, text string, keyboard *telegramInlineKeyboard) (*http.Request, error) {
+	payload, _ := json.Marshal(struct {
+		ChatID      string                  `json:"chat_id"`
+		Text        string                  `json:"text"`
+		ParseMode   string                  `json:"parse_mode"`
+		ReplyMarkup *telegramInlineKeyboard `json:"reply_markup,omitempty"`
+	}{ChatID: chatID, Text: text, ParseMode: "HTML", ReplyMarkup: keyboard})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.telegram.org/bot"+token+"/sendMessage", bytes.NewReader(payload))
 	if err != nil {
 		return nil, errors.New("telegram request is invalid")

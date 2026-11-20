@@ -95,7 +95,7 @@ function templateCatalogBody(catalogVersion = "notification-catalog-v1", locale 
 
 function previewPresentation(overrides: Record<string, unknown> = {}) {
   return {
-    telegram: { mode: "sendPhoto", text: "<b>预览标题</b>\n\n预览正文", title: "预览标题", body_parts: [{ text: "预览正文", link: null }], text_units: 20, image_omitted: false, truncated: false },
+    telegram: { mode: "sendPhoto", text: "<b>预览标题</b>\n\n预览正文", title: "预览标题", body_parts: [{ text: "预览正文", link: null }], buttons: [], text_units: 20, image_omitted: false, truncated: false },
     feishu: {
       title: "预览标题",
       content: [[{ tag: "text", text: "预览正文" }]],
@@ -675,9 +675,9 @@ describe("SettingsNotifications 模板页", () => {
         previewBody({
           body: longBody,
           body_parts: [{ text: longBody, link: null }],
-          attachments: { image: { source: "automatic" }, links: [] },
+          attachments: { image: { source: "automatic" }, links: [], buttons: [] },
           presentation: previewPresentation({
-            telegram: { mode: "sendMessage", text: longBody, title: "", body_parts: [{ text: longBody, link: null }], text_units: 1100, image_omitted: true, truncated: false },
+            telegram: { mode: "sendMessage", text: longBody, title: "", body_parts: [{ text: longBody, link: null }], buttons: [], text_units: 1100, image_omitted: true, truncated: false },
           }),
         }),
     });
@@ -697,9 +697,9 @@ describe("SettingsNotifications 模板页", () => {
         previewBody({
           body: longBody,
           body_parts: [{ text: longBody, link: null }],
-          attachments: { image: null, links: [] },
+          attachments: { image: null, links: [], buttons: [] },
           presentation: previewPresentation({
-            telegram: { mode: "sendMessage", text: fittedBody, title: "", body_parts: [{ text: fittedBody, link: null }], text_units: 4096, image_omitted: false, truncated: true },
+            telegram: { mode: "sendMessage", text: fittedBody, title: "", body_parts: [{ text: fittedBody, link: null }], buttons: [], text_units: 4096, image_omitted: false, truncated: true },
           }),
         }),
     });
@@ -716,7 +716,7 @@ describe("SettingsNotifications 模板页", () => {
     stubFetch({
       preview: () =>
         previewBody({
-          attachments: { image: { source: "automatic" }, links: [] },
+          attachments: { image: { source: "automatic" }, links: [], buttons: [] },
           presentation: previewPresentation({
             feishu: {
               title: "预览标题",

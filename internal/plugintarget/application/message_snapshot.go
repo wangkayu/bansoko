@@ -13,11 +13,13 @@ const messageSnapshotVersion = 1
 
 // messageSnapshot is the durable, channel-neutral output of a single render.
 // The body and its links are projections of Parts, so they cannot diverge.
+// Buttons is an optional v1 extension. Older snapshots have no buttons.
 type messageSnapshot struct {
 	Version int                     `json:"version"`
 	Title   string                  `json:"title"`
 	Parts   []notification.BodyPart `json:"parts"`
 	Image   *imageInstruction       `json:"image,omitempty"`
+	Buttons []notification.Button   `json:"buttons,omitempty"`
 }
 
 type imageInstruction struct {
@@ -34,7 +36,7 @@ func freezeNotificationMessage(message notification.Message, facts map[string]an
 	if !message.Valid() {
 		return nil, errors.New("cannot freeze an invalid notification message")
 	}
-	snapshot := messageSnapshot{Version: messageSnapshotVersion, Title: message.Title, Parts: message.BodyParts}
+	snapshot := messageSnapshot{Version: messageSnapshotVersion, Title: message.Title, Parts: message.BodyParts, Buttons: message.Attachments.Buttons}
 	if snapshot.Parts == nil {
 		snapshot.Parts = []notification.BodyPart{}
 	}

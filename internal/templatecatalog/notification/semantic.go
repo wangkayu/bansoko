@@ -38,6 +38,15 @@ type Link struct {
 	URL      string
 }
 
+// Button is a URL action displayed outside the body text.
+type Button struct {
+	Provider string `json:"provider"`
+	Label    string `json:"label"`
+	URL      string `json:"url"`
+}
+
+const buttonFunction = "button"
+
 // Attachments is the channel-neutral semantic content requested by a template.
 // ImageSource is empty for automatic selection, a provider name for an explicit
 // provider variable, or "custom" with ImageURL for a literal HTTPS image.
@@ -46,6 +55,7 @@ type Attachments struct {
 	ImageSource string
 	ImageURL    string
 	Links       []Link
+	Buttons     []Button
 }
 
 var providerWorkIDPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
@@ -222,6 +232,11 @@ func mergeFirstImage(dst *Attachments, src Attachments) {
 		return
 	}
 	dst.Image, dst.ImageSource, dst.ImageURL = src.Image, src.ImageSource, src.ImageURL
+}
+
+func (a *Attachments) mergeLine(line Attachments) {
+	mergeFirstImage(a, line)
+	a.Buttons = append(a.Buttons, line.Buttons...)
 }
 
 func validLinkLabel(label string) bool {

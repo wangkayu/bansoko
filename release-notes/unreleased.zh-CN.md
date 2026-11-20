@@ -1,5 +1,7 @@
 ## 新增
 
+- Telegram 通知模板可在正文中用 `button(target, label)` 添加跳转按钮。按钮在消息下方逐行显示，不影响飞书或 Webhook 正文。
+
 - 种子检索（Jackett）结果第二行显示站点分类、做种与下载计数以及计费标签（免费、折扣百分比、上传倍率）；分类名称取自单站 caps，读取失败时省略且不影响检索，下载数为 0 与标准计费（1/1）不显示。
 
 - 下载、入库及未识别文件通知支持 task.origin，区分订阅（subscription）与一次性任务（one_shot）。来源相关事件新增 release.site 与 release.link，分别表示发布站点和明确的发布详情页；下载地址仍使用 download.link。

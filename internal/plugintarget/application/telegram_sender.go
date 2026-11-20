@@ -17,6 +17,8 @@ const maxTelegramImageBytes = 2 << 20
 // another representation in those cases could duplicate an accepted message.
 func (h *PluginDeliverHandler) sendTelegramMessage(ctx context.Context, req *http.Request, mode telegramRequestMode, row deliveryRow, message outboundMessage, secretValue string, redactor secretRedactor) (attemptResult, error) {
 	modes := make([]string, 0, 3)
+	presented := presentMessage(message)
+	keyboard := telegramKeyboard(presented.Buttons)
 	for {
 		modes = append(modes, mode.String())
 		result, sendErr := h.sendRequest(req, row.adapterKind, redactor)
@@ -39,7 +41,7 @@ func (h *PluginDeliverHandler) sendTelegramMessage(ctx context.Context, req *htt
 			if err != nil {
 				return telegramFallbackBuildFailure(modes), nil
 			}
-			next, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, notifypresent.FitTelegram(presentMessage(message), notifypresent.TelegramTextLimit))
+			next, err := buildTelegramHTMLMessageRequest(ctx, chatID, token, notifypresent.FitTelegram(presented, notifypresent.TelegramTextLimit), keyboard)
 			if err != nil {
 				return telegramFallbackBuildFailure(modes), nil
 			}
@@ -53,7 +55,7 @@ func (h *PluginDeliverHandler) sendTelegramMessage(ctx context.Context, req *htt
 		if err != nil {
 			return telegramFallbackBuildFailure(modes), nil
 		}
-		next, err := buildTelegramPhotoRequest(ctx, chatID, token, notifypresent.FitTelegram(presentMessage(message), notifypresent.TelegramCaptionLimit), nextImage)
+		next, err := buildTelegramPhotoRequest(ctx, chatID, token, notifypresent.FitTelegram(presented, notifypresent.TelegramCaptionLimit), nextImage, keyboard)
 		if err != nil {
 			return telegramFallbackBuildFailure(modes), nil
 		}

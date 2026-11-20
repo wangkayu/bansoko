@@ -278,7 +278,7 @@ func TestRenderNotificationTestMarkerKeepsTitleWithinRenderedBound(t *testing.T)
 func TestPreviewNotificationReturnsStructuredAttachments(t *testing.T) {
 	service := NewService()
 	preview, err := service.PreviewNotification(context.Background(), NotificationTemplatePreviewInput{
-		BodyTemplate:    "{{release.title}}\n{{image(bgm.image)}}\n{{link(download.link, '下载')}}",
+		BodyTemplate:    "{{release.title}}\n{{image(bgm.image)}}\n{{link(download.link, '下载')}}\n{{button(release.link, '发布页')}}",
 		CatalogVersion:  NotificationTemplatePreviewInputCatalogVersionNotificationCatalogV1,
 		LanguageVersion: NotificationTemplatePreviewInputLanguageVersionBansokoTemplate1,
 		TitleTemplate:   "{{anime.title}}",
@@ -297,6 +297,12 @@ func TestPreviewNotificationReturnsStructuredAttachments(t *testing.T) {
 	// and the link is the last body part, not a footer attachment.
 	if len(preview.BodyParts) != 3 || preview.BodyParts[0].Link != nil || preview.BodyParts[2].Link == nil || preview.BodyParts[2].Link.Provider != "download" {
 		t.Fatalf("body parts = %+v", preview.BodyParts)
+	}
+	if len(preview.Attachments.Buttons) != 1 || preview.Attachments.Buttons[0].Provider != "release" || preview.Attachments.Buttons[0].Label != "发布页" {
+		t.Fatalf("button attachments = %+v", preview.Attachments.Buttons)
+	}
+	if len(preview.Presentation.Telegram.Buttons) != 1 || preview.Presentation.Telegram.Buttons[0] != preview.Attachments.Buttons[0] || strings.Contains(preview.Presentation.Telegram.Text, "发布页") {
+		t.Fatalf("telegram presentation = %+v", preview.Presentation.Telegram)
 	}
 	if !strings.HasSuffix(preview.Body, "下载") {
 		t.Fatalf("body = %q", preview.Body)
@@ -705,7 +711,7 @@ func assertFunctions(t *testing.T, functions []TemplateFunction) {
 	t.Helper()
 	want := map[string]bool{
 		"coalesce": true, "defaultIfEmpty": true, "lower": true, "upper": true,
-		"replace": true, "if": true, "eq": true, "showIf": true, "link": true, "image": true,
+		"replace": true, "if": true, "eq": true, "showIf": true, "link": true, "button": true, "image": true,
 	}
 	if len(functions) != len(want) {
 		t.Errorf("function count = %d, want %d", len(functions), len(want))

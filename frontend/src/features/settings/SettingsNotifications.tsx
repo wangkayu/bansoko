@@ -1343,7 +1343,16 @@ function AdapterMessage({
           <p className="text-caption tw:text-warning">{t("settings.notifications.template.telegramTruncated")}</p>
         )}
         <div className="settings-notifications-preview-tg-title">{telegram.title}</div>
-        <div className="settings-notifications-preview-body">{renderBodyInline(telegram.body_parts)}</div>
+        {telegram.body_parts.length > 0 && (
+          <div className="settings-notifications-preview-body">{renderBodyInline(telegram.body_parts)}</div>
+        )}
+        {telegram.buttons.length > 0 && (
+          <div className="settings-notifications-preview-url-buttons">
+            {telegram.buttons.map((button, index) => (
+              <span key={index}>{button.label}</span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

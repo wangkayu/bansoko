@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -403,4 +406,79 @@ func TestTelegramRealImageFailuresConvergeToPlaceholderThenText(t *testing.T) {
 			t.Fatalf("result=%+v final=%s", result, client.bodies[len(client.bodies)-1])
 		}
 	})
+}
+
+func TestTelegramURLButtonsSurviveEveryImageFallback(t *testing.T) {
+	const token = `{"bot_token":"123:abc"}`
+	const body = "Body\n{{button(bgm.link, 'Bangumi')}}\n{{button('https://example.com/?a=1&b=2', 'Notes <&>')}}"
+	rendered, _ := notification.RenderMessage(notification.TriggerDownloadSubmitted, "Title", body, map[string]any{"bgm.id": "123"})
+	client := &telegramSequenceClient{results: []telegramHTTPResult{
+		{status: 400, body: `{"ok":false,"description":"Bad Request: failed to get HTTP URL content"}`},
+		{status: 400, body: `{"ok":false,"description":"Bad Request: IMAGE_PROCESS_FAILED"}`},
+		{status: 400, body: `{"ok":false,"description":"Bad Request: IMAGE_PROCESS_FAILED"}`},
+		{status: 200, body: `{"ok":true}`},
+	}}
+	handler := NewPluginDeliverHandler(nil, nil, nil, client, nil)
+	handler.imageClient = httpDoerFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/jpeg"}}, Body: io.NopCloser(bytes.NewReader([]byte{0xff, 0xd8, 0xff, 0xd9}))}, nil
+	})
+	row := richDeliveryRow(t, nil)
+	message := outboundMessage{Title: rendered.Title, Body: rendered.Body, Parts: rendered.BodyParts, Buttons: rendered.Attachments.Buttons, Image: &outboundImage{Source: "custom", URL: "https://example.com/cover.jpg"}}
+	req, mode, err := handler.buildTelegramMessageRequest(context.Background(), row, message, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := handler.sendTelegramMessage(context.Background(), req, mode, row, message, token, newSecretRedactor(""))
+	if err != nil || result.state != "delivered" || strings.Join(result.telegramModes, ",") != "sendPhoto:url,sendPhoto:multipart,sendPhoto:placeholder,sendMessage" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	want := [][]map[string]string{
+		{{"text": "Bangumi", "url": "https://bgm.tv/subject/123"}},
+		{{"text": "Notes <&>", "url": "https://example.com/?a=1&b=2"}},
+	}
+	for i, req := range client.requests {
+		contentType, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var markup json.RawMessage
+		if contentType == "multipart/form-data" {
+			form, err := multipart.NewReader(bytes.NewReader(client.bodies[i]), params["boundary"]).ReadForm(1 << 20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = form.RemoveAll() })
+			if values := form.Value["reply_markup"]; len(values) == 1 {
+				markup = json.RawMessage(values[0])
+			}
+		} else {
+			var payload map[string]json.RawMessage
+			if err := json.Unmarshal(client.bodies[i], &payload); err != nil {
+				t.Fatal(err)
+			}
+			markup = payload["reply_markup"]
+		}
+		var keyboard struct {
+			Rows [][]map[string]string `json:"inline_keyboard"`
+		}
+		if err := json.Unmarshal(markup, &keyboard); err != nil || !reflect.DeepEqual(keyboard.Rows, want) {
+			t.Errorf("attempt %d reply_markup = %s, err = %v", i, markup, err)
+		}
+	}
+}
+
+func TestTelegramWithoutButtonsOmitsReplyMarkup(t *testing.T) {
+	handler := NewPluginDeliverHandler(nil, nil, nil, nil, nil)
+	req, _, err := handler.buildTelegramMessageRequest(context.Background(), richDeliveryRow(t, nil), outboundMessage{Title: "Title"}, `{"bot_token":"123:abc"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer req.Body.Close()
+	var payload map[string]json.RawMessage
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["reply_markup"]; ok {
+		t.Fatalf("unexpected reply_markup: %s", payload["reply_markup"])
+	}
 }

@@ -170,8 +170,8 @@ func (s *Service) PreviewNotification(_ context.Context, input NotificationTempl
 	// same facts; building a presentation from the message never scans the
 	// template a second time.
 	semantic := message.Attachments
-	attachments := NotificationTemplatePreviewAttachments{Links: []NotificationTemplatePreviewLink{}}
-	presented := notifypresent.Message{Title: message.Title, Body: message.Body, Parts: message.BodyParts, Links: semantic.Links}
+	attachments := NotificationTemplatePreviewAttachments{Links: []NotificationTemplatePreviewLink{}, Buttons: semantic.Buttons}
+	presented := notifypresent.Message{Title: message.Title, Body: message.Body, Parts: message.BodyParts, Links: semantic.Links, Buttons: semantic.Buttons}
 	if semantic.Image {
 		source := semantic.ImageSource
 		// Unknown targets (for example a gated directive whose argument was

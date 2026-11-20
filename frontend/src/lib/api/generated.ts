@@ -7513,7 +7513,7 @@ export interface components {
         TemplateFactPhase: "release" | "execution";
         TemplateFunction: {
             /** @enum {string} */
-            name: "coalesce" | "defaultIfEmpty" | "lower" | "upper" | "replace" | "if" | "eq" | "showIf" | "link" | "image";
+            name: "coalesce" | "defaultIfEmpty" | "lower" | "upper" | "replace" | "if" | "eq" | "showIf" | "link" | "button" | "image";
             description: string;
             arguments: string[];
         };
@@ -7605,9 +7605,18 @@ export interface components {
             /** Format: uri */
             url: string;
         };
+        NotificationTemplatePreviewButton: {
+            /** @enum {string} */
+            provider: "bgm" | "tmdb" | "anibt" | "mikan" | "download" | "release" | "custom";
+            label: string;
+            /** Format: uri */
+            url: string;
+        };
         NotificationTemplatePreviewAttachments: {
             image: components["schemas"]["NotificationTemplatePreviewImage"] | null;
             links: components["schemas"]["NotificationTemplatePreviewLink"][];
+            /** @description URL buttons requested in template order. Only Telegram displays them. */
+            buttons: components["schemas"]["NotificationTemplatePreviewButton"][];
         };
         NotificationTemplatePreviewBodyPart: {
             /** @description Literal text, or the label when link is present. */
@@ -7657,6 +7666,8 @@ export interface components {
             title: string;
             /** @description The channel-fitted body with its inline links. */
             body_parts: components["schemas"]["NotificationTemplatePreviewBodyPart"][];
+            /** @description Inline keyboard URL buttons, one per row, in display order. */
+            buttons: components["schemas"]["NotificationTemplatePreviewButton"][];
             /** @description Length of text in UTF-16 code units, the unit Telegram counts. */
             text_units: number;
             /** @description An image was requested but the caption exceeds the photo limit, so the message is sent without it. */

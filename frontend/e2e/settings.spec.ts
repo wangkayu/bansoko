@@ -264,6 +264,7 @@ async function mockSettingsReads(page: Page) {
         ],
         functions: [
           { name: "link", description: "插入链接", arguments: ["target", "label"] },
+          { name: "button", description: "添加跳转按钮", arguments: ["target", "label"] },
           { name: "image", description: "插入指定图片", arguments: ["target"] },
         ],
         default_template: { mode: "custom", title_template: "默认标题", body_template: "{{image}}\n默认正文\n{{link(bgm.link, 'Bangumi')}}\n{{link(tmdb.link, 'TMDB')}}" },
@@ -275,6 +276,13 @@ async function mockSettingsReads(page: Page) {
     if (route.request().method() !== "POST") {
       return route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "method_not_allowed", allowed: ["POST"] }) });
     }
+    const { body_template: bodyTemplate = "" } = route.request().postDataJSON() as { body_template?: string };
+    const buttons = bodyTemplate.includes("{{button(")
+      ? [
+          { provider: "bgm", label: "打开 Bangumi", url: "https://bgm.tv/subject/123" },
+          { provider: "tmdb", label: "打开 TMDB", url: "https://www.themoviedb.org/tv/456" },
+        ]
+      : [];
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -292,6 +300,7 @@ async function mockSettingsReads(page: Page) {
         valid: true,
         attachments: {
           image: { source: "automatic" },
+          buttons,
           links: [
             { provider: "bgm", label: "Bangumi", url: "https://bgm.tv/subject/123" },
             { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" },
@@ -308,6 +317,7 @@ async function mockSettingsReads(page: Page) {
               { text: "\n", link: null },
               { text: "TMDB", link: { provider: "tmdb", label: "TMDB", url: "https://www.themoviedb.org/tv/456" } },
             ],
+            buttons,
             text_units: 30,
             image_omitted: false,
             truncated: false,
@@ -616,6 +626,22 @@ test.describe("settings fixture coverage", () => {
     await expect(preview.getByText("节目图片（封面或占位图）")).toBeVisible();
     await expect(preview.locator(".settings-notifications-preview-tg-title")).toHaveCSS("font-size", "14px");
     await expect(preview.locator(".settings-notifications-preview-body")).toHaveCSS("font-size", "14px");
+    const body = editor.getByLabel("正文模板");
+    const source = await body.inputValue();
+    await body.fill(`${source}\n{{button(bgm.link, '打开 Bangumi')}}\n{{button(tmdb.link, '打开 TMDB')}}`);
+    const buttons = preview.locator(".settings-notifications-preview-url-buttons > span");
+    await expect(buttons).toHaveText(["打开 Bangumi", "打开 TMDB"]);
+    await expect(preview.locator(".settings-notifications-preview-body")).not.toContainText("打开 Bangumi");
+    const bodyBox = await preview.locator(".settings-notifications-preview-body").boundingBox();
+    const firstButton = await buttons.nth(0).boundingBox();
+    const secondButton = await buttons.nth(1).boundingBox();
+    expect(bodyBox).not.toBeNull();
+    expect(firstButton).not.toBeNull();
+    expect(secondButton).not.toBeNull();
+    expect(firstButton!.y).toBeGreaterThanOrEqual(bodyBox!.y + bodyBox!.height);
+    expect(secondButton!.y).toBeGreaterThanOrEqual(firstButton!.y + firstButton!.height);
+    expect(secondButton!.x).toBeCloseTo(firstButton!.x);
+    expect(secondButton!.width).toBeCloseTo(firstButton!.width);
     // 几何断言：预览卡片在弹窗内、页面无横向滚动。
     const previewBox = await preview.boundingBox();
     const editorBox = await editor.boundingBox();
