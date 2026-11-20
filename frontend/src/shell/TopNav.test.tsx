@@ -405,11 +405,9 @@ describe("顶栏状态条用语", () => {
     );
     renderTopNav();
 
-    // The status bar lives in the top-bar status dot's popover. Without a
-    // usable downloader the dot says "no downloader configured", ahead of
-    // "partially disabled".
     const trigger = await screen.findByRole("button", { name: t("nav.statusAria") });
-    await waitFor(() => expect(trigger).toHaveTextContent(t("nav.statusNoDownloader")));
+    await waitFor(() => expect(trigger).toHaveAccessibleDescription(t("nav.statusNeedsAttention")));
+    expect(trigger.textContent).toBe("");
     expect(trigger.querySelector(".system-status-dot-warning")).not.toBeNull();
     fireEvent.click(trigger);
 
@@ -431,6 +429,7 @@ describe("顶栏状态条用语", () => {
       .getAllByRole("button", { name: new RegExp(`^${t("nav.connection.qbittorrent")}`) })
       .find((el) => el.className.includes("system-status-row"))!;
     expect(qbRow).toHaveTextContent(t("nav.goSettings"));
+    expect(qbRow).toHaveTextContent(t("nav.statusNotConfigured"));
     expect(qbRow.querySelector(".system-status-dot-warning")).not.toBeNull();
     // TMDB is enabled: a ready test result shows as reachable, with its check time.
     expect(await screen.findByText(t("nav.statusReachable"))).toBeInTheDocument();
@@ -439,6 +438,31 @@ describe("顶栏状态条用语", () => {
     expect(screen.queryByText(t("nav.statusUnreachable"))).not.toBeInTheDocument();
     expect(screen.getByText(new RegExp(`^${t("nav.automationKind.group_discovery")} · `))).toBeInTheDocument();
     expect(screen.queryByText(/RSS 网络|节目列表|BGM|已启用 \/ 未启用|未启用/)).not.toBeInTheDocument();
+  });
+
+  it("状态点在加载时为灰色，连接正常时为绿色，检测失败后为黄色", async () => {
+    let loadConnections!: (response: Response) => void;
+    const connections = new Promise<Response>((resolve) => { loadConnections = resolve; });
+    const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/config/connections")) return connections;
+      if (url.endsWith("/c-qb/test")) return json({ connection_id: "c-qb", kind: "qbittorrent", health: "failed", checked_at: "2026-07-21T08:00:00Z" });
+      return json([]);
+    }));
+    renderTopNav();
+    const trigger = screen.getByRole("button", { name: t("nav.statusAria") });
+    expect(trigger).toHaveAccessibleDescription(t("nav.statusLoading"));
+    expect(trigger.querySelector(".system-status-dot-disabled")).not.toBeNull();
+
+    loadConnections(json([{ id: "c-qb", kind: "qbittorrent", enabled: true, version: 1 }]));
+    await waitFor(() => expect(trigger).toHaveAccessibleDescription(t("nav.statusOk")));
+    expect(trigger.querySelector(".system-status-dot-enabled")).not.toBeNull();
+
+    fireEvent.click(trigger);
+    expect(await screen.findByText(t("nav.statusUnreachable"))).toBeInTheDocument();
+    expect(trigger).toHaveAccessibleDescription(t("nav.statusNeedsAttention"));
+    expect(trigger.querySelector(".system-status-dot-warning")).not.toBeNull();
   });
 
   it("状态点弹层：每行跳到该服务的设置分区", async () => {

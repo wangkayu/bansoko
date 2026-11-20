@@ -316,7 +316,7 @@ test.describe("qb-manager dialog", () => {
     await expect(page).toHaveURL(/#\/\?source=anibt$/);
   });
 
-  test("未配置下载器时入口保留，打开显示空状态和“去设置”", async ({ page }) => {
+  test("未配置下载器时入口保留，打开显示空状态和“去设置”", async ({ page }, testInfo) => {
     const recorder: QBRequestRecorder = { pause: [], resume: [], remove: [] };
     await mockSignedIn(page);
     await mockQBManagerShell(page, recorder);
@@ -331,8 +331,24 @@ test.describe("qb-manager dialog", () => {
       await expect(page.getByRole("navigation", { name: "底部导航" })).toBeVisible({ timeout: 10000 });
     } else {
       await expect(page.getByRole("button", { name: "AniBT", exact: true })).toBeVisible({ timeout: 10000 });
-      // UI 评审 Q4：状态点如实写「未配置下载器」。
-      await expect(page.getByRole("button", { name: "服务状态" })).toHaveText(/未配置下载器/);
+      const status = page.getByRole("button", { name: "服务状态", exact: true });
+      await expect(status).toHaveAccessibleDescription("有项目需要检查");
+      await expect(status).toHaveText("");
+      const dot = status.locator(".system-status-dot-warning");
+      await expect(dot).toBeVisible();
+      const [button, icon, badge, adjacent] = await Promise.all([
+        status.boundingBox(), status.locator(".lucide-activity").boundingBox(), dot.boundingBox(), qbEntry(page).boundingBox(),
+      ]);
+      expect(button).toMatchObject({ width: 36, height: 36 });
+      expect(adjacent).toMatchObject({ y: button!.y, width: button!.width, height: button!.height });
+      expect(badge!.x).toBeGreaterThan(icon!.x + icon!.width / 2);
+      expect(badge!.y + badge!.height).toBeLessThan(icon!.y + icon!.height / 2);
+      expect(badge!.x + badge!.width).toBeLessThan(button!.x + button!.width);
+      await status.click();
+      await expect(page.locator(".system-status-pop").getByRole("button", { name: /qBittorrent.*未配置.*去设置/ })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("service-status.png"), animations: "disabled" });
+      await page.keyboard.press("Escape");
+      await expect(status).toHaveAttribute("aria-expanded", "false");
     }
     await qbEntry(page).click();
     const dialog = page.getByRole("dialog", { name: "下载器管理" });

@@ -12,6 +12,8 @@
 
 ## Improved
 
+- The desktop service status entry uses a waveform icon with a status dot. Open it to see individual connections and why any service needs attention.
+
 - Browse and search poster cards use compact Subscribed and Ended badges. Badges sit below the weekday or rating when shown, or on the first line otherwise.
 
 - The downloader entry and dialog now use the same download icon. Transfer speeds use arrows without duplicate icons.

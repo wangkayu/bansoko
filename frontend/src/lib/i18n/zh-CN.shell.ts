@@ -24,7 +24,7 @@ export const navCopy = {
   tabbarAria: "底部导航",
   statusAria: "服务状态",
   statusOk: "正常",
-  statusPartial: "部分停用",
+  statusNeedsAttention: "有项目需要检查",
   statusNoDownloader: "未配置下载器",
   goSettings: "去设置",
   statusConnections: "服务连接",

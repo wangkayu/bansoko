@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
+  Activity,
   CalendarDays,
   ClipboardList,
   Compass,
@@ -62,8 +63,8 @@ import { t } from "../lib/i18n";
 // (Subscribed / Discover / Downloads / More); tools, system status, settings
 // and the account actions fold into the More sheet.
 //
-// No usable downloader: the status dot turns warning with "no downloader
-// configured", the downloader entry and the phone Downloads tab stay and open
+// No usable downloader: the status icon shows a warning dot and the popover explains it.
+// The downloader entry and the phone Downloads tab stay and open
 // an empty state with a go-to-settings action; `?tool=qbittorrent` always
 // opens the manager.
 //
@@ -96,8 +97,7 @@ export function TopNav({
     queryFn: listConnections,
   });
   const connections = connectionsQuery.data ?? [];
-  // A usable downloader is an enabled qBittorrent connection. Without one the
-  // status reads "no downloader configured"; the manager entry stays and shows an empty state.
+  // A usable downloader is an enabled qBittorrent connection.
   const hasUsableDownloader = connections.some((c) => c.kind === "qbittorrent" && c.enabled);
 
   const routeDialogs = useRouteDialogs();
@@ -558,6 +558,11 @@ function StatusPopover({ connections: allConnections, loading }: { connections: 
   // Without a usable downloader the system can download nothing: the status says as much.
   const noDownloader = !loading && !connections.some((c) => c.kind === "qbittorrent" && c.enabled);
   const healthy = allEnabled && !anyUnreachable && !noDownloader;
+  const statusLabel = t("nav.statusAria");
+  const summary = t(loading ? "nav.statusLoading" : healthy ? "nav.statusOk" : "nav.statusNeedsAttention");
+  const statusDot = loading
+    ? "system-status-dot-disabled"
+    : healthy ? "system-status-dot-enabled" : "system-status-dot-warning";
   const go = (to: string) => {
     setOpen(false);
     navigate(to, { state: ROUTE_DIALOG_STATE });
@@ -569,9 +574,10 @@ function StatusPopover({ connections: allConnections, loading }: { connections: 
       onOpenChange={setOpen}
       align="end"
       trigger={
-        <button type="button" aria-label={t("nav.statusAria")} title={t("nav.statusAria")} className="top-nav-status">
-          <span aria-hidden className={cn("system-status-dot", healthy ? "system-status-dot-enabled" : "system-status-dot-warning")} />
-          {loading ? t("nav.statusLoading") : noDownloader ? t("nav.statusNoDownloader") : healthy ? t("nav.statusOk") : t("nav.statusPartial")}
+        <button type="button" aria-label={statusLabel} aria-description={summary} title={statusLabel}
+          className="top-nav-icon-btn top-nav-status-btn">
+          <Activity size={18} aria-hidden />
+          <span aria-hidden className={cn("system-status-dot", statusDot)} />
         </button>
       }
     >

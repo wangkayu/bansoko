@@ -35,7 +35,7 @@ export const enNavCopy = {
   tabbarAria: "Bottom navigation",
   statusAria: "Service status",
   statusOk: "Normal",
-  statusPartial: "Some disabled",
+  statusNeedsAttention: "Some services need attention",
   statusNoDownloader: "No download client",
   goSettings: "Go to Settings",
   statusConnections: "Connections",
