@@ -104,11 +104,10 @@ export function BrowseCard({
       : []),
   ];
 
-  // The top-left state pill (the same chip as the subscribed poster card): retired / subscribed.
-  const statusPill = retired ? (
-    <span className="catalog-pw-chip catalog-pw-chip-muted">{lifecycleStateLabel("retired")}</span>
-  ) : subscribed ? (
-    <span className="catalog-pw-chip catalog-pw-chip-online">{t("grid.card.subscribed")}</span>
+  const statusPill = retired || subscribed ? (
+    <span className={`catalog-pw-chip browse-card-status-badge ${retired ? "catalog-pw-chip-muted" : "catalog-pw-chip-online"}`}>
+      {retired ? lifecycleStateLabel("retired") : t("grid.card.subscribed")}
+    </span>
   ) : null;
 
   return (

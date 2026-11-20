@@ -73,7 +73,7 @@ function synopsisFixture(): CatalogEntrySynopsis {
   };
 }
 
-async function mockReaderShell(page: Page): Promise<void> {
+async function mockReaderShell(page: Page, workspace = seasonFixture()): Promise<void> {
   // The last-registered route wins, so the specific reads come after the shell reads.
   const json = (route: Route, body: unknown) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
@@ -88,7 +88,7 @@ async function mockReaderShell(page: Page): Promise<void> {
     route.fulfill({ status: 200, contentType: "image/png", body: COVER_PNG }),
   );
   await page.route(/\/api\/v1\/catalog\/providers\/anibt\/seasons\/[^/]+$/, (route) =>
-    json(route, seasonFixture()),
+    json(route, workspace),
   );
   await page.route("**/api/v1/catalog/providers/anibt/entries/*/synopsis", (route) =>
     json(route, synopsisFixture()),
@@ -137,5 +137,107 @@ test.describe("browse synopsis reader", () => {
     expect(boxes.img).not.toBeNull();
     expect(boxes.img!.w).toBe(boxes.container!.w);
     expect(boxes.panel.width).toBeGreaterThan(boxes.container!.w * 3);
+  });
+});
+
+test.describe("browse subscription badge", () => {
+  test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
+
+  test("keeps the compact badge below metadata without covering card controls", async ({ page }, testInfo) => {
+    const workspace = seasonFixture();
+    const entry = workspace.items[0];
+    const titles = ["Skyline Notes", "Forest Post", "Moon Archive"];
+    workspace.items = titles.map((title, index) => ({
+      ...entry,
+      title,
+      provider_entry_ref: `anibt:badge-fixture-${index}`,
+      broadcast_day: index === 0 ? "wed" : "none",
+      score: index === 1 ? undefined : 8.2,
+      instances: [{
+        managed_anime_ref: `badge-owner-${index}`,
+        subscription_ref: `badge-subscription-${index}`,
+        subscription_state: "active",
+        subscription_version: 1,
+        lifecycle_state: "active",
+        lifecycle_epoch: 1,
+      }],
+    }));
+    await page.addInitScript(() => localStorage.setItem("locale", "en"));
+    await mockReaderShell(page, workspace);
+    await page.goto("/");
+    if (testInfo.project.name === "mobile") {
+      await page.getByRole("navigation", { name: "Bottom navigation" }).getByRole("button", { name: "Discover" }).click();
+      await page.getByRole("radio", { name: "AniBT", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "AniBT", exact: true }).click();
+    }
+    await page.evaluate(() => document.fonts.ready);
+
+    for (const [index, title] of titles.entries()) {
+      const card = page.locator(".browse-card").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+      const badge = card.getByText("Subscribed", { exact: true });
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveCSS("font-size", "11px");
+      const layout = await badge.evaluate((element) => {
+        const card = element.closest(".browse-card")!;
+        const corner = element.parentElement!;
+        const chip = element.getBoundingClientRect();
+        const label = document.createRange();
+        label.selectNodeContents(element);
+        const textRight = label.getBoundingClientRect().right;
+        const paddedRight = chip.right - parseFloat(getComputedStyle(element).paddingRight);
+        const facts = Array.from(corner.querySelectorAll(".catalog-corner-badge, .catalog-corner-badge-score"),
+          (fact) => fact.getBoundingClientRect());
+        const controls = Array.from(card.querySelectorAll(".browse-card-synopsis, .catalog-pw-more"),
+          (button) => button.getBoundingClientRect());
+        return {
+          height: chip.height,
+          remaining: paddedRight - textRight,
+          clearance: Math.min(...controls.map((r) => r.left)) - Math.max(chip.right, ...facts.map((r) => r.right)),
+          controls: controls.length,
+          factTops: facts.map((r) => r.top),
+          chipX: chip.left - corner.getBoundingClientRect().left,
+          chipY: chip.top - Math.max(corner.getBoundingClientRect().top, ...facts.map((r) => r.bottom)),
+        };
+      });
+      expect(layout.height).toBeCloseTo(18);
+      expect(layout.remaining).toBeGreaterThanOrEqual(-0.1);
+      expect(layout.controls).toBe(2);
+      expect(layout.clearance).toBeGreaterThanOrEqual(1);
+      expect(layout.factTops).toHaveLength(index === 0 ? 2 : index === 1 ? 0 : 1);
+      expect(new Set(layout.factTops).size).toBe(index === 1 ? 0 : 1);
+      expect(layout.chipX).toBeCloseTo(0);
+      expect(layout.chipY).toBeCloseTo(index === 1 ? 0 : 3);
+      if (index === 0) await card.screenshot({ path: testInfo.outputPath("subscription-badge.png"), animations: "disabled" });
+    }
+
+    const retiredTitle = "Winter Broadcast";
+    await page.route("**/api/v1/anime-config-candidates?origin=custom", (route) => route.fulfill({ json: { candidates: [{
+      id: "retired-preset",
+      title: retiredTitle,
+      activated_managed_anime_id: "retired-owner",
+      draft: { rss_sources: [] },
+    }] } }));
+    await page.route("**/api/v1/anime", (route) => route.fulfill({ json: [{
+      managed_anime: { id: "retired-owner", title: retiredTitle },
+      subscription: { id: "retired-subscription", origin: "custom", state: "stopped", lifecycle_state: "retired", lifecycle_epoch: 2, version: 2 },
+      metadata_hold: { held: false, missing: [] },
+      metadata: {},
+      broadcast_day: "wed",
+    }] }));
+    await page.getByRole(testInfo.project.name === "mobile" ? "radio" : "button", { name: "Custom", exact: true }).click();
+    const retiredCard = page.locator(".browse-card").filter({ has: page.getByRole("heading", { name: retiredTitle }) });
+    const ended = retiredCard.getByText("Ended", { exact: true });
+    await expect(ended).toBeVisible();
+    await expect(ended).toHaveCSS("font-size", "11px");
+    await expect(ended).toHaveClass(/\bcatalog-pw-chip-muted\b/);
+    const retiredLayout = await ended.evaluate((element) => {
+      const badge = element.getBoundingClientRect();
+      const day = element.parentElement!.querySelector(".catalog-corner-badge")!.getBoundingClientRect();
+      return { height: badge.height, rowGap: badge.top - day.bottom, leftOffset: badge.left - day.left };
+    });
+    expect(retiredLayout).toEqual({ height: 18, rowGap: 3, leftOffset: 0 });
+    await expect(retiredCard.getByText("Subscribed", { exact: true })).toHaveCount(0);
+    await retiredCard.screenshot({ path: testInfo.outputPath("ended-badge.png"), animations: "disabled" });
   });
 });

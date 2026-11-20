@@ -10,6 +10,8 @@
 
 ## Improved
 
+- Browse and search poster cards use compact Subscribed and Ended badges. Badges sit below the weekday or rating when shown, or on the first line otherwise.
+
 - The downloader entry and dialog now use the same download icon. Transfer speeds use arrows without duplicate icons.
 
 - The log dialog separates business events from runtime logs. Search retained logs across restarts, or select “View this task” on a warning to see what happened before and after it. Files rotate at midnight UTC or 10 MiB, with about 30 MiB retained for up to seven days. If disk storage is unavailable, the dialog shows recent in-memory records.
