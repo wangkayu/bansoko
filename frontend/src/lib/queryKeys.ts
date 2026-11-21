@@ -87,6 +87,7 @@ export const acquisitionRecordKeys = {
     ["acquisition-records", "list", filters.managedAnimeID ?? "", filters.state ?? "", filters.entryKind ?? "", filters.origin ?? ""] as const,
   detail: (acquisitionID: string) => ["acquisition-records", "detail", acquisitionID] as const,
   files: (acquisitionID: string) => ["acquisition-records", "files", acquisitionID] as const,
+  scriptReceipts: (acquisitionID: string, version: number | undefined) => ["acquisition-records", "script-receipts", acquisitionID, version] as const,
 };
 
 export const fileManagerKeys = {

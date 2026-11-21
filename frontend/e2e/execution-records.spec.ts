@@ -149,7 +149,7 @@ function withMethods(allowed: string[], handler: (route: Route) => Promise<void>
   };
 }
 
-async function enterRecords(page: Page, record: string) {
+async function enterRecords(page: Page, record: string, scriptReceipts: unknown[] = []) {
   await mockSignedIn(page);
   await page.route("**/api/v1/events/stream", withMethods(["GET"], (route) => route.fulfill({ status: 200, contentType: "text/event-stream", body: ": fixture stream\n\n" })));
   await page.route("**/api/v1/config/connections", withMethods(["GET"], (route) => route.fulfill(json([]))));
@@ -166,6 +166,7 @@ async function enterRecords(page: Page, record: string) {
     await route.fulfill(json({ as_of: "2026-10-20T08:42:00Z", items, origin_counts: { subscription: 3, one_shot: 1 } }));
   }));
   await page.route("**/api/v1/acquisitions/*/files**", withMethods(["GET"], (route) => route.fulfill(json(files))));
+  await page.route("**/api/v1/acquisitions/*/script-receipts", withMethods(["GET"], (route) => route.fulfill(json(scriptReceipts))));
   await page.route("**/api/v1/acquisitions/*", withMethods(["GET"], async (route) => {
     const id = new URL(route.request().url()).pathname.split("/").pop() ?? "";
     await route.fulfill(details[id] ? json(details[id]) : json({ code: "ACQUISITION_NOT_FOUND", message: "missing" }, 404));
@@ -186,6 +187,35 @@ async function capture(page: Page, name: string, focus?: Locator) {
 test.describe("execution records", () => {
   test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
 
+  test("脚本响应只出现在对应条目，关闭后返回原入口", async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 320, height: 640 });
+    await enterRecords(page, "acq-succeeded", [
+      { script: "record-download.sh", started_at: "2026-10-20T08:30:06Z" },
+      { file_ref: "f0", script: "refresh-library.sh", started_at: "2026-10-20T08:42:00Z", exit_code: 0, http_status: 204, summary: "Emby 已接受媒体库刷新请求" },
+    ]);
+    const record = page.getByRole("dialog", { name: "执行记录" });
+    const submit = record.getByRole("list", { name: "处理阶段列表" }).getByRole("listitem").filter({ hasText: "提交下载" });
+    await expect(submit.getByText("事件脚本已触发")).toBeVisible();
+    await expect(submit.getByRole("button", { name: "查看脚本响应" })).toHaveCount(0);
+    const fileList = record.getByRole("list", { name: "文件列表" });
+    const video = fileList.getByRole("listitem").first();
+    await expect(fileList.getByRole("listitem").last().getByText("事件脚本已触发")).toHaveCount(0);
+    const responseButton = video.getByRole("button", { name: "查看脚本响应" });
+    await responseButton.click();
+    const response = page.getByRole("dialog", { name: "脚本响应" });
+    await expect(response.getByText("refresh-library.sh", { exact: true })).toBeVisible();
+    await expect(response.getByText("0", { exact: true })).toBeVisible();
+    await expect(response.getByText("204", { exact: true })).toBeVisible();
+    await expect(response.getByText("Emby 已接受媒体库刷新请求", { exact: true })).toBeVisible();
+    const bounds = await response.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+    expect(await response.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await response.getByRole("button", { name: "关闭", exact: true }).click();
+    await expect(response).toBeHidden();
+    await expect(responseButton).toBeFocused();
+  });
+
   test("列表按集数或种子标题区分同一番剧的记录，下载中显示进度与速度", async ({ page }) => {
     await enterRecords(page, "list");
     const list = page.getByRole("list", { name: "执行记录列表" });
@@ -200,9 +230,22 @@ test.describe("execution records", () => {
   });
 
   test("订阅 / 一次性分段：服务端筛选、显示计数，分段写进链接并在刷新后保留", async ({ page }) => {
+    let scriptRequests = 0;
+    await page.route("**/api/v1/event-actions/attempts**", (route) => {
+      scriptRequests++;
+      return route.fulfill(json([{
+        id: "script-result",
+        kind: "file_operation_completed",
+        script: "after-import.sh",
+        state: "completed",
+        time: "2026-10-20T08:42:00Z",
+      }]));
+    });
+    if (test.info().project.name === "mobile") await page.setViewportSize({ width: 320, height: 800 });
     await enterRecords(page, "list");
     const dialog = page.getByRole("dialog", { name: "执行记录" });
     const segments = dialog.getByRole("radiogroup", { name: "记录来源" });
+    await expect(segments.getByRole("radio")).toHaveCount(2);
     await expect(segments.getByRole("radio", { name: "订阅 3" })).toBeChecked({ timeout: 10000 });
     await expect(segments.getByRole("radio", { name: "一次性 1" })).toBeVisible();
     const list = page.getByRole("list", { name: "执行记录列表" });
@@ -219,6 +262,8 @@ test.describe("execution records", () => {
 
     await page.reload();
     await expect(segments.getByRole("radio", { name: "一次性 1" })).toBeChecked({ timeout: 10000 });
+    await expect(dialog.getByText("after-import.sh", { exact: true })).toHaveCount(0);
+    expect(scriptRequests).toBe(0);
   });
 
   test("详情的下载阶段显示进度，文件行显示入库位置", async ({ page }) => {

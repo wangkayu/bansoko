@@ -6707,6 +6707,24 @@ paths:
           $ref: '#/components/responses/Conflict'
         '410':
           $ref: '#/components/responses/Gone'
+  /acquisitions/{acquisition_id}/script-receipts:
+    get:
+      tags: [Releases]
+      operationId: listAcquisitionScriptReceipts
+      security: [{browserSession: []}]
+      x-scope: read
+      parameters:
+        - $ref: '#/components/parameters/AcquisitionID'
+      responses:
+        '200':
+          description: Started scripts for the current record results. Previous import attempts are not returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AcquisitionScriptReceipt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /acquisitions/{acquisition_id}/import/retry:
     post:
       tags: [Releases]
@@ -8012,6 +8030,10 @@ components:
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
         enabled: {type: boolean}
         timeout_seconds: {type: integer, enum: [15, 30, 60]}
+        record_result:
+          type: boolean
+          default: false
+          description: Accept a bounded, versioned result from script stdout into the runtime log.
         version: {type: integer, minimum: 0}
     EventActionBinding:
       allOf:
@@ -8040,6 +8062,17 @@ components:
           type: string
           enum: [running, completed, missing, unavailable, failed, timeout, unconfirmed]
         exit_code: {type: integer}
+    AcquisitionScriptReceipt:
+      type: object
+      description: A started script. Absence of file_ref denotes download submission. Exit code and HTTP status are only included with a valid response.
+      required: [script, started_at]
+      properties:
+        file_ref: {type: string}
+        script: {type: string}
+        started_at: {type: string, format: date-time}
+        summary: {type: string, minLength: 1, maxLength: 240}
+        exit_code: {type: integer, minimum: 0}
+        http_status: {type: integer, minimum: 100, maximum: 599}
     RealtimeEvent:
       type: object
       description: >-
@@ -17972,6 +18005,23 @@ components:
           minimum: 0
         retryable:
           type: boolean
+        script_name:
+          type: string
+          maxLength: 128
+          description: Event script file name, never a filesystem path.
+        exit_code:
+          type: integer
+          minimum: 0
+          description: Observed event script exit code, including zero. Absent when no exit code is available.
+        script_summary:
+          type: string
+          maxLength: 240
+          description: Sanitized summary explicitly reported by the event script.
+        http_status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: HTTP response status explicitly reported by the event script.
     RuntimeLogPage:
       type: object
       additionalProperties: false

@@ -1509,6 +1509,12 @@ export function getAcquisitionRecord(acquisitionID: string, signal?: AbortSignal
   return request(`/acquisitions/${encodePathSegment(acquisitionID)}`, { method: "GET", signal });
 }
 
+export type AcquisitionScriptReceipt = Schema<"AcquisitionScriptReceipt">;
+
+export function listAcquisitionScriptReceipts(acquisitionID: string, signal?: AbortSignal): Promise<AcquisitionScriptReceipt[]> {
+  return request(`/acquisitions/${encodePathSegment(acquisitionID)}/script-receipts`, { method: "GET", bearerToken: "", signal });
+}
+
 /** Retries the failed import stage: re-runs every failed file of this record; imported files
  *  are untouched and nothing is re-downloaded. `expectedVersion` is the detail's `version`;
  *  available only while `import_retry_available` is true, otherwise 409. */

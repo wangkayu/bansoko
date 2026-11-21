@@ -121,37 +121,19 @@ RUN set -eu; \
     done; \
     [ -s /out/THIRD_PARTY_LICENSES.txt ] || { echo "no third-party licence text collected" >&2; exit 1; }
 
-# Pinned PostgreSQL 17 client toolchain (Oracle plan A): collect pg_dump /
-# pg_restore / psql plus every non-musl shared library they link, installed at
-# their original paths onto the runtime layer. The image is not used as a
-# base. The future embedded bootstrap and updater adapter are the only
-# callers, with hardcoded argument sets.
-# postgres:17-alpine, pinned by its registry manifest digest.
+# postgres:17-alpine, pinned by its registry manifest digest. Copy only
+# PostgreSQL's own files; the runtime APK repositories supply their OS libraries.
 FROM postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 AS pg17-tools
-# The staged file list is kept beside the stage so the runtime stage can name
-# what this layer contributes: its apk records are here, and the runtime
-# layer's belong to Alpine 3.20. It travels outside /stage so it is not copied
-# into the image; THIRD_PARTY_LICENSES.txt is appended to in the runtime stage.
-COPY scripts/generators/generate-pg17-components.sh /tmp/generate-pg17-components.sh
 RUN set -eux; \
-    : > /tmp/all-deps.txt; \
-    for tool in pg_dump pg_restore psql; do \
-      ldd "/usr/local/bin/$tool" | tr ' \t' '\n\n' | grep '^/' | sort -u >> /tmp/all-deps.txt || true; \
-    done; \
-    mkdir -p /stage/usr/local/bin /out; \
-    for tool in pg_dump pg_restore psql; do cp "/usr/local/bin/$tool" /stage/usr/local/bin/; done; \
-    { for tool in pg_dump pg_restore psql; do echo "/usr/local/bin/$tool"; done; \
-      sort -u /tmp/all-deps.txt | while read -r dep; do \
-        case "$dep" in *musl*) continue ;; esac; \
-        mkdir -p "/stage$(dirname "$dep")"; \
-        cp "$dep" "/stage$dep"; \
-        echo "$dep"; \
-      done; } | sort -u > /tmp/staged-paths.txt; \
-    sh /tmp/generate-pg17-components.sh /tmp/staged-paths.txt /out/pg17-components.tsv; \
-    wc -l /out/pg17-components.tsv
+    mkdir -p /stage/bin /stage/lib /out; \
+    for tool in pg_dump pg_restore psql; do cp "/usr/local/bin/$tool" /stage/bin/; done; \
+    cp -L /usr/local/lib/libpq.so.5 /stage/lib/; \
+    version="$(pg_config --version | awk '{print $2}')"; \
+    printf '%s\n' "$version" | grep -Eq '^17\.[0-9]+$'; \
+    printf 'postgresql\t%s\tPostgreSQL\thttps://www.postgresql.org/about/licence/\n' "$version" > /out/pg17-components.tsv
 
-# Runtime base stays on the locally pinned alpine:3.20 (same as before B1).
-FROM alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+# alpine:3.24.4, pinned by its multi-platform manifest digest.
+FROM alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # ARG is per stage, so the values the labels report are re-declared here; a
 # label naming an undeclared ARG silently renders empty. The publish script
@@ -167,7 +149,12 @@ LABEL org.opencontainers.image.licenses="GPL-3.0-only" \
 # audio_codec, container) of every downloaded video; it is started directly
 # with the file path as one argument, never through a shell.
 # Event scripts can use curl for HTTP and jq for their JSON input.
-RUN apk add --no-cache ca-certificates tzdata mediainfo curl jq
+# Install the PG clients' direct OS dependencies by soname. APK resolves their
+# transitive dependencies and owns the versions used by all runtime tools.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates tzdata mediainfo curl jq \
+    'so:libcrypto.so.3' 'so:libedit.so.0' 'so:libgssapi_krb5.so.2' \
+    'so:libldap.so.2' 'so:liblz4.so.1' 'so:libssl.so.3' 'so:libz.so.1' 'so:libzstd.so.1'
 WORKDIR /app
 
 COPY --from=go-builder /out/bansoko-server /app/bansoko-server
@@ -184,20 +171,12 @@ COPY LICENSE /app/LICENSE
 COPY --from=go-builder /out/THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 COPY --from=go-builder /out/THIRD_PARTY_LICENSES.txt /app/THIRD_PARTY_LICENSES.txt
 
-# PostgreSQL client tools + collected shared-library closure, installed at
-# original paths (newer libzstd/liblz4 etc. shadow the alpine:3.20 ones). This
-# runs before the notices so the list describes the assembled image.
-COPY --from=pg17-tools /stage/ /
+# The staged files go under /usr/local only, without replacing APK-owned files.
+COPY --from=pg17-tools /stage/ /usr/local/
 
-# The Go stage lists the module graph and the frontend bundle; the runtime
-# layer is a second distribution (busybox, musl, mediainfo...) and the
-# PostgreSQL tools are a third, and neither is visible from the Go stage. Both
-# are listed here — this stage holds the Alpine 3.20 package database, and the
-# pg17 stage handed over the list its own Alpine 3.24 records produced. Their
-# licence texts ship from deployment/licenses because they come from upstream
-# trees, not the module graph. A package with no declared licence, or an SPDX
-# id with no text beside it, aborts the build, so the shipped notice never
-# omits a component the image contains.
+# Add notices for the runtime APK packages and the pinned PostgreSQL files.
+# Their licence texts ship from deployment/licenses. Missing licence metadata
+# or text aborts the build.
 COPY --from=pg17-tools /out/pg17-components.tsv /tmp/pg17-components.tsv
 COPY --from=go-builder /src/scripts/generators/generate-base-image-notices.sh /tmp/generate-base-image-notices.sh
 COPY deployment/licenses /tmp/licenses
@@ -213,11 +192,7 @@ COPY --from=go-builder /out/SOURCE /app/SOURCE
 # pg_dump would break the update backup contract later.
 RUN set -eux; \
     for tool in pg_dump pg_restore psql; do \
-      if ldd "/usr/local/bin/$tool" | grep -q "not found"; then \
-        echo "missing dynamic dependency for $tool:" >&2; \
-        ldd "/usr/local/bin/$tool" >&2 || true; \
-        exit 1; \
-      fi; \
+      ldd "/usr/local/bin/$tool"; \
       "/usr/local/bin/$tool" --version | grep -q " 17\."; \
     done
 
@@ -225,11 +200,7 @@ RUN set -eux; \
 # dependency and answer --Version. The installed Alpine package version is
 # printed into the build log as build evidence.
 RUN set -eux; \
-    if ldd /usr/bin/mediainfo | grep -q "not found"; then \
-      echo "missing dynamic dependency for mediainfo:" >&2; \
-      ldd /usr/bin/mediainfo >&2 || true; \
-      exit 1; \
-    fi; \
+    ldd /usr/bin/mediainfo; \
     mediainfo --Version | grep -q "MediaInfoLib"; \
     apk list --installed mediainfo libmediainfo
 

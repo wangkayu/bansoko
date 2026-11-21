@@ -603,20 +603,35 @@ test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
 
   test("事件脚本：配置分栏、源码滚动与返回草稿", async ({ page }, testInfo) => {
-    if (isMobile(page)) await page.setViewportSize({ width: 320, height: 720 });
+    const mobile = isMobile(page);
+    if (mobile) await page.setViewportSize({ width: 320, height: 640 });
     await openSettings(page, "/#/settings/notifications");
+    const lastFile = "update-library.sh";
     const files = [
       { name: "after-import.sh", check: "checkPassed", interpreter: "/bin/sh", source: `#!/bin/sh\n# ${"wide-source-line ".repeat(25)}\nexit 0` },
+      ...(mobile ? Array.from({ length: 37 }, (_, i) => ({
+        name: `archive-${String(i + 1).padStart(2, "0")}.sh`, check: "checkPassed", interpreter: "/bin/sh", source: "#!/bin/sh\nexit 0",
+      })) : []),
       { name: "refresh-index.py", check: "missingInterpreter", interpreter: "/usr/bin/python3", source: "#!/usr/bin/python3\nprint('example')" },
+      ...(mobile ? [{ name: lastFile, check: "checkPassed", interpreter: "/bin/sh", source: "#!/bin/sh\n# Update library index\nexit 0" }] : []),
     ];
     await page.route("**/api/v1/plugin-targets", route => route.fulfill({ json: { targets: [{
       id: "target-script-fixture", name: "示例渠道", plugin_kind: "notification", adapter_kind: "telegram", enabled: false,
       trigger_kinds: ["download_submitted"], config_schema_version: 1, config_status: "available", config: { adapter_kind: "telegram", chat_id: "123456" },
       template_set: { language_version: "bansoko-template-1", catalog_version: "notification-catalog-v1", events: {} }, has_secret: false, version: 1,
     }] } }));
-    await page.route("**/api/v1/event-actions", route => route.fulfill({ json: ["file_operation_completed", "download_submitted", "file_operation_failed"].map(kind => ({
-      kind, script: null, enabled: false, timeout_seconds: 30, version: 1,
-    })) }));
+    const bindings = ["file_operation_completed", "download_submitted", "file_operation_failed"].map(kind => ({
+      kind, script: null as string | null, enabled: false, record_result: false, timeout_seconds: 30, version: 1,
+    }));
+    await page.route("**/api/v1/event-actions", route => {
+      const method = route.request().method();
+      if (method === "GET") return route.fulfill({ json: bindings });
+      if (method !== "PUT") return route.fulfill({ status: 405 });
+      const input = route.request().postDataJSON();
+      expect(input).toMatchObject({ kind: "file_operation_completed", record_result: true, enabled: true });
+      Object.assign(bindings[0]!, input, { version: 2, check: "checkPassed" });
+      return route.fulfill({ json: bindings[0] });
+    });
     await page.route("**/api/v1/event-actions/scripts**", route => {
       const file = new URL(route.request().url()).searchParams.get("file");
       return route.fulfill({ json: file ? files.filter(row => row.name === file) : files });
@@ -640,17 +655,95 @@ test.describe("settings fixture coverage", () => {
     await expect(code.locator("code")).toContainText("#!/bin/sh");
     const [listBox, detailBox, pickerBox] = await Promise.all([list.boundingBox(), detail.boundingBox(), picker.boundingBox()]);
     expect(detailBox!.x + detailBox!.width).toBeLessThanOrEqual(pickerBox!.x + pickerBox!.width + 1);
-    if (isMobile(page)) expect(detailBox!.y).toBeGreaterThan(listBox!.y + listBox!.height);
+    if (mobile) expect(detailBox!.y).toBeGreaterThan(listBox!.y + listBox!.height);
     else expect(detailBox!.x).toBeGreaterThan(listBox!.x + listBox!.width);
     expect(await code.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
     expect(await picker.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     const cancelBox = await picker.getByRole("button", { name: "取消", exact: true }).boundingBox();
-    const chooseBox = await picker.getByRole("button", { name: "选择此脚本" }).boundingBox();
+    const choose = picker.getByRole("button", { name: "选择此脚本" });
+    const chooseBox = await choose.boundingBox();
     expect(Math.abs(cancelBox!.y - chooseBox!.y)).toBeLessThan(2);
     await picker.screenshot({ path: testInfo.outputPath("event-script-split.png"), animations: "disabled" });
+    if (mobile) {
+      const next = picker.getByRole("button", { name: "下一组" });
+      const previous = picker.getByRole("button", { name: "上一组" });
+      const filter = picker.getByRole("searchbox", { name: "按文件名筛选" });
+      const statusText = (text: string) => picker.getByRole("status").and(picker.getByText(text, { exact: true }));
+      await expect(list.getByRole("button")).toHaveCount(4);
+      await expect(previous).toBeDisabled();
+      await expect(statusText("1–4 / 40")).toBeVisible();
+      expect(await list.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+      await filter.fill("does-not-exist");
+      await expect(statusText("没有匹配的脚本")).toBeVisible();
+      await expect(choose).toBeDisabled();
+      await filter.fill("UPDATE-LIBRARY");
+      await expect(list.getByRole("button")).toHaveCount(1);
+      await expect(code).toContainText("# Update library index");
+      await expect(choose).toBeEnabled();
+      await filter.clear();
+      await expect(statusText("1–4 / 40")).toBeVisible();
+      for (let group = 1; group < 10; group++) {
+        await expect(next).toBeInViewport({ ratio: 1 });
+        await next.tap();
+        await expect(statusText(`${group * 4 + 1}–${group * 4 + 4} / 40`)).toBeVisible();
+      }
+      await expect(next).toBeDisabled();
+      await previous.tap();
+      await expect(statusText("33–36 / 40")).toBeVisible();
+      await next.tap();
+      await expect(statusText("37–40 / 40")).toBeVisible();
+    }
     await list.getByRole("button", { name: /refresh-index\.py.*缺少解释器/ }).click();
     await expect(code.locator("code")).toContainText("#!/usr/bin/python3");
-    await expect(picker.getByRole("button", { name: "选择此脚本" })).toBeDisabled();
+    await expect(choose).toBeDisabled();
+    if (mobile) {
+      await list.getByRole("button", { name: /update-library\.sh/ }).tap();
+      await expect(code.locator("code")).toContainText("# Update library index");
+      await expect(choose).toBeEnabled();
+      await expect(code).toBeInViewport({ ratio: 1 });
+      await expect(choose).toBeInViewport({ ratio: 1 });
+      expect(Math.abs((await list.boundingBox())!.y - listBox!.y)).toBeLessThan(2);
+      expect(Math.abs((await choose.boundingBox())!.y - chooseBox!.y)).toBeLessThan(2);
+      expect((await code.boundingBox())!.y + (await code.boundingBox())!.height).toBeLessThanOrEqual(chooseBox!.y);
+      await picker.screenshot({ path: testInfo.outputPath("event-script-long-list.png"), animations: "disabled" });
+    } else {
+      await list.getByRole("button", { name: /after-import\.sh/ }).click();
+    }
+    await expect(choose).toBeEnabled();
+    await choose.click();
+    await expect(configure.locator("code", { hasText: mobile ? lastFile : "after-import.sh" })).toBeVisible();
+    const recordResult = configure.getByRole("checkbox", { name: "记录脚本结果" });
+    await expect(recordResult).not.toBeChecked();
+    await configure.getByRole("checkbox", { name: "启用脚本" }).check();
+    await recordResult.check();
+    const timeout = configure.getByRole("combobox", { name: "超时" });
+    const timeoutLabel = configure.getByText("超时", { exact: true });
+    const save = configure.getByRole("button", { name: "保存", exact: true });
+    const [checkBox, timeoutBox, labelBox, saveBox] = await Promise.all([
+      recordResult.boundingBox(), timeout.boundingBox(), timeoutLabel.boundingBox(), save.boundingBox(),
+    ]);
+    const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+    expect(Math.abs(centerY(labelBox!) - centerY(timeoutBox!))).toBeLessThan(2);
+    if (mobile) {
+      expect(labelBox!.y).toBeGreaterThan(checkBox!.y + checkBox!.height);
+      expect(Math.abs(labelBox!.x - checkBox!.x)).toBeLessThan(2);
+    } else {
+      expect(Math.abs(centerY(checkBox!) - centerY(timeoutBox!))).toBeLessThan(2);
+    }
+    expect(saveBox!.y).toBeGreaterThan(timeoutBox!.y + timeoutBox!.height);
+    expect(Math.abs(saveBox!.x + saveBox!.width - timeoutBox!.x - timeoutBox!.width)).toBeLessThan(2);
+    await expect(save).toBeInViewport({ ratio: 1 });
+    await expect(timeout).toBeInViewport({ ratio: 1 });
+    expect(await configure.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await save.click();
+    const saved = configure.getByRole("status", { name: "" }).filter({ hasText: "事件动作已保存" });
+    await expect(saved).toBeVisible();
+    await expect(recordResult).toBeChecked();
+    const [savedBox, disabledSaveBox] = await Promise.all([saved.boundingBox(), save.boundingBox()]);
+    expect(Math.abs(centerY(savedBox!) - centerY(disabledSaveBox!))).toBeLessThan(2);
+    expect(savedBox!.x + savedBox!.width).toBeLessThan(disabledSaveBox!.x);
+    await configure.screenshot({ path: testInfo.outputPath("event-script-report-option.png"), animations: "disabled", scale: "css" });
+    await browse.click();
     await picker.getByRole("button", { name: "返回配置事件" }).click();
     await expect(browse).toBeFocused();
     await configure.getByRole("button", { name: "关闭", exact: true }).last().click();

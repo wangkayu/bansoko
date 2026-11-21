@@ -46,6 +46,10 @@ type RuntimeLogEntry struct {
 	Component     string
 	Operation     string
 	Outcome       string
+	ScriptName    string
+	ExitCode      *int
+	ScriptSummary string
+	HTTPStatus    int
 	ReasonCode    string
 	RequestID     string
 	CorrelationID string
@@ -192,6 +196,8 @@ func runtimeLogSearchText(entry RuntimeLogEntry) string {
 		{"disposition", entry.Disposition},
 		{"owner_type", entry.OwnerType},
 		{"outcome", entry.Outcome},
+		{"script_name", entry.ScriptName},
+		{"script_summary", entry.ScriptSummary},
 		{"reason_code", entry.ReasonCode},
 		{"error_class", entry.ErrorClass},
 		{"request_id", entry.RequestID},
@@ -209,6 +215,12 @@ func runtimeLogSearchText(entry RuntimeLogEntry) string {
 	}
 	if entry.Retryable != nil {
 		fields = append(fields, "retryable="+strconv.FormatBool(*entry.Retryable))
+	}
+	if entry.ExitCode != nil {
+		fields = append(fields, "exit_code="+strconv.Itoa(*entry.ExitCode))
+	}
+	if entry.HTTPStatus != 0 {
+		fields = append(fields, "http_status="+strconv.Itoa(entry.HTTPStatus))
 	}
 	return strings.Join(fields, " ")
 }
@@ -231,6 +243,10 @@ func parseRuntimeLogLine(line string) (RuntimeLogEntry, bool) {
 		Component     string `json:"component"`
 		Operation     string `json:"operation"`
 		Outcome       string `json:"outcome"`
+		ScriptName    string `json:"script_name"`
+		ExitCode      *int   `json:"exit_code"`
+		ScriptSummary string `json:"script_summary"`
+		HTTPStatus    int    `json:"http_status"`
 		ReasonCode    string `json:"reason_code"`
 		RequestID     string `json:"request_id"`
 		CorrelationID string `json:"correlation_id"`
@@ -259,6 +275,13 @@ func parseRuntimeLogLine(line string) (RuntimeLogEntry, bool) {
 	if raw.DurationMS < 0 {
 		raw.DurationMS = 0
 	}
+	if raw.ExitCode != nil && *raw.ExitCode < 0 {
+		raw.ExitCode = nil
+	}
+	summary := safeRuntimeScriptSummary(raw.ScriptSummary)
+	if summary == "" || raw.HTTPStatus < 100 || raw.HTTPStatus > 599 {
+		raw.HTTPStatus = 0
+	}
 	return RuntimeLogEntry{
 		At:            at.UTC(),
 		Level:         safeRuntimeField(raw.Level),
@@ -266,6 +289,10 @@ func parseRuntimeLogLine(line string) (RuntimeLogEntry, bool) {
 		Component:     safeRuntimeField(raw.Component),
 		Operation:     safeRuntimeField(raw.Operation),
 		Outcome:       safeRuntimeField(raw.Outcome),
+		ScriptName:    safeRuntimeScriptName(raw.ScriptName),
+		ExitCode:      raw.ExitCode,
+		ScriptSummary: summary,
+		HTTPStatus:    raw.HTTPStatus,
 		ReasonCode:    safeRuntimeField(raw.ReasonCode),
 		RequestID:     safeRuntimeRequestID(raw.RequestID),
 		CorrelationID: safeRuntimeField(raw.CorrelationID),

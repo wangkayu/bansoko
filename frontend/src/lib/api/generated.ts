@@ -2759,6 +2759,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/acquisitions/{acquisition_id}/script-receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAcquisitionScriptReceipts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/acquisitions/{acquisition_id}/import/retry": {
         parameters: {
             query?: never;
@@ -3114,6 +3130,11 @@ export interface components {
             enabled: boolean;
             /** @enum {integer} */
             timeout_seconds: 15 | 30 | 60;
+            /**
+             * @description Accept a bounded, versioned result from script stdout into the runtime log.
+             * @default false
+             */
+            record_result: boolean;
             version: number;
         };
         EventActionBinding: components["schemas"]["EventActionInput"] & {
@@ -3135,6 +3156,16 @@ export interface components {
             /** @enum {string} */
             state: "running" | "completed" | "missing" | "unavailable" | "failed" | "timeout" | "unconfirmed";
             exit_code?: number;
+        };
+        /** @description A started script. Absence of file_ref denotes download submission. Exit code and HTTP status are only included with a valid response. */
+        AcquisitionScriptReceipt: {
+            file_ref?: string;
+            script: string;
+            /** Format: date-time */
+            started_at: string;
+            summary?: string;
+            exit_code?: number;
+            http_status?: number;
         };
         /** @description One invalidation signal on /events/stream. It names the read model to re-read and never carries a business object. */
         RealtimeEvent: {
@@ -7208,6 +7239,14 @@ export interface components {
             /** Format: int64 */
             duration_ms?: number;
             retryable?: boolean;
+            /** @description Event script file name, never a filesystem path. */
+            script_name?: string;
+            /** @description Observed event script exit code, including zero. Absent when no exit code is available. */
+            exit_code?: number;
+            /** @description Sanitized summary explicitly reported by the event script. */
+            script_summary?: string;
+            /** @description HTTP response status explicitly reported by the event script. */
+            http_status?: number;
         };
         RuntimeLogPage: {
             lines: components["schemas"]["RuntimeLogLine"][];
@@ -14064,6 +14103,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
+        };
+    };
+    listAcquisitionScriptReceipts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution record (acquisition root) id. */
+                acquisition_id: components["parameters"]["AcquisitionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Started scripts for the current record results. Previous import attempts are not returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionScriptReceipt"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     retryAcquisitionImport: {

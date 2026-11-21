@@ -3284,6 +3284,16 @@ type AcquisitionRequirements struct {
 // AcquisitionRequirementsStatus defines model for AcquisitionRequirements.Status.
 type AcquisitionRequirementsStatus string
 
+// AcquisitionScriptReceipt A started script. Absence of file_ref denotes download submission. Exit code and HTTP status are only included with a valid response.
+type AcquisitionScriptReceipt struct {
+	ExitCode   *int      `json:"exit_code,omitempty"`
+	FileRef    *string   `json:"file_ref,omitempty"`
+	HttpStatus *int      `json:"http_status,omitempty"`
+	Script     string    `json:"script"`
+	StartedAt  time.Time `json:"started_at"`
+	Summary    *string   `json:"summary,omitempty"`
+}
+
 // AcquisitionSeedIdentity Which seed an execution record took, from facts frozen when the acquisition was accepted: the group, source site, torrent size and info hash come from the accepted input, the tags and publish time from the source release's frozen facts. A value that is unavailable is absent. The torrent location is never part of it.
 type AcquisitionSeedIdentity struct {
 	// AnibtTags The frozen AniBT tags ("dimension:value"); present only for an AniBT seed.
@@ -4952,9 +4962,12 @@ type EventActionAttemptState string
 
 // EventActionBinding defines model for EventActionBinding.
 type EventActionBinding struct {
-	Check          *EventActionCheck                `json:"check,omitempty"`
-	Enabled        bool                             `json:"enabled"`
-	Kind           EventActionKind                  `json:"kind"`
+	Check   *EventActionCheck `json:"check,omitempty"`
+	Enabled bool              `json:"enabled"`
+	Kind    EventActionKind   `json:"kind"`
+
+	// RecordResult Accept a bounded, versioned result from script stdout into the runtime log.
+	RecordResult   *bool                            `json:"record_result,omitempty"`
 	Script         *string                          `json:"script"`
 	TimeoutSeconds EventActionBindingTimeoutSeconds `json:"timeout_seconds"`
 	Version        int                              `json:"version"`
@@ -4977,8 +4990,11 @@ type EventActionFile struct {
 
 // EventActionInput defines model for EventActionInput.
 type EventActionInput struct {
-	Enabled        bool                           `json:"enabled"`
-	Kind           EventActionKind                `json:"kind"`
+	Enabled bool            `json:"enabled"`
+	Kind    EventActionKind `json:"kind"`
+
+	// RecordResult Accept a bounded, versioned result from script stdout into the runtime log.
+	RecordResult   *bool                          `json:"record_result,omitempty"`
 	Script         *string                        `json:"script"`
 	TimeoutSeconds EventActionInputTimeoutSeconds `json:"timeout_seconds"`
 	Version        int                            `json:"version"`
@@ -9111,26 +9127,38 @@ type RulesSections struct {
 
 // RuntimeLogLine defines model for RuntimeLogLine.
 type RuntimeLogLine struct {
-	At            time.Time           `json:"at"`
-	Attempt       *int                `json:"attempt,omitempty"`
-	Component     *string             `json:"component,omitempty"`
-	CorrelationId *string             `json:"correlation_id,omitempty"`
-	Disposition   *string             `json:"disposition,omitempty"`
-	DurationMs    *int64              `json:"duration_ms,omitempty"`
-	ErrorClass    *string             `json:"error_class,omitempty"`
-	Kind          *string             `json:"kind,omitempty"`
-	Level         RuntimeLogLineLevel `json:"level"`
-	Message       string              `json:"message"`
-	Operation     *string             `json:"operation,omitempty"`
-	Outcome       *string             `json:"outcome,omitempty"`
-	OwnerType     *string             `json:"owner_type,omitempty"`
-	ReasonCode    *string             `json:"reason_code,omitempty"`
-	RequestId     *string             `json:"request_id,omitempty"`
-	Retryable     *bool               `json:"retryable,omitempty"`
-	Stage         *string             `json:"stage,omitempty"`
-	StateAfter    *string             `json:"state_after,omitempty"`
-	StateBefore   *string             `json:"state_before,omitempty"`
-	WorkItemId    *string             `json:"work_item_id,omitempty"`
+	At            time.Time `json:"at"`
+	Attempt       *int      `json:"attempt,omitempty"`
+	Component     *string   `json:"component,omitempty"`
+	CorrelationId *string   `json:"correlation_id,omitempty"`
+	Disposition   *string   `json:"disposition,omitempty"`
+	DurationMs    *int64    `json:"duration_ms,omitempty"`
+	ErrorClass    *string   `json:"error_class,omitempty"`
+
+	// ExitCode Observed event script exit code, including zero. Absent when no exit code is available.
+	ExitCode *int `json:"exit_code,omitempty"`
+
+	// HttpStatus HTTP response status explicitly reported by the event script.
+	HttpStatus *int                `json:"http_status,omitempty"`
+	Kind       *string             `json:"kind,omitempty"`
+	Level      RuntimeLogLineLevel `json:"level"`
+	Message    string              `json:"message"`
+	Operation  *string             `json:"operation,omitempty"`
+	Outcome    *string             `json:"outcome,omitempty"`
+	OwnerType  *string             `json:"owner_type,omitempty"`
+	ReasonCode *string             `json:"reason_code,omitempty"`
+	RequestId  *string             `json:"request_id,omitempty"`
+	Retryable  *bool               `json:"retryable,omitempty"`
+
+	// ScriptName Event script file name, never a filesystem path.
+	ScriptName *string `json:"script_name,omitempty"`
+
+	// ScriptSummary Sanitized summary explicitly reported by the event script.
+	ScriptSummary *string `json:"script_summary,omitempty"`
+	Stage         *string `json:"stage,omitempty"`
+	StateAfter    *string `json:"state_after,omitempty"`
+	StateBefore   *string `json:"state_before,omitempty"`
+	WorkItemId    *string `json:"work_item_id,omitempty"`
 }
 
 // RuntimeLogLineLevel defines model for RuntimeLogLine.Level.
@@ -13069,6 +13097,9 @@ type ServerInterface interface {
 	// (POST /acquisitions/{acquisition_id}/import/retry)
 	RetryAcquisitionImport(w http.ResponseWriter, r *http.Request, acquisitionId AcquisitionID, params RetryAcquisitionImportParams)
 
+	// (GET /acquisitions/{acquisition_id}/script-receipts)
+	ListAcquisitionScriptReceipts(w http.ResponseWriter, r *http.Request, acquisitionId AcquisitionID)
+
 	// (GET /agent-guide)
 	GetAgentGuide(w http.ResponseWriter, r *http.Request, params GetAgentGuideParams)
 
@@ -14010,6 +14041,37 @@ func (siw *ServerInterfaceWrapper) RetryAcquisitionImport(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RetryAcquisitionImport(w, r, acquisitionId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAcquisitionScriptReceipts operation middleware
+func (siw *ServerInterfaceWrapper) ListAcquisitionScriptReceipts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "acquisition_id" -------------
+	var acquisitionId AcquisitionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "acquisition_id", r.PathValue("acquisition_id"), &acquisitionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "acquisition_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAcquisitionScriptReceipts(w, r, acquisitionId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -21303,6 +21365,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/acquisitions/{acquisition_id}/download/cancel", wrapper.CancelAcquisitionDownload)
 	m.HandleFunc("GET "+options.BaseURL+"/acquisitions/{acquisition_id}/files", wrapper.ListAcquisitionRecordFiles)
 	m.HandleFunc("POST "+options.BaseURL+"/acquisitions/{acquisition_id}/import/retry", wrapper.RetryAcquisitionImport)
+	m.HandleFunc("GET "+options.BaseURL+"/acquisitions/{acquisition_id}/script-receipts", wrapper.ListAcquisitionScriptReceipts)
 	m.HandleFunc("GET "+options.BaseURL+"/agent-guide", wrapper.GetAgentGuide)
 	m.HandleFunc("GET "+options.BaseURL+"/anime", wrapper.ListAnime)
 	m.HandleFunc("GET "+options.BaseURL+"/anime-config-candidates", wrapper.ListAnimeConfigCandidates)

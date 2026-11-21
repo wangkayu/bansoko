@@ -15,6 +15,6 @@ func canExecuteFile(dir, _ int, name string) bool {
 // Production execution requires Linux descriptor-pinned exec semantics.
 func canRun() bool { return false }
 
-func execute(context.Context, *os.File, []byte, time.Duration) (string, *int) {
-	return "unavailable", nil
+func execute(context.Context, *os.File, []byte, time.Duration, *resultCapture) (string, *int, *time.Time) {
+	return "unavailable", nil, nil
 }

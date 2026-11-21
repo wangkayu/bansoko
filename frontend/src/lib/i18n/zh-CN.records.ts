@@ -12,6 +12,16 @@ export const recordsCopy = {
   listAria: "执行记录列表",
   untitled: "（无名称）",
   redacted: "（已隐藏）",
+  script: {
+    triggered: "事件脚本已触发",
+    view: "查看脚本响应",
+    title: "脚本响应",
+    name: "脚本",
+    startedAt: "执行时间",
+    exitCode: "退出码",
+    httpStatus: "HTTP 状态",
+    summary: "摘要",
+  },
   filter: {
     state: "状态",
     entry: "来源",

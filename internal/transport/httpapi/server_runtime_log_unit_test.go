@@ -116,6 +116,39 @@ func readRuntimeLogResponse(t *testing.T, server *Server, params generated.GetRu
 	return page
 }
 
+func TestRuntimeLogScriptNameAndExitCode(t *testing.T) {
+	server, logger := persistentRuntimeLogServer(t)
+	ctx := context.Background()
+	zero, nonzero, noExit := 0, 7, -1
+	for _, event := range []observabilityport.RuntimeEvent{
+		{Outcome: "completed", ScriptName: "refresh-library.sh", ExitCode: &zero},
+		{Outcome: "failed", ScriptName: "refresh-library.sh", ExitCode: &nonzero},
+		{Outcome: "missing", ScriptName: "refresh-library.sh"},
+		{Outcome: "failed", ScriptName: "/private/scripts/example.sh", ExitCode: &noExit},
+	} {
+		event.Message, event.Component, event.Operation = "event script finished", "event_actions", "execute"
+		logger.Info(ctx, event)
+	}
+	page := readRuntimeLogResponse(t, server, generated.GetRuntimeLogParams{})
+	if len(page.Lines) != 4 {
+		t.Fatalf("lines: %+v", page.Lines)
+	}
+	for i, want := range []*int{&zero, &nonzero, nil, nil} {
+		line := page.Lines[i]
+		if (want == nil && line.ExitCode != nil) || (want != nil && (line.ExitCode == nil || *line.ExitCode != *want)) {
+			t.Fatalf("row %d: wrong exit code: %+v", i, line)
+		}
+		if i < 3 && (line.ScriptName == nil || *line.ScriptName != "refresh-library.sh") || i == 3 && line.ScriptName != nil {
+			t.Fatalf("row %d: wrong script name: %+v", i, line)
+		}
+	}
+	query := "script_name=refresh-library.sh exit_code=0"
+	matched := readRuntimeLogResponse(t, server, generated.GetRuntimeLogParams{Q: &query})
+	if len(matched.Lines) != 1 || matched.Lines[0].Outcome == nil || *matched.Lines[0].Outcome != "completed" {
+		t.Fatalf("search result: %+v", matched.Lines)
+	}
+}
+
 func TestRuntimeLogExactWorkItemAndCursorContract(t *testing.T) {
 	server, logger := persistentRuntimeLogServer(t)
 	ctx := context.Background()

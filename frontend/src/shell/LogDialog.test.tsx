@@ -460,6 +460,14 @@ describe("LogDialog", () => {
 });
 
 describe("rawLogText", () => {
+  it("keeps a successful script's zero exit code and omits an unknown exit code", () => {
+    const base = { at: "2026-11-21T04:27:19Z", level: "info", message: "event script finished", script_name: "refresh-library.sh" } as const;
+    const [completed, missing] = rawLogText([{ ...base, exit_code: 0 }, { ...base, level: "warn", outcome: "missing" }]).split("\n");
+    expect(completed).toContain("script_name=refresh-library.sh exit_code=0");
+    expect(missing).toContain("script_name=refresh-library.sh");
+    expect(missing).not.toContain("exit_code");
+  });
+
   it("builds one plain line per entry with the structured fields", () => {
     const text = rawLogText(runtimeLines as never);
     expect(text).toBe(

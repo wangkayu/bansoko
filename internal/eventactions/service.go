@@ -14,6 +14,7 @@ import (
 	"bansoko/internal/apperrors"
 	"bansoko/internal/events"
 	observability "bansoko/internal/observability/port"
+	redaction "bansoko/internal/redact"
 	"bansoko/internal/templatecatalog/notification"
 )
 
@@ -36,12 +37,13 @@ type Binding struct {
 	Script         *string `json:"script"`
 	Enabled        bool    `json:"enabled"`
 	TimeoutSeconds int     `json:"timeout_seconds"`
+	RecordResult   bool    `json:"record_result"`
 	Version        int     `json:"version"`
 	Check          string  `json:"check,omitempty"`
 }
 
 func (s *Service) ListBindings(ctx context.Context) ([]Binding, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, script, enabled, timeout_seconds, version FROM event_action_bindings ORDER BY kind`)
+	rows, err := s.db.QueryContext(ctx, `SELECT kind, script, enabled, timeout_seconds, version, record_result FROM event_action_bindings ORDER BY kind`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +51,7 @@ func (s *Service) ListBindings(ctx context.Context) ([]Binding, error) {
 	out := make([]Binding, 0, 3)
 	for rows.Next() {
 		var binding Binding
-		if err := rows.Scan(&binding.Kind, &binding.Script, &binding.Enabled, &binding.TimeoutSeconds, &binding.Version); err != nil {
+		if err := rows.Scan(&binding.Kind, &binding.Script, &binding.Enabled, &binding.TimeoutSeconds, &binding.Version, &binding.RecordResult); err != nil {
 			return nil, err
 		}
 		out = append(out, binding)
@@ -89,8 +91,8 @@ func (s *Service) Save(ctx context.Context, binding Binding) (Binding, error) {
 	}
 	defer tx.Rollback()
 	var previous Binding
-	err = tx.QueryRowContext(ctx, `SELECT script, enabled, timeout_seconds, version FROM event_action_bindings WHERE kind=$1 FOR UPDATE`, binding.Kind).
-		Scan(&previous.Script, &previous.Enabled, &previous.TimeoutSeconds, &previous.Version)
+	err = tx.QueryRowContext(ctx, `SELECT script, enabled, timeout_seconds, version, record_result FROM event_action_bindings WHERE kind=$1 FOR UPDATE`, binding.Kind).
+		Scan(&previous.Script, &previous.Enabled, &previous.TimeoutSeconds, &previous.Version, &previous.RecordResult)
 	if err != nil {
 		return Binding{}, err
 	}
@@ -107,13 +109,12 @@ func (s *Service) Save(ctx context.Context, binding Binding) (Binding, error) {
 	if binding.Enabled && !previous.Enabled && !canRun() {
 		return invalid("EVENT_SCRIPT_RUNTIME_UNAVAILABLE", "Script execution requires the unprivileged Linux application runtime.")
 	}
-	if !same || binding.Enabled != previous.Enabled || binding.TimeoutSeconds != previous.TimeoutSeconds {
-		// Changing only the timeout must not discard events waiting in line or
-		// reopen a missing-file warning cycle.
-		err = tx.QueryRowContext(ctx, `UPDATE event_action_bindings SET script=$2, enabled=$3, timeout_seconds=$4,
+	if !same || binding.Enabled != previous.Enabled || binding.TimeoutSeconds != previous.TimeoutSeconds || binding.RecordResult != previous.RecordResult {
+		// Timeout and reporting changes do not reset the event boundary.
+		err = tx.QueryRowContext(ctx, `UPDATE event_action_bindings SET script=$2, enabled=$3, timeout_seconds=$4, record_result=$6,
             version=version+1, active_from=CASE WHEN NOT $5 OR enabled<>$3 THEN clock_timestamp() ELSE active_from END,
             missing=CASE WHEN NOT $5 OR enabled<>$3 THEN false ELSE missing END WHERE kind=$1 RETURNING version`,
-			binding.Kind, binding.Script, binding.Enabled, binding.TimeoutSeconds, same).Scan(&binding.Version)
+			binding.Kind, binding.Script, binding.Enabled, binding.TimeoutSeconds, same, binding.RecordResult).Scan(&binding.Version)
 		if err != nil {
 			return Binding{}, err
 		}
@@ -203,6 +204,7 @@ func (s *Service) consume(ctx context.Context) error {
 		return err
 	}
 	if count, _ := result.RowsAffected(); count > 0 {
+		s.logger.Warn(ctx, observability.RuntimeEvent{Message: "interrupted event script results unconfirmed", Component: "event_actions", Operation: "recover", Outcome: "unconfirmed"})
 		s.hub.Publish(events.Event{Target: events.TargetRecords})
 	}
 	cancel()
@@ -273,21 +275,27 @@ type invocation struct {
 func (s *Service) step(ctx context.Context, conn *sql.Conn) (bool, error) {
 	item := invocation{Version: 1, ActionID: uuid.New()}
 	var bindingVersion, timeout int
+	var recordResult bool
 	var name string
 	var payload []byte
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	err := conn.QueryRowContext(queryCtx, `WITH pending AS MATERIALIZED (
-        SELECT a.id, a.trigger_kind, a.occurred_at, a.payload, b.version, b.script, b.timeout_seconds
+        SELECT a.id, a.trigger_kind, a.occurred_at, a.payload, b.version, b.script, b.timeout_seconds, b.record_result,
+               COALESCE(d.acquisition_id, f.acquisition_id) AS acquisition_id, a.source_owner_id, a.source_owner_version
         FROM event_action_bindings AS b JOIN notification_admissions AS a ON a.trigger_kind=b.kind
+        LEFT JOIN download_tasks AS d ON a.trigger_kind='download_submitted' AND a.source_owner_type='download_task' AND d.id=a.source_owner_id
+        LEFT JOIN file_operations AS f ON a.trigger_kind IN ('file_operation_completed','file_operation_failed')
+            AND a.source_owner_type='file_operation' AND f.id=a.source_owner_id
         WHERE b.enabled AND a.event_action_ready_at >= b.active_from
           AND NOT EXISTS (SELECT 1 FROM event_action_attempts AS r WHERE r.event_id=a.id)
         ORDER BY a.event_action_ready_at, a.id LIMIT 1 FOR UPDATE OF b
     ), claimed AS (
-        INSERT INTO event_action_attempts (id, event_id, kind, binding_version, script, occurred_at, state)
-        SELECT $1, id, trigger_kind, version, script, occurred_at, 'running' FROM pending ON CONFLICT (event_id) DO NOTHING RETURNING event_id
-    ) SELECT p.id, p.trigger_kind, p.occurred_at, p.payload, p.version, p.script, p.timeout_seconds
+        INSERT INTO event_action_attempts (id, event_id, kind, binding_version, script, occurred_at, state, acquisition_id, source_id, source_version)
+        SELECT $1, id, trigger_kind, version, script, occurred_at, 'running', acquisition_id, source_owner_id, source_owner_version
+        FROM pending ON CONFLICT (event_id) DO NOTHING RETURNING event_id
+    ) SELECT p.id, p.trigger_kind, p.occurred_at, p.payload, p.version, p.script, p.timeout_seconds, p.record_result
       FROM pending p JOIN claimed c ON c.event_id=p.id`, item.ActionID).
-		Scan(&item.EventID, &item.Event, &item.OccurredAt, &payload, &bindingVersion, &name, &timeout)
+		Scan(&item.EventID, &item.Event, &item.OccurredAt, &payload, &bindingVersion, &name, &timeout, &recordResult)
 	cancel()
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -298,6 +306,8 @@ func (s *Service) step(ctx context.Context, conn *sql.Conn) (bool, error) {
 	// QueryRow closed its rows and the durable claim committed before the
 	// external process can start. Never start if draining or preflight failed.
 	state, code := "unconfirmed", (*int)(nil)
+	var startedAt *time.Time
+	var result scriptResult
 	if ctx.Err() == nil {
 		view, file := s.openScript(name, false)
 		if file != nil {
@@ -308,7 +318,15 @@ func (s *Service) step(ctx context.Context, conn *sql.Conn) (bool, error) {
 			state = "missing"
 		case Ready:
 			if input, err := scriptInput(item, payload); err == nil {
-				state, code = execute(ctx, file, input, time.Duration(timeout)*time.Second)
+				var capture *resultCapture
+				if recordResult {
+					capture = &resultCapture{}
+				}
+				state, code, startedAt = execute(ctx, file, input, time.Duration(timeout)*time.Second, capture)
+				if code != nil && *code >= 0 {
+					result = capture.result()
+					result.summary, _ = redaction.Apply(result.summary, 240, redaction.Mask, "<redacted runtime message>")
+				}
 			} else {
 				state = "failed"
 			}
@@ -318,13 +336,28 @@ func (s *Service) step(ctx context.Context, conn *sql.Conn) (bool, error) {
 	}
 	settle, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer done()
-	_, err = conn.ExecContext(settle, `WITH first_missing AS (
+	var firstMissing bool
+	err = conn.QueryRowContext(settle, `WITH first_missing AS (
         UPDATE event_action_bindings SET missing=true WHERE kind=$3 AND script=$4 AND enabled AND NOT missing AND $2='missing' RETURNING kind
     ), recovered AS (
         UPDATE event_action_bindings SET missing=false WHERE kind=$3 AND script=$4 AND enabled AND missing AND $2 IN ('completed', 'failed', 'timeout') RETURNING kind
-    ) UPDATE event_action_attempts SET state=$2, exit_code=$5, warning=EXISTS (SELECT 1 FROM first_missing) WHERE id=$1`,
-		item.ActionID, state, item.Event, name, code)
+    ) UPDATE event_action_attempts SET state=$2, exit_code=$5, warning=EXISTS (SELECT 1 FROM first_missing),
+        process_started_at=$6, script_summary=NULLIF($7::text,''), http_status=NULLIF($8::smallint,0)
+        WHERE id=$1 RETURNING warning`,
+		item.ActionID, state, item.Event, name, code, startedAt, result.summary, result.httpStatus).Scan(&firstMissing)
 	if err == nil {
+		event := observability.RuntimeEvent{
+			Message: "event script finished", Component: "event_actions", Operation: "execute",
+			Outcome: state, Kind: item.Event, CorrelationID: item.ActionID.String(),
+			ScriptName: name, ExitCode: code,
+			ScriptSummary: result.summary, HTTPStatus: result.httpStatus,
+		}
+		switch {
+		case state == "completed":
+			s.logger.Info(settle, event)
+		case state != "missing" || firstMissing:
+			s.logger.Warn(settle, event)
+		}
 		s.hub.Publish(events.Event{Target: events.TargetRecords})
 	}
 	return true, err

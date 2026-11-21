@@ -160,6 +160,7 @@ required_paths = {
   "/acquisitions" => ["get"],
   "/acquisitions/{acquisition_id}" => ["get"],
   "/acquisitions/{acquisition_id}/files" => ["get"],
+  "/acquisitions/{acquisition_id}/script-receipts" => ["get"],
   "/acquisitions/{acquisition_id}/import/retry" => ["post"],
   "/acquisitions/{acquisition_id}/download/cancel" => ["post"],
   "/one-shot-acquisitions" => ["post"],

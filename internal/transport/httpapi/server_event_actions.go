@@ -48,6 +48,7 @@ func (s *Server) SaveEventAction(w http.ResponseWriter, r *http.Request) {
 		Script         json.RawMessage `json:"script"`
 		Enabled        *bool           `json:"enabled"`
 		TimeoutSeconds int             `json:"timeout_seconds"`
+		RecordResult   bool            `json:"record_result"`
 		Version        *int            `json:"version"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
@@ -59,7 +60,7 @@ func (s *Server) SaveEventAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, unprocessable("EVENT_ACTION_INVALID", "All event binding fields are required.", nil))
 		return
 	}
-	view, err := service.Save(r.Context(), eventactions.Binding{Kind: input.Kind, Script: script, Enabled: *input.Enabled, TimeoutSeconds: input.TimeoutSeconds, Version: *input.Version})
+	view, err := service.Save(r.Context(), eventactions.Binding{Kind: input.Kind, Script: script, Enabled: *input.Enabled, TimeoutSeconds: input.TimeoutSeconds, RecordResult: input.RecordResult, Version: *input.Version})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -96,6 +97,19 @@ func (s *Server) ListEventActionAttempts(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	view, err := service.Attempts(r.Context(), params.Warnings != nil && *params.Warnings)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, view)
+}
+
+func (s *Server) ListAcquisitionScriptReceipts(w http.ResponseWriter, r *http.Request, acquisitionID generated.AcquisitionID) {
+	service := s.eventActions(w, r)
+	if service == nil {
+		return
+	}
+	view, err := service.RecordReceipts(r.Context(), string(acquisitionID))
 	if err != nil {
 		writeError(w, r, err)
 		return

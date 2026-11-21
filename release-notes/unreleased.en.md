@@ -14,7 +14,7 @@
 - Download, import and unrecognized-file notifications support task.origin to distinguish subscription tasks (subscription) from one-shot tasks (one_shot). Source-aware events add release.site for the publishing site and release.link for an explicit release details page; download.link remains the download address.
 - Containers now support bansoko-server update check|apply|status for embedded update checks, admission and status, with human-readable and JSON output. Access is limited to root or the serving PUID and requires no web session or API token.
 - Library import completion and execution failure notifications support original file-name attributes through frt.*. File displacement notifications can show both files using frt.* and taker.frt.*.
-- Open Event actions beside the notification channel’s triggers to select a local script for import completion, download submission, or import failure. Script bindings are independent of notification channels, and results appear in Execution records.
+- Open Event actions beside a notification channel’s triggers to bind a local script to import completion, download submission, or import failure. Bindings are independent of notification channels, and the phone picker supports filename filtering and paging. Execution records mark where a script started. With Record script result on, you can view its reported summary and optional HTTP status. A retry shows only the latest attempt. Missing scripts raise an event warning.
 - The container image ships curl and jq so event scripts can make HTTP requests and read event JSON. Python is not included.
 
 ## Improved

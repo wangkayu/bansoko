@@ -201,6 +201,8 @@ func mapRuntimeLogPage(page observabilityapplication.RuntimeLogPage) generated.R
 			At: entry.At, Level: generated.RuntimeLogLineLevel(entry.Level), Message: entry.Message,
 			Component: optionalText(entry.Component), Operation: optionalText(entry.Operation),
 			Outcome: optionalText(entry.Outcome), ReasonCode: optionalText(entry.ReasonCode),
+			ScriptName: optionalText(entry.ScriptName), ExitCode: entry.ExitCode,
+			ScriptSummary: optionalText(entry.ScriptSummary), HttpStatus: optionalPositiveInt(entry.HTTPStatus),
 			RequestId: optionalText(entry.RequestID), CorrelationId: optionalText(entry.CorrelationID),
 			ErrorClass: optionalText(entry.ErrorClass), OwnerType: optionalText(entry.OwnerType),
 			Kind: optionalText(entry.Kind), WorkItemId: optionalText(entry.WorkItemID),

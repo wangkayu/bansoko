@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -104,6 +105,18 @@ func (l *JSONRuntimeLogger) log(ctx context.Context, level slog.Level, event obs
 	}
 	if value := safeRuntimeField(event.Outcome); value != "" {
 		attrs = append(attrs, slog.String("outcome", value))
+	}
+	if value := safeRuntimeScriptName(event.ScriptName); value != "" {
+		attrs = append(attrs, slog.String("script_name", value))
+	}
+	if event.ExitCode != nil && *event.ExitCode >= 0 {
+		attrs = append(attrs, slog.Int("exit_code", *event.ExitCode))
+	}
+	if summary := safeRuntimeScriptSummary(event.ScriptSummary); summary != "" {
+		attrs = append(attrs, slog.String("script_summary", summary))
+		if event.HTTPStatus >= 100 && event.HTTPStatus <= 599 {
+			attrs = append(attrs, slog.Int("http_status", event.HTTPStatus))
+		}
 	}
 	if value := safeRuntimeField(event.ReasonCode); value != "" {
 		attrs = append(attrs, slog.String("reason_code", value))
@@ -245,6 +258,22 @@ func normalizeRuntimeExcludeReasonCode(value string) string {
 	default:
 		return "unknown"
 	}
+}
+
+var runtimeScriptBasename = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+func safeRuntimeScriptName(value string) string {
+	if !runtimeScriptBasename.MatchString(value) || safeRuntimeField(value) != value {
+		return ""
+	}
+	return value
+}
+
+func safeRuntimeScriptSummary(value string) string {
+	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 240 {
+		return ""
+	}
+	return safeRuntimeMessage(value)
 }
 
 func safeRuntimeField(value string) string {

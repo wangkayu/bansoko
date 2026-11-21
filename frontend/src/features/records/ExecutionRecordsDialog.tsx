@@ -4,6 +4,8 @@ import {
   ApiError,
   getAcquisitionRecord,
   listAcquisitionRecordFiles,
+  listAcquisitionScriptReceipts,
+  type AcquisitionScriptReceipt,
   listAcquisitionRecords,
   toUserMessage,
   type AcquisitionConfigHold,
@@ -19,9 +21,7 @@ import {
   type AcquisitionStageState,
   type AcquisitionTransfer,
 } from "../../lib/api/client";
-import { formatBytes, formatDateTime, notificationTriggerKindLabel } from "../../lib/labels";
-import { listEventActionAttempts } from "../../lib/api/client";
-import { eventActionKeys } from "../../lib/queryKeys";
+import { formatBytes, formatDateTime } from "../../lib/labels";
 import { useRememberedSegment } from "../../lib/rememberedSegment";
 import { acquisitionRecordKeys, rssListKeys } from "../../lib/queryKeys";
 import { useBoundedRefresh } from "../../lib/events/useBoundedRefresh";
@@ -39,6 +39,7 @@ import { seedIdentityParts } from "./seedIdentity";
 import { ImportRetryConfirmDialog } from "./ImportRetryConfirmDialog";
 import { DownloadCancelConfirmDialog } from "./DownloadCancelConfirmDialog";
 import { configHoldText } from "./configHold";
+import { ScriptReceiptLine } from "./ScriptReceiptLine";
 
 // ExecutionRecordsDialog — the read-only list and details of execution records (accepted
 //   acquisitions). Route-carried (`?record=list|<id>`, see shell/routeDialogs.ts), full screen on
@@ -214,51 +215,17 @@ export function ExecutionRecordsDialog({
   return (
     <Dialog open={open} onRequestClose={onClose} tier="R" focusTitle title={t("records.title")}>
       {showList ? (
-        <>
-          {open && !animeFilter && <ScriptRecords />}
-          <RecordList
-            animeFilter={animeFilter}
-            segment={segment}
-            onSegmentChange={onSegmentChange}
-            onOpenRecord={onOpenRecord}
-            onClearAnime={onClearAnime}
-          />
-        </>
+        <RecordList
+          animeFilter={animeFilter}
+          segment={segment}
+          onSegmentChange={onSegmentChange}
+          onOpenRecord={onOpenRecord}
+          onClearAnime={onClearAnime}
+        />
       ) : (
         <RecordDetail acquisitionID={record} onShowList={onShowList} onOpenAnime={onOpenAnime} />
       )}
     </Dialog>
-  );
-}
-
-function ScriptRecords() {
-  const { data: attempts = [] } = useQuery({
-    queryKey: [...eventActionKeys.attempts, "all"],
-    queryFn: ({ signal }) => listEventActionAttempts(false, signal),
-    refetchInterval: 15_000,
-  });
-  if (!attempts.length) return null;
-  const title = t("settings.eventScripts.attemptsTitle");
-  return (
-    <section className="tw:mb-4" aria-label={title}>
-      <h3 className={SECTION_TITLE}>{title}</h3>
-      <ul className={LIST}>
-        {attempts.map((attempt) => (
-          <li key={attempt.id} className={ITEM}>
-            <div className={ITEM_HEAD}>
-              <StatePill tone={attempt.state === "completed" ? "online" : attempt.state === "running" ? "muted" : "warning"}>
-                {t(`settings.eventScripts.state.${attempt.state}`)}
-              </StatePill>
-              <time className={META} dateTime={attempt.time}>{formatDateTime(attempt.time)}</time>
-            </div>
-            <strong>{notificationTriggerKindLabel(attempt.kind)}</strong>
-            <span className={`${META} tw:wrap-anywhere`}>
-              {attempt.state === "missing" ? t("settings.eventScripts.missingDetail", { script: attempt.script }) : attempt.script}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 
@@ -442,6 +409,13 @@ function RecordDetail({
     queryKey: acquisitionRecordKeys.detail(acquisitionID),
     queryFn: ({ signal }) => getAcquisitionRecord(acquisitionID, signal),
   });
+  const receipts = useQuery({
+    queryKey: acquisitionRecordKeys.scriptReceipts(acquisitionID, query.data?.version),
+    queryFn: ({ signal }) => listAcquisitionScriptReceipts(acquisitionID, signal),
+    enabled: query.data?.record_detail === "full",
+    retry: false,
+  });
+  const byFile = new Map(receipts.data?.map(receipt => [receipt.file_ref, receipt]));
   const back = (
     <Button size="sm" variant="link" className="tw:justify-self-start" onClick={onShowList}>
       {t("records.allRecords")}
@@ -486,10 +460,10 @@ function RecordDetail({
         />
       ) : null}
       {!compact && detail.stages.length > 0 ? (
-        <StageList detail={detail} />
+        <StageList detail={detail} receipt={byFile.get(undefined)} />
       ) : null}
       {detail.outcome ? <OutcomeSection outcome={detail.outcome} /> : null}
-      {detail.files_available ? <FileSection acquisitionID={detail.acquisition_id} /> : null}
+      {detail.files_available ? <FileSection acquisitionID={detail.acquisition_id} receipts={byFile} /> : null}
     </div>
   );
 }
@@ -567,7 +541,7 @@ function InfoHash({ hash }: { hash: string }) {
   );
 }
 
-function StageList({ detail }: { detail: AcquisitionRecordDetail }) {
+function StageList({ detail, receipt }: { detail: AcquisitionRecordDetail; receipt?: AcquisitionScriptReceipt }) {
   const { stages, transfer } = detail;
   return (
     <section>
@@ -585,6 +559,9 @@ function StageList({ detail }: { detail: AcquisitionRecordDetail }) {
               {stage.updated_at ? <span className={META}>{formatDateTime(stage.updated_at)}</span> : null}
             </div>
             <StageMeta stage={stage} transfer={stage.stage === "download_wait" && stage.state === "running" ? transfer : undefined} />
+            {stage.stage === "submit" && receipt ? (
+              <ScriptReceiptLine key={receipt.started_at} receipt={receipt} context={stageLabel(stage.stage)} />
+            ) : null}
             {/* Waiting for configuration is not a failure: what is missing and that it continues by itself; no retry. */}
             {stage.state === "waiting_config" && detail.config_hold ? (
               <>
@@ -703,7 +680,7 @@ function OutcomeSection({ outcome }: { outcome: NonNullable<AcquisitionRecordDet
   );
 }
 
-function FileSection({ acquisitionID }: { acquisitionID: string }) {
+function FileSection({ acquisitionID, receipts }: { acquisitionID: string; receipts: ReadonlyMap<string | undefined, AcquisitionScriptReceipt> }) {
   const query = useInfiniteQuery({
     queryKey: acquisitionRecordKeys.files(acquisitionID),
     queryFn: ({ pageParam, signal }) => listAcquisitionRecordFiles(acquisitionID, { limit: FILE_PAGE_LIMIT, cursor: pageParam }, signal),
@@ -733,7 +710,7 @@ function FileSection({ acquisitionID }: { acquisitionID: string }) {
       <>
         <ul aria-label={t("records.file.aria")} className={LIST}>
           {files.map((file) => (
-            <FileRow key={file.file_ref} file={file} />
+            <FileRow key={file.file_ref} file={file} receipt={receipts.get(file.file_ref)} />
           ))}
         </ul>
         {query.hasNextPage ? (
@@ -760,7 +737,7 @@ const COLLISION_TONE: Record<NonNullable<AcquisitionFile["collision_outcome"]>, 
   overwritten: "warning",
 };
 
-function FileRow({ file }: { file: AcquisitionFile }) {
+function FileRow({ file, receipt }: { file: AcquisitionFile; receipt?: AcquisitionScriptReceipt }) {
   const status = fileStatus(file);
   // Files not imported explain why they were not selected (unknown file, excluded by filter rules); the reason for selection is not shown.
   const reason =
@@ -799,6 +776,9 @@ function FileRow({ file }: { file: AcquisitionFile }) {
           </span>
         ) : null}
       </div>
+      {receipt ? (
+        <ScriptReceiptLine key={receipt.started_at} receipt={receipt} context={displayText(file.relative_path)} />
+      ) : null}
     </li>
   );
 }

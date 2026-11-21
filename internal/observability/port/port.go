@@ -225,6 +225,10 @@ type RuntimeEvent struct {
 	Component           string
 	Operation           string
 	Outcome             string
+	ScriptName          string
+	ExitCode            *int
+	ScriptSummary       string
+	HTTPStatus          int
 	ReasonCode          string
 	RequestID           string
 	CorrelationID       string

@@ -14,6 +14,16 @@ export const enRecordsCopy = {
   listAria: "Activity history",
   untitled: "(untitled)",
   redacted: "(hidden)",
+  script: {
+    triggered: "Event script started",
+    view: "View script response",
+    title: "Script response",
+    name: "Script",
+    startedAt: "Run time",
+    exitCode: "Exit code",
+    httpStatus: "HTTP status",
+    summary: "Summary",
+  },
   filter: {
     state: "Status",
     entry: "Source",
