@@ -246,23 +246,26 @@ type taskSnapshot struct {
 }
 
 type frozenInput struct {
-	ReleaseStableItemKey string                `json:"release_stable_item_key"`
-	SelectedRelease      json.RawMessage       `json:"selected_release,omitempty"`
-	SelectedSeed         json.RawMessage       `json:"selected_seed,omitempty"`
-	TargetFacts          json.RawMessage       `json:"target_facts,omitempty"`
-	TargetSetDigest      string                `json:"target_set_digest,omitempty"`
-	SourceLocatorDisplay string                `json:"source_locator_display"`
-	TorrentInputID       string                `json:"torrent_input_id"`
-	TorrentPayloadDigest string                `json:"torrent_payload_digest"`
-	TorrentFilename      string                `json:"torrent_filename"`
-	TorrentParserVersion string                `json:"torrent_parser_version"`
-	TorrentVersion       string                `json:"torrent_version"`
-	InfoHash             string                `json:"info_hash,omitempty"`
-	InfoHashV1           string                `json:"info_hash_v1,omitempty"`
-	InfoHashV2           string                `json:"info_hash_v2,omitempty"`
-	ReleaseFiles         []json.RawMessage     `json:"release_files,omitempty"`
-	PathSnapshot         *domain.PathSnapshot  `json:"path_snapshot,omitempty"`
-	AdoptionProvenance   *admission.Provenance `json:"adoption_provenance,omitempty"`
+	ReleaseStableItemKey string                  `json:"release_stable_item_key"`
+	SelectedRelease      json.RawMessage         `json:"selected_release,omitempty"`
+	SelectedSeed         json.RawMessage         `json:"selected_seed,omitempty"`
+	TargetFacts          json.RawMessage         `json:"target_facts,omitempty"`
+	TargetSetDigest      string                  `json:"target_set_digest,omitempty"`
+	SourceLocatorDisplay string                  `json:"source_locator_display"`
+	TorrentInputID       string                  `json:"torrent_input_id"`
+	TorrentPayloadDigest string                  `json:"torrent_payload_digest"`
+	TorrentFilename      string                  `json:"torrent_filename"`
+	TorrentParserVersion string                  `json:"torrent_parser_version"`
+	TorrentVersion       string                  `json:"torrent_version"`
+	InfoHash             string                  `json:"info_hash,omitempty"`
+	InfoHashV1           string                  `json:"info_hash_v1,omitempty"`
+	InfoHashV2           string                  `json:"info_hash_v2,omitempty"`
+	ReleaseFiles         []json.RawMessage       `json:"release_files,omitempty"`
+	PathSnapshot         *domain.PathSnapshot    `json:"path_snapshot,omitempty"`
+	PartialDownload      *domain.PartialDownload `json:"partial_download,omitempty"`
+	PartialNamespace     string                  `json:"partial_namespace,omitempty"`
+	PartialStartSent     bool                    `json:"partial_start_sent,omitempty"`
+	AdoptionProvenance   *admission.Provenance   `json:"adoption_provenance,omitempty"`
 }
 
 // providerCorrelation is intentionally an internal DownloadTask owner

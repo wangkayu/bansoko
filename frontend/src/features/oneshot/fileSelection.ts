@@ -19,6 +19,18 @@ export function effectiveFileSelection(files: readonly RSSListManifestFile[], ch
   return chosen ? new Set(chosen) : defaultFileSelection(files);
 }
 
+/** The download subset excludes orphan subtitles, but compares against the whole torrent. */
+export function partialDownloadSelection(files: readonly RSSListManifestFile[], chosen: readonly string[] | undefined): string[] | undefined {
+  const checked = effectiveFileSelection(files, chosen);
+  const videos = new Set(files.filter((file) => file.selectable && file.media_kind === "video" && checked.has(file.source_path)).map((file) => file.source_path));
+  if (videos.size === 0) return undefined;
+  const paths = files.filter((file) => videos.has(file.source_path) || (
+    file.media_kind === "subtitle" && file.selectable && checked.has(file.source_path) &&
+    file.bound_video_source_path !== undefined && videos.has(file.bound_video_source_path)
+  )).map((file) => file.source_path);
+  return paths.length < files.length ? paths.sort() : undefined;
+}
+
 /** Whether a row's checkbox is usable under the current checked set. */
 export function fileCheckable(file: RSSListManifestFile, selection: ReadonlySet<string>): boolean {
   if (!file.selectable) return false;

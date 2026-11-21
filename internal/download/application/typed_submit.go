@@ -76,6 +76,21 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if err != nil {
 		return fail("qb_connection_unavailable", err, true)
 	}
+	var partialNamespace string
+	if input.PartialDownload != nil {
+		if _, err := partialDownloadManifest(input); err != nil || c.OneShot == nil || input.PartialStartSent {
+			return fail("frozen_input_invalid", qbittorrent.ErrPartialDownloadIdentity, false)
+		}
+		location := qbittorrent.NewNamespaceLocation(config)
+		if location.Endpoint == "" || len(frozenInfoHashCandidates(input)) == 0 {
+			return fail("frozen_input_invalid", qbittorrent.ErrPartialDownloadIdentity, false)
+		}
+		partialNamespace = location.Digest()
+		if input.PathSnapshot != nil && input.PartialNamespace != partialNamespace {
+			return fail("qb_path_snapshot_changed", qbittorrent.ErrPathSnapshotChanged, false)
+		}
+		input.PartialNamespace = partialNamespace
+	}
 	frozen := pathSnapshotFromInput(input)
 	if frozen == nil {
 		c, task, input, err = s.freezeTaskPathSnapshot(ctx, c, task, input, snapshot)
@@ -101,7 +116,23 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if !adoption {
 		occupancyHashes = frozenInfoHashCandidates(input)
 	}
-	prepared, existing, found, err := preparer.PrepareSubmission(ctx, payload.Payload, payload.Filename, *frozen, c.IdempotencyKey, occupancyHashes)
+	var prepared *qbittorrent.PreparedSubmission
+	var existing domain.ProviderTask
+	var found bool
+	if input.PartialDownload != nil {
+		partial, ok := s.provider.(qbittorrent.PartialSubmissionPreparer)
+		if !ok || adoption {
+			return fail("qb_partial_download_unavailable", qbittorrent.ErrPartialDownloadIdentity, false)
+		}
+		prepared, existing, found, err = partial.PreparePartialSubmission(ctx, payload.Payload, payload.Filename, *frozen, c.IdempotencyKey, occupancyHashes, partialNamespace)
+		if err == nil && found {
+			// A fresh dispatch has no right to mutate a pre-existing task. An
+			// interrupted add is reconciled by the recovery handler instead.
+			return fail(ReasonDownloaderHashOccupied, qbittorrent.ErrHashOccupied, false)
+		}
+	} else {
+		prepared, existing, found, err = preparer.PrepareSubmission(ctx, payload.Payload, payload.Filename, *frozen, c.IdempotencyKey, occupancyHashes)
+	}
 	if err != nil {
 		code, retry := prepareFailure(err, s.provider.ClassifyProviderError(err))
 		return fail(code, err, retry)
@@ -144,7 +175,11 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 		"namespace":     namespace,
 	})
 	namespaceDigest := namespace.Digest()
-	specBytes, _ := json.Marshal(map[string]any{"task": task.id, "payload": input.TorrentPayloadDigest, "path": frozen, "operation_key": c.IdempotencyKey, "namespace": namespaceDigest})
+	specFields := map[string]any{"task": task.id, "payload": input.TorrentPayloadDigest, "path": frozen, "operation_key": c.IdempotencyKey, "namespace": namespaceDigest}
+	if input.PartialDownload != nil {
+		specFields["partial_download"] = input.PartialDownload
+	}
+	specBytes, _ := json.Marshal(specFields)
 	digest := func(b []byte) string { sum := sha256.Sum256(b); return "sha256:" + hex.EncodeToString(sum[:]) }
 	spec := digest(specBytes)
 	var dispatch struct {
@@ -203,6 +238,12 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 			closed = `{"kind":"channel_closed"}`
 			resolution = `{"kind":"provider_refused_hash_occupied"}`
 		}
+	}
+	if input.PartialDownload != nil && effect != "no_external_effect" {
+		// The durable dispatch is already unknown. Confirm a stopped add by its
+		// exact provider identity, not an HTTP acknowledgment; both the happy
+		// path and recovery then have a replayable lookup receipt.
+		return s.typedSubmitRecovery(ctx, c)
 	}
 	observation := map[string]any{}
 	if effect == "confirmed" {

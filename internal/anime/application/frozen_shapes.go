@@ -5,6 +5,7 @@ import (
 
 	animedomain "bansoko/internal/anime/domain"
 	downloadadmission "bansoko/internal/download/admission"
+	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
 )
@@ -26,21 +27,22 @@ type SelectedReleaseIdentity struct {
 }
 
 type FrozenDownloadInput struct {
-	InfoHashV1           *string                       `json:"info_hash_v1,omitempty"`
-	InfoHashV2           *string                       `json:"info_hash_v2,omitempty"`
-	AdoptionProvenance   *downloadadmission.Provenance `json:"adoption_provenance,omitempty"`
-	ReleaseFiles         json.RawMessage               `json:"release_files,omitempty"`
-	ReleaseStableItemKey string                        `json:"release_stable_item_key"`
-	SelectedRelease      *SelectedReleaseIdentity      `json:"selected_release,omitempty"`
-	SelectedSeed         json.RawMessage               `json:"selected_seed,omitempty"`
-	SelectedURLDigest    *string                       `json:"selected_url_digest,omitempty"`
-	SourceLocatorDisplay string                        `json:"source_locator_display"`
-	TargetFacts          json.RawMessage               `json:"target_facts,omitempty"`
-	TorrentFilename      *string                       `json:"torrent_filename,omitempty"`
-	TorrentInputID       *string                       `json:"torrent_input_id,omitempty"`
-	TorrentParserVersion *string                       `json:"torrent_parser_version,omitempty"`
-	TorrentPayloadDigest *string                       `json:"torrent_payload_digest,omitempty"`
-	TorrentVersion       *string                       `json:"torrent_version,omitempty"`
+	InfoHashV1           *string                         `json:"info_hash_v1,omitempty"`
+	InfoHashV2           *string                         `json:"info_hash_v2,omitempty"`
+	AdoptionProvenance   *downloadadmission.Provenance   `json:"adoption_provenance,omitempty"`
+	ReleaseFiles         json.RawMessage                 `json:"release_files,omitempty"`
+	PartialDownload      *downloaddomain.PartialDownload `json:"partial_download,omitempty"`
+	ReleaseStableItemKey string                          `json:"release_stable_item_key"`
+	SelectedRelease      *SelectedReleaseIdentity        `json:"selected_release,omitempty"`
+	SelectedSeed         json.RawMessage                 `json:"selected_seed,omitempty"`
+	SelectedURLDigest    *string                         `json:"selected_url_digest,omitempty"`
+	SourceLocatorDisplay string                          `json:"source_locator_display"`
+	TargetFacts          json.RawMessage                 `json:"target_facts,omitempty"`
+	TorrentFilename      *string                         `json:"torrent_filename,omitempty"`
+	TorrentInputID       *string                         `json:"torrent_input_id,omitempty"`
+	TorrentParserVersion *string                         `json:"torrent_parser_version,omitempty"`
+	TorrentPayloadDigest *string                         `json:"torrent_payload_digest,omitempty"`
+	TorrentVersion       *string                         `json:"torrent_version,omitempty"`
 }
 
 type ConfigRevisionIdentity = animedomain.ConfigRevisionIdentity

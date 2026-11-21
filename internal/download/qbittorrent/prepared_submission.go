@@ -58,6 +58,30 @@ func (c ConfiguredClient) PrepareSubmission(ctx context.Context, payload []byte,
 }
 
 func (c Client) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
+	return c.prepareSubmission(ctx, payload, filename, snapshot, key, hashes, "")
+}
+
+func (c ConfiguredClient) PreparePartialSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string, namespace string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
+	client, err := c.partialClient(ctx, snapshot, namespace)
+	if err != nil {
+		return nil, domain.ProviderTask{}, false, err
+	}
+	return client.PreparePartialSubmission(ctx, payload, filename, snapshot, key, hashes, namespace)
+}
+
+func (c Client) PreparePartialSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string, _ string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
+	version, err := c.Health(ctx)
+	if err != nil {
+		return nil, domain.ProviderTask{}, false, err
+	}
+	field, err := initialStopField(version)
+	if err != nil {
+		return nil, domain.ProviderTask{}, false, err
+	}
+	return c.prepareSubmission(ctx, payload, filename, snapshot, key, hashes, field)
+}
+
+func (c Client) prepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string, stopField string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
 	normalized, err := NormalizePathSnapshot(snapshot)
 	if err != nil {
 		return nil, domain.ProviderTask{}, false, err
@@ -99,6 +123,9 @@ func (c Client) PrepareSubmission(ctx context.Context, payload []byte, filename 
 		return nil, domain.ProviderTask{}, false, err
 	}
 	fields := [][2]string{{"savepath", filepath.Clean(normalized.RemoteRoot)}, {"tags", strings.Join(append([]string{tag}, c.UserTags...), ",")}}
+	if stopField != "" {
+		fields = append(fields, [2]string{stopField, "true"}, [2]string{"contentLayout", "Original"}, [2]string{"autoTMM", "false"})
+	}
 	if strings.TrimSpace(c.Category) != "" {
 		fields = append(fields, [2]string{"category", c.Category})
 	}

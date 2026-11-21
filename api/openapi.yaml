@@ -8016,6 +8016,13 @@ components:
             and the idempotency request identity; it is never read from an
             existing subscription, link or the submitted draft. Omitted means 0.
             Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
+        download_selected_files:
+          type: boolean
+          description: >-
+            When true, requires an explicit file_selection containing a strict subset
+            of the torrent with at least one video. Only those files are enabled in
+            the new download task. Omitted or false downloads the whole torrent.
+            This does not change the file selection rules for library import.
         file_selection:
           type: array
           minItems: 1
@@ -8032,8 +8039,8 @@ components:
             gate: the chosen files are named, bound and placed exactly like
             first-level ones, under the same file rules, episode recognition,
             unknown-file route and collision policy, and a subtitle binds to a
-            selected video of its own folder. The download itself is
-            unchanged (the whole torrent; no file priorities): an unselected
+            selected video of its own folder. Unless download_selected_files is
+            true, the whole torrent downloads: an unselected
             file stays in the download location untouched. Every path must be
             a file of this seed's torrent, of the video or subtitle kind; a
             selected video must pass the file rules; at least one video is

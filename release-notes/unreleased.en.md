@@ -1,5 +1,7 @@
 ## New
 
+- One-shot downloads can download only the selected videos and their subtitles. The option is off by default and does not change which files are imported.
+
 - Default rules now let you choose a preferred title for new subscriptions. The default keeps the current title. If the selected title is unavailable when matching first completes, the current title is kept. Existing subscriptions are unaffected.
 - View episode lists directly from existing TMDB or Bangumi links in program settings, one-shot downloads, and the file manager, without matching again.
 

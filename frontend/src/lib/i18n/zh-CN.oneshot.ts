@@ -52,6 +52,7 @@ export const oneshotCopy = {
   metadata: "元数据",
   metadataUnbound: "未关联 Bangumi、TMDB",
   offset: "集数偏移",
+  downloadSelectedFiles: "仅下载所选文件",
   previewTitle: "预览",
   previewing: "正在生成预览…",
   previewFailed: "预览失败",

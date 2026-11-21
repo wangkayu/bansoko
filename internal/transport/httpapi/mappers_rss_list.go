@@ -175,6 +175,7 @@ func mapSnapshotSeedDownloadInput(snapshotID, stableSeedKey string, value genera
 		input.FileSelection = append([]string{}, *value.FileSelection...)
 	}
 	input.Overrides = mapFileEpisodeOverrides(value.Overrides)
+	input.DownloadSelectedFiles = value.DownloadSelectedFiles != nil && *value.DownloadSelectedFiles
 	switch string(value.InputSource) {
 	case "current_input":
 		if value.Draft == nil {

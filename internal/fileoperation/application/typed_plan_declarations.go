@@ -2,6 +2,7 @@ package application
 
 import (
 	protocol "bansoko/internal/acquisition/terminal/domain"
+	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/filekinds"
 	"context"
 	"encoding/json"
@@ -52,8 +53,13 @@ func buildTypedPlanDeclarations(ctx context.Context, b *artifactPreparedBatch) (
 	var captured struct {
 		Requirements     json.RawMessage  `json:"requirements"`
 		RequirementFiles []map[string]any `json:"requirement_files"`
-		TargetSet        json.RawMessage  `json:"target_set"`
-		Targets          []map[string]any `json:"targets"`
+		ManifestFiles    []struct {
+			Ref  string `json:"file_ref"`
+			Path string `json:"relative_path"`
+			Size int64  `json:"exact_size"`
+		} `json:"manifest_files"`
+		TargetSet json.RawMessage  `json:"target_set"`
+		Targets   []map[string]any `json:"targets"`
 	}
 	if err := json.Unmarshal(b.capture.Facts, &captured); err != nil {
 		return typedPlanDeclarations{}, err
@@ -184,6 +190,40 @@ func buildTypedPlanDeclarations(ctx context.Context, b *artifactPreparedBatch) (
 			row := earlyByRef[file.fileRef]
 			requirements = append(requirements, map[string]any{"file_ref": file.fileRef, "requirement": row["requirement"], "reason_code": row["requirement_reason_code"], "selection_evidence": row["selection_evidence"]})
 		}
+	}
+	var download struct {
+		Partial *downloaddomain.PartialDownload `json:"partial_download"`
+	}
+	if len(b.artifact.frozenInput) != 0 {
+		if err := json.Unmarshal(b.artifact.frozenInput, &download); err != nil {
+			return typedPlanDeclarations{}, fmt.Errorf("decode frozen download input: %w", err)
+		}
+	}
+	if download.Partial != nil {
+		if download.Partial.Validate() != nil || len(captured.ManifestFiles) != download.Partial.FileCount {
+			return typedPlanDeclarations{}, fmt.Errorf("partial download does not match the sealed manifest")
+		}
+		selected := make(map[string]bool, len(download.Partial.Paths))
+		for _, path := range download.Partial.Paths {
+			selected[path] = true
+		}
+		for _, file := range captured.ManifestFiles {
+			if selected[file.Path] {
+				continue
+			}
+			if earlyRequirements {
+				row := earlyByRef[file.Ref]
+				if row["requirement"] != "excluded" {
+					return typedPlanDeclarations{}, fmt.Errorf("early requirements include an undownloaded file")
+				}
+				requirements = append(requirements, map[string]any{"file_ref": file.Ref, "requirement": row["requirement"], "reason_code": row["requirement_reason_code"], "selection_evidence": row["selection_evidence"]})
+				continue
+			}
+			requirements = append(requirements, map[string]any{"file_ref": file.Ref, "requirement": "excluded", "reason_code": filekinds.ReasonIgnoredUnselected, "selection_evidence": map[string]any{"selection": json.RawMessage(selectionRaw(b.input)), "path": file.Path, "size": file.Size, "fingerprint": nil}})
+		}
+		sort.Slice(requirements, func(i, j int) bool {
+			return requirements[i]["file_ref"].(string) < requirements[j]["file_ref"].(string)
+		})
 	}
 	if earlyTargets {
 		targets = []map[string]any{}

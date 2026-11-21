@@ -23,6 +23,7 @@ import (
 	"bansoko/internal/apperrors"
 	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
+	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/events"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
@@ -387,7 +388,8 @@ type AcquireSeedInput struct {
 	// of the replay identity, is validated against the seed's own manifest
 	// and file rules inside the admission transaction, and freezes into the
 	// batch plan and the input snapshot.
-	FileSelection []string `json:"file_selection,omitempty"`
+	FileSelection         []string `json:"file_selection,omitempty"`
+	DownloadSelectedFiles bool     `json:"download_selected_files,omitempty"`
 	// Overrides replace selected videos' final identities and optionally their
 	// owner naming seasons. They are canonical before hashing and frozen with
 	// the exact input; an explicit final episode never receives EpisodeOffset.
@@ -571,6 +573,9 @@ func (s *Service) AcquireSeedOnce(ctx context.Context, input AcquireSeedInput, r
 		return OneShotAdmissionResult{}, err
 	}
 	input.FileSelection = selection
+	if input.DownloadSelectedFiles && len(selection) == 0 {
+		return OneShotAdmissionResult{}, fileSelectionInvalid("partial download requires an explicit file selection")
+	}
 	overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
 	if err != nil {
 		return OneShotAdmissionResult{}, fileSelectionInvalid("overrides: %v", err)
@@ -1055,6 +1060,15 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	if err != nil {
 		return OneShotAdmissionResult{}, err
 	}
+	var partialDownload *downloaddomain.PartialDownload
+	if input.DownloadSelectedFiles {
+		partialDownload = &downloaddomain.PartialDownload{
+			Paths: fileSelection.Paths(), FileCount: len(item.ReleaseFiles),
+		}
+		if err := partialDownload.Validate(); err != nil {
+			return OneShotAdmissionResult{}, fileSelectionInvalid("%v", err)
+		}
+	}
 	if err := validateOneShotFileOverrides(input.Overrides, item.ReleaseFiles, effective.Rules.FileFilter, fileSelection); err != nil {
 		return OneShotAdmissionResult{}, err
 	}
@@ -1385,6 +1399,7 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 			InfoHashV1           string                                    `json:"info_hash_v1,omitempty"`
 			InfoHashV2           string                                    `json:"info_hash_v2,omitempty"`
 			ReleaseFiles         json.RawMessage                           `json:"release_files,omitempty"`
+			PartialDownload      *downloaddomain.PartialDownload           `json:"partial_download,omitempty"`
 		}{
 			ReleaseStableItemKey: evaluation.StableItemKey,
 			SelectedRelease: &animeapplication.SelectedReleaseIdentity{
@@ -1404,6 +1419,7 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 			InfoHashV1:           payload.Metadata.InfoHashV1,
 			InfoHashV2:           payload.Metadata.InfoHashV2,
 			ReleaseFiles:         releaseFilesFromInternalFacts(internalFacts),
+			PartialDownload:      partialDownload,
 		})
 		if err != nil {
 			return OneShotAdmissionResult{}, fmt.Errorf("encode one-shot frozen input: %w", err)

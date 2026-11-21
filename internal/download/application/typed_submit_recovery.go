@@ -78,7 +78,25 @@ func (s *Service) typedSubmitRecovery(ctx context.Context, c workitems.Claim) (w
 	var observed domain.ProviderTask
 	var found bool
 	var lookupErr error
-	if provider, ok := s.provider.(qbittorrent.SnapshotLookup); ok {
+	var shape struct {
+		Selection *domain.PartialDownload `json:"partial_download"`
+	}
+	if err := json.Unmarshal(task.frozenInputRaw, &shape); err != nil {
+		return worker.Outcome{}, err
+	}
+	if shape.Selection != nil {
+		frozen, err := decodeFrozenInput(task.frozenInputRaw)
+		if err != nil {
+			return worker.Outcome{}, err
+		}
+		provider, ok := s.provider.(qbittorrent.PartialSubmissionLookup)
+		if !ok || c.OneShot == nil || frozen.PartialNamespace == "" || frozen.PathSnapshot == nil || !qbittorrent.PathSnapshotsEqual(snapshot, *frozen.PathSnapshot) {
+			lookupErr = qbittorrent.ErrPartialDownloadIdentity
+		} else {
+			observed, found, lookupErr = provider.LookupPartialSubmission(ctx, c.IdempotencyKey, snapshot, frozen.PartialNamespace, frozenInfoHashCandidates(frozen))
+			observed = partialSubmissionTask(observed, frozen)
+		}
+	} else if provider, ok := s.provider.(qbittorrent.SnapshotLookup); ok {
 		observed, found, lookupErr = provider.LookupByOperationKeyWithSnapshot(ctx, c.IdempotencyKey, snapshot)
 	} else {
 		observed, found, lookupErr = s.provider.LookupByOperationKey(ctx, c.IdempotencyKey)

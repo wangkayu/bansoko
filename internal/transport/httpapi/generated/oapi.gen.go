@@ -9278,14 +9278,17 @@ type SelectionMode string
 
 // SnapshotSeedDownloadInput One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server. A keyword search seed is the same shape: provider_entry_ref/provider_group_ref are the derived search-scope and search-query refs, the server proves the named snapshot is the `search` kind, and the admission must be a current_input one-shot.
 type SnapshotSeedDownloadInput struct {
-	CandidateId *ID         `json:"candidate_id"`
-	ContentHash string      `json:"content_hash"`
-	Draft       *AnimeDraft `json:"draft"`
+	CandidateId *ID    `json:"candidate_id"`
+	ContentHash string `json:"content_hash"`
+
+	// DownloadSelectedFiles When true, requires an explicit file_selection containing a strict subset of the torrent with at least one video. Only those files are enabled in the new download task. Omitted or false downloads the whole torrent. This does not change the file selection rules for library import.
+	DownloadSelectedFiles *bool       `json:"download_selected_files,omitempty"`
+	Draft                 *AnimeDraft `json:"draft"`
 
 	// EpisodeOffset The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
 	EpisodeOffset *int `json:"episode_offset,omitempty"`
 
-	// FileSelection Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. The download itself is unchanged (the whole torrent; no file priorities): an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance.
+	// FileSelection Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. Unless download_selected_files is true, the whole torrent downloads: an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance.
 	FileSelection *[]string                            `json:"file_selection,omitempty"`
 	InputSource   SnapshotSeedDownloadInputInputSource `json:"input_source"`
 

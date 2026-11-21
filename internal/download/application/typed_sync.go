@@ -129,8 +129,25 @@ func (s *Service) typedSync(ctx context.Context, claim workitems.Claim) (worker.
 			err = qbittorrent.ErrPathSnapshotChanged
 		}
 	}
+	var partial struct {
+		Selection *domain.PartialDownload `json:"partial_download"`
+	}
+	if decodeErr := json.Unmarshal(task.frozenInputRaw, &partial); decodeErr != nil {
+		return s.finishTypedSync(ctx, claim, task, session, input.Ordinal, domain.ProviderTask{}, "frozen_input_invalid", "the frozen download input is invalid", false)
+	}
 	var observed domain.ProviderTask
-	if err != nil && snapshot == nil {
+	if partial.Selection != nil {
+		if err == nil {
+			var frozen frozenInput
+			frozen, err = decodeFrozenInput(task.frozenInputRaw)
+			if err == nil {
+				observed, err = s.observePartialDownload(ctx, claim, task, correlation, frozen, session, input.Ordinal)
+			}
+		}
+		if errors.Is(err, qbittorrent.ErrPartialDownloadIdentity) || errors.Is(err, qbittorrent.ErrPathSnapshotChanged) {
+			return s.finishTypedSync(ctx, claim, task, session, input.Ordinal, domain.ProviderTask{}, "qb_partial_download_unverified", redactProviderError(err), false)
+		}
+	} else if err != nil && snapshot == nil {
 		observed, err = s.provider.Sync(ctx, correlation.ExternalID)
 	} else if err == nil {
 		observed, err = s.syncProvider(ctx, correlation.ExternalID, snapshot)

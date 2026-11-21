@@ -23,7 +23,7 @@ import { MetadataFields } from "../anime-forms/MetadataFields";
 import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { draftParserKind, freezeBusinessDraft, withDraftParserKind } from "../anime-config/businessDraft";
 import { Button, Field, Input, StateBlock, StatePill } from "../../ui";
-import { Dialog, HelpTip, REVEAL_MS, SpinnerIcon } from "../../ui/base";
+import { Checkbox, Dialog, HelpTip, REVEAL_MS, SpinnerIcon } from "../../ui/base";
 import { ReasonText } from "../../ui/ReasonText";
 import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles";
 import { fileUnitsSummary, groupBoundSubtitles } from "../../lib/boundSubtitles";
@@ -48,7 +48,7 @@ import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
 import { FilePickerDialog } from "./FilePicker";
 import { FileNumberingDialog } from "../file-numbering/FileNumberingDialog";
 import { sanitizeOverrides, type FileEpisodeOverride, type FileNumberingItem } from "../file-numbering/model";
-import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount } from "./fileSelection";
+import { effectiveFileSelection, partialDownloadSelection, sanitizeFileSelection, selectedVideoCount } from "./fileSelection";
 
 // The one-shot download: a centered dialog opened by a card's "browse seeds". Two steps:
 //   1. Catalog: subgroups listed first, and entering a group fetches its seed list and renders all
@@ -385,6 +385,7 @@ export function OneShotDialog({
   // Per-seed manual file choices (row key -> chosen paths). A seed without an entry downloads its
   //   default files and its request carries no file_selection.
   const [fileChoices, setFileChoices] = useState<ReadonlyMap<string, string[]>>(new Map());
+  const [onlySelected, setOnlySelected] = useState(false);
   // Sparse per-video final numbering, keyed by seed. Entries are re-sanitized against the current
   // selection whenever a preview or submit body is built.
   const [fileOverrides, setFileOverrides] = useState<ReadonlyMap<string, FileEpisodeOverride[]>>(new Map());
@@ -473,6 +474,7 @@ export function OneShotDialog({
     else if (scopedSeeds.current !== scope) {
       scopedSeeds.current = scope;
       source.resetDraft();
+      setOnlySelected(false);
       // What first arrival seeded from the initial load re-seeds the same way: the offset input and the restore-defaults baselines.
       offsetSeeded.current = false;
       baseline.current = undefined;
@@ -606,6 +608,7 @@ export function OneShotDialog({
 
   /** Resets the naming / file-filter / parser sections and the episode offset to their task-start values. */
   function restoreDefaults() {
+    setOnlySelected(false);
     setOffsetText(String(source.initialOffset));
     if (fileChoices.size > 0 || fileOverrides.size > 0) {
       setFileChoices(new Map());
@@ -664,6 +667,14 @@ export function OneShotDialog({
     return sanitizeFileSelection(row.item.manifest_files ?? [], fileChoices.get(row.key));
   }
 
+  function downloadSubsetOf(row: OneShotSeedRow): string[] | undefined {
+    return partialDownloadSelection(row.item.manifest_files ?? [], fileChoiceOf(row));
+  }
+  const canDownloadSubset = pendingSubmit.some((row) => downloadSubsetOf(row) !== undefined);
+  useEffect(() => {
+    if (!source.pending && !canDownloadSubset) setOnlySelected(false);
+  }, [canDownloadSubset, source.pending]);
+
   /** Only selected, still-selectable videos can carry an override. */
   function fileOverridesOf(row: OneShotSeedRow): FileEpisodeOverride[] {
     return seedOverridesFor(row, fileChoiceOf(row), fileOverrides.get(row.key));
@@ -702,6 +713,8 @@ export function OneShotDialog({
     const provider = row.scope.provider;
     if (provider === "oneshot") throw new TypeError("A one-shot origin is not a seed provider");
     const overrides = fileOverridesOf(row);
+    const downloadSubset = onlySelected ? downloadSubsetOf(row) : undefined;
+    const fileChoice = downloadSubset ?? fileChoiceOf(row);
     return {
       provider,
       provider_entry_ref: row.scope.provider_entry_ref,
@@ -711,7 +724,8 @@ export function OneShotDialog({
       input_source: "current_input",
       draft: prepared,
       ...(effectiveOffset !== 0 ? { episode_offset: effectiveOffset } : {}),
-      ...(fileChoiceOf(row) ? { file_selection: fileChoiceOf(row) } : {}),
+      ...(fileChoice ? { file_selection: fileChoice } : {}),
+      ...(downloadSubset ? { download_selected_files: true } : {}),
       ...(overrides.length > 0 ? { overrides } : {}),
     };
   }
@@ -1224,6 +1238,11 @@ export function OneShotDialog({
                 />
               </Field>
               {!offsetValid && <p className="text-danger text-caption">{t("rss.offsetInvalid")}</p>}
+            </div>
+            <div className="tw:min-w-0 tw:border-t tw:border-border tw:pt-3">
+              <Checkbox checked={onlySelected && canDownloadSubset} disabled={!canDownloadSubset || source.pending || submitting} onCheckedChange={setOnlySelected}>
+                {t("oneshot.downloadSelectedFiles")}
+              </Checkbox>
             </div>
           </TaskConfigPanel>
         </TaskSplitLayout>

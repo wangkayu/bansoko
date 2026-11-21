@@ -473,6 +473,61 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     expect(download.submissions()).toBe(1);
   });
 
+  test("仅下载所选文件在全选时禁用，取消视频后带跟随字幕提交", async ({ page }) => {
+    await mockSignedIn(page);
+    await mockShellReads(page);
+    await mockCandidates(page);
+    await mockDiscovery(page);
+    await mockSeedRead(page);
+    const download = await mockSnapshotDownload(page);
+    await page.route("**/api/v1/anime/rss-list-view", async (route) => {
+      const view = numberingView();
+      const selected: string[] | undefined = route.request().postDataJSON().file_selections?.[0]?.source_paths;
+      const item = view.groups[0].items[0];
+      if (selected) item.files = item.files.filter((file) => selected.includes(file.source_path));
+      await ok(route, 200, view);
+    });
+
+    await page.goto("/");
+    if ((page.viewportSize()?.width ?? 1280) <= 600) {
+      await page.getByRole("navigation", { name: "底部导航" }).getByRole("button", { name: "发现", exact: true }).click();
+      await page.getByRole("radiogroup", { name: "主导航" }).getByRole("radio", { name: "AniBT", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "AniBT", exact: true }).click();
+    }
+    await page.getByRole("button", { name: `浏览《${TITLE}》的种子` }).click();
+    const task = page.getByRole("dialog", { name: "浏览种子" });
+    await task.getByRole("checkbox", { name: `[${GROUP}] ${TITLE} - 01 [1080p]` }).click();
+    await task.getByRole("button", { name: "下一步（1）" }).click();
+
+    const only = task.getByRole("checkbox", { name: "仅下载所选文件" });
+    await expect(only).toBeVisible();
+    await expect(only).not.toBeChecked();
+    await expect(only).toBeDisabled();
+    await task.getByRole("button", { name: /选择文件/ }).click();
+    const picker = page.getByRole("dialog", { name: "选择文件", exact: true });
+    await picker.getByRole("checkbox", { name: `${TITLE} - 02.mkv`, exact: true }).click();
+    await picker.getByRole("button", { name: "确认", exact: true }).click();
+
+    await expect(only).toBeEnabled();
+    await only.click();
+    await expect(only).toBeChecked();
+    const box = await only.boundingBox();
+    const bounds = await task.boundingBox();
+    expect(box).not.toBeNull();
+    expect(bounds).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+    await task.screenshot({ path: test.info().outputPath(`partial-download-${test.info().project.name}.png`), animations: "disabled" });
+
+    await task.getByRole("button", { name: "开始下载（1）" }).click();
+    await expect.poll(() => download.submittedRequest()).toMatchObject({
+      download_selected_files: true,
+      file_selection: [`${TITLE} - 01.mkv`, `${TITLE} - 01.zh-Hans.ass`],
+    });
+  });
+
   test("按文件编号在桌面和手机保持可用，预览与提交使用同一覆盖", async ({ page }) => {
     await mockSignedIn(page);
     await mockShellReads(page);

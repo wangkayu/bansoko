@@ -211,6 +211,7 @@ required_tests=(
   TestOneShotMovieQBRealChain
   TestOneShotQBRealChain
   TestOneShotManualFileSelectionRealChain
+  TestOneShotPartialDownloadRealChain
   TestOneShotQBConcurrentSameKeyAdmitsOnce
   TestOneShotQBSameTorrentSecondSubmissionOccupied
   TestReplacementRealChainActiveAndStopped

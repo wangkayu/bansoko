@@ -439,9 +439,10 @@ type frozenReleaseFile struct {
 // stored in download_tasks.frozen_input.  Only the fields needed by
 // artifact inspection are decoded.
 type frozenDownloadInput struct {
-	InfoHash       string              `json:"info_hash,omitempty"`
-	TorrentVersion string              `json:"torrent_version,omitempty"`
-	ReleaseFiles   []frozenReleaseFile `json:"release_files,omitempty"`
+	InfoHash        string                  `json:"info_hash,omitempty"`
+	TorrentVersion  string                  `json:"torrent_version,omitempty"`
+	ReleaseFiles    []frozenReleaseFile     `json:"release_files,omitempty"`
+	PartialDownload *domain.PartialDownload `json:"partial_download,omitempty"`
 }
 
 type artifactSnapshot struct {
@@ -647,7 +648,30 @@ func applyProviderPathSnapshot(input inspectInput, correlation providerCorrelati
 // a hint for primary selection when available.
 func resolveArtifactFilesFromFrozenInput(input inspectInput, frozen frozenDownloadInput, correlation providerCorrelation) ([]artifactInspectionTarget, error) {
 	var targets []artifactInspectionTarget
-	if len(frozen.ReleaseFiles) == 0 {
+	if frozen.PartialDownload != nil {
+		selection := frozen.PartialDownload
+		if selection.Validate() != nil || len(frozen.ReleaseFiles) != selection.FileCount {
+			return nil, ErrProviderFilesIncomplete
+		}
+		wanted := make(map[string]bool, len(selection.Paths))
+		for _, path := range selection.Paths {
+			wanted[path] = true
+		}
+		files := make([]frozenReleaseFile, 0, len(wanted))
+		for _, file := range frozen.ReleaseFiles {
+			if wanted[file.SourcePath] {
+				files = append(files, file)
+			}
+		}
+		if len(files) != len(wanted) || len(files) > maxInspectionFiles {
+			return nil, ErrProviderFilesIncomplete
+		}
+		var err error
+		targets, err = buildTargetsFromReleaseFiles(input, files)
+		if err != nil {
+			return nil, err
+		}
+	} else if len(frozen.ReleaseFiles) == 0 {
 		// Frozen release_files can be empty even though the provider actually
 		// downloaded and completed the file: acquisition-time torrent metadata
 		// enrichment may have failed while the payload row was preserved by an

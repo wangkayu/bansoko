@@ -40,6 +40,27 @@ func (f *fakeInspector) Inspect(_ context.Context, path string) (domain.Artifact
 	return facts, nil
 }
 
+func TestPartialInspectionUsesOnlyTheFrozenSelection(t *testing.T) {
+	input := inspectInput{LocalRoot: t.TempDir()}
+	frozen := frozenDownloadInput{
+		ReleaseFiles: []frozenReleaseFile{
+			{SourcePath: "Pack/E01.mkv", MediaKind: "video"},
+			{SourcePath: "Pack/E01.ass", MediaKind: "subtitle"},
+			{SourcePath: "Pack/E02.mkv", MediaKind: "video"},
+		},
+		PartialDownload: &domain.PartialDownload{Paths: []string{"Pack/E01.ass", "Pack/E01.mkv"}, FileCount: 3},
+	}
+	targets, err := resolveArtifactFilesFromFrozenInput(input, frozen, providerCorrelation{})
+	if err != nil || len(targets) != 2 || targets[0].path != filepath.Join(input.LocalRoot, "Pack/E01.mkv") ||
+		targets[1].path != filepath.Join(input.LocalRoot, "Pack/E01.ass") {
+		t.Fatalf("partial inspection: %+v, %v", targets, err)
+	}
+	frozen.PartialDownload.Paths[0] = "Pack/missing.ass"
+	if _, err := resolveArtifactFilesFromFrozenInput(input, frozen, providerCorrelation{}); !errors.Is(err, ErrProviderFilesIncomplete) {
+		t.Fatalf("missing selected path: %v", err)
+	}
+}
+
 func TestHandleRejectsInvalidKindBeforeDatabaseAccess(t *testing.T) {
 	service := &Service{}
 	_, err := service.Handle(context.Background(), workitems.Claim{Kind: workitems.KindQBSubmit})

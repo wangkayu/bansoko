@@ -72,6 +72,7 @@ export const enOneshotCopy = {
   missingFacts: "Missing {facts}",
 
   filePickerTitle: "Choose files",
+  downloadSelectedFiles: "Download only selected files",
   filePickerFolder: "Videos in folder {name}",
   filePickerToggle: "Choose files ({n}/{total} selected)",
   filePickerHint: "Checked videos and their subtitles are imported. Unchecked files stay in the download location.",

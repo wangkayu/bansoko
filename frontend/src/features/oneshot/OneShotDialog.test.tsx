@@ -1858,6 +1858,27 @@ describe("OneShotDialog 手动选择文件", () => {
     expect(downloads()[0]!.body).toMatchObject({ file_selection: selection });
   });
 
+  it("仅下载所选文件默认关闭，开启后逐颗种子判断并包含跟随字幕", async () => {
+    const view = viewOf([seedGroup({ items: [
+      seedItem("seed-a", SEED_A, { manifest_files: manifestFiles, files: [VIDEO, SUB].map(previewFile) }),
+      seedItem("seed-b", SEED_B, { manifest_files: manifestFiles.slice(0, 2), files: [VIDEO, SUB].map(previewFile) }),
+    ] })]);
+    stubFetch({ view });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A, SEED_B]);
+    const only = await screen.findByRole("checkbox", { name: t("oneshot.downloadSelectedFiles") });
+    expect(only).not.toBeChecked();
+    await waitFor(() => expect(only).not.toHaveAttribute("aria-disabled", "true"));
+    fireEvent.click(only);
+    expect(only).toBeChecked();
+    fireEvent.click(button(t("oneshot.create", { n: 2 })));
+    await waitFor(() => expect(downloads()).toHaveLength(2));
+    const requests = new Map(downloads().map(({ url, body }) => [url.split("/").at(-2), body]));
+    expect(requests.get("seed-a")).toMatchObject({ download_selected_files: true, file_selection: [SUB, VIDEO].sort() });
+    expect(requests.get("seed-b")).toBeDefined();
+    expect(requests.get("seed-b")).not.toHaveProperty("download_selected_files");
+  });
+
   it("没有改动就确认：只关闭弹窗，不读预览", async () => {
     stubPicker();
     await renderAndEnter();

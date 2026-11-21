@@ -25,6 +25,8 @@ import (
 	oneshotapplication "bansoko/internal/anime/oneshot/application"
 	animetransport "bansoko/internal/anime/transport"
 	"bansoko/internal/batchplan"
+	"bansoko/internal/download/qbittorrent"
+	"bansoko/internal/testutil/mkvfixture"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -111,6 +113,15 @@ func startNestedFileFixture(t *testing.T, name string, files []torrentFile) (*ht
 // later one by source path with a version number), and an unselected
 // first-level video is not placed.
 func TestOneShotManualFileSelectionRealChain(t *testing.T) {
+	runOneShotFileSelectionRealChain(t, false)
+}
+
+func TestOneShotPartialDownloadRealChain(t *testing.T) {
+	runOneShotFileSelectionRealChain(t, true)
+}
+
+func runOneShotFileSelectionRealChain(t *testing.T, partial bool) {
+	t.Helper()
 	stamp := time.Now().UTC().Format(time.RFC3339Nano)
 	content := func(label string) []byte { return []byte("ospick " + label + " " + stamp) }
 	files := []torrentFile{
@@ -119,6 +130,16 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 		{Name: "Season 1/OSPick Real Show - 01.mkv", Content: content("season 1 episode 01")},
 		{Name: "Season 1/OSPick Real Show - 02.mkv", Content: content("season 1 episode 02")},
 		{Name: "Season 2/OSPick Real Show - 02.mkv", Content: content("season 2 copy of episode 02")},
+	}
+	if partial {
+		// Keep the excluded video on whole pieces, so no boundary piece of a
+		// selected file requires bytes from it.
+		skipped := mkvfixture.HEVC1080pAAC("unselected " + stamp)
+		const piece = 16384
+		skipped = append(skipped, make([]byte, piece+(piece-len(skipped)%piece)%piece)...)
+		files[0].Content = skipped
+		files[2].Content = mkvfixture.HEVC1080pAAC("selected " + stamp)
+		files = files[:3]
 	}
 	byManifest := map[string][]byte{}
 	for _, file := range files {
@@ -181,11 +202,16 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 	firstCopy := fileSelectionTorrentName + "/Season 1/OSPick Real Show - 02.mkv"
 	secondCopy := fileSelectionTorrentName + "/Season 2/OSPick Real Show - 02.mkv"
 	unselected := fileSelectionTorrentName + "/OSPick Real Show - 03.mkv"
+	want := []string{deepSubtitle, deepVideo, firstCopy, secondCopy}
+	if partial {
+		want = want[:2]
+	}
 	input := oneshotapplication.AcquireSeedInput{
-		CandidateID:   candidate.Id,
-		Revision:      *candidate.CurrentRevision,
-		Seed:          seed,
-		FileSelection: []string{deepVideo, deepSubtitle, firstCopy, secondCopy},
+		CandidateID:           candidate.Id,
+		Revision:              *candidate.CurrentRevision,
+		Seed:                  seed,
+		FileSelection:         want,
+		DownloadSelectedFiles: partial,
 		Caller: oneshotapplication.AcquireSeedCaller{Kind: oneshotapplication.AcquireSeedCallerAgent,
 			Agent: &oneshotapplication.AgentSeedAuthorization{GrantedBy: "integration", AuthorizationRef: "one-shot-file-selection"}},
 	}
@@ -201,8 +227,27 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
+	var qb qbittorrent.Client
+	if partial {
+		qb = qbittorrent.Client{Endpoint: os.Getenv("BANSOKO_QB_ENDPOINT"), Username: os.Getenv("BANSOKO_QB_USERNAME"), Password: os.Getenv("BANSOKO_QB_PASSWORD"), Timeout: 20 * time.Second}
+		stopDeadline := time.Now().Add(10 * time.Second)
+		for {
+			item, found, err := qb.TorrentByHash(ctx, infoHash)
+			if err != nil || !found {
+				t.Fatalf("partial torrent before the first sync: found=%v err=%v", found, err)
+			}
+			if item.State == "stoppedDL" || item.State == "pausedDL" {
+				t.Logf("PARTIAL QB ADD: state=%s", item.State)
+				break
+			}
+			if (item.State != "checkingResumeData" && item.State != "checkingDL") || !time.Now().Before(stopDeadline) {
+				t.Fatalf("partial torrent before the first sync: state=%q, want stopped", item.State)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 	deadline := time.Now().Add(90 * time.Second)
-	var taskState string
+	var taskState, failureCode, failureReason string
 	for time.Now().Before(deadline) {
 		if _, err := svc.download.DispatchQBSync(ctx); err != nil {
 			t.Fatal(err)
@@ -210,7 +255,7 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 		if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.db.QueryRowContext(ctx, `SELECT state FROM download_tasks WHERE id = $1`, downloadTaskID).Scan(&taskState); err != nil {
+		if err := svc.db.QueryRowContext(ctx, `SELECT state, COALESCE(failure_code,''), COALESCE(failure_reason,'') FROM download_tasks WHERE id = $1`, downloadTaskID).Scan(&taskState, &failureCode, &failureReason); err != nil {
 			t.Fatal(err)
 		}
 		if taskState == string(generated.DownloadTaskStateCompleted) || taskState == string(generated.DownloadTaskStateFailed) {
@@ -219,7 +264,28 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	if taskState != string(generated.DownloadTaskStateCompleted) {
-		t.Fatalf("one-shot task did not complete: state=%q", taskState)
+		t.Fatalf("one-shot task did not complete: state=%q code=%q reason=%q", taskState, failureCode, failureReason)
+	}
+	if partial {
+		qbFiles, err := qb.GetTorrentFiles(ctx, infoHash)
+		if err != nil || len(qbFiles) != 3 {
+			t.Fatalf("partial qB files: %v, %v", qbFiles, err)
+		}
+		for _, file := range qbFiles {
+			switch file.Name {
+			case unselected:
+				if file.Priority != 0 || file.Progress != 0 {
+					t.Fatalf("excluded file was downloaded: %+v", file)
+				}
+			case deepVideo, deepSubtitle:
+				if file.Priority == 0 || file.Progress != 1 {
+					t.Fatalf("selected file did not finish: %+v", file)
+				}
+			default:
+				t.Fatalf("unexpected qB file: %+v", file)
+			}
+			t.Logf("PARTIAL QB FILE: %s priority=%d progress=%.0f%%", file.Name, file.Priority, file.Progress*100)
+		}
 	}
 	var artifactID string
 	if err := svc.db.QueryRowContext(ctx, `SELECT id FROM artifacts WHERE download_task_id = $1`, downloadTaskID).Scan(&artifactID); err != nil {
@@ -264,7 +330,7 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 		placed = append(placed, manifest)
 	}
 	sort.Strings(placed)
-	if want := []string{deepSubtitle, deepVideo, firstCopy, secondCopy}; strings.Join(placed, "|") != strings.Join(want, "|") {
+	if strings.Join(placed, "|") != strings.Join(want, "|") {
 		var plan []byte
 		_ = svc.db.QueryRowContext(ctx, `SELECT release_facts->'batch_plan' FROM media_fact_snapshots WHERE release_id = $1`, result.ReleaseID).Scan(&plan)
 		var targetRows []byte
@@ -292,6 +358,18 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 	subtitle := targets[deepSubtitle]
 	if filepath.Dir(subtitle) != filepath.Dir(targets[deepVideo]) || !strings.HasPrefix(filepath.Base(subtitle), strings.TrimSuffix(video, filepath.Ext(video))+".") || filepath.Ext(subtitle) != ".ass" {
 		t.Fatalf("subtitle target %s is not beside its video %s", subtitle, targets[deepVideo])
+	}
+	if partial {
+		var inspected, placements int
+		if err := svc.db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM artifact_files WHERE artifact_id=$1), (SELECT count(*) FROM placements WHERE managed_anime_id=$2 AND state='active')`, artifactID, result.ManagedAnimeID).Scan(&inspected, &placements); err != nil {
+			t.Fatal(err)
+		}
+		if inspected != 2 || placements != 1 {
+			t.Fatalf("partial inspection and placement: inspected=%d placements=%d", inspected, placements)
+		}
+		t.Logf("PARTIAL IMPORT: inspected=%d verified placement=%d; %s and %s", inspected, placements, video, filepath.Base(subtitle))
+		assertNoDuplicateLiveWorkItems(t, ctx, svc.db)
+		return
 	}
 	// Both copies of episode 2 landed: the first by source path keeps the
 	// rendered name, the later one carries the version number.

@@ -35,7 +35,8 @@ type SnapshotSeedDownloadInput struct {
 	EpisodeOffset int
 	// FileSelection is the manual file selection (nil = the default files);
 	// see AcquireSeedInput.FileSelection.
-	FileSelection []string
+	FileSelection         []string
+	DownloadSelectedFiles bool
 	// Overrides are the sparse final per-file numbering values; see
 	// AcquireSeedInput.Overrides.
 	Overrides []acquisitiontarget.FileEpisodeOverride
@@ -110,11 +111,12 @@ func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDo
 	}, *fact)
 
 	admission := AcquireSeedInput{
-		Seed:          seed,
-		EpisodeOffset: input.EpisodeOffset,
-		FileSelection: input.FileSelection,
-		Overrides:     input.Overrides,
-		Caller:        AcquireSeedCaller{Kind: AcquireSeedCallerHuman},
+		Seed:                  seed,
+		EpisodeOffset:         input.EpisodeOffset,
+		FileSelection:         input.FileSelection,
+		DownloadSelectedFiles: input.DownloadSelectedFiles,
+		Overrides:             input.Overrides,
+		Caller:                AcquireSeedCaller{Kind: AcquireSeedCallerHuman},
 	}
 	switch input.InputSource {
 	case "current_input":

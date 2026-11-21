@@ -87,7 +87,8 @@ JOIN download_tasks t ON t.acquisition_id = a.id
 WHERE a.execution_branch = 'download' AND a.record_state = 'full'
   AND NOT EXISTS (SELECT 1 FROM download_completions c WHERE c.acquisition_id = a.id)
   AND ((a.completion_open AND a.state = 'succeeded')
-       OR (a.state = 'failed' AND t.state = 'failed' AND download_failure_is_timeout(t.failure_code)))
+       OR (a.state = 'failed' AND t.state = 'failed' AND download_failure_is_timeout(t.failure_code)
+           AND (NOT (t.frozen_input ? 'partial_download') OR t.frozen_input @> '{"partial_start_sent":true}')))
 ORDER BY a.terminal_at, a.id
 LIMIT $1`, limit)
 	if err != nil {

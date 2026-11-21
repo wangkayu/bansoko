@@ -26,8 +26,9 @@ type oneShotCanonicalRequest struct {
 	EpisodeOffset int `json:"episode_offset,omitempty"`
 	// FileSelection is omitted without a manual selection so a default
 	// request keeps its replay identity.
-	FileSelection []string                                `json:"file_selection,omitempty"`
-	Overrides     []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
+	FileSelection         []string                                `json:"file_selection,omitempty"`
+	DownloadSelectedFiles bool                                    `json:"download_selected_files,omitempty"`
+	Overrides             []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
 }
 
 func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, error) {
@@ -37,15 +38,16 @@ func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, er
 	}
 	input.Overrides = overrides
 	return animeapplication.CanonicalJSONHash(oneShotCanonicalRequest{
-		Kind:            "acquire_seed_once",
-		IdempotencyKey:  key,
-		CandidateID:     input.CandidateID,
-		Revision:        input.Revision,
-		EffectiveDigest: input.EffectiveDigest,
-		SelectedSeed:    input.Seed,
-		EpisodeOffset:   input.EpisodeOffset,
-		FileSelection:   input.FileSelection,
-		Overrides:       input.Overrides,
+		Kind:                  "acquire_seed_once",
+		IdempotencyKey:        key,
+		CandidateID:           input.CandidateID,
+		Revision:              input.Revision,
+		EffectiveDigest:       input.EffectiveDigest,
+		SelectedSeed:          input.Seed,
+		EpisodeOffset:         input.EpisodeOffset,
+		FileSelection:         input.FileSelection,
+		DownloadSelectedFiles: input.DownloadSelectedFiles,
+		Overrides:             input.Overrides,
 	})
 }
 
@@ -56,13 +58,14 @@ func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, er
 // always decided against the originally captured input, never re-resolved
 // against changed configuration.
 type oneShotCurrentInputCanonicalRequest struct {
-	Kind           string                                  `json:"kind"`
-	IdempotencyKey string                                  `json:"idempotency_key"`
-	DraftDigest    string                                  `json:"draft_digest"`
-	SelectedSeed   SelectedSeed                            `json:"selected_seed"`
-	EpisodeOffset  int                                     `json:"episode_offset,omitempty"`
-	FileSelection  []string                                `json:"file_selection,omitempty"`
-	Overrides      []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
+	Kind                  string                                  `json:"kind"`
+	IdempotencyKey        string                                  `json:"idempotency_key"`
+	DraftDigest           string                                  `json:"draft_digest"`
+	SelectedSeed          SelectedSeed                            `json:"selected_seed"`
+	EpisodeOffset         int                                     `json:"episode_offset,omitempty"`
+	FileSelection         []string                                `json:"file_selection,omitempty"`
+	DownloadSelectedFiles bool                                    `json:"download_selected_files,omitempty"`
+	Overrides             []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
 }
 
 func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSeedInput, key string) (string, error) {
@@ -72,13 +75,14 @@ func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSe
 	}
 	input.Overrides = overrides
 	return animeapplication.CanonicalJSONHash(oneShotCurrentInputCanonicalRequest{
-		Kind:           "acquire_seed_once_current_input",
-		IdempotencyKey: key,
-		DraftDigest:    draftDigest,
-		SelectedSeed:   input.Seed,
-		EpisodeOffset:  input.EpisodeOffset,
-		FileSelection:  input.FileSelection,
-		Overrides:      input.Overrides,
+		Kind:                  "acquire_seed_once_current_input",
+		IdempotencyKey:        key,
+		DraftDigest:           draftDigest,
+		SelectedSeed:          input.Seed,
+		EpisodeOffset:         input.EpisodeOffset,
+		FileSelection:         input.FileSelection,
+		DownloadSelectedFiles: input.DownloadSelectedFiles,
+		Overrides:             input.Overrides,
 	})
 }
 
