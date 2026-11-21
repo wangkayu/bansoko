@@ -59,6 +59,13 @@ func TestReltitleEpisodeGolden(t *testing.T) {
 	}
 }
 
+func TestReltitleRecognizesCompactSeasonRange(t *testing.T) {
+	got := parseWith(t, ParserReltitle, InputReleaseTitle, "[SampleGroup] Sample Show 10-bit 1080p HEVC BDRip [S1-2 Fin]")
+	if got.Status != StatusUnsupported || got.Shape != ShapeSeasonOnly || got.RawCapture != "S1-S2" || got.Episode != nil {
+		t.Fatalf("compact season range was not recognized: %+v", got)
+	}
+}
+
 func TestReltitleRefusesConfigAndIgnoresProfilePatterns(t *testing.T) {
 	adapter := ReltitleAdapter{}
 	if err := adapter.ValidateConfig(json.RawMessage(`{"episode_patterns":["x"]}`)); err == nil {

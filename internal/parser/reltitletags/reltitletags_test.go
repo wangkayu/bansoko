@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,6 +54,17 @@ func TestExtractNeverCarriesEpisodeIdentity(t *testing.T) {
 	}
 	if want := []string{"title:Show", "group:Group", "version:V2"}; !reflect.DeepEqual(got.ValueTags, want) {
 		t.Fatalf("value tags = %v, want %v", got.ValueTags, want)
+	}
+}
+
+func TestExtractPreservesAtSignInTailGroup(t *testing.T) {
+	for _, input := range []string{
+		"Example.Show.S01.2020.1080p.BluRay.x265.FLAC.2.0-SampleGroup@NET",
+		"Example.Show.S01E02.2020.1080p.BluRay.x265.FLAC.2.0-SampleGroup@NET.mkv",
+	} {
+		if got := Extract(input); got.Diagnostic != "" || !slices.Contains(got.ValueTags, "group:SampleGroup@NET") {
+			t.Errorf("%q: value tags = %v, diagnostic = %q; want group:SampleGroup@NET", input, got.ValueTags, got.Diagnostic)
+		}
 	}
 }
 

@@ -45,6 +45,8 @@
 
 ## Fixed
 
+- The built-in title parser recognizes trailing group names containing @ and reads S1-2 Fin as a pack of seasons 1 and 2 instead of a single episode.
+
 - The event log reports a replacement only when an old version was actually replaced. Expand the event to see the kept and replaced versions and whether a library check triggered the replacement.
 - Automation run records and logs distinguish completed catalog checks from queued work and show confirmed results even when some tasks fail.
 - Interrupted automation runs with no confirmed result show as unconfirmed rather than failed in settings and logs.
