@@ -2586,10 +2586,13 @@ test.describe("AnimeGrid", () => {
     await option.click();
     const applySeason = match.getByRole("combobox", { name: t("forms.applySeason"), includeHidden: true });
     await expect(applySeason).toContainText("S2 · 第二季");
-    await entry.click();
+    // Keyboard activation must not return focus to the option just clicked.
+    await entry.press("Enter");
     const reopened = page.getByRole("dialog", { name: "EP 列表", exact: true });
     await expect(reopened.locator(".metadata-episode-row")).toHaveCount(24);
     await reopened.getByRole("button", { name: "关闭", exact: true }).last().click();
+    await expect(reopened).toBeHidden();
+    await expect(entry).toBeFocused();
     await expect(applySeason).toContainText("S2 · 第二季");
   });
 

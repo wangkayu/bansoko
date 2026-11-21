@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Search } from "lucide-react";
 import { listTMDBWorkSeasons, toUserMessage, type TMDBSeasonList } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
@@ -13,10 +13,11 @@ export type MetadataEpisodeBinding = Pick<MetadataEpisodeWork, "workId" | "title
 type EpisodeDialogProps = {
   loader: MetadataEpisodeLoader;
   onClose: () => void;
+  returnFocus?: RefObject<HTMLButtonElement | null>;
 } & ({ candidate: MetadataCandidate; binding?: never } | { binding: MetadataEpisodeBinding; candidate?: never });
 
 // Browsing keeps the selected season and filter local, independent of matching and saved settings.
-export function MetadataEpisodeDialog({ candidate, binding, loader, onClose }: EpisodeDialogProps) {
+export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, returnFocus }: EpisodeDialogProps) {
   const work = binding ?? candidate;
   const boundSeason = binding?.provider === "tmdb" ? binding.season : undefined;
   const boundTMDBWorkID = binding?.provider === "tmdb" ? binding.workId : undefined;
@@ -104,6 +105,7 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose }: E
       fixedHeight
       bodyLayout="fill"
       focusTitle
+      returnFocus={returnFocus}
       title={t(binding ? "forms.boundEpisodeTitle" : "forms.episodeListTitle")}
       description={[work.title, isTMDB ? "TMDB" : "Bangumi"].filter(Boolean).join(" · ")}
       footer={

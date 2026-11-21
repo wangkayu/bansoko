@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Eraser, ListOrdered, LoaderCircle, Pencil, Search, Sparkles } from "lucide-react";
 import { toUserMessage, type AnimeMetadataDraft, type SubscriptionOrigin } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
@@ -1009,6 +1009,7 @@ function MetadataMatchDialog({
   const [candidates, setCandidates] = useState<MetadataCandidate[]>([]);
   const [selected, setSelected] = useState<MetadataCandidate>();
   const [episodeReference, setEpisodeReference] = useState<MetadataCandidate>();
+  const episodeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string>();
@@ -1341,7 +1342,10 @@ function MetadataMatchDialog({
                       variant="ghost"
                       className="metadata-match-episodes-action"
                       aria-label={t("forms.browseCandidateEpisodes", { title: candidate.title })}
-                      onClick={() => setEpisodeReference(candidate)}
+                      onClick={(event) => {
+                        episodeTriggerRef.current = event.currentTarget;
+                        setEpisodeReference(candidate);
+                      }}
                     >
                       <ListOrdered aria-hidden="true" />
                       {t("forms.episodeListAction")}
@@ -1358,6 +1362,7 @@ function MetadataMatchDialog({
           key={`${episodeReference.provider}:${episodeReference.workId}`}
           candidate={episodeReference}
           loader={episodeLoader}
+          returnFocus={episodeTriggerRef}
           onClose={() => setEpisodeReference(undefined)}
         />
       )}
