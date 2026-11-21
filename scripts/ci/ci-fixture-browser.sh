@@ -74,6 +74,7 @@ echo "== fixture browser (desktop + mobile; only declared design-time viewport s
 # real regression.
 fixture_specs=(
   e2e/anime-grid.spec.ts
+  e2e/browse-synopsis.spec.ts
   e2e/rss-oneoff.spec.ts
   e2e/oneshot-adopt-fixture.spec.ts
   e2e/settings.spec.ts

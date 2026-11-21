@@ -293,12 +293,14 @@ func TestExitCodeTableIsDocumented(t *testing.T) {
 // The appendix draft is not just JSON: it decodes strictly into the contract
 // type and passes the same draft validation activation uses.
 func TestAppendixDraftIsAValidAnimeDraft(t *testing.T) {
-	guide := agentguide.Guide()
-	start := strings.Index(guide, "```json\n")
-	if start < 0 {
-		t.Fatal("the guide has no JSON example")
+	_, appendix, ok := strings.Cut(agentguide.Guide(), "## Appendix")
+	if !ok {
+		t.Fatal("the guide has no appendix")
 	}
-	block := guide[start+len("```json\n"):]
+	_, block, ok := strings.Cut(appendix, "```json\n")
+	if !ok {
+		t.Fatal("the appendix has no JSON example")
+	}
 	block = block[:strings.Index(block, "```")]
 	decoder := json.NewDecoder(strings.NewReader(block))
 	decoder.DisallowUnknownFields()
@@ -321,7 +323,6 @@ func TestAppendixDraftIsAValidAnimeDraft(t *testing.T) {
 	if _, err := animedomain.ResolveDraftSectionsFromBusiness(mapped, nil); err == nil {
 		t.Fatal("the appendix draft unexpectedly resolves without a business snapshot; revisit the load step in the guide")
 	}
-	appendix := guide[strings.Index(guide, "## Appendix"):]
 	if !strings.Contains(appendix, "`load_business_preset`") {
 		t.Fatal("the appendix must say the draft goes through load_business_preset before preview and save")
 	}

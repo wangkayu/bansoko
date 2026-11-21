@@ -852,7 +852,7 @@ h1, h2, h3, h4, h5, h6 {
 .catalog-metadata-empty { color: hsl(var(--muted-foreground)); }
 .catalog-corner-badges { pointer-events: none; position: absolute; left: 0.5rem; top: 0.5rem; z-index: 20; display: flex; max-width: calc(100% - 3.25rem); flex-wrap: wrap; align-items: center; gap: 0.375rem; }
 .catalog-corner-badges:has(> .browse-card-status-badge) { display: grid; grid-template-columns: auto 1fr; justify-items: start; gap: 3px; }
-.browse-card-status-badge { grid-column: 1 / -1; line-height: 0.875rem; }
+.browse-card-status-badge { grid-column: 1 / -1; border-radius: 0.25rem; line-height: 0.75rem; }
 /* Reserve room for both 2rem controls, their spacing and the right gutter. */
 .browse-card:has(> .browse-card-synopsis:not(.browse-card-synopsis-alone)) .catalog-corner-badges:has(> .browse-card-status-badge) { right: 4.875rem; max-width: none; }
 @media (width < 640px) {

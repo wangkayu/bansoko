@@ -223,9 +223,36 @@ Notes:
 - The HTTP and CLI callers may still send the full seed with its `locator` (the frontend does). `get_one_shot_acquisition` never returns the locator: its `input_snapshot` shows the seed without it.
 - Caller binding: an agent request needs a complete `origin: oneshot` draft and an explicit authorization snapshot. A one-shot names its seed directly and is never bound by group selection; the seed's exact persisted snapshot proves it exists. A human request admits a seed of a provider draft's (`anibt` or `mikan`) own entry (`origin_entry_ref` equals the seed's `provider_entry_ref`) from any of its groups. A human custom draft admits a custom seed: under `input_source=saved_revision` the server derives the source/group from the revision and any other seed is `SEED_PREVIEW_STALE`; under `input_source=current_input` (the one-shot's own unsaved configuration) the seed's persisted custom snapshot is the binding.
 - `rss_list_view` with `one_shot: true` (current_input only) is the one-shot browse: every configured and observed group lists its supplied snapshot whatever the draft selects, every group previews with `episode_offset`, and a custom draft binds the custom snapshot it names. Use it to preview exactly what `download_snapshot_seed` with that draft and offset will create.
-- Choosing files: by default a one-shot imports only the torrent's first-level videos and the subtitles that follow them. Every item of a one-shot browse lists `manifest_files`: every file at any depth, whether it is `selectable`, whether it is `default_selected`, a video's episode `recognition`, and the video a subtitle follows. To import other files, send `file_selection` (the exact `source_path` values) on `download_snapshot_seed`; it replaces the default list. Only videos the file rules keep and subtitles may be chosen, with at least one video, and a subtitle only together with the video of its folder that it follows; anything else fails with `FILE_SELECTION_INVALID` (HTTP 422) and writes nothing. Preview the same choice with `file_selections` on the one-shot browse. The whole torrent is still downloaded; unchosen files stay in the download location. Omit `file_selection` for the default files.
+- Choosing files: by default a one-shot imports only the torrent's first-level videos and the subtitles that follow them. Each one-shot browse item lists `manifest_files`: each file at any depth, whether it is `selectable` or `default_selected`, a video's episode `recognition`, and the video a subtitle follows. On `download_snapshot_seed`, send `file_selection` with the exact `source_path` values to replace the default list. Choose at least one video that the file rules keep, and include each wanted subtitle alongside the video it follows in the same folder. An invalid selection fails with `FILE_SELECTION_INVALID` (HTTP 422) and writes nothing. Omit `file_selection` to use the default list.
+- Numbering files: send top-level `overrides` on `download_snapshot_seed` or `acquire_seed_once`. Each entry uses the exact `path` of one selected video once. `episode` is the final positive integer, with no automatic `episode_offset` added. Omit `season` to use the draft's naming season, or set `season: 0` for Specials. Subtitles inherit the video's numbering. Videos without an override still use automatic recognition and the offset. `acquire_seed_once` accepts overrides for the default selection but does not accept `file_selection` or `download_selected_files`.
+- Downloading only the selection: `download_snapshot_seed` downloads the whole torrent unless `download_selected_files` is `true`. Set it per seed only when the human requests it, and send an explicit `file_selection` containing at least one video and fewer files than the full `manifest_files` list, counting the chosen subtitles in the selection. This changes which files qBittorrent downloads, not the import rules or any subscription setting.
 - Use `get_one_shot_acquisition`, not `get_workspace`, for a one-shot.
 - A one-shot whose import (file placement) failed can retry that stage from its execution record (`retry_import`, section 5.4). Any other failed one-shot is final: there is no replan, so to download the seed again admit it again as a new one-shot (steps 1 to 5) with a new `idempotency_key`.
+
+**Preview, then submit the same selection and numbering.** Suppose a seed has two videos and a subtitle that follows the first. To import just the first video and subtitle as Specials episode 7, add these fields to the `rss_list_view` arguments. Use the actual snapshot ID, seed key and paths from the browse result.
+
+```json
+{
+  "file_selections": [{
+    "snapshot_id": "00000000-0000-4000-8000-000000000001",
+    "stable_seed_key": "example-seed",
+    "source_paths": ["Example/Part 01.mkv", "Example/Part 01.en.ass"],
+    "overrides": [{"path": "Example/Part 01.mkv", "season": 0, "episode": 7}]
+  }]
+}
+```
+
+Check the rendered targets, then call `download_snapshot_seed` with the same snapshot and seed identity, draft and `episode_offset`. Copy `source_paths` to `file_selection` and use the same `overrides` at the top level. If the human chose a partial download, the additional arguments for this example are:
+
+```json
+{
+  "file_selection": ["Example/Part 01.mkv", "Example/Part 01.en.ass"],
+  "overrides": [{"path": "Example/Part 01.mkv", "season": 0, "episode": 7}],
+  "download_selected_files": true
+}
+```
+
+For `acquire_seed_once`, use the default file paths when previewing the overrides, then send only the same top-level `overrides` alongside the usual admission fields.
 
 ### 5.3 File management (group `files`)
 

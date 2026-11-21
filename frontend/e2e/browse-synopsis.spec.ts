@@ -156,7 +156,12 @@ test.describe("browse synopsis reader", () => {
     await filter.fill('星屑 -"测试条目 0"');
     const row = list.locator("[data-catalog-row]").filter({ hasText: "星屑邮递员" });
     await expect(list.locator("[data-catalog-row]")).toHaveCount(24);
-    await expect(row.getByRole("button")).toHaveText([t("grid.list.synopsis"), t("grid.card.browse"), t("anime.subscribe")]);
+    const actions = row.locator("[data-catalog-actions]").getByRole("button");
+    await expect(actions).toHaveCount(3);
+    const actionKeys = ["grid.card.viewSynopsisFor", "grid.list.browseFor", "grid.list.subscribeFor"] as const;
+    for (const [index, key] of actionKeys.entries()) {
+      await expect(actions.nth(index)).toHaveAccessibleName(t(key, { title: "星屑邮递员" }));
+    }
     const [filterBox, availableBox] = await Promise.all([filter.boundingBox(), available.boundingBox()]);
     if (testInfo.project.name === "mobile") {
       expect(availableBox!.y).toBeCloseTo(filterBox!.y);
@@ -245,6 +250,7 @@ test.describe("browse subscription badge", () => {
       const badge = card.getByText("Subscribed", { exact: true });
       await expect(badge).toBeVisible();
       await expect(badge).toHaveCSS("font-size", "11px");
+      await expect(badge).toHaveCSS("border-radius", "4px");
       const layout = await badge.evaluate((element) => {
         const card = element.closest(".browse-card")!;
         const corner = element.parentElement!;
@@ -267,7 +273,7 @@ test.describe("browse subscription badge", () => {
           chipY: chip.top - Math.max(corner.getBoundingClientRect().top, ...facts.map((r) => r.bottom)),
         };
       });
-      expect(layout.height).toBeCloseTo(18);
+      expect(layout.height).toBeCloseTo(16);
       expect(layout.remaining).toBeGreaterThanOrEqual(-0.1);
       expect(layout.controls).toBe(2);
       expect(layout.clearance).toBeGreaterThanOrEqual(1);
@@ -297,13 +303,14 @@ test.describe("browse subscription badge", () => {
     const ended = retiredCard.getByText("Ended", { exact: true });
     await expect(ended).toBeVisible();
     await expect(ended).toHaveCSS("font-size", "11px");
+    await expect(ended).toHaveCSS("border-radius", "4px");
     await expect(ended).toHaveClass(/\bcatalog-pw-chip-muted\b/);
     const retiredLayout = await ended.evaluate((element) => {
       const badge = element.getBoundingClientRect();
       const day = element.parentElement!.querySelector(".catalog-corner-badge")!.getBoundingClientRect();
       return { height: badge.height, rowGap: badge.top - day.bottom, leftOffset: badge.left - day.left };
     });
-    expect(retiredLayout).toEqual({ height: 18, rowGap: 3, leftOffset: 0 });
+    expect(retiredLayout).toEqual({ height: 16, rowGap: 3, leftOffset: 0 });
     await expect(retiredCard.getByText("Subscribed", { exact: true })).toHaveCount(0);
     await retiredCard.screenshot({ path: testInfo.outputPath("ended-badge.png"), animations: "disabled" });
   });
