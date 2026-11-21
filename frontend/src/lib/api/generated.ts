@@ -2004,6 +2004,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/event-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEventActions"];
+        put: operations["saveEventAction"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event-actions/scripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["readEventActionScripts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event-actions/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEventActionAttempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugin-targets": {
         parameters: {
             query?: never;
@@ -3056,6 +3104,38 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        EventActionKind: "file_operation_completed" | "download_submitted" | "file_operation_failed";
+        /** @enum {string} */
+        EventActionCheck: "checkPassed" | "missingFile" | "missingPermission" | "missingInterpreter" | "unreadable";
+        EventActionInput: {
+            kind: components["schemas"]["EventActionKind"];
+            script: string | null;
+            enabled: boolean;
+            /** @enum {integer} */
+            timeout_seconds: 15 | 30 | 60;
+            version: number;
+        };
+        EventActionBinding: components["schemas"]["EventActionInput"] & {
+            check?: components["schemas"]["EventActionCheck"];
+        };
+        EventActionFile: {
+            name: string;
+            check: components["schemas"]["EventActionCheck"];
+            interpreter?: string;
+            source?: string;
+            truncated?: boolean;
+        };
+        EventActionAttempt: {
+            id: string;
+            kind: components["schemas"]["EventActionKind"];
+            script: string;
+            /** Format: date-time */
+            time: string;
+            /** @enum {string} */
+            state: "running" | "completed" | "missing" | "unavailable" | "failed" | "timeout" | "unconfirmed";
+            exit_code?: number;
+        };
         /** @description One invalidation signal on /events/stream. It names the read model to re-read and never carries a business object. */
         RealtimeEvent: {
             /** @enum {string} */
@@ -12700,6 +12780,105 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    listEventActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current global event bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventActionBinding"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    saveEventAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventActionInput"];
+            };
+        };
+        responses: {
+            /** @description Saved event binding. A null script removes the binding only. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventActionBinding"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    readEventActionScripts: {
+        parameters: {
+            query?: {
+                file?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read-only directory listing, or the preflight and bounded source preview of one file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventActionFile"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listEventActionAttempts: {
+        parameters: {
+            query?: {
+                warnings?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The latest 50 script attempts, or only the first missing-file attempt of each observed missing period. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventActionAttempt"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listPluginTargets: {

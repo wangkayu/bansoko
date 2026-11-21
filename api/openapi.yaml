@@ -5137,6 +5137,85 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/Unprocessable'
+  /event-actions:
+    get:
+      tags: [Plugins]
+      operationId: listEventActions
+      security: [{browserSession: []}]
+      x-scope: read
+      responses:
+        '200':
+          description: Current global event bindings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/EventActionBinding'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [Plugins]
+      operationId: saveEventAction
+      security: [{browserSession: []}]
+      x-scope: write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventActionInput'}
+      responses:
+        '200':
+          description: Saved event binding. A null script removes the binding only.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventActionBinding'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+  /event-actions/scripts:
+    get:
+      tags: [Plugins]
+      operationId: readEventActionScripts
+      security: [{browserSession: []}]
+      x-scope: read
+      parameters:
+        - name: file
+          in: query
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+      responses:
+        '200':
+          description: Read-only directory listing, or the preflight and bounded source preview of one file.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/EventActionFile'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+  /event-actions/attempts:
+    get:
+      tags: [Plugins]
+      operationId: listEventActionAttempts
+      security: [{browserSession: []}]
+      x-scope: read
+      parameters:
+        - name: warnings
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: The latest 50 script attempts, or only the first missing-file attempt of each observed missing period.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/EventActionAttempt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /plugin-targets:
     get:
       tags: [Plugins]
@@ -7575,6 +7654,11 @@ paths:
           $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
+    browserSession:
+      type: apiKey
+      in: cookie
+      name: bansoko_session
+      description: Owner browser session. Writes also require the CSRF header. Bearer credentials are not accepted.
     bearerAuth:
       type: http
       scheme: bearer
@@ -7911,6 +7995,51 @@ components:
           schema:
             $ref: '#/components/schemas/ManualRetryResult'
   schemas:
+    EventActionKind:
+      type: string
+      enum: [file_operation_completed, download_submitted, file_operation_failed]
+    EventActionCheck:
+      type: string
+      enum: [checkPassed, missingFile, missingPermission, missingInterpreter, unreadable]
+    EventActionInput:
+      type: object
+      required: [kind, script, enabled, timeout_seconds, version]
+      properties:
+        kind: {$ref: '#/components/schemas/EventActionKind'}
+        script:
+          type: string
+          nullable: true
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+        enabled: {type: boolean}
+        timeout_seconds: {type: integer, enum: [15, 30, 60]}
+        version: {type: integer, minimum: 0}
+    EventActionBinding:
+      allOf:
+        - $ref: '#/components/schemas/EventActionInput'
+        - type: object
+          properties:
+            check: {$ref: '#/components/schemas/EventActionCheck'}
+    EventActionFile:
+      type: object
+      required: [name, check]
+      properties:
+        name: {type: string}
+        check: {$ref: '#/components/schemas/EventActionCheck'}
+        interpreter: {type: string}
+        source: {type: string}
+        truncated: {type: boolean}
+    EventActionAttempt:
+      type: object
+      required: [id, kind, script, time, state]
+      properties:
+        id: {type: string}
+        kind: {$ref: '#/components/schemas/EventActionKind'}
+        script: {type: string}
+        time: {type: string, format: date-time}
+        state:
+          type: string
+          enum: [running, completed, missing, unavailable, failed, timeout, unconfirmed]
+        exit_code: {type: integer}
     RealtimeEvent:
       type: object
       description: >-

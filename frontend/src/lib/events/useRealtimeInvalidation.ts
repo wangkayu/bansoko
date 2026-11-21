@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { acquisitionRecordKeys, animeKeys, catalogKeys, fileMaintenanceKeys, fileManagerKeys, observabilityKeys, reconciliationKeys, rssListKeys } from "../queryKeys";
+import { acquisitionRecordKeys, animeKeys, catalogKeys, eventActionKeys, fileMaintenanceKeys, fileManagerKeys, observabilityKeys, reconciliationKeys, rssListKeys } from "../queryKeys";
 import { beginScopedOwnerRssRefresh, clearScopedOwnerRssRefreshes, markScopedOwnerRssSnapshot } from "./refreshOwnerRss";
 import { createCoalescedInvalidation } from "./coalescedInvalidation";
 import { useSessionStore } from "../../shell/sessionStore";
@@ -27,7 +27,7 @@ const TARGET_QUERY_KEYS: Record<RealtimeEvent["target"], ReadonlyArray<QueryKey>
   catalog: [catalogKeys.all, animeKeys.list],
   subscribed: [animeKeys.list, catalogKeys.all],
   rss: [animeKeys.workspacePrefix],
-  records: [observabilityKeys.all, fileManagerKeys.all, acquisitionRecordKeys.all],
+  records: [observabilityKeys.all, fileManagerKeys.all, acquisitionRecordKeys.all, eventActionKeys.attempts],
 };
 
 const SUBSCRIPTION_LIST_KEYS: ReadonlyArray<QueryKey> = [animeKeys.list];

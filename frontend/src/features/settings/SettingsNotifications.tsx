@@ -55,7 +55,6 @@ import {
   updatePluginTarget,
   type ErrorDetail,
   type NotificationCatalogVersion,
-  type NotificationTemplateCatalog,
   type NotificationTemplatePreview,
   type NotificationTriggerKind,
   type PluginAdapterConfig,
@@ -69,6 +68,7 @@ import { ConfirmDialog, SecretField, SegmentedControl, type SecretMode } from ".
 import { DeliveryHistoryDialog } from "./DeliveryHistoryDialog";
 import { deliveryStateLabel } from "./DeliveryDetailDialog";
 import { SettingsEditDialog } from "./SettingsEditDialog";
+import { SettingsEventScripts } from "./SettingsEventScripts";
 import { getLocale, t, tryT } from "../../lib/i18n";
 import { FactCatalog } from "../templateFacts/FactCatalog";
 
@@ -948,18 +948,20 @@ function ChannelPage({
       )}
       {triggerVocabulary.data && (
         <div className="settings-notifications-field-gap">
-          <div className="settings-notifications-sec-head">
+          <div className={cn("settings-notifications-sec-head", !isNew && "tw:flex-wrap")}>
             <span className="text-caption">{t("settings.notifications.field.triggers")}</span>
             <span className="settings-notifications-footer-grow" />
-            <span className="text-caption tw:text-muted-foreground">
-              {customCount > 0
-                ? t("settings.notifications.customTemplateCount", { n: customCount })
-                : t("settings.notifications.allDefaultTemplates")}
-            </span>
-            <Button size="sm" onClick={onOpenTemplates}>
-              {t("settings.notifications.template.editEntry")}
-              <ChevronRight size={14} aria-hidden />
-            </Button>
+            {customCount > 0 && (
+              <span className="text-caption tw:text-muted-foreground">
+                {t("settings.notifications.customTemplateCount", { n: customCount })}
+              </span>
+            )}
+            <div className="tw:flex tw:items-center tw:gap-2">
+              <Button size="sm" onClick={onOpenTemplates}>
+                <Pencil size={14} aria-hidden="true" />{t("settings.notifications.template.editEntry")}
+              </Button>
+              {!isNew && <SettingsEventScripts />}
+            </div>
           </div>
           <div className="settings-notifications-events-input">
             {triggerKinds.map((kind) => {

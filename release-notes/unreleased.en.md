@@ -14,6 +14,8 @@
 - Download, import and unrecognized-file notifications support task.origin to distinguish subscription tasks (subscription) from one-shot tasks (one_shot). Source-aware events add release.site for the publishing site and release.link for an explicit release details page; download.link remains the download address.
 - Containers now support bansoko-server update check|apply|status for embedded update checks, admission and status, with human-readable and JSON output. Access is limited to root or the serving PUID and requires no web session or API token.
 - Library import completion and execution failure notifications support original file-name attributes through frt.*. File displacement notifications can show both files using frt.* and taker.frt.*.
+- Open Event actions beside the notification channel’s triggers to select a local script for import completion, download submission, or import failure. Script bindings are independent of notification channels, and results appear in Execution records.
+- The container image ships curl and jq so event scripts can make HTTP requests and read event JSON. Python is not included.
 
 ## Improved
 
@@ -56,6 +58,7 @@
 
 ## Important
 
+- When upgrading to 0.2, pull the new image and recreate the application container. An in-app update alone does not install curl or jq. In an older container, a script can pass the permission check and still fail at runtime because one of these commands is missing.
 - Keyword-search one-shot tasks no longer parse a group name from the release title, and the unknown placeholder is gone: ${group} (anime.group) renders empty in both preview and import for search one-shots. To use the group named in the title, reference ${rt.group} (release title parse) or ${frt.group} (file name parse). Subscription and custom source group names are unchanged.
 - media.resolution in file naming now comes only from inspection of the actual file. It is never filled from the release title, original file name or acceptance-time media.quality, and remains empty when inspection yields no value. Media and file facts do not participate in replacement resource comparison.
 - New notifications use release.src consistently for the acquisition channel: anibt, mikan, nyaa, jackett or custom, instead of provider_group/custom_rss. Custom templates that compare the old values need manual adjustment. No source line is appended to existing custom templates.

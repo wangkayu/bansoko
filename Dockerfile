@@ -166,7 +166,8 @@ LABEL org.opencontainers.image.licenses="GPL-3.0-only" \
 # mediainfo reads the execution-time media facts (file.resolution, video_codec,
 # audio_codec, container) of every downloaded video; it is started directly
 # with the file path as one argument, never through a shell.
-RUN apk add --no-cache ca-certificates tzdata mediainfo
+# Event scripts can use curl for HTTP and jq for their JSON input.
+RUN apk add --no-cache ca-certificates tzdata mediainfo curl jq
 WORKDIR /app
 
 COPY --from=go-builder /out/bansoko-server /app/bansoko-server
@@ -231,6 +232,12 @@ RUN set -eux; \
     fi; \
     mediainfo --Version | grep -q "MediaInfoLib"; \
     apk list --installed mediainfo libmediainfo
+
+RUN set -eu; \
+    curl --version; \
+    jq --version; \
+    printf '%s\n' '{"facts":{"out.path":"/library/example.mkv"}}' | \
+      jq -e '.facts["out.path"] == "/library/example.mkv"'
 
 # The container starts as root: the unified binary's bootstrap mode prepares
 # updates root for PUID:PGID (default 1000:1000) and then drops to that account

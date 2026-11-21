@@ -602,6 +602,61 @@ test.describe("settings functional closure", () => {
 test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
 
+  test("事件脚本：配置分栏、源码滚动与返回草稿", async ({ page }, testInfo) => {
+    if (isMobile(page)) await page.setViewportSize({ width: 320, height: 720 });
+    await openSettings(page, "/#/settings/notifications");
+    const files = [
+      { name: "after-import.sh", check: "checkPassed", interpreter: "/bin/sh", source: `#!/bin/sh\n# ${"wide-source-line ".repeat(25)}\nexit 0` },
+      { name: "refresh-index.py", check: "missingInterpreter", interpreter: "/usr/bin/python3", source: "#!/usr/bin/python3\nprint('example')" },
+    ];
+    await page.route("**/api/v1/plugin-targets", route => route.fulfill({ json: { targets: [{
+      id: "target-script-fixture", name: "示例渠道", plugin_kind: "notification", adapter_kind: "telegram", enabled: false,
+      trigger_kinds: ["download_submitted"], config_schema_version: 1, config_status: "available", config: { adapter_kind: "telegram", chat_id: "123456" },
+      template_set: { language_version: "bansoko-template-1", catalog_version: "notification-catalog-v1", events: {} }, has_secret: false, version: 1,
+    }] } }));
+    await page.route("**/api/v1/event-actions", route => route.fulfill({ json: ["file_operation_completed", "download_submitted", "file_operation_failed"].map(kind => ({
+      kind, script: null, enabled: false, timeout_seconds: 30, version: 1,
+    })) }));
+    await page.route("**/api/v1/event-actions/scripts**", route => {
+      const file = new URL(route.request().url()).searchParams.get("file");
+      return route.fulfill({ json: file ? files.filter(row => row.name === file) : files });
+    });
+    await page.reload();
+    await page.getByRole("button", { name: "编辑", exact: true }).click();
+    const channel = page.getByRole("dialog", { name: "编辑通知渠道" });
+    const draftName = channel.getByRole("textbox", { name: "名称", exact: true });
+    await draftName.fill("尚未保存的渠道名称");
+    const template = channel.getByRole("button", { name: "编辑模板" });
+    const entry = channel.getByRole("button", { name: "事件动作" });
+    expect(Math.abs((await template.boundingBox())!.y - (await entry.boundingBox())!.y)).toBeLessThan(2);
+    await entry.click();
+    const configure = page.getByRole("dialog", { name: "配置事件" });
+    const browse = configure.getByRole("button", { name: "浏览脚本" });
+    await browse.click();
+    const picker = page.getByRole("dialog", { name: "选择脚本" });
+    const list = picker.getByRole("group", { name: "脚本文件" });
+    const detail = picker.locator("[data-event-script-preview]");
+    const code = detail.locator("pre");
+    await expect(code.locator("code")).toContainText("#!/bin/sh");
+    const [listBox, detailBox, pickerBox] = await Promise.all([list.boundingBox(), detail.boundingBox(), picker.boundingBox()]);
+    expect(detailBox!.x + detailBox!.width).toBeLessThanOrEqual(pickerBox!.x + pickerBox!.width + 1);
+    if (isMobile(page)) expect(detailBox!.y).toBeGreaterThan(listBox!.y + listBox!.height);
+    else expect(detailBox!.x).toBeGreaterThan(listBox!.x + listBox!.width);
+    expect(await code.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(await picker.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const cancelBox = await picker.getByRole("button", { name: "取消", exact: true }).boundingBox();
+    const chooseBox = await picker.getByRole("button", { name: "选择此脚本" }).boundingBox();
+    expect(Math.abs(cancelBox!.y - chooseBox!.y)).toBeLessThan(2);
+    await picker.screenshot({ path: testInfo.outputPath("event-script-split.png"), animations: "disabled" });
+    await list.getByRole("button", { name: /refresh-index\.py.*缺少解释器/ }).click();
+    await expect(code.locator("code")).toContainText("#!/usr/bin/python3");
+    await expect(picker.getByRole("button", { name: "选择此脚本" })).toBeDisabled();
+    await picker.getByRole("button", { name: "返回配置事件" }).click();
+    await expect(browse).toBeFocused();
+    await configure.getByRole("button", { name: "关闭", exact: true }).last().click();
+    await expect(draftName).toHaveValue("尚未保存的渠道名称");
+  });
+
   test("通知模板页：按渠道实时渲染预览且不溢出", async ({ page }, testInfo) => {
     await openSettings(page, "/#/settings/notifications");
     const settings = page.getByRole("dialog");

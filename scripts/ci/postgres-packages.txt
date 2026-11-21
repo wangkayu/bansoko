@@ -20,6 +20,7 @@
 ./internal/downloadcompletion
 ./internal/episodetitle
 ./internal/episodetitle/namingfacts
+./internal/eventactions
 ./internal/filemaintenance
 ./internal/filemaintenance/adapter/receipts
 ./internal/filemanager/persistence

@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	BearerAuthScopes = "bearerAuth.Scopes"
+	BearerAuthScopes     = "bearerAuth.Scopes"
+	BrowserSessionScopes = "browserSession.Scopes"
 )
 
 // Defines values for AcquireSeedOnceInputInputSource.
@@ -734,6 +735,47 @@ const (
 	DownloadTaskStateQueued       DownloadTaskState = "queued"
 	DownloadTaskStateSubmitting   DownloadTaskState = "submitting"
 	DownloadTaskStateWaitingRetry DownloadTaskState = "waiting_retry"
+)
+
+// Defines values for EventActionAttemptState.
+const (
+	EventActionAttemptStateCompleted   EventActionAttemptState = "completed"
+	EventActionAttemptStateFailed      EventActionAttemptState = "failed"
+	EventActionAttemptStateMissing     EventActionAttemptState = "missing"
+	EventActionAttemptStateRunning     EventActionAttemptState = "running"
+	EventActionAttemptStateTimeout     EventActionAttemptState = "timeout"
+	EventActionAttemptStateUnavailable EventActionAttemptState = "unavailable"
+	EventActionAttemptStateUnconfirmed EventActionAttemptState = "unconfirmed"
+)
+
+// Defines values for EventActionBindingTimeoutSeconds.
+const (
+	EventActionBindingTimeoutSecondsN15 EventActionBindingTimeoutSeconds = 15
+	EventActionBindingTimeoutSecondsN30 EventActionBindingTimeoutSeconds = 30
+	EventActionBindingTimeoutSecondsN60 EventActionBindingTimeoutSeconds = 60
+)
+
+// Defines values for EventActionCheck.
+const (
+	EventActionCheckCheckPassed        EventActionCheck = "checkPassed"
+	EventActionCheckMissingFile        EventActionCheck = "missingFile"
+	EventActionCheckMissingInterpreter EventActionCheck = "missingInterpreter"
+	EventActionCheckMissingPermission  EventActionCheck = "missingPermission"
+	EventActionCheckUnreadable         EventActionCheck = "unreadable"
+)
+
+// Defines values for EventActionInputTimeoutSeconds.
+const (
+	EventActionInputTimeoutSecondsN15 EventActionInputTimeoutSeconds = 15
+	EventActionInputTimeoutSecondsN30 EventActionInputTimeoutSeconds = 30
+	EventActionInputTimeoutSecondsN60 EventActionInputTimeoutSeconds = 60
+)
+
+// Defines values for EventActionKind.
+const (
+	EventActionKindDownloadSubmitted      EventActionKind = "download_submitted"
+	EventActionKindFileOperationCompleted EventActionKind = "file_operation_completed"
+	EventActionKindFileOperationFailed    EventActionKind = "file_operation_failed"
 )
 
 // Defines values for FeedSiteId.
@@ -4894,6 +4936,59 @@ type ErrorResponse struct {
 	// RequiredScope Present on 403 TOKEN_SCOPE_INSUFFICIENT: the scope the bearer is missing for this operation.
 	RequiredScope *ApiTokenScope `json:"required_scope,omitempty"`
 }
+
+// EventActionAttempt defines model for EventActionAttempt.
+type EventActionAttempt struct {
+	ExitCode *int                    `json:"exit_code,omitempty"`
+	Id       string                  `json:"id"`
+	Kind     EventActionKind         `json:"kind"`
+	Script   string                  `json:"script"`
+	State    EventActionAttemptState `json:"state"`
+	Time     time.Time               `json:"time"`
+}
+
+// EventActionAttemptState defines model for EventActionAttempt.State.
+type EventActionAttemptState string
+
+// EventActionBinding defines model for EventActionBinding.
+type EventActionBinding struct {
+	Check          *EventActionCheck                `json:"check,omitempty"`
+	Enabled        bool                             `json:"enabled"`
+	Kind           EventActionKind                  `json:"kind"`
+	Script         *string                          `json:"script"`
+	TimeoutSeconds EventActionBindingTimeoutSeconds `json:"timeout_seconds"`
+	Version        int                              `json:"version"`
+}
+
+// EventActionBindingTimeoutSeconds defines model for EventActionBinding.TimeoutSeconds.
+type EventActionBindingTimeoutSeconds int
+
+// EventActionCheck defines model for EventActionCheck.
+type EventActionCheck string
+
+// EventActionFile defines model for EventActionFile.
+type EventActionFile struct {
+	Check       EventActionCheck `json:"check"`
+	Interpreter *string          `json:"interpreter,omitempty"`
+	Name        string           `json:"name"`
+	Source      *string          `json:"source,omitempty"`
+	Truncated   *bool            `json:"truncated,omitempty"`
+}
+
+// EventActionInput defines model for EventActionInput.
+type EventActionInput struct {
+	Enabled        bool                           `json:"enabled"`
+	Kind           EventActionKind                `json:"kind"`
+	Script         *string                        `json:"script"`
+	TimeoutSeconds EventActionInputTimeoutSeconds `json:"timeout_seconds"`
+	Version        int                            `json:"version"`
+}
+
+// EventActionInputTimeoutSeconds defines model for EventActionInput.TimeoutSeconds.
+type EventActionInputTimeoutSeconds int
+
+// EventActionKind defines model for EventActionKind.
+type EventActionKind string
 
 // FeedSite defines model for FeedSite.
 type FeedSite struct {
@@ -10554,6 +10649,16 @@ type RetryDownloadTaskParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ListEventActionAttemptsParams defines parameters for ListEventActionAttempts.
+type ListEventActionAttemptsParams struct {
+	Warnings *bool `form:"warnings,omitempty" json:"warnings,omitempty"`
+}
+
+// ReadEventActionScriptsParams defines parameters for ReadEventActionScripts.
+type ReadEventActionScriptsParams struct {
+	File *string `form:"file,omitempty" json:"file,omitempty"`
+}
+
 // ListReplacementDecisionsParams defines parameters for ListReplacementDecisions.
 type ListReplacementDecisionsParams struct {
 	ManagedAnimeId *ID  `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
@@ -10973,6 +11078,9 @@ type RetrieveSubgroupGroupCandidateJSONRequestBody = SubgroupGroupRetrievalInput
 
 // RetryDownloadTaskJSONRequestBody defines body for RetryDownloadTask for application/json ContentType.
 type RetryDownloadTaskJSONRequestBody = ManualRetryInput
+
+// SaveEventActionJSONRequestBody defines body for SaveEventAction for application/json ContentType.
+type SaveEventActionJSONRequestBody = EventActionInput
 
 // EvaluateReplacementJSONRequestBody defines body for EvaluateReplacement for application/json ContentType.
 type EvaluateReplacementJSONRequestBody = ReplacementEvaluateInput
@@ -13251,6 +13359,18 @@ type ServerInterface interface {
 
 	// (POST /download-tasks/{download_task_id}/retry)
 	RetryDownloadTask(w http.ResponseWriter, r *http.Request, downloadTaskId DownloadTaskID, params RetryDownloadTaskParams)
+
+	// (GET /event-actions)
+	ListEventActions(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /event-actions)
+	SaveEventAction(w http.ResponseWriter, r *http.Request)
+
+	// (GET /event-actions/attempts)
+	ListEventActionAttempts(w http.ResponseWriter, r *http.Request, params ListEventActionAttemptsParams)
+
+	// (GET /event-actions/scripts)
+	ReadEventActionScripts(w http.ResponseWriter, r *http.Request, params ReadEventActionScriptsParams)
 
 	// (GET /events/stream)
 	StreamEvents(w http.ResponseWriter, r *http.Request)
@@ -17285,6 +17405,112 @@ func (siw *ServerInterfaceWrapper) RetryDownloadTask(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListEventActions operation middleware
+func (siw *ServerInterfaceWrapper) ListEventActions(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEventActions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveEventAction operation middleware
+func (siw *ServerInterfaceWrapper) SaveEventAction(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveEventAction(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEventActionAttempts operation middleware
+func (siw *ServerInterfaceWrapper) ListEventActionAttempts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListEventActionAttemptsParams
+
+	// ------------- Optional query parameter "warnings" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "warnings", r.URL.Query(), &params.Warnings)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "warnings", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEventActionAttempts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReadEventActionScripts operation middleware
+func (siw *ServerInterfaceWrapper) ReadEventActionScripts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReadEventActionScriptsParams
+
+	// ------------- Optional query parameter "file" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "file", r.URL.Query(), &params.File)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "file", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReadEventActionScripts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // StreamEvents operation middleware
 func (siw *ServerInterfaceWrapper) StreamEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -21174,6 +21400,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("DELETE "+options.BaseURL+"/config/subgroups/groups/{provider}/{group_ref}", wrapper.DeleteSubgroupGroupDictionaryEntry)
 	m.HandleFunc("GET "+options.BaseURL+"/config/tag-filters/title-vocabulary", wrapper.GetTitleTagVocabulary)
 	m.HandleFunc("POST "+options.BaseURL+"/download-tasks/{download_task_id}/retry", wrapper.RetryDownloadTask)
+	m.HandleFunc("GET "+options.BaseURL+"/event-actions", wrapper.ListEventActions)
+	m.HandleFunc("PUT "+options.BaseURL+"/event-actions", wrapper.SaveEventAction)
+	m.HandleFunc("GET "+options.BaseURL+"/event-actions/attempts", wrapper.ListEventActionAttempts)
+	m.HandleFunc("GET "+options.BaseURL+"/event-actions/scripts", wrapper.ReadEventActionScripts)
 	m.HandleFunc("GET "+options.BaseURL+"/events/stream", wrapper.StreamEvents)
 	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/decisions", wrapper.ListReplacementDecisions)
 	m.HandleFunc("POST "+options.BaseURL+"/file-maintenance/decisions", wrapper.EvaluateReplacement)

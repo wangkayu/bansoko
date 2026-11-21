@@ -31,6 +31,7 @@
 2	./internal/catalog/adapter/persistence
 2	./internal/deployment
 2	./internal/downloadcompletion
+2	./internal/eventactions
 2	./internal/identitymetadata/adapter/persistence
 2	./internal/metadata/adapter/persistence
 2	./internal/integration

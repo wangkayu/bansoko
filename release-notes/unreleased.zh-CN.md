@@ -14,6 +14,8 @@
 - 下载、入库及未识别文件通知支持 task.origin，区分订阅（subscription）与一次性任务（one_shot）。来源相关事件新增 release.site 与 release.link，分别表示发布站点和明确的发布详情页；下载地址仍使用 download.link。
 - 容器内可通过 bansoko-server update check|apply|status 检查、受理和查询内嵌更新，支持人读及 JSON 输出；仅限 root 或服务 PUID，不需要 Web 会话或 API token。
 - 入库完成和执行失败通知支持原始文件名解析属性 frt.*；文件被替换通知可分别使用 frt.* 和 taker.frt.* 展示新旧文件属性。
+- 在编辑通知渠道的「触发事件」旁可配置事件动作，为入库完成、下载已提交或入库失败选择本地脚本。脚本绑定独立于通知渠道，执行结果可在「执行记录」查看。
+- 容器镜像内置 curl 和 jq，事件脚本可发送 HTTP 请求并读取事件 JSON。Python 不随镜像提供。
 
 ## 改进
 
@@ -56,6 +58,7 @@
 
 ## 注意
 
+- 升级到 0.2 时，请拉取新镜像并重建应用容器。仅在应用内更新不会安装 curl 和 jq。在旧容器上，引用这些命令的脚本即使通过权限检查，也可能因找不到命令而显示「执行失败」。
 - 搜索一次性任务不再从发布标题解析组名，也不再使用 unknown 占位：${group}（anime.group）对搜索一次性的预览与入库均渲染为空。需要标题中的字幕组名时使用 ${rt.group}（发布标题解析）或 ${frt.group}（文件名解析）；订阅与自定义来源的组名不变。
 - 文件命名的 media.resolution 只来自实际文件探测，不再从发布标题、原始文件名或受理时的 media.quality 回填；未探测到值时保持为空。媒体与文件事实不参与洗版资源优劣比较。
 - 新通知的 release.src 统一为获取渠道 anibt、mikan、nyaa、jackett 或 custom，不再输出 provider_group/custom_rss。使用旧值判断的自定义模板需自行调整；不会自动给自定义模板加来源行。

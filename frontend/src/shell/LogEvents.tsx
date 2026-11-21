@@ -38,6 +38,8 @@ import {
   type BusinessEntry,
 } from "./logRuns";
 import { messageText, type LogState } from "./logState";
+import { listEventActionAttempts } from "../lib/api/client";
+import { eventActionKeys } from "../lib/queryKeys";
 
 // Events tab. Each row has three layers: the title ("anime · episode · group") with the result
 // fixed on its right, a second line of facts (files, size, replacement), and a third line with
@@ -288,6 +290,18 @@ function EventsList({
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
   const items = useMemo(() => groupEvents(query.data?.pages.flatMap((page) => page.records) ?? []), [query.data]);
+  const showScriptWarnings = type !== "plugin" && (state === "" || state === "failure") && !animeId;
+  const scriptWarnings = useQuery({
+    queryKey: [...eventActionKeys.attempts, "warnings"],
+    queryFn: ({ signal }) => listEventActionAttempts(true, signal),
+    enabled: showScriptWarnings,
+    refetchInterval: 15_000,
+  });
+  const warnings = !showScriptWarnings ? [] : (scriptWarnings.data ?? []).filter((item) => {
+    if ((from && item.time < from) || (to && item.time > to)) return false;
+    const summary = `${notificationTriggerKindLabel(item.kind)} ${t("settings.eventScripts.missingDetail", { script: item.script })}`;
+    return !q || summary.toLowerCase().includes(q.toLowerCase());
+  });
   const hideAnime = animeId !== "";
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const toggle = (key: string) =>
@@ -313,7 +327,7 @@ function EventsList({
     );
   }
   if (!query.data) return <StateBlock kind="busy" title={t("log.loadingRecords")} />;
-  if (items.length === 0) return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
+  if (items.length === 0 && warnings.length === 0) return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
 
   return (
     <div
@@ -323,6 +337,11 @@ function EventsList({
       className="tw:grid tw:min-h-0 tw:auto-rows-max tw:gap-2 tw:overflow-y-auto tw:overscroll-contain tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
     >
       <ul aria-label={t("log.recordsAria")} className={LIST}>
+        {warnings.map((item) => (
+          <Row key={`script-${item.id}`} title={t("settings.eventScripts.warningTitle", { event: notificationTriggerKindLabel(item.kind) })}
+            result={t("settings.eventScripts.missingFile")} tone="warning" time={item.time}
+            reason={t("settings.eventScripts.missingDetail", { script: item.script })} />
+        ))}
         {items.map((item) => {
           if (item.type === "run") {
             return (

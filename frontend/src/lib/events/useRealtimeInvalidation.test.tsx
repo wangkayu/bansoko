@@ -10,7 +10,7 @@ import {
   useRealtimeConnected,
 } from "./useRealtimeInvalidation";
 import type { RealtimeEvent } from "./sseClient";
-import { acquisitionRecordKeys, animeKeys, catalogKeys, fileMaintenanceKeys, fileManagerKeys, observabilityKeys, reconciliationKeys, rssListKeys } from "../queryKeys";
+import { acquisitionRecordKeys, animeKeys, catalogKeys, eventActionKeys, fileMaintenanceKeys, fileManagerKeys, observabilityKeys, reconciliationKeys, rssListKeys } from "../queryKeys";
 
 // Hook unit tests: the target → query key prefix invalidation mapping, connected state
 // propagation and the session lifecycle (started on login, stopped on logout). sseClient is
@@ -129,8 +129,9 @@ describe("useRealtimeInvalidation", () => {
       expect(invalidate).not.toHaveBeenCalledWith({ queryKey: observabilityKeys.records });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: eventActionKeys.attempts });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
-      expect(invalidate).toHaveBeenCalledTimes(4);
+      expect(invalidate).toHaveBeenCalledTimes(5);
     } finally {
       vi.useRealTimers();
     }

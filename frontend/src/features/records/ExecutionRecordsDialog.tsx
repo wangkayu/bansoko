@@ -19,7 +19,9 @@ import {
   type AcquisitionStageState,
   type AcquisitionTransfer,
 } from "../../lib/api/client";
-import { formatBytes, formatDateTime } from "../../lib/labels";
+import { formatBytes, formatDateTime, notificationTriggerKindLabel } from "../../lib/labels";
+import { listEventActionAttempts } from "../../lib/api/client";
+import { eventActionKeys } from "../../lib/queryKeys";
 import { useRememberedSegment } from "../../lib/rememberedSegment";
 import { acquisitionRecordKeys, rssListKeys } from "../../lib/queryKeys";
 import { useBoundedRefresh } from "../../lib/events/useBoundedRefresh";
@@ -212,17 +214,51 @@ export function ExecutionRecordsDialog({
   return (
     <Dialog open={open} onRequestClose={onClose} tier="R" focusTitle title={t("records.title")}>
       {showList ? (
-        <RecordList
-          animeFilter={animeFilter}
-          segment={segment}
-          onSegmentChange={onSegmentChange}
-          onOpenRecord={onOpenRecord}
-          onClearAnime={onClearAnime}
-        />
+        <>
+          {open && !animeFilter && <ScriptRecords />}
+          <RecordList
+            animeFilter={animeFilter}
+            segment={segment}
+            onSegmentChange={onSegmentChange}
+            onOpenRecord={onOpenRecord}
+            onClearAnime={onClearAnime}
+          />
+        </>
       ) : (
         <RecordDetail acquisitionID={record} onShowList={onShowList} onOpenAnime={onOpenAnime} />
       )}
     </Dialog>
+  );
+}
+
+function ScriptRecords() {
+  const { data: attempts = [] } = useQuery({
+    queryKey: [...eventActionKeys.attempts, "all"],
+    queryFn: ({ signal }) => listEventActionAttempts(false, signal),
+    refetchInterval: 15_000,
+  });
+  if (!attempts.length) return null;
+  const title = t("settings.eventScripts.attemptsTitle");
+  return (
+    <section className="tw:mb-4" aria-label={title}>
+      <h3 className={SECTION_TITLE}>{title}</h3>
+      <ul className={LIST}>
+        {attempts.map((attempt) => (
+          <li key={attempt.id} className={ITEM}>
+            <div className={ITEM_HEAD}>
+              <StatePill tone={attempt.state === "completed" ? "online" : attempt.state === "running" ? "muted" : "warning"}>
+                {t(`settings.eventScripts.state.${attempt.state}`)}
+              </StatePill>
+              <time className={META} dateTime={attempt.time}>{formatDateTime(attempt.time)}</time>
+            </div>
+            <strong>{notificationTriggerKindLabel(attempt.kind)}</strong>
+            <span className={`${META} tw:wrap-anywhere`}>
+              {attempt.state === "missing" ? t("settings.eventScripts.missingDetail", { script: attempt.script }) : attempt.script}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -33,6 +33,7 @@ import (
 	downloadapplication "bansoko/internal/download/application"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/downloadcompletion"
+	"bansoko/internal/eventactions"
 	"bansoko/internal/events"
 	"bansoko/internal/filemanager"
 	fileoperationapplication "bansoko/internal/fileoperation/application"
@@ -617,7 +618,9 @@ func runServe(args []string) {
 	// BackgroundRuntime: composition-root lifecycle controller for the worker
 	// runtime and every producer. Booting in maintenance (recovery run)
 	// keeps it stopped; the runtime owns lifecycle transitions.
+	eventActions := eventactions.New(db, eventHub, runtimeLogger)
 	producers := []func(context.Context){
+		eventActions.Run,
 		// One bounded pass removes transient files an interrupted action left
 		// beside a library target; nothing else ever revisits their names.
 		func(ctx context.Context) { runTransientResidueSweep(ctx, db, runtimeLogger) },
@@ -782,6 +785,7 @@ func runServe(args []string) {
 	downloadCancel.SetEventHub(eventHub)
 	apiServer.SetDownloadCancel(downloadCancel)
 	apiServer.SetBackup(backupService)
+	apiServer.SetEventActions(eventActions)
 	// The reltitle parser component has its own channel, independent of the
 	// Bansoko application update. The startup probe's note and source are
 	// passed through so the read model explains a refused manual build. An

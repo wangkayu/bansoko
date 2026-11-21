@@ -1836,6 +1836,28 @@ export function readAgentGuide(format: "guide" | "skill" = "guide"): Promise<str
   return request(`/agent-guide${format === "skill" ? "?format=skill" : ""}`, { method: "GET", responseType: "text" });
 }
 
+export type EventActionBinding = Schema<"EventActionBinding">;
+export type EventActionInput = Schema<"EventActionInput">;
+export type EventActionFile = Schema<"EventActionFile">;
+export type EventActionAttempt = Schema<"EventActionAttempt">;
+
+export function listEventActions(signal?: AbortSignal): Promise<EventActionBinding[]> {
+  return request("/event-actions", { method: "GET", bearerToken: "", signal });
+}
+
+export function saveEventAction(body: EventActionInput): Promise<EventActionBinding> {
+  return request("/event-actions", { method: "PUT", bearerToken: "", body });
+}
+
+export function readEventActionScripts(file?: string, signal?: AbortSignal): Promise<EventActionFile[]> {
+  const query = file ? `?${new URLSearchParams({ file })}` : "";
+  return request(`/event-actions/scripts${query}`, { method: "GET", bearerToken: "", signal });
+}
+
+export function listEventActionAttempts(warnings: boolean, signal?: AbortSignal): Promise<EventActionAttempt[]> {
+  return request(`/event-actions/attempts${warnings ? "?warnings=true" : ""}`, { method: "GET", bearerToken: "", signal });
+}
+
 export function listPluginTargets(): Promise<PluginTargetPage> {
   return request("/plugin-targets", { method: "GET" });
 }

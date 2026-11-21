@@ -20,6 +20,7 @@ import (
 	readmodelapplication "bansoko/internal/anime/readmodel/application"
 	automationapplication "bansoko/internal/automation/application"
 	configurationdomain "bansoko/internal/configuration/domain"
+	"bansoko/internal/eventactions"
 	"bansoko/internal/events"
 	filemaintenance "bansoko/internal/filemaintenance"
 	filemaintenanceplanner "bansoko/internal/filemaintenance/planner"
@@ -375,6 +376,7 @@ type Dependencies struct {
 	Observability      ObservabilityService
 	DiagnosticRecorder observabilityport.Recorder
 	PluginTargets      PluginTargetService
+	EventActions       *eventactions.Service
 	EmbeddedUpdate     EmbeddedUpdateService
 	TemplateCatalog    TemplateCatalogService
 	NamingVars         NamingVarsService

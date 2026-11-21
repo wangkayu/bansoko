@@ -415,6 +415,22 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "event_action_attempts",
+    "privileges": ["DELETE", "INSERT", "UPDATE"],
+    "reason": "Durable action claims, outcomes and bounded history retention",
+    "direct_access": ["internal/eventactions/service.go"],
+    "closure_slice": "event actions",
+    "exit_condition": "retain while event actions own script attempts"
+  },
+  {
+    "table": "event_action_bindings",
+    "privileges": ["UPDATE"],
+    "reason": "Owner binding settings and observed missing-file state",
+    "direct_access": ["internal/eventactions/service.go"],
+    "closure_slice": "event actions",
+    "exit_condition": "retain while event actions own binding configuration"
+  },
+  {
     "table": "file_manager_operations",
     "privileges": [
       "INSERT",

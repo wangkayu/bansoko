@@ -34,6 +34,12 @@ export const rssListKeys = {
     ["rss-list-view", "owner", managedAnimeID, subscriptionVersion, rulesVersion, previewKey] as const,
 };
 
+export const eventActionKeys = {
+  bindings: ["event-actions", "bindings"] as const,
+  scripts: (file?: string) => ["event-actions", "scripts", file] as const,
+  attempts: ["event-actions", "attempts"] as const,
+};
+
 export const configKeys = {
   prefix: ["config"] as const,
   connections: ["config", "connections"] as const,

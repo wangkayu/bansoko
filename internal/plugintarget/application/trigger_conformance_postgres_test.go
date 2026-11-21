@@ -118,9 +118,8 @@ func TestTriggerMirrorsAgreeWithTheRegistry(t *testing.T) {
 }
 
 // triggerMirror is one installed SQL object that restates the trigger
-// vocabulary. Every one of them must accept exactly the registry set: a mirror
-// narrower than the registry rejects a delivery the producer can legitimately
-// emit, and a wider one admits a trigger no code path can handle.
+// vocabulary. A notification mirror must match the full registry; a consumer
+// such as event actions can declare a deliberately narrower set.
 type triggerMirror struct {
 	table      string
 	constraint string
@@ -257,25 +256,34 @@ func insertAccepts(t *testing.T, db *sql.DB, statement string, args ...any) bool
 	return false
 }
 
-// TestInstalledTriggerChecksAcceptExactlyTheRegistry proves every installed SQL
-// trigger mirror is the registry set plus nothing. The mirrors are discovered
-// from the catalog, so a table that starts carrying the vocabulary later is
-// covered without editing this test.
+// TestInstalledTriggerChecksAcceptExactlyTheRegistry proves every discovered SQL
+// mirror matches the registry or its explicitly declared consumer subset.
 func TestInstalledTriggerChecksAcceptExactlyTheRegistry(t *testing.T) {
 	db := openTestDB(t)
 	registry := registrySet()
+	actionBinding := triggerMirror{table: "event_action_bindings", constraint: "event_action_bindings_kind_check"}
+	actionTriggers := map[string]bool{
+		"file_operation_completed": true,
+		"file_operation_failed":    true,
+		"download_submitted":       true,
+	}
+	for trigger := range actionTriggers {
+		if !registry[trigger] {
+			t.Errorf("event action trigger %q is not in the registry", trigger)
+		}
+	}
 	mirrors := installedTriggerMirrors(t, db)
 	if len(mirrors) == 0 {
 		t.Fatal("no installed constraint names a trigger: the discovery query or the schema is wrong")
 	}
 
-	// Three known mirrors must be among those discovered; the names pin the
-	// inventory so a renamed or dropped CHECK is visible here rather than
-	// silently reducing coverage.
+	// Pin the known mirrors so a renamed or dropped CHECK cannot silently
+	// reduce coverage.
 	for _, required := range []triggerMirror{
 		{table: "notification_admissions", constraint: "notification_admissions_trigger_kind_check"},
 		{table: "plugin_deliveries", constraint: "plugin_deliveries_trigger_kind_check"},
 		{table: "idempotency_records", constraint: "idempotency_records_trigger_kind_check"},
+		actionBinding,
 	} {
 		found := false
 		for _, mirror := range mirrors {
@@ -290,6 +298,10 @@ func TestInstalledTriggerChecksAcceptExactlyTheRegistry(t *testing.T) {
 	}
 
 	for _, mirror := range mirrors {
+		allowed := registry
+		if mirror == actionBinding {
+			allowed = actionTriggers
+		}
 		var predicate, definition string
 		if err := db.QueryRowContext(context.Background(), `
 SELECT pg_get_expr(conbin, conrelid), pg_get_constraintdef(oid)
@@ -303,21 +315,22 @@ FROM pg_constraint WHERE conname = $1 AND conrelid = $2::regclass`,
 		// accepts "schema_only_trigger" answers every registry value correctly
 		// and admits one trigger no code path can produce.
 		for _, literal := range constraintLiterals(definition) {
-			if !registry[literal] {
-				t.Errorf("%s accepts %q, which the registry does not declare", mirror.constraint, literal)
+			if !allowed[literal] {
+				t.Errorf("%s accepts %q outside its trigger set", mirror.constraint, literal)
 			}
 		}
-		for trigger := range registry {
+		for trigger := range allowed {
 			if !sqlLiteralPresent(definition, trigger) {
-				t.Errorf("%s omits registry trigger %q, so the producer can emit a value the schema rejects", mirror.constraint, trigger)
+				t.Errorf("%s omits allowed trigger %q", mirror.constraint, trigger)
 			}
 		}
 
 		columns := testColumnOf(t, db, mirror.table, mirror.constraint)
 		probe := probeTable(t, db, shortIdentifier(fmt.Sprintf("tp_%s", mirror.constraint)), columns, predicate)
 		for trigger := range registry {
-			if !insertAccepts(t, db, `INSERT INTO `+probe+` (`+columns[0]+`) VALUES ($1)`, trigger) {
-				t.Errorf("%s rejects registry trigger %q", mirror.constraint, trigger)
+			accepted := insertAccepts(t, db, `INSERT INTO `+probe+` (`+columns[0]+`) VALUES ($1)`, trigger)
+			if accepted != allowed[trigger] {
+				t.Errorf("%s acceptance of registry trigger %q = %t, want %t", mirror.constraint, trigger, accepted, allowed[trigger])
 			}
 		}
 		for _, unknown := range []string{"not_a_trigger", "download_submitted "} {

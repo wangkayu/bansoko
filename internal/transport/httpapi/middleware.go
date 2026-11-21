@@ -21,6 +21,7 @@ const (
 	requestIDKey          contextKey = "httpapi.request_id"
 	accountKey            contextKey = "httpapi.account"
 	sessionTokenKey       contextKey = "httpapi.session_token"
+	cookieAuthKey         contextKey = "httpapi.cookie_auth"
 	runtimeLoggerKey      contextKey = "httpapi.runtime_logger"
 	diagnosticRecorderKey contextKey = "httpapi.diagnostic_recorder"
 )
@@ -204,6 +205,7 @@ func (s *Server) withCommonMiddleware(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), accountKey, account)
 		ctx = context.WithValue(ctx, sessionTokenKey, token)
+		ctx = context.WithValue(ctx, cookieAuthKey, cookieAuthenticated)
 		handler.ServeHTTP(w, r.WithContext(ctx))
 	})
 	recovered := s.withPanicRecovery(authenticated)
