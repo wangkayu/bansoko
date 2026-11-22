@@ -10,12 +10,60 @@ import (
 	"strings"
 	"testing"
 
+	animeapplication "bansoko/internal/anime/application"
+	ownershipapplication "bansoko/internal/anime/ownership/application"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/runtime/database"
 	"bansoko/internal/testutil/disposabledb"
 	"bansoko/internal/testutil/disposabledb/guard"
+	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/worktree"
 )
+
+func patchAnimeMetadata(ctx context.Context, svc *ownershipapplication.Service, managedAnimeID string, patch generated.AnimeMetadataPatch) (generated.AnimeMetadata, error) {
+	input := ownershipapplication.MetadataPatchInput{
+		ExpectedVersion: int64(patch.ExpectedVersion),
+		TitleOverride:   animeapplication.CloneString(patch.TitleOverride),
+		TotalEpisodes:   animeapplication.CloneInt(patch.TotalEpisodes),
+		MediaKind:       animeapplication.CloneString((*string)(patch.MediaKind)),
+		Year:            animeapplication.CloneInt(patch.Year),
+		Season:          animeapplication.CloneInt(patch.Season),
+	}
+	if patch.Bgm != nil {
+		input.BGM = &ownershipapplication.BGMBinding{WorkID: patch.Bgm.WorkId}
+	}
+	if patch.Tmdb != nil {
+		input.TMDB = &ownershipapplication.TMDBBinding{
+			WorkID:    patch.Tmdb.WorkId,
+			MediaKind: string(patch.Tmdb.MediaKind),
+			Season:    patch.Tmdb.Season,
+		}
+	}
+	value, err := svc.PatchAnimeMetadataApplication(ctx, managedAnimeID, input)
+	if err != nil {
+		return generated.AnimeMetadata{}, err
+	}
+	result := generated.AnimeMetadata{
+		ManagedAnimeId: generated.ID(value.ManagedAnimeID),
+		TitleOverride:  animeapplication.CloneString(value.TitleOverride),
+		TotalEpisodes:  animeapplication.CloneInt(value.TotalEpisodes),
+		MediaKind:      (*generated.AnimeMetadataMediaKind)(animeapplication.CloneString(value.MediaKind)),
+		Year:           animeapplication.CloneInt(value.Year),
+		Season:         animeapplication.CloneInt(value.Season),
+		Version:        generated.Version(value.Version),
+	}
+	if value.BGM != nil {
+		result.Bgm = &generated.NullableBGMBinding{WorkId: value.BGM.WorkID}
+	}
+	if value.TMDB != nil {
+		result.Tmdb = &generated.NullableTMDBBinding{
+			WorkId:    value.TMDB.WorkID,
+			MediaKind: generated.TMDBMediaKind(value.TMDB.MediaKind),
+			Season:    value.TMDB.Season,
+		}
+	}
+	return result, nil
+}
 
 // realChainOwnerDB opens the schema-owner handle (BANSOKO_TEST_DATABASE_URL,
 // through the disposable guard) for fixture writes that the runtime role must

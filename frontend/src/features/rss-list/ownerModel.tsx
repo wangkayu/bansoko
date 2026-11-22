@@ -196,7 +196,7 @@ function isRenderDiagnostic(code: string): boolean {
 /** The source of an owner file row: the preview layer's file row and the acquisition layer's parsed same file, merged by source path. */
 type OwnerFileEntry = { path: string; preview?: RSSListFile; parsed?: ReleaseFile };
 
-function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles = [] }: {
+function renderOwnerReleaseFileRow({ preview, parsed, target, observation, subtitles = [] }: {
   preview?: RSSListFile;
   parsed?: ReleaseFile;
   target?: AcquisitionTarget;
@@ -366,7 +366,7 @@ function mediaIcon(kind?: string | null) {
   return <File className="icon-sm-fixed" />;
 }
 
-function OwnerReleaseDetail({ item, release }: { item: RSSListItem; release?: Release }) {
+function renderOwnerReleaseDetail({ item, release }: { item: RSSListItem; release?: Release }) {
   const serverFiles = item.files;
   const releaseFiles = release?.release_files ?? [];
   const targets = release?.acquisition_targets ?? [];
@@ -393,7 +393,7 @@ function OwnerReleaseDetail({ item, release }: { item: RSSListItem; release?: Re
         <p className="chain-files-label text-badge">{t("rss.seedFiles")}</p>
         {rows.map(({ file: { path, preview, parsed }, subtitles }) => {
           const target = targetsByPath.get(path);
-          return <OwnerReleaseFileRow key={path} preview={preview} parsed={parsed} target={target} observation={target ? observationsByID.get(target.id) : undefined} subtitles={subtitles} />;
+          return <div key={path}>{renderOwnerReleaseFileRow({ preview, parsed, target, observation: target ? observationsByID.get(target.id) : undefined, subtitles })}</div>;
         })}
       </>}
     </div>
@@ -460,7 +460,7 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
       {retries}
     </> : undefined,
     actions,
-    detail: <OwnerReleaseDetail item={item} release={release} />,
+    detail: renderOwnerReleaseDetail({ item, release }),
     manifestSummary: item.torrent.manifest ? manifestSummary(item) : undefined,
     manifestUnavailable: knownReasonLabel(item.torrent.error_code) ?? (item.torrent.state === "not_applicable" ? t("rss.manifestNotApplicable") : undefined),
   };

@@ -7,7 +7,7 @@ import { notificationTriggerKindLabel } from "../lib/labels";
 import { tryT, t } from "../lib/i18n";
 import { LogDialog } from "./LogDialog";
 import { useLogDialogStore } from "./logDialogStore";
-import { rawLogText } from "./LogRawView";
+import { rawLogText } from "./runtimeLogFeed";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let records: ObservabilityRecord[];

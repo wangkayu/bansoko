@@ -28,6 +28,7 @@ import { t } from "../lib/i18n";
 import { labelValue } from "../lib/i18n/format";
 import {
   deliveryView,
+  EMPTY_FILTERS,
   entryGroupName,
   appliedReplacementDetails,
   entryView,
@@ -36,6 +37,9 @@ import {
   runView,
   stepText,
   type BusinessEntry,
+  type EventFilters,
+  type StateFilter,
+  type TypeFilter,
 } from "./logRuns";
 import { messageText, type LogState } from "./logState";
 import { listEventActionAttempts } from "../lib/api/client";
@@ -50,23 +54,10 @@ import { eventActionKeys } from "../lib/queryKeys";
 const PAGE_LIMIT = 50;
 const SEARCH_DEBOUNCE_MS = 300;
 
-export type StateFilter = "" | LogState;
-export type TypeFilter = "" | "business" | "plugin";
+export type { EventFilters, StateFilter, TypeFilter };
 
 /** The events read projection: primary hides the repeated release filtering process; all is the full history. */
 type EventView = "primary" | "all";
-
-export type EventFilters = {
-  state: StateFilter;
-  type: TypeFilter;
-  animeId: string;
-  q: string;
-  /** datetime-local values; converted to ISO before entering the query. */
-  fromLocal: string;
-  toLocal: string;
-};
-
-export const EMPTY_FILTERS: EventFilters = { state: "", type: "", animeId: "", q: "", fromLocal: "", toLocal: "" };
 
 const TYPE_OPTIONS = (): { value: TypeFilter; label: string }[] => [
   { value: "", label: t("log.allTypes") },
@@ -107,7 +98,7 @@ function stateTone(state: LogState, unconfirmed = false): StatePillTone {
 }
 
 /** datetime-local local value → contract date-time; empty or invalid values do not filter. */
-export function localToIso(value: string): string | undefined {
+function localToIso(value: string): string | undefined {
   if (value === "") return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();

@@ -69,7 +69,7 @@ func startCompanionChain(t *testing.T, ctx context.Context, collision ...generat
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "comp-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "comp-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},
@@ -656,7 +656,7 @@ func TestCompanionReplacementCleanupRealChain(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "comp-repl-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "comp-repl-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

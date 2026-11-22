@@ -6,7 +6,7 @@ import { toUserMessage, type RuntimeLogLine } from "../lib/api/client";
 import { downloadTextFile } from "../features/settings/agentSetup";
 import { t } from "../lib/i18n";
 import { RuntimeLogRows } from "./RuntimeLogRows";
-import { RUNTIME_LOG_PAGE_LIMIT } from "./runtimeLogFeed";
+import { rawLogText } from "./runtimeLogFeed";
 import { useRuntimeLogFeed, type RuntimeLogLevel } from "./useRuntimeLogFeed";
 
 // The runtime log tab reads the retained on-disk history: the newest matching
@@ -16,45 +16,9 @@ import { useRuntimeLogFeed, type RuntimeLogLevel } from "./useRuntimeLogFeed";
 // plain text from the lines currently shown, not from the whole retained
 // history.
 
-export const RUNTIME_LOG_LINE_LIMIT = RUNTIME_LOG_PAGE_LIMIT;
 const SEARCH_DEBOUNCE_MS = 300;
 
 type Level = RuntimeLogLevel;
-
-/** One plain-text line: time, level, source, message, then the structured fields that are present. */
-export function rawLogText(lines: readonly RuntimeLogLine[]): string {
-  return lines
-    .map((line) => {
-      const fields = (
-        [
-          ["kind", line.kind],
-          ["work_item_id", line.work_item_id],
-          ["stage", line.stage],
-          ["state_before", line.state_before],
-          ["state_after", line.state_after],
-          ["disposition", line.disposition],
-          ["owner_type", line.owner_type],
-          ["attempt", line.attempt === undefined ? undefined : String(line.attempt)],
-          ["duration_ms", line.duration_ms === undefined ? undefined : String(line.duration_ms)],
-          ["retryable", line.retryable === undefined ? undefined : String(line.retryable)],
-          ["outcome", line.outcome],
-          ["script_name", line.script_name],
-          ["exit_code", line.exit_code === undefined ? undefined : String(line.exit_code)],
-          ["http_status", line.http_status === undefined ? undefined : String(line.http_status)],
-          ["script_summary", line.script_summary],
-          ["reason_code", line.reason_code],
-          ["error_class", line.error_class],
-          ["request_id", line.request_id],
-          ["correlation_id", line.correlation_id],
-        ] as const
-      )
-        .filter(([, value]) => !!value)
-        .map(([key, value]) => `${key}=${value}`);
-      const source = [line.component, line.operation].filter(Boolean).join(".");
-      return [line.at, line.level.toUpperCase(), source, line.message, ...fields].filter(Boolean).join(" ");
-    })
-    .join("\n");
-}
 
 function useDebounced<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);

@@ -315,7 +315,7 @@ func TestMovieBindingRealChainPostgres(t *testing.T) {
 
 	// The metadata hold is released with a movie binding: no episode is implied
 	// by the binding, and the release title carries only a year.
-	if _, err := ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, ownershipService, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "m1-movie-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindMovie, Season: 0},
@@ -492,7 +492,7 @@ WHERE p.managed_anime_id = $1`, animeID).Scan(&placementCoverage, &placementFact
 	if err := db.QueryRowContext(ctx, `SELECT version FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&metadataVersion); err != nil {
 		t.Fatal(err)
 	}
-	_, err = ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	_, err = patchAnimeMetadata(ctx, ownershipService, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: metadataVersion,
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 3},
 	})
@@ -501,7 +501,7 @@ WHERE p.managed_anime_id = $1`, animeID).Scan(&placementCoverage, &placementFact
 		t.Fatalf("rebinding to tv without the owner kind: err = %v, want %s", err, animeapplication.IdentityKindChangeBlockedCode)
 	}
 	keepMovie := generated.AnimeMetadataPatchMediaKindMovie
-	if _, err := ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, ownershipService, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: metadataVersion,
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 3},
 		MediaKind:       &keepMovie,

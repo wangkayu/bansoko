@@ -66,7 +66,7 @@ import {
 } from "../../lib/api/client";
 import { ConfirmDialog, SecretField, SegmentedControl, type SecretMode } from "../../ui";
 import { DeliveryHistoryDialog } from "./DeliveryHistoryDialog";
-import { deliveryStateLabel } from "./DeliveryDetailDialog";
+import { deliveryStateLabel } from "@/lib/labels";
 import { SettingsEditDialog } from "./SettingsEditDialog";
 import { SettingsEventScripts } from "./SettingsEventScripts";
 import { getLocale, t, tryT } from "../../lib/i18n";

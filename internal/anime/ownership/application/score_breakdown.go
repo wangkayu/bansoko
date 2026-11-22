@@ -53,3 +53,19 @@ func cloneSubgroupScoreBreakdown(value *SubgroupScoreBreakdown) *SubgroupScoreBr
 	result.PinnedScore = cloneIntValue(value.PinnedScore)
 	return &result
 }
+
+func cloneBoolValue(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
+}
+
+func cloneIntValue(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
+}

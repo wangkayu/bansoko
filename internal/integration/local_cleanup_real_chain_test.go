@@ -56,7 +56,7 @@ func TestLocalCleanupPreservesRealExternalEffects(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "cleanup-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "cleanup-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

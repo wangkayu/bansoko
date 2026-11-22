@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getPluginDelivery, listPluginTargets, type PluginDeliveryDetail, type PluginTargetConfig } from "@/lib/api/client";
-import { formatDateTime, notificationTriggerKindLabel } from "@/lib/labels";
+import { deliveryStateLabel, formatDateTime, notificationTriggerKindLabel } from "@/lib/labels";
 import { configKeys, pluginDeliveryKeys } from "@/lib/queryKeys";
 import { Alert, Dialog, StatePill, StateBlock } from "../../ui/base";
 import { t } from "../../lib/i18n";
@@ -10,25 +10,6 @@ import { knownReasonLabel, reasonLabel } from "../../lib/i18n/reasons";
 // Attempts are the per-network-attempt evidence. `unknown` is never shown as
 // success and never auto-equal to terminal failure — the label explains that
 // a retry may still happen.
-
-export function deliveryStateLabel(state: PluginDeliveryDetail["delivery"]["state"]): string {
-  switch (state) {
-    case "delivered":
-      return t("settings.delivery.state.delivered");
-    case "failed":
-      return t("settings.delivery.state.failedFinal");
-    case "waiting_retry":
-      return t("settings.delivery.state.waiting_retry");
-    case "delivering":
-      return t("settings.delivery.state.delivering");
-    case "pending":
-      return t("settings.delivery.state.pending");
-    case "unknown":
-      return t("settings.delivery.state.unknown");
-    default:
-      return t("settings.delivery.state.other");
-  }
-}
 
 function adapterLabel(adapter: PluginDeliveryDetail["delivery"]["adapter_kind"]): string {
   switch (adapter) {

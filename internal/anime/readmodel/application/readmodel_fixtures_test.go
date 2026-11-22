@@ -9,7 +9,6 @@ import (
 
 	rootanimepersistence "bansoko/internal/anime/adapter/persistence"
 	rootapplication "bansoko/internal/anime/application"
-	draftapplication "bansoko/internal/anime/draft/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
 	animetransport "bansoko/internal/anime/transport"
 	"bansoko/internal/filemaintenance"
@@ -18,6 +17,7 @@ import (
 	facts "bansoko/internal/release/facts"
 	mediapersistence "bansoko/internal/release/facts/adapter/persistence/media"
 	"bansoko/internal/testutil/animetest"
+	draftapplication "bansoko/internal/testutil/draftfixture"
 	"bansoko/internal/testutil/frozenpolicy"
 	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/workitems"

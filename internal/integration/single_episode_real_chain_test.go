@@ -418,7 +418,7 @@ func TestSingleEpisodeRealPostgresQBRSSFileOperation(t *testing.T) {
 	}
 	assertLogKinds(t, workspace.Logs, generated.SubscriptionLogKindSubscriptionCreated, generated.SubscriptionLogKindRssNewContent, generated.SubscriptionLogKindReleaseProcessed)
 
-	metadata, err := ownershipService.PatchAnimeMetadata(ctx, result.ManagedAnime.Id, generated.AnimeMetadataPatch{
+	metadata, err := patchAnimeMetadata(ctx, ownershipService, result.ManagedAnime.Id, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "real-chain-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "real-chain-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

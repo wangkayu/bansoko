@@ -6,6 +6,7 @@ import type {
   MetadataHold,
   NetworkRouteTestResult,
   NotificationTriggerKind,
+  PluginDeliveryDetail,
   ReleaseVerdict,
   RoutineActivityKind,
   RSSSourceRuntime,
@@ -494,4 +495,23 @@ export function selectionPolicy(entry: {
 }): SelectionPolicy {
   if (entry.selection_mode === "auto") return "ranked";
   return entry.manual_selected === true ? "always" : "never";
+}
+
+export function deliveryStateLabel(state: PluginDeliveryDetail["delivery"]["state"]): string {
+  switch (state) {
+    case "delivered":
+      return t("settings.delivery.state.delivered");
+    case "failed":
+      return t("settings.delivery.state.failedFinal");
+    case "waiting_retry":
+      return t("settings.delivery.state.waiting_retry");
+    case "delivering":
+      return t("settings.delivery.state.delivering");
+    case "pending":
+      return t("settings.delivery.state.pending");
+    case "unknown":
+      return t("settings.delivery.state.unknown");
+    default:
+      return t("settings.delivery.state.other");
+  }
 }

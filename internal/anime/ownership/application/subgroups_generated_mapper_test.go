@@ -13,6 +13,66 @@ func selectionGenerationValue(value *int64) int64 {
 	return *value
 }
 
+func pinnedGroupScoresToGenerated(value []PinnedGroupScore) *[]generated.PinnedGroupScore {
+	if value == nil {
+		return nil
+	}
+	result := make([]generated.PinnedGroupScore, len(value))
+	for i, pin := range value {
+		result[i] = generated.PinnedGroupScore{GroupRef: pin.GroupRef, Score: pin.Score}
+	}
+	return &result
+}
+
+func pinnedGroupScoresFromGenerated(value *[]generated.PinnedGroupScore) []PinnedGroupScore {
+	if value == nil {
+		return nil
+	}
+	result := make([]PinnedGroupScore, len(*value))
+	for i, pin := range *value {
+		result[i] = PinnedGroupScore{GroupRef: pin.GroupRef, Score: pin.Score}
+	}
+	return result
+}
+
+func subgroupScoreBreakdownToGenerated(value *SubgroupScoreBreakdown) *generated.SubgroupScoreBreakdown {
+	if value == nil {
+		return nil
+	}
+	result := &generated.SubgroupScoreBreakdown{
+		SiteMode:         generated.SubgroupScoreBreakdownSiteMode(value.SiteMode),
+		SiteDefaultScore: value.SiteDefaultScore,
+		ListEffect:       generated.SubgroupScoreBreakdownListEffect(value.ListEffect),
+		EntryOverride:    generated.SubgroupScoreBreakdownEntryOverride(value.EntryOverride),
+		Keywords:         make([]generated.NameKeywordRule, len(value.Keywords)),
+		FinalScore:       cloneIntValue(value.FinalScore),
+		PinnedScore:      cloneIntValue(value.PinnedScore),
+	}
+	for i, keyword := range value.Keywords {
+		result.Keywords[i] = generated.NameKeywordRule{Keyword: keyword.Keyword, Score: keyword.Score}
+	}
+	return result
+}
+
+func subgroupScoreBreakdownFromGenerated(value *generated.SubgroupScoreBreakdown) *SubgroupScoreBreakdown {
+	if value == nil {
+		return nil
+	}
+	result := &SubgroupScoreBreakdown{
+		SiteMode:         string(value.SiteMode),
+		SiteDefaultScore: value.SiteDefaultScore,
+		ListEffect:       string(value.ListEffect),
+		EntryOverride:    string(value.EntryOverride),
+		Keywords:         make([]NameKeywordRule, len(value.Keywords)),
+		FinalScore:       cloneIntValue(value.FinalScore),
+		PinnedScore:      cloneIntValue(value.PinnedScore),
+	}
+	for i, keyword := range value.Keywords {
+		result.Keywords[i] = NameKeywordRule{Keyword: keyword.Keyword, Score: keyword.Score}
+	}
+	return result
+}
+
 func subgroupsSectionToGenerated(value SubgroupsSection) generated.SubgroupsSection {
 	result := generated.SubgroupsSection{MaxRss: value.MaxRss}
 	if value.Entries != nil {
@@ -56,33 +116,7 @@ func providerGroupDefaultToGenerated(value *ProviderGroupDefault) *generated.Pro
 	if value == nil {
 		return nil
 	}
-	return &generated.ProviderGroupDefault{Groups: animeapplication.CloneStringSlice(value.Groups), Mode: generated.ProviderGroupDefaultMode(value.Mode), Score: value.Score, PinnedScores: PinnedGroupScoresToGenerated(value.PinnedScores)}
-}
-
-// PinnedGroupScoresToGenerated is the one public projection of a site's
-// pinned scores; nil (no pin field) stays absent.
-func PinnedGroupScoresToGenerated(value []PinnedGroupScore) *[]generated.PinnedGroupScore {
-	if value == nil {
-		return nil
-	}
-	result := make([]generated.PinnedGroupScore, len(value))
-	for i, pin := range value {
-		result[i] = generated.PinnedGroupScore{GroupRef: pin.GroupRef, Score: pin.Score}
-	}
-	return &result
-}
-
-// PinnedGroupScoresFromGenerated is the inverse of
-// PinnedGroupScoresToGenerated.
-func PinnedGroupScoresFromGenerated(value *[]generated.PinnedGroupScore) []PinnedGroupScore {
-	if value == nil {
-		return nil
-	}
-	result := make([]PinnedGroupScore, len(*value))
-	for i, pin := range *value {
-		result[i] = PinnedGroupScore{GroupRef: pin.GroupRef, Score: pin.Score}
-	}
-	return result
+	return &generated.ProviderGroupDefault{Groups: animeapplication.CloneStringSlice(value.Groups), Mode: generated.ProviderGroupDefaultMode(value.Mode), Score: value.Score, PinnedScores: pinnedGroupScoresToGenerated(value.PinnedScores)}
 }
 
 func subgroupsOwnerFromGenerated(value generated.SubgroupsOwnerResult) SubgroupsOwnerResult {
@@ -99,7 +133,7 @@ func subgroupsOwnerFromGenerated(value generated.SubgroupsOwnerResult) Subgroups
 			EffectiveScore: selection.EffectiveScore, EffectiveSelected: selection.EffectiveSelected,
 			GroupRef: selection.GroupRef, ID: string(selection.Id), ManualSelected: cloneBoolValue(selection.ManualSelected),
 			Provider: string(selection.Provider), ReasonCode: cloneStringValue(selection.ReasonCode),
-			ScoreBreakdown: SubgroupScoreBreakdownFromGenerated(selection.ScoreBreakdown),
+			ScoreBreakdown: subgroupScoreBreakdownFromGenerated(selection.ScoreBreakdown),
 			SelectionMode:  string(selection.SelectionMode),
 			SubscriptionID: string(selection.SubscriptionId), Version: int64(selection.Version),
 			Available:              selection.Available != nil && *selection.Available,
@@ -130,7 +164,7 @@ func subgroupsOwnerToGenerated(value SubgroupsOwnerResult) generated.SubgroupsOw
 			EffectiveScore: selection.EffectiveScore, EffectiveSelected: selection.EffectiveSelected,
 			GroupRef: selection.GroupRef, Id: generated.ID(selection.ID), ManualSelected: cloneBoolValue(selection.ManualSelected),
 			Provider: generated.ProviderKind(selection.Provider), ReasonCode: cloneStringValue(selection.ReasonCode),
-			ScoreBreakdown: SubgroupScoreBreakdownToGenerated(selection.ScoreBreakdown),
+			ScoreBreakdown: subgroupScoreBreakdownToGenerated(selection.ScoreBreakdown),
 			SelectionMode:  generated.SelectionMode(selection.SelectionMode),
 			SubscriptionId: generated.ID(selection.SubscriptionID), Version: generated.Version(selection.Version),
 			Available: &selection.Available, AvailabilityGeneration: &selection.AvailabilityGeneration,
@@ -199,7 +233,7 @@ func providerGroupDefaultFromGenerated(value *generated.ProviderGroupDefault) *P
 	if value == nil {
 		return nil
 	}
-	return &ProviderGroupDefault{Groups: animeapplication.CloneStringSlice(value.Groups), Mode: string(value.Mode), Score: value.Score, PinnedScores: PinnedGroupScoresFromGenerated(value.PinnedScores)}
+	return &ProviderGroupDefault{Groups: animeapplication.CloneStringSlice(value.Groups), Mode: string(value.Mode), Score: value.Score, PinnedScores: pinnedGroupScoresFromGenerated(value.PinnedScores)}
 }
 
 func rssSourceFromGenerated(value generated.RSSSource) RSSSource {
@@ -223,61 +257,7 @@ func rssSourceFromGenerated(value generated.RSSSource) RSSSource {
 	return result
 }
 
-func cloneBoolValue(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	result := *value
-	return &result
-}
-
 func cloneStringValue(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	result := *value
-	return &result
-}
-
-// SubgroupScoreBreakdownToGenerated is the one public projection of a score
-// breakdown; every transport that lists a group selection uses it.
-func SubgroupScoreBreakdownToGenerated(value *SubgroupScoreBreakdown) *generated.SubgroupScoreBreakdown {
-	if value == nil {
-		return nil
-	}
-	result := &generated.SubgroupScoreBreakdown{
-		SiteMode: generated.SubgroupScoreBreakdownSiteMode(value.SiteMode), SiteDefaultScore: value.SiteDefaultScore,
-		ListEffect:    generated.SubgroupScoreBreakdownListEffect(value.ListEffect),
-		EntryOverride: generated.SubgroupScoreBreakdownEntryOverride(value.EntryOverride),
-		Keywords:      make([]generated.NameKeywordRule, len(value.Keywords)),
-		FinalScore:    cloneIntValue(value.FinalScore),
-		PinnedScore:   cloneIntValue(value.PinnedScore),
-	}
-	for i, keyword := range value.Keywords {
-		result.Keywords[i] = generated.NameKeywordRule{Keyword: keyword.Keyword, Score: keyword.Score}
-	}
-	return result
-}
-
-// SubgroupScoreBreakdownFromGenerated is the inverse of
-// SubgroupScoreBreakdownToGenerated.
-func SubgroupScoreBreakdownFromGenerated(value *generated.SubgroupScoreBreakdown) *SubgroupScoreBreakdown {
-	if value == nil {
-		return nil
-	}
-	result := &SubgroupScoreBreakdown{
-		SiteMode: string(value.SiteMode), SiteDefaultScore: value.SiteDefaultScore,
-		ListEffect: string(value.ListEffect), EntryOverride: string(value.EntryOverride),
-		Keywords: make([]NameKeywordRule, len(value.Keywords)), FinalScore: cloneIntValue(value.FinalScore),
-		PinnedScore: cloneIntValue(value.PinnedScore),
-	}
-	for i, keyword := range value.Keywords {
-		result.Keywords[i] = NameKeywordRule{Keyword: keyword.Keyword, Score: keyword.Score}
-	}
-	return result
-}
-
-func cloneIntValue(value *int) *int {
 	if value == nil {
 		return nil
 	}

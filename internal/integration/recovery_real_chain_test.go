@@ -65,7 +65,7 @@ func TestRetirementRecoveryRealChain(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "recov-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "recov-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},
@@ -162,7 +162,7 @@ LIMIT 1`, animeID).Scan(&taskA, &artifactA, &operationA, &providerTaskID, &provi
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeB, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeB, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "recov-b-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "recov-b-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

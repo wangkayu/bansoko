@@ -53,7 +53,7 @@ func TestQBCrossOwnerAdoptionAfterRetirementRealChain(t *testing.T) {
 		return result
 	}
 	completeMetadata := func(animeID, prefix string) {
-		if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+		if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 			ExpectedVersion: 1,
 			Bgm:             &generated.NullableBGMBinding{WorkId: prefix + "-bgm"},
 			Tmdb:            &generated.NullableTMDBBinding{WorkId: prefix + "-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},
@@ -219,7 +219,7 @@ func TestQBCrossOwnerAdoptionAmbiguousHashesRealChain(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, subscribed.ManagedAnime.Id, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, subscribed.ManagedAnime.Id, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "ambiguous-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "ambiguous-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

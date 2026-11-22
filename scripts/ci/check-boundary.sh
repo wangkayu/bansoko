@@ -21,23 +21,9 @@ anime_root="$root/internal/anime"
 anime_paths=(domain application draft/application ownership/application oneshot/application readmodel/application)
 # Within anime application buckets, oneshot may import kernel (`application`)
 # and draft; imports from ownership/readmodel remain forbidden by the matrix below.
-# `application/list_transport.go` is deleted with the readmodel move: it had no
-# production caller and projected generated HTTP DTOs inside the application
-# layer. The ownership move relocated four of the remaining six legacy facades
-# (`metadata_patch_transport.go`, `reevaluate_transport.go`,
-# `subgroups_generated_mapper.go`, `subgroups_transport.go`) into the ownership
-# bucket and the draft move relocated the last two (`domain_transport.go`,
-# `subscribe_transport.go`) into the draft bucket, so the exception is keyed by
-# package-relative path rather than by basename, and it still shrinks only by
-# deleting a facade.
-anime_generated_baseline=(
-  draft/application/domain_transport.go
-  draft/application/subscribe_transport.go
-  ownership/application/metadata_patch_transport.go
-  ownership/application/reevaluate_transport.go
-  ownership/application/subgroups_generated_mapper.go
-  ownership/application/subgroups_transport.go
-)
+# All six legacy generated-DTO compatibility facades in draft and ownership have
+# been retired from production packages, so zero generated or transport imports
+# are permitted anywhere in internal/anime/*/application.
 
 anime_inventory() {
   local base="$1" rel="$2" abs="$1/$2" result status
@@ -93,52 +79,15 @@ anime_check() {
       esac
       case "$source:$entry" in
         application:bansoko/internal/transport/httpapi/generated*|draft/application:bansoko/internal/transport/httpapi/generated*|ownership/application:bansoko/internal/transport/httpapi/generated*)
-          if [[ "$base" == "$anime_root" ]]; then
-            baseline=0
-            for file in "${anime_generated_baseline[@]}"; do [[ "$file" == "$source"/* ]] && baseline=1; done
-            (( baseline )) || { echo "Forbidden generated HTTP DTO import in $rel: $entry" >&2; return 1; }
-          else
-            echo "Forbidden generated HTTP DTO import in $rel: $entry" >&2; return 1
-          fi
-          ;;
+          echo "Forbidden generated HTTP DTO import in $rel: $entry" >&2; return 1 ;;
         application:bansoko/internal/anime/transport*|draft/application:bansoko/internal/anime/transport*)
-          if [[ "$base" == "$anime_root" ]]; then
-            output=$(rg -l --glob '*.go' --glob '!**/*_test.go' '"bansoko/internal/anime/transport"' "$base/$source" 2>&1) || status=$?
-            if [[ "$output" != *"$source/domain_transport.go"* ]]; then
-              echo "Forbidden application-to-anime/transport import from $rel: $entry" >&2; return 1
-            fi
-          else
-            echo "Forbidden application-to-anime/transport import from $rel: $entry" >&2; return 1
-          fi
-          ;;
+          echo "Forbidden application-to-anime/transport import from $rel: $entry" >&2; return 1 ;;
         application:bansoko/internal/transport/httpapi*)
           echo "Forbidden application-to-transport import from $rel: $entry" >&2; return 1 ;;
         */application:bansoko/internal/anime/transport*|*/application:bansoko/internal/transport/httpapi*)
           echo "Forbidden application-to-transport import from $rel: $entry" >&2; return 1 ;;
       esac
     done <<< "$imports"
-  done
-  # `go list` aggregates imports at package scope, so attribute generated DTO
-  # imports to their source paths for the ratchet. Every configured anime
-  # application bucket is attributed, because the legacy facade basenames no
-  # longer all live in the root package.
-  local generated_sources
-  set +e
-  generated_sources=$(cd "$root" && rg -l --glob '*.go' --glob '!**/*_test.go' \
-    '"bansoko/internal/transport/httpapi/generated"' internal/anime/application internal/anime/draft/application internal/anime/ownership/application 2>&1)
-  status=$?
-  set -e
-  if (( status == 2 )); then echo "rg search error checking anime DTO source paths: $generated_sources" >&2; return 1; fi
-  if (( status == 0 )); then
-    while IFS= read -r file; do
-      file="${file#internal/anime/}"
-      baseline=0
-      for entry in "${anime_generated_baseline[@]}"; do [[ "$file" == "$entry" ]] && baseline=1; done
-      (( baseline )) || { echo "Forbidden generated HTTP DTO import in unbaselined path $file" >&2; return 1; }
-    done <<< "$generated_sources"
-  fi
-  for entry in "${anime_generated_baseline[@]}"; do
-    [[ -f "$root/internal/anime/$entry" ]] || { echo "Stale anime generated-import baseline path: $entry" >&2; return 1; }
   done
   set +e
   output=$(cd "$root" && go list -e -f '{{join .Imports "\n"}}' ./internal/anime/... 2>&1)

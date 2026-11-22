@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	ownershipapplication "bansoko/internal/anime/ownership/application"
+	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -44,7 +45,7 @@ func mapDiscoverSubgroupsOwner(value ownershipapplication.DiscoverSubgroupsOwner
 			ManualSelected:    cloneHTTPBool(selection.ManualSelected),
 			Provider:          generated.ProviderKind(selection.Provider),
 			ReasonCode:        cloneStringPtr(selection.ReasonCode),
-			ScoreBreakdown:    ownershipapplication.SubgroupScoreBreakdownToGenerated(selection.ScoreBreakdown),
+			ScoreBreakdown:    animeworkspace.SubgroupScoreBreakdownToGenerated(selection.ScoreBreakdown),
 			SelectionMode:     generated.SelectionMode(selection.SelectionMode),
 			SubscriptionId:    generated.ID(selection.SubscriptionID),
 			Version:           generated.Version(selection.Version),
@@ -106,7 +107,7 @@ func mapDiscoverProviderGroupDefault(value *ownershipapplication.ProviderGroupDe
 		Groups:       append([]string(nil), value.Groups...),
 		Mode:         generated.ProviderGroupDefaultMode(value.Mode),
 		Score:        value.Score,
-		PinnedScores: ownershipapplication.PinnedGroupScoresToGenerated(value.PinnedScores),
+		PinnedScores: animeworkspace.PinnedGroupScoresToGenerated(value.PinnedScores),
 	}
 }
 

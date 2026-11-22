@@ -24,6 +24,21 @@ import {
 
 export type { BusinessEntry } from "./logState";
 
+export type StateFilter = "" | LogState;
+export type TypeFilter = "" | "business" | "plugin";
+
+export type EventFilters = {
+  state: StateFilter;
+  type: TypeFilter;
+  animeId: string;
+  q: string;
+  /** datetime-local values; converted to ISO before entering the query. */
+  fromLocal: string;
+  toLocal: string;
+};
+
+export const EMPTY_FILTERS: EventFilters = { state: "", type: "", animeId: "", q: "", fromLocal: "", toLocal: "" };
+
 export type EventItem =
   | { type: "record"; key: string; record: ObservabilityRecord }
   | { type: "group"; key: string; entries: BusinessEntry[] }

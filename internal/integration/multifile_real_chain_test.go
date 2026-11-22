@@ -251,7 +251,7 @@ func TestMultiFileRealPostgresChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Complete the sole metadata hold, then let the chain run.
-	if _, err := ownershipService.PatchAnimeMetadata(ctx, result.ManagedAnime.Id, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, ownershipService, result.ManagedAnime.Id, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "m1-multi-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "m1-multi-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

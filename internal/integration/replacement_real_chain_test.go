@@ -690,7 +690,7 @@ func TestReplacementRealChainActiveAndStopped(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "repl-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "repl-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},
@@ -966,7 +966,7 @@ func subscribeRevisionScenario(t *testing.T, ctx context.Context, svc *realChain
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: key + "-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: key + "-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

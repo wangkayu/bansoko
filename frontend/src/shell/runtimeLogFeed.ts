@@ -21,9 +21,45 @@ export type RuntimeLogPage = Schema<"RuntimeLogPage">;
 export type RuntimeLogSource = RuntimeLogPage["source"];
 
 export const RUNTIME_LOG_PAGE_LIMIT = 200;
+export const RUNTIME_LOG_LINE_LIMIT = RUNTIME_LOG_PAGE_LIMIT;
 /** Bound on browser memory and DOM: older/newer pages fall off this window. */
 export const RUNTIME_LOG_MAX_LINES = 2000;
 export const RUNTIME_LOG_MAX_CHUNKS = 40;
+
+/** One plain-text line: time, level, source, message, then the structured fields that are present. */
+export function rawLogText(lines: readonly RuntimeLogLine[]): string {
+  return lines
+    .map((line) => {
+      const fields = (
+        [
+          ["kind", line.kind],
+          ["work_item_id", line.work_item_id],
+          ["stage", line.stage],
+          ["state_before", line.state_before],
+          ["state_after", line.state_after],
+          ["disposition", line.disposition],
+          ["owner_type", line.owner_type],
+          ["attempt", line.attempt === undefined ? undefined : String(line.attempt)],
+          ["duration_ms", line.duration_ms === undefined ? undefined : String(line.duration_ms)],
+          ["retryable", line.retryable === undefined ? undefined : String(line.retryable)],
+          ["outcome", line.outcome],
+          ["script_name", line.script_name],
+          ["exit_code", line.exit_code === undefined ? undefined : String(line.exit_code)],
+          ["http_status", line.http_status === undefined ? undefined : String(line.http_status)],
+          ["script_summary", line.script_summary],
+          ["reason_code", line.reason_code],
+          ["error_class", line.error_class],
+          ["request_id", line.request_id],
+          ["correlation_id", line.correlation_id],
+        ] as const
+      )
+        .filter(([, value]) => !!value)
+        .map(([key, value]) => `${key}=${value}`);
+      const source = [line.component, line.operation].filter(Boolean).join(".");
+      return [line.at, line.level.toUpperCase(), source, line.message, ...fields].filter(Boolean).join(" ");
+    })
+    .join("\n");
+}
 
 export type RuntimeLogChunk = {
   key: number;

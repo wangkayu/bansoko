@@ -61,7 +61,7 @@ func TestReconciliationRealChain(t *testing.T) {
 	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	if _, err := patchAnimeMetadata(ctx, svc.ownership, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: 1,
 		Bgm:             &generated.NullableBGMBinding{WorkId: "recon-bgm"},
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "recon-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},

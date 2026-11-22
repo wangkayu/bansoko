@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	ownershipapplication "bansoko/internal/anime/ownership/application"
 	readmodelapplication "bansoko/internal/anime/readmodel/application"
+	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -71,7 +71,7 @@ func mapSubgroupsSelectionPreview(value readmodelapplication.SubgroupsSelectionP
 			Available:         group.Available,
 			EffectiveSelected: group.EffectiveSelected,
 			ReasonCode:        cloneStringPtr(group.ReasonCode),
-			ScoreBreakdown:    ownershipapplication.SubgroupScoreBreakdownToGenerated(group.ScoreBreakdown),
+			ScoreBreakdown:    animeworkspace.SubgroupScoreBreakdownToGenerated(group.ScoreBreakdown),
 		}
 	}
 	return generated.SubgroupsSelectionPreview{Mode: generated.SubgroupsSelectionPreviewMode(value.Mode), Groups: groups}

@@ -5,7 +5,7 @@ const DELAY_MS = 120;
 
 /**
  * Non-blocking suspense fallback for lazily loaded dialogs and overlays.
- * Screen readers receive an immediate status announcement, while the slim top
+ * Screen readers receive an immediate status announcement, while the thin top
  * progress bar only appears after a 120ms delay so cached chunks never flicker.
  */
 export function LazyPendingBar({ label }: { label?: string }) {

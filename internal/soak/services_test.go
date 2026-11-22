@@ -12,7 +12,6 @@ import (
 
 	rootanimepersistence "bansoko/internal/anime/adapter/persistence"
 	rootapplication "bansoko/internal/anime/application"
-	draftapplication "bansoko/internal/anime/draft/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
 	readmodel "bansoko/internal/anime/readmodel/application"
 	"bansoko/internal/filemaintenance"
@@ -22,6 +21,7 @@ import (
 	"bansoko/internal/parserpolicy"
 	facts "bansoko/internal/release/facts"
 	mediapersistence "bansoko/internal/release/facts/adapter/persistence/media"
+	draftapplication "bansoko/internal/testutil/draftfixture"
 	"bansoko/internal/testutil/frozenpolicy"
 	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/workitems"

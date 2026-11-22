@@ -3,6 +3,7 @@ package httpapi
 import (
 	animeapplication "bansoko/internal/anime/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
+	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -74,7 +75,7 @@ func mapProviderGroupDefault(value *generated.ProviderGroupDefault) *ownershipap
 		Groups:       cloneStrings(value.Groups),
 		Mode:         string(value.Mode),
 		Score:        value.Score,
-		PinnedScores: ownershipapplication.PinnedGroupScoresFromGenerated(value.PinnedScores),
+		PinnedScores: animeworkspace.PinnedGroupScoresFromGenerated(value.PinnedScores),
 	}
 }
 
@@ -102,7 +103,7 @@ func mapSubgroupsOwnerResult(value ownershipapplication.SubgroupsOwnerResult) ge
 			ManualSelected:         cloneBoolPtr(selection.ManualSelected),
 			Provider:               generated.ProviderKind(selection.Provider),
 			ReasonCode:             cloneStringPtr(selection.ReasonCode),
-			ScoreBreakdown:         ownershipapplication.SubgroupScoreBreakdownToGenerated(selection.ScoreBreakdown),
+			ScoreBreakdown:         animeworkspace.SubgroupScoreBreakdownToGenerated(selection.ScoreBreakdown),
 			SelectionMode:          generated.SelectionMode(selection.SelectionMode),
 			SubscriptionId:         selection.SubscriptionID,
 			Version:                generated.Version(selection.Version),
@@ -151,7 +152,7 @@ func mapApplicationProviderGroupDefault(value *ownershipapplication.ProviderGrou
 	if value == nil {
 		return nil
 	}
-	return &generated.ProviderGroupDefault{Groups: cloneStrings(value.Groups), Mode: generated.ProviderGroupDefaultMode(value.Mode), Score: value.Score, PinnedScores: ownershipapplication.PinnedGroupScoresToGenerated(value.PinnedScores)}
+	return &generated.ProviderGroupDefault{Groups: cloneStrings(value.Groups), Mode: generated.ProviderGroupDefaultMode(value.Mode), Score: value.Score, PinnedScores: animeworkspace.PinnedGroupScoresToGenerated(value.PinnedScores)}
 }
 
 func mapApplicationRSSSource(value animeapplication.RSSSource) generated.RSSSource {

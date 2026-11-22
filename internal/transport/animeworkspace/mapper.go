@@ -658,7 +658,7 @@ func mapWorkspaceSelections(value []ownershipapplication.ProviderGroupSelection)
 			ManualSelected:    cloneWorkspaceBool(item.ManualSelected),
 			Provider:          generated.ProviderKind(item.Provider),
 			ReasonCode:        cloneWorkspaceString(item.ReasonCode),
-			ScoreBreakdown:    ownershipapplication.SubgroupScoreBreakdownToGenerated(item.ScoreBreakdown),
+			ScoreBreakdown:    SubgroupScoreBreakdownToGenerated(item.ScoreBreakdown),
 			SelectionMode:     generated.SelectionMode(item.SelectionMode),
 			SubscriptionId:    generated.ID(item.SubscriptionID),
 			Version:           generated.Version(item.Version),
@@ -707,8 +707,72 @@ func mapWorkspaceProviderDefault(value *ownershipapplication.ProviderGroupDefaul
 		Groups:       cloneWorkspaceStringsSlice(value.Groups),
 		Mode:         generated.ProviderGroupDefaultMode(value.Mode),
 		Score:        value.Score,
-		PinnedScores: ownershipapplication.PinnedGroupScoresToGenerated(value.PinnedScores),
+		PinnedScores: PinnedGroupScoresToGenerated(value.PinnedScores),
 	}
+}
+
+// PinnedGroupScoresToGenerated projects a site's pinned scores onto the generated wire type.
+func PinnedGroupScoresToGenerated(value []ownershipapplication.PinnedGroupScore) *[]generated.PinnedGroupScore {
+	if value == nil {
+		return nil
+	}
+	result := make([]generated.PinnedGroupScore, len(value))
+	for i, pin := range value {
+		result[i] = generated.PinnedGroupScore{GroupRef: pin.GroupRef, Score: pin.Score}
+	}
+	return &result
+}
+
+// PinnedGroupScoresFromGenerated is the inverse of PinnedGroupScoresToGenerated.
+func PinnedGroupScoresFromGenerated(value *[]generated.PinnedGroupScore) []ownershipapplication.PinnedGroupScore {
+	if value == nil {
+		return nil
+	}
+	result := make([]ownershipapplication.PinnedGroupScore, len(*value))
+	for i, pin := range *value {
+		result[i] = ownershipapplication.PinnedGroupScore{GroupRef: pin.GroupRef, Score: pin.Score}
+	}
+	return result
+}
+
+// SubgroupScoreBreakdownToGenerated projects a score breakdown onto the generated wire type.
+func SubgroupScoreBreakdownToGenerated(value *ownershipapplication.SubgroupScoreBreakdown) *generated.SubgroupScoreBreakdown {
+	if value == nil {
+		return nil
+	}
+	result := &generated.SubgroupScoreBreakdown{
+		SiteMode:         generated.SubgroupScoreBreakdownSiteMode(value.SiteMode),
+		SiteDefaultScore: value.SiteDefaultScore,
+		ListEffect:       generated.SubgroupScoreBreakdownListEffect(value.ListEffect),
+		EntryOverride:    generated.SubgroupScoreBreakdownEntryOverride(value.EntryOverride),
+		Keywords:         make([]generated.NameKeywordRule, len(value.Keywords)),
+		FinalScore:       cloneWorkspaceInt(value.FinalScore),
+		PinnedScore:      cloneWorkspaceInt(value.PinnedScore),
+	}
+	for i, keyword := range value.Keywords {
+		result.Keywords[i] = generated.NameKeywordRule{Keyword: keyword.Keyword, Score: keyword.Score}
+	}
+	return result
+}
+
+// SubgroupScoreBreakdownFromGenerated is the inverse of SubgroupScoreBreakdownToGenerated.
+func SubgroupScoreBreakdownFromGenerated(value *generated.SubgroupScoreBreakdown) *ownershipapplication.SubgroupScoreBreakdown {
+	if value == nil {
+		return nil
+	}
+	result := &ownershipapplication.SubgroupScoreBreakdown{
+		SiteMode:         string(value.SiteMode),
+		SiteDefaultScore: value.SiteDefaultScore,
+		ListEffect:       string(value.ListEffect),
+		EntryOverride:    string(value.EntryOverride),
+		Keywords:         make([]ownershipapplication.NameKeywordRule, len(value.Keywords)),
+		FinalScore:       cloneWorkspaceInt(value.FinalScore),
+		PinnedScore:      cloneWorkspaceInt(value.PinnedScore),
+	}
+	for i, keyword := range value.Keywords {
+		result.Keywords[i] = ownershipapplication.NameKeywordRule{Keyword: keyword.Keyword, Score: keyword.Score}
+	}
+	return result
 }
 
 func mapWorkspaceNameKeywordRules(value *[]ownershipapplication.NameKeywordRule) *[]generated.NameKeywordRule {
