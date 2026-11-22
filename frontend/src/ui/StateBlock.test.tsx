@@ -43,9 +43,14 @@ describe("StateBlock", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("读取失败");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
 
-    rerender(<StateBlock kind="busy" skeleton="cards" title="正在读取目录" />);
-    const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("正在读取目录");
-    expect(status).toHaveAttribute("data-skeleton", "cards");
+    rerender(<StateBlock kind="busy" skeleton="cards" title="正在读取搜索" />);
+    const cardsStatus = screen.getByRole("status");
+    expect(cardsStatus).toHaveTextContent("正在读取搜索");
+    expect(cardsStatus).toHaveAttribute("data-skeleton", "cards");
+
+    rerender(<StateBlock kind="busy" skeleton="wall" title="正在读取目录" />);
+    const wallStatus = screen.getByRole("status");
+    expect(wallStatus).toHaveTextContent("正在读取目录");
+    expect(wallStatus).toHaveAttribute("data-skeleton", "wall");
   });
 });

@@ -31,9 +31,9 @@ export const WALL_ROW_BODY_CLASS =
 export const WALL_ROW_TRACK_CLASS =
   "tw:m-0 tw:flex tw:list-none tw:gap-(--wall-gap) tw:overflow-x-auto tw:overscroll-x-contain tw:snap-x tw:snap-proximity tw:scroll-px-1 tw:px-1 tw:pt-1.5 tw:pb-2 tw:[scrollbar-width:thin] tw:[mask-image:linear-gradient(to_right,transparent_0,black_var(--fade-start),black_calc(100%_-_var(--fade-end)),transparent_100%)]";
 
-/** The expanded grid track: 2 equal columns on phones, auto-fill poster columns on >=640px. */
+/** The expanded grid track: 2 equal columns on phones, fixed poster columns matching --wall-card-w on >=640px. */
 export const WALL_ROW_GRID_CLASS =
-  "tw:m-0 tw:grid tw:list-none tw:grid-cols-2 tw:gap-(--wall-gap) tw:px-1 tw:pt-1.5 tw:pb-2 tw:sm:grid-cols-[repeat(auto-fill,minmax(var(--wall-card-w),1fr))] tw:[&>li]:w-auto";
+  "tw:m-0 tw:grid tw:list-none tw:grid-cols-2 tw:gap-(--wall-gap) tw:px-1 tw:pt-1.5 tw:pb-2 tw:sm:grid-cols-[repeat(auto-fill,var(--wall-card-w))] tw:[&>li]:w-auto";
 
 /** A card item: fixed poster width in the horizontal track, snapped and aligned by card. */
 export const WALL_ROW_ITEM_CLASS = "tw:flex-none tw:w-(--wall-card-w) tw:snap-start";

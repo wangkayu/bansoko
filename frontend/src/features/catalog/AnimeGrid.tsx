@@ -818,7 +818,7 @@ export function AnimeGrid() {
 
       <section aria-live="polite">
         {loading && rows.length === 0 ? (
-          <StateBlock kind="busy" skeleton="cards" title={t("grid.loading")} />
+          <StateBlock kind="busy" skeleton="wall" title={t("grid.loading")} />
         ) : error ? null : settledEmpty ? (
           <EmptyHint
             tab={tab}

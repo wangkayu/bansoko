@@ -41,7 +41,11 @@ function SettingsRedirect() {
 }
 
 function StageFallback() {
-  return <StateBlock kind="busy" skeleton="cards" title={t("nav.stageLoading")} />;
+  return (
+    <div className="catalog-page">
+      <StateBlock kind="busy" skeleton="wall" title={t("nav.stageLoading")} />
+    </div>
+  );
 }
 
 // The catalog is the base; overlays render on top of it through the Outlet, so

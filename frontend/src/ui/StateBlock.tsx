@@ -21,7 +21,7 @@ import { Alert } from "./base/feedback";
 // placement); never pass padding, borders, colors or type classes.
 
 export type StateBlockKind = "empty" | "busy" | "error" | "restricted";
-export type StateBlockSkeleton = "cards" | "config" | "list" | "log" | "table" | "settings";
+export type StateBlockSkeleton = "wall" | "cards" | "config" | "list" | "log" | "table" | "settings";
 
 const centered = "tw:grid tw:justify-items-center tw:gap-1 tw:px-4 tw:py-8 tw:text-center";
 const iconCircle =
@@ -30,10 +30,36 @@ const skelBar = "tw:block tw:rounded-full tw:bg-muted tw:motion-safe:animate-pul
 
 function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
   switch (variant) {
+    case "wall":
+      return (
+        <div aria-hidden="true" className="tw:grid tw:gap-2 tw:sm:gap-3">
+          {[0, 1].map((rowIndex) => (
+            <div
+              key={rowIndex}
+              className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)] tw:gap-1 tw:[--wall-card-w:10rem] tw:[--wall-gap:0.75rem] tw:sm:grid-cols-[4.5rem_minmax(0,1fr)] tw:sm:items-start tw:sm:gap-x-2 tw:sm:[--wall-card-w:11.5rem] tw:lg:[--wall-card-w:12.5rem]"
+            >
+              <div className="tw:flex tw:items-center tw:gap-1.5 tw:sm:pt-2">
+                <span className={cn(skelBar, "tw:h-3.5 tw:w-10")} />
+              </div>
+              <div className="tw:flex tw:gap-(--wall-gap) tw:overflow-hidden tw:px-1 tw:pt-1.5 tw:pb-2">
+                {[0, 1, 2, 3, 4, 5, 6].map((cardIndex) => (
+                  <div
+                    key={cardIndex}
+                    className="tw:flex tw:w-(--wall-card-w) tw:flex-none tw:aspect-[2/3] tw:flex-col tw:justify-end tw:gap-1.5 tw:rounded-2xl tw:border tw:border-border tw:bg-card tw:p-3"
+                  >
+                    <span className={cn(skelBar, "tw:h-3 tw:w-4/5")} />
+                    <span className={cn(skelBar, "tw:h-2.5 tw:w-1/2")} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
     case "cards":
       return (
-        <div aria-hidden="true" className="tw:grid tw:grid-cols-2 tw:gap-3 tw:sm:grid-cols-4 tw:lg:grid-cols-5">
-          {[0, 1, 2, 3, 4].map((index) => (
+        <div aria-hidden="true" className="tw:grid tw:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] tw:gap-3">
+          {[0, 1, 2, 3, 4, 5].map((index) => (
             <div
               key={index}
               className="tw:flex tw:aspect-[2/3] tw:flex-col tw:justify-end tw:gap-1.5 tw:rounded-2xl tw:border tw:border-border tw:bg-card tw:p-3"
@@ -151,7 +177,7 @@ export function StateBlock({
   if (kind === "busy") {
     if (skeleton) {
       return (
-        <div role="status" data-state-block="busy" data-skeleton={skeleton} className={cn("tw:grid tw:min-w-0 tw:gap-3 tw:py-2", className)}>
+        <div role="status" data-state-block="busy" data-skeleton={skeleton} className={cn("tw:grid tw:w-full tw:min-w-0 tw:gap-3 tw:py-2", className)}>
           <span className="sr-only">{title}</span>
           {description && <span className="sr-only">{description}</span>}
           <StateSkeleton variant={skeleton} />
