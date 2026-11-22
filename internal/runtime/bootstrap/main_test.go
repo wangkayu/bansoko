@@ -738,13 +738,21 @@ func TestPlanLaunchRequiresOverlayProvenance(t *testing.T) {
 }
 
 func TestUpdatesRootUsesConfiguredRootOrDefault(t *testing.T) {
-	t.Setenv(deploymentidentity.EnvUpdatesRoot, " /config/updates ")
-	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != "/config/updates" {
-		t.Fatalf("configured updates root = %q, want /config/updates", root)
+	t.Setenv("BANSOKO_CONFIG_DIR", "")
+	t.Setenv(deploymentidentity.EnvUpdatesRoot, " /custom/updates ")
+	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != "/custom/updates" {
+		t.Fatalf("configured updates root = %q, want /custom/updates", root)
 	}
 	t.Setenv(deploymentidentity.EnvUpdatesRoot, "")
+	if deploymentidentity.DefaultUpdatesRoot != "/config/updates" {
+		t.Fatalf("DefaultUpdatesRoot = %q, want /config/updates", deploymentidentity.DefaultUpdatesRoot)
+	}
 	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != deploymentidentity.DefaultUpdatesRoot {
 		t.Fatalf("default updates root = %q, want %q", root, deploymentidentity.DefaultUpdatesRoot)
+	}
+	t.Setenv("BANSOKO_CONFIG_DIR", "/srv/bansoko-config")
+	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != "/srv/bansoko-config/updates" {
+		t.Fatalf("config-dir updates root = %q, want /srv/bansoko-config/updates", root)
 	}
 }
 

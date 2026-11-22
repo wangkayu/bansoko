@@ -6,7 +6,7 @@
 //     of the digest-addressed base image and can never be replaced by update
 //     payload content;
 //   - overlay release trees live on the updates volume
-//     (/var/lib/bansoko/updates by default) in releases/<release-id>/, with
+//     (/config/updates by default) in releases/<release-id>/, with
 //     a `current` pointer file naming the promoted release id. Promotion uses
 //     atomic rename semantics and is owned by later stages of the chain; this
 //     binary only consumes pointers that already verify cleanly.

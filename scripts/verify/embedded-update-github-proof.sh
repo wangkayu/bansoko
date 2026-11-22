@@ -62,15 +62,15 @@ keep = [line for line in lines if not line.lstrip().startswith((
     "BANSOKO_UPDATE_CHANNEL_BASE:",
 ))]
 text = "".join(keep)
-old_port = '- "${BANSOKO_APP_PORT:-8000}:8080"'
+old_port = '- "${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}"'
 if old_port not in text:
     raise SystemExit("app port anchor missing")
-text = text.replace(old_port, '- "127.0.0.1:${BANSOKO_APP_PORT:-8000}:8080"')
+text = text.replace(old_port, '- "127.0.0.1:${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}"')
 if proxy:
-    anchor = "      BANSOKO_UPDATES_ROOT:"
+    anchor = "      BANSOKO_BASE_IMAGE_DIGEST:"
     index = next((i for i, line in enumerate(text.splitlines(True)) if line.startswith(anchor)), None)
     if index is None:
-        raise SystemExit("app updates-root anchor missing")
+        raise SystemExit("app environment anchor missing")
     lines = text.splitlines(True)
     lines[index + 1:index + 1] = [
         f"      HTTP_PROXY: {proxy}\n",

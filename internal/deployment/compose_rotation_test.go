@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
+	"bansoko/internal/runtime/deploymentidentity"
 	"gopkg.in/yaml.v3"
 )
 
@@ -79,6 +81,10 @@ func TestQuickstartStoresUpdatesUnderConfig(t *testing.T) {
 		Services map[string]struct {
 			Environment map[string]string `yaml:"environment"`
 			Volumes     []string          `yaml:"volumes"`
+			Ports       []string          `yaml:"ports"`
+			Healthcheck struct {
+				Test []string `yaml:"test"`
+			} `yaml:"healthcheck"`
 		} `yaml:"services"`
 		Volumes map[string]any `yaml:"volumes"`
 	}
@@ -89,8 +95,26 @@ func TestQuickstartStoresUpdatesUnderConfig(t *testing.T) {
 	if !exists {
 		t.Fatal("quickstart compose has no app service")
 	}
-	if got := app.Environment["BANSOKO_UPDATES_ROOT"]; got != "/config/updates" {
-		t.Errorf("quickstart updates root = %q, want /config/updates", got)
+	if _, hasUpdatesRoot := app.Environment["BANSOKO_UPDATES_ROOT"]; hasUpdatesRoot {
+		t.Error("quickstart compose should rely on default updates root (/config/updates) instead of setting BANSOKO_UPDATES_ROOT")
+	}
+	if got := deploymentidentity.UpdatesRoot(func(string) string { return "" }); got != "/config/updates" {
+		t.Errorf("default updates root = %q, want /config/updates", got)
+	}
+	if got := app.Environment["BANSOKO_PORT"]; got != "${BANSOKO_PORT:-8080}" {
+		t.Errorf("quickstart BANSOKO_PORT = %q, want ${BANSOKO_PORT:-8080}", got)
+	}
+	hasPortMapping := false
+	for _, mapping := range app.Ports {
+		if mapping == "${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}" {
+			hasPortMapping = true
+		}
+	}
+	if !hasPortMapping {
+		t.Errorf("quickstart ports = %v, want ${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}", app.Ports)
+	}
+	if joined := strings.Join(app.Healthcheck.Test, " "); strings.Contains(joined, ":8080/api/v1/livez") {
+		t.Errorf("quickstart healthcheck hardcodes :8080/api/v1/livez: %q", joined)
 	}
 	if _, exists := app.Environment["BANSOKO_UPDATE_MODE"]; exists {
 		t.Error("quickstart overrides the image's embedded update default")

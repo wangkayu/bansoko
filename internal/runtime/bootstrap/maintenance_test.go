@@ -145,13 +145,23 @@ func TestMaintenanceHandlerDoesNotMutateDurableStateOrTakeJournalLock(t *testing
 }
 
 func TestMaintenanceListenAddressUsesDeploymentSetting(t *testing.T) {
+	t.Setenv("BANSOKO_PORT", "")
 	t.Setenv(envListenAddress, "127.0.0.1:19090")
-	if got := maintenanceListenAddress(); got != "127.0.0.1:19090" {
-		t.Fatalf("listen address = %q", got)
+	if got, err := maintenanceListenAddress(); err != nil || got != "127.0.0.1:19090" {
+		t.Fatalf("listen address = (%q, %v), want (127.0.0.1:19090, nil)", got, err)
 	}
 	t.Setenv(envListenAddress, "")
-	if got := maintenanceListenAddress(); got != defaultListenAddress {
-		t.Fatalf("default listen address = %q", got)
+	t.Setenv("BANSOKO_PORT", "9090")
+	if got, err := maintenanceListenAddress(); err != nil || got != "0.0.0.0:9090" {
+		t.Fatalf("port env listen address = (%q, %v), want (0.0.0.0:9090, nil)", got, err)
+	}
+	t.Setenv("BANSOKO_PORT", "")
+	if got, err := maintenanceListenAddress(); err != nil || got != defaultListenAddress {
+		t.Fatalf("default listen address = (%q, %v), want (%q, nil)", got, err, defaultListenAddress)
+	}
+	t.Setenv("BANSOKO_PORT", "not-a-port")
+	if _, err := maintenanceListenAddress(); err == nil {
+		t.Fatal("invalid BANSOKO_PORT unexpectedly succeeded")
 	}
 }
 

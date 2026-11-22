@@ -170,3 +170,32 @@ func TestReadCurrentPointerDistinguishesCorrupt(t *testing.T) {
 		t.Fatalf("unexpected corrupt pointer state: %+v", state)
 	}
 }
+
+func TestUpdatesRootDefaultsUnderConfigDirAndAllowsOverride(t *testing.T) {
+	if DefaultUpdatesRoot != "/config/updates" {
+		t.Fatalf("DefaultUpdatesRoot = %q, want /config/updates", DefaultUpdatesRoot)
+	}
+	if got := UpdatesRoot(func(string) string { return "" }); got != DefaultUpdatesRoot {
+		t.Fatalf("default UpdatesRoot = %q, want %q", got, DefaultUpdatesRoot)
+	}
+	if got := UpdatesRoot(func(key string) string {
+		if key == "BANSOKO_CONFIG_DIR" {
+			return "/srv/bansoko-config"
+		}
+		return ""
+	}); got != "/srv/bansoko-config/updates" {
+		t.Fatalf("config-dir derived UpdatesRoot = %q, want /srv/bansoko-config/updates", got)
+	}
+	if got := UpdatesRoot(func(key string) string {
+		switch key {
+		case "BANSOKO_CONFIG_DIR":
+			return "/srv/bansoko-config"
+		case EnvUpdatesRoot:
+			return " /custom/updates "
+		default:
+			return ""
+		}
+	}); got != "/custom/updates" {
+		t.Fatalf("explicit UpdatesRoot = %q, want /custom/updates", got)
+	}
+}

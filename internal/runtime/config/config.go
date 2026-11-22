@@ -7,13 +7,22 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"bansoko/internal/runtime/bootprepare"
 	"bansoko/internal/runtime/deploymentidentity"
 )
 
-const DefaultUpdateMode = "embedded"
+const (
+	EnvListenAddress     = "BANSOKO_LISTEN_ADDRESS"
+	EnvPort              = "BANSOKO_PORT"
+	DefaultPort          = "8080"
+	DefaultListenAddress = "0.0.0.0:8080"
+	DefaultUpdateMode    = "embedded"
+)
+
+var ErrInvalidPort = errors.New("BANSOKO_PORT must be an integer between 1 and 65535")
 
 func UpdateModeFromEnv(getenv func(string) string) string {
 	mode := strings.TrimSpace(getenv("BANSOKO_UPDATE_MODE"))
@@ -72,10 +81,36 @@ type Config struct {
 	updateModeExplicit bool
 }
 
+// ResolveListenAddress determines the HTTP listen address from
+// BANSOKO_LISTEN_ADDRESS (full host:port), BANSOKO_PORT (binds 0.0.0.0:<port>),
+// or DefaultListenAddress ("0.0.0.0:8080").
+func ResolveListenAddress(getenv func(string) string) (string, error) {
+	if addr := strings.TrimSpace(getenv(EnvListenAddress)); addr != "" {
+		return addr, nil
+	}
+	if rawPort := strings.TrimSpace(getenv(EnvPort)); rawPort != "" {
+		for i := 0; i < len(rawPort); i++ {
+			if rawPort[i] < '0' || rawPort[i] > '9' {
+				return "", fmt.Errorf("%w: %q", ErrInvalidPort, rawPort)
+			}
+		}
+		port, err := strconv.Atoi(rawPort)
+		if err != nil || port < 1 || port > 65535 {
+			return "", fmt.Errorf("%w: %q", ErrInvalidPort, rawPort)
+		}
+		return net.JoinHostPort("0.0.0.0", strconv.Itoa(port)), nil
+	}
+	return DefaultListenAddress, nil
+}
+
 func FromFlags(args []string) (Config, error) {
 	flags := flag.NewFlagSet("bansoko-server", flag.ContinueOnError)
+	listenAddr, listenErr := ResolveListenAddress(os.Getenv)
+	if listenErr != nil {
+		listenAddr = DefaultListenAddress
+	}
 	cfg := Config{
-		ListenAddress:          envOr("BANSOKO_LISTEN_ADDRESS", "0.0.0.0:8080"),
+		ListenAddress:          listenAddr,
 		DatabaseURL:            servingDatabaseURL(os.Getenv),
 		Environment:            envOr("BANSOKO_ENVIRONMENT", "development"),
 		SkipAuth:               os.Getenv("BANSOKO_SKIP_AUTH") == "true",
@@ -106,11 +141,18 @@ func FromFlags(args []string) (Config, error) {
 	if err := flags.Parse(args); err != nil {
 		return Config{}, err
 	}
+	listenExplicit := false
 	flags.Visit(func(flag *flag.Flag) {
 		if flag.Name == "update-mode" {
 			cfg.updateModeExplicit = true
 		}
+		if flag.Name == "listen" {
+			listenExplicit = true
+		}
 	})
+	if !listenExplicit && listenErr != nil {
+		return Config{}, listenErr
+	}
 	if cfg.Environment == "production" && len(cfg.TestFixtureHosts) > 0 {
 		return Config{}, ErrProductionFixtureHosts
 	}

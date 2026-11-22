@@ -160,8 +160,8 @@ fi
 if grep -qE 'source: updates$' "$compose" || grep -qE '/var/lib/bansoko/updates' "$compose"; then
   fail "production compose must keep updates under the config mount, not a separate volume"
 fi
-if ! grep -qE 'BANSOKO_UPDATES_ROOT:[[:space:]]*/config/updates([[:space:]]|$)' "$compose"; then
-  fail "production compose must set BANSOKO_UPDATES_ROOT=/config/updates"
+if grep -qE '^[[:space:]]+BANSOKO_UPDATES_ROOT:' "$compose"; then
+  fail "production compose should rely on the default updates root (/config/updates) instead of setting BANSOKO_UPDATES_ROOT"
 fi
 
 # Backups are downloads and uploads; the server keeps no backup storage.

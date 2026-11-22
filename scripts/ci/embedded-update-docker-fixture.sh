@@ -124,7 +124,7 @@ PY
 
 local_update() {
   docker compose -p "$project" -f "$compose" exec -T --user "${local_cli_uid:-0}" app sh -c '
-    root=${BANSOKO_UPDATES_ROOT:-/config/updates}
+    root=${BANSOKO_UPDATES_ROOT:-${BANSOKO_CONFIG_DIR:-/config}/updates}
     binary=/app/bansoko-server
     if [ -f "$root/current" ]; then
       release=$(cat "$root/current")
@@ -351,9 +351,9 @@ go -C "$root" run ./cmd/bansoko-release channel-write \
 for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:${artifact_port}/update-channel/channel-v1.json" >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS "http://127.0.0.1:${artifact_port}/update-channel/channel-v1.json" >/dev/null 2>&1 || fail_blocked "artifact HTTP server did not become ready" "$workdir/artifact-http.log"
 python3 "$root/scripts/ci/transform-embedded-compose.py" "$root/deployment/maintainer/docker-compose.production.yml" "$compose" "$volume" "$image"
-python3 - "$compose" "$channel_base" "$scenario" "$crash_target_step" "${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" "$local_cli" <<'PY'
+python3 - "$compose" "$channel_base" "$scenario" "$crash_target_step" "${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" "$local_cli" "$legacy_base" <<'PY'
 import pathlib,sys
-dst=pathlib.Path(sys.argv[1]); channel_base,scenario,crash_target_step,run_id,volume,local_cli=sys.argv[2:]
+dst=pathlib.Path(sys.argv[1]); channel_base,scenario,crash_target_step,run_id,volume,local_cli=sys.argv[2:8]; legacy_base=sys.argv[8] if len(sys.argv)>8 else "0"
 text=dst.read_text()
 def set_env(text,values):
     prefixes={key:f"      {key}:" for key in values}; found=set(); out=[]
@@ -363,10 +363,11 @@ def set_env(text,values):
         elif key not in found: out.append(f"      {key}: {values[key]}\n"); found.add(key)
     missing=[key for key in values if key not in found]
     if missing:
-        index=next((i for i,line in enumerate(out) if line.startswith("      BANSOKO_UPDATES_ROOT:")),None)
+        index=next((i for i,line in enumerate(out) if line.startswith("      BANSOKO_BASE_IMAGE_DIGEST:")),None)
         if index is None: raise SystemExit("app update environment anchor missing")
         out[index+1:index+1]=[f"      {key}: {values[key]}\n" for key in missing]
     return "".join(out)
+if legacy_base=="1": text=set_env(text,{"BANSOKO_UPDATES_ROOT":"/config/updates"})
 if scenario=="rollback-blocked": text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_RESTORE_FAILURE":'"1"'})
 if scenario=="readiness-failure": text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_FAIL_READINESS":'"1"'})
 if scenario=="crash-staging": text=set_env(text,{"BANSOKO_EMBEDDED_FIXTURE_STOP_BEFORE_MARKER":'"1"'})
@@ -387,9 +388,9 @@ anchor="  postgres_data:\n"
 if anchor not in text: raise SystemExit("postgres volume anchor missing")
 text=text.replace(anchor,anchor+f"    labels:\n      bansoko.update-e2e.run: {run_id}\n",1)
 text=set_env(text,{"BANSOKO_UPDATE_LANE":'"stable"',"BANSOKO_UPDATE_CHANNEL_BASE":channel_base})
-text=text.replace("    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:8080\"","    extra_hosts:\n      - host.docker.internal:host-gateway\n    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:8080\"").replace('      - "127.0.0.1:29000:29000"\n','')
+text=text.replace("    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}\"","    extra_hosts:\n      - host.docker.internal:host-gateway\n    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}\"").replace('      - "127.0.0.1:29000:29000"\n','')
 config_bind="        source: ${BANSOKO_CONFIG_DIR:?BANSOKO_CONFIG_DIR must be set}\n        target: /config\n"
-if config_bind not in text or "BANSOKO_UPDATES_ROOT: /config/updates" not in text:
+if config_bind not in text or (legacy_base=="1")!=("BANSOKO_UPDATES_ROOT: /config/updates" in text) or "/var/lib/bansoko/updates" in text:
     raise SystemExit("single config bind and updates subtree contract missing")
 dst.write_text(text)
 PY
@@ -398,7 +399,7 @@ for _ in $(seq 1 60); do curl -fsS "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/
 curl -fsS "http://127.0.0.1:${BANSOKO_APP_PORT}/api/v1/livez" >/dev/null 2>&1 || fail_blocked "real app process did not become live" "$log"
 inspect="$(docker compose -p "$project" -f "$compose" exec -T app sh -c 'printf "BANSOKO_UPDATE_MODE=%s\\nBANSOKO_EMBEDDED_FIXTURE_STOP_AFTER=%s\\nBANSOKO_EMBEDDED_FIXTURE_STOP_BEFORE_MARKER=%s\\nBANSOKO_EMBEDDED_FIXTURE_FAIL_READINESS=%s\\n" "$BANSOKO_UPDATE_MODE" "$BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER" "$BANSOKO_EMBEDDED_FIXTURE_STOP_BEFORE_MARKER" "$BANSOKO_EMBEDDED_FIXTURE_FAIL_READINESS"; test -x /app/bansoko-server; test ! -e /app/bootstrap; test ! -e /app/bansoko-migrate; test -x /usr/local/bin/pg_dump')" || fail_blocked "container runtime contract failed" "$log"
 if (( local_cli == 1 && legacy_base == 0 )); then
-  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test -S "$BANSOKO_UPDATES_ROOT/update-control.sock" && [ "$(stat -c %a "$BANSOKO_UPDATES_ROOT/update-control.sock")" = 600 ]' || fail_blocked "local update socket contract failed"
+  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test -S "${BANSOKO_UPDATES_ROOT:-/config/updates}/update-control.sock" && [ "$(stat -c %a "${BANSOKO_UPDATES_ROOT:-/config/updates}/update-control.sock")" = 600 ]' || fail_blocked "local update socket contract failed"
   if docker compose -p "$project" -f "$compose" exec -T --user 65534 app /app/bansoko-server update check --json >"$workdir/local-unauthorized.json" 2>"$workdir/local-unauthorized.log"; then unauthorized_rc=0; else unauthorized_rc=$?; fi
   [[ "$unauthorized_rc" == 3 ]] || fail_blocked "local update control accepted an unrelated uid" "rc=$unauthorized_rc"
   python3 - "$workdir/local-unauthorized.json" <<'PY'
@@ -409,7 +410,7 @@ assert body["error"]["exit_code"]==3, body
 PY
 fi
 if (( legacy_base == 1 )); then
-  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test ! -e "$BANSOKO_UPDATES_ROOT/update-control.sock" && test ! -e "$BANSOKO_UPDATES_ROOT/current" && ! grep -a -q "Container-local embedded update control" /app/bansoko-server' || fail_blocked "fixture base is not a pre-local-CLI release"
+  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test ! -e "${BANSOKO_UPDATES_ROOT:-/config/updates}/update-control.sock" && test ! -e "${BANSOKO_UPDATES_ROOT:-/config/updates}/current" && ! grep -a -q "Container-local embedded update control" /app/bansoko-server' || fail_blocked "fixture base is not a pre-local-CLI release"
 fi
 app_container_id="$(docker compose -p "$project" -f "$compose" ps -q app)"; [[ -n "$app_container_id" ]] || fail_blocked "app container identity unavailable" "$log"
 restart_count_before="$(docker inspect --format '{{.RestartCount}}' "$app_container_id")"; events_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -623,9 +624,9 @@ else
 fi
 if (( local_cli == 1 )); then
   if local_update status >"$workdir/status.json"; then status_code=200; else status_code=$?; fi
-  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test -S "$BANSOKO_UPDATES_ROOT/update-control.sock" && [ "$(stat -c %a "$BANSOKO_UPDATES_ROOT/update-control.sock")" = 600 ]' || fail_blocked "restarted local update socket contract failed"
+  docker compose -p "$project" -f "$compose" exec -T app sh -c 'test -S "${BANSOKO_UPDATES_ROOT:-/config/updates}/update-control.sock" && [ "$(stat -c %a "${BANSOKO_UPDATES_ROOT:-/config/updates}/update-control.sock")" = 600 ]' || fail_blocked "restarted local update socket contract failed"
   if (( legacy_base == 1 )); then
-    current_release="$(docker compose -p "$project" -f "$compose" exec -T app sh -c 'cat "$BANSOKO_UPDATES_ROOT/current"')"
+    current_release="$(docker compose -p "$project" -f "$compose" exec -T app sh -c 'cat "${BANSOKO_UPDATES_ROOT:-/config/updates}/current"')"
     [[ "$current_release" == "$target_id" ]] || fail_blocked "current executable selector is not the new overlay" "$current_release"
     docker compose -p "$project" -f "$compose" exec -T app sh -c '! grep -a -q "Container-local embedded update control" /app/bansoko-server' || fail_blocked "legacy /app binary changed during overlay update"
     local_update check >"$workdir/legacy-overlay-check.json" || fail_blocked "new overlay CLI check failed through current release selector"

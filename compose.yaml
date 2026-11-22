@@ -28,6 +28,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    stop_grace_period: 30s
     restart: unless-stopped
     logging:
       driver: local
@@ -44,9 +45,8 @@ services:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       TZ: ${TZ:-Etc/UTC}
-      # Keep update state under the existing config mount: no second
-      # application-state volume is needed just for channel updates.
-      BANSOKO_UPDATES_ROOT: /config/updates
+      # Container HTTP listening port (default 8080).
+      BANSOKO_PORT: ${BANSOKO_PORT:-8080}
       # Test builds: uncomment to take every main build through
       # Settings → Updates instead of only formal releases. Comment it out again
       # to return to formal releases (from the next release on).
@@ -57,24 +57,27 @@ services:
       # HTTPS_PROXY: http://192.168.1.2:7890
       # NO_PROXY: localhost,127.0.0.1,postgres
     volumes:
-      # Back up secrets.json with the database. /config/updates is app-owned
-      # disposable state: keep it across recreation, never back it up or edit it.
+      # Back up secrets.json with the database. Embedded updates default to
+      # /config/updates inside this mount (override with BANSOKO_UPDATES_ROOT
+      # only if needed); /config/updates is app-owned disposable state — keep it
+      # across recreation, never back it up or edit it.
       - ./config:/config
       # Only a default playground: point this at (or add mounts for) your real
       # download/library directories, then set the download root and library
       # root in the app settings to paths inside the container.
       - ./data:/data
     ports:
-      - "${BANSOKO_APP_PORT:-8000}:8080"
+      - "${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/livez"]
+      test: ["CMD-SHELL", 'port="$${BANSOKO_PORT:-8080}"; if [ -n "$${BANSOKO_LISTEN_ADDRESS:-}" ]; then port="$${BANSOKO_LISTEN_ADDRESS##*:}"; fi; wget --no-verbose --tries=1 --spider "http://127.0.0.1:$${port}/api/v1/livez"']
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
+    stop_grace_period: 30s
     restart: unless-stopped
     logging:
       driver: local

@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"bansoko/internal/runtime/config"
 	"bansoko/internal/transport/httpapi/generated"
 	embeddedupdate "bansoko/internal/update/journal"
 )
 
-const defaultListenAddress = "0.0.0.0:8080"
+const defaultListenAddress = config.DefaultListenAddress
 
 func maintenanceHandler(journalPath string, fallbackStep, fallbackOperation string, now func() time.Time) http.Handler {
 	if now == nil {
@@ -95,15 +96,16 @@ func writeMaintenanceJSON(w http.ResponseWriter, status int, value any) {
 	}
 }
 
-func maintenanceListenAddress() string {
-	if address := strings.TrimSpace(os.Getenv(envListenAddress)); address != "" {
-		return address
-	}
-	return defaultListenAddress
+func maintenanceListenAddress() (string, error) {
+	return config.ResolveListenAddress(os.Getenv)
 }
 
 func startMaintenanceResponder(updatesRoot, step, operation string) (func() error, error) {
-	listener, err := net.Listen("tcp", maintenanceListenAddress())
+	address, err := maintenanceListenAddress()
+	if err != nil {
+		return nil, fmt.Errorf("resolve listen address for maintenance responder: %w", err)
+	}
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen for maintenance responder: %w", err)
 	}

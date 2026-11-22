@@ -100,7 +100,7 @@ dc up -d --wait postgres
 inner='
 set -eu
 bin=/app/bansoko-server
-updates_root="${BANSOKO_UPDATES_ROOT:-}"
+updates_root="${BANSOKO_UPDATES_ROOT:-${BANSOKO_CONFIG_DIR:-/config}/updates}"
 if [ -n "$updates_root" ] && [ -f "$updates_root/current" ]; then
   token="$(tr -d " \n\r\t" < "$updates_root/current")"
   bin="$updates_root/releases/$token/bansoko-server"

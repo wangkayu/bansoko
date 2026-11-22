@@ -8,19 +8,86 @@ finished files into your library with a naming template.
 
 ## Quick start
 
-The stable image is published on Docker Hub as `wangkayu/bansoko`
-(linux/amd64, linux/arm64). All you need is Docker and Compose.
+Save either snippet below as `compose.yaml` and run `docker compose up -d`
+(see [`compose.yaml`](compose.yaml) for the full annotated template).
 
-```bash
-git clone https://github.com/wangkayu/bansoko.git
-cd bansoko
-docker compose up -d
+### Option 1: Bundled PostgreSQL (recommended)
+
+```yaml
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: bansoko
+      POSTGRES_USER: bansoko
+      POSTGRES_PASSWORD: bansoko
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bansoko -d bansoko"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    image: wangkayu/bansoko:latest
+    environment:
+      BANSOKO_DATABASE_URL: postgres://bansoko:bansoko@postgres:5432/bansoko?sslmode=disable
+      PUID: 1000
+      PGID: 1000
+      TZ: Etc/UTC
+      # BANSOKO_PORT: 8080
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      - "8000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+
+### Option 2: External PostgreSQL
+
+Requires PostgreSQL 17 (the only version verified). Prepare a dedicated database
+and owner role (`CREATEROLE` required; `CREATEDB` also required for embedded
+updates):
+
+```sql
+CREATE ROLE <user> LOGIN PASSWORD '<password>' CREATEROLE CREATEDB;
+CREATE DATABASE <db> OWNER <user>;
+-- Example:
+-- CREATE ROLE bansoko LOGIN PASSWORD 'your-password' CREATEROLE CREATEDB;
+-- CREATE DATABASE bansoko OWNER bansoko;
+```
+
+```yaml
+services:
+  app:
+    image: wangkayu/bansoko:latest
+    environment:
+      BANSOKO_DATABASE_URL: postgres://<user>:<password>@<host>:5432/<db>?sslmode=disable
+      # BANSOKO_DATABASE_URL: postgres://bansoko:your-password@192.168.1.10:5432/bansoko?sslmode=disable
+      PUID: 1000
+      PGID: 1000
+      TZ: Etc/UTC
+      # BANSOKO_PORT: 8080
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      - "8000:8080"
+    restart: unless-stopped
 ```
 
 Open `http://<host>:8000` and create the administrator account on the first
-visit. First steps after that: connect qBittorrent in Settings, add a feed
-source, subscribe to a title. Back up the database and `config/secrets.json`
-before upgrading.
+visit.
 
 ## Disclaimer
 

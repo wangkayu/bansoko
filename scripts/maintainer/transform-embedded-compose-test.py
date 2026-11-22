@@ -34,15 +34,18 @@ with tempfile.TemporaryDirectory() as td:
 fixture = (root / "scripts/ci/embedded-update-docker-fixture.sh").read_text()
 patch = re.search(r'python3 - "\$compose"[^\n]*<<\'PY\'\n(.*?)\nPY', fixture, re.S)
 assert patch, "fixture compose patch was not found"
-for scenario, local_cli, checkpoint in [("normal", "0", ""), ("normal", "1", ""), ("crash-after-backup", "0", "pending_backup")]:
+for scenario, local_cli, checkpoint, legacy_base in [("normal", "0", "", "0"), ("normal", "1", "", "0"), ("crash-after-backup", "0", "pending_backup", "0"), ("normal", "1", "", "1")]:
     with tempfile.TemporaryDirectory() as td:
         dst = pathlib.Path(td) / "compose.yml"
         subprocess.run([sys.executable, "-I", str(entry), str(root / "deployment/maintainer/docker-compose.production.yml"), str(dst), "fixture_updates", "fixture-image:tag"], check=True)
-        result = subprocess.run([sys.executable, "-I", "-c", patch.group(1), str(dst), "http://host.docker.internal:12345/update-channel", scenario, checkpoint, "fixture-run", "fixture_updates", local_cli], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "-I", "-c", patch.group(1), str(dst), "http://host.docker.internal:12345/update-channel", scenario, checkpoint, "fixture-run", "fixture_updates", local_cli, legacy_base], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
         rendered = dst.read_text()
         assert "        target: /config\n" in rendered
-        assert "BANSOKO_UPDATES_ROOT: /config/updates" in rendered
+        if legacy_base == "1":
+            assert "BANSOKO_UPDATES_ROOT: /config/updates" in rendered
+        else:
+            assert "BANSOKO_UPDATES_ROOT:" not in rendered
         assert rendered.count("bansoko.update-e2e.run: fixture-run") == 3, "both services and the database volume must carry the cleanup label"
         assert "source: updates" not in rendered and "target: /var/lib/bansoko/updates" not in rendered
         app = rendered.split("  app:\n", 1)[1]

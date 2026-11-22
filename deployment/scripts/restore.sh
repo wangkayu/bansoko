@@ -150,7 +150,7 @@ printf "%s" "$sum" | grep -Eq "^[0-9a-f]{64}$" || die "the backup header is malf
 
 # The schema the running release has.
 schema_dir=/app/db/migrations
-updates_root="${BANSOKO_UPDATES_ROOT:-}"
+updates_root="${BANSOKO_UPDATES_ROOT:-${BANSOKO_CONFIG_DIR:-/config}/updates}"
 if [ -n "$updates_root" ] && [ -f "$updates_root/current" ]; then
   token="$(tr -d " \n\r\t" < "$updates_root/current")"
   schema_dir="$updates_root/releases/$token/db/migrations"
@@ -236,7 +236,7 @@ if [[ "$health" != healthy ]]; then
   log "the app did not become healthy within ${timeout}s (state: ${health:-unknown}); check: docker compose -p $project logs app"
   exit 4
 fi
-if dc exec -T app wget -q -O /dev/null http://127.0.0.1:8080/api/v1/readyz; then
+if dc exec -T app sh -c 'port="${BANSOKO_PORT:-8080}"; if [ -n "${BANSOKO_LISTEN_ADDRESS:-}" ]; then port="${BANSOKO_LISTEN_ADDRESS##*:}"; fi; wget -q -O /dev/null "http://127.0.0.1:${port}/api/v1/readyz"'; then
   log "done; the app is healthy and ready"
 else
   log "the app is healthy but not ready yet; check /api/v1/readyz and the app log"

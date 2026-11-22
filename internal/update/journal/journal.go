@@ -2,7 +2,7 @@
 // container-embedded self-update chain.
 //
 // The journal is a single deployment-owned file on the updates volume
-// (/var/lib/bansoko/updates/journal.json). Both the server-side updater
+// (/config/updates/journal.json). Both the server-side updater
 // (which writes admission through pending_migration checkpoints before
 // exiting) and the bootstrap wrapper (which consumes the handoff after the
 // restart and records migration/promotion outcomes) persist through this

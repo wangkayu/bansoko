@@ -380,7 +380,7 @@ Usage with the current binary / 当前版本命令:
 
 Container invocation / 容器调用（将最后的 check 换为 apply 或 status）:
   docker exec <container> sh -c '
-    root=${BANSOKO_UPDATES_ROOT:-/config/updates}
+    root=${BANSOKO_UPDATES_ROOT:-${BANSOKO_CONFIG_DIR:-/config}/updates}
     binary=/app/bansoko-server
     if [ -f "$root/current" ]; then
       release=$(cat "$root/current")

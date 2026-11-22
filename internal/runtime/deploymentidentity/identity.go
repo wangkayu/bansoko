@@ -35,7 +35,7 @@ const (
 	// readiness must keep treating a dev process without bootstrap facts as
 	// not_provided, while the updater compares the version itself.
 	EnvBootstrapVersion     = "BANSOKO_BOOTSTRAP_VERSION"
-	DefaultUpdatesRoot      = "/var/lib/bansoko/updates"
+	DefaultUpdatesRoot      = "/config/updates"
 	currentPointerFileName  = "current"
 	payloadDigestHexPattern = `^[0-9a-f]{64}$`
 	imageDigestPattern      = `^sha256:[0-9a-f]{64}$`
@@ -122,10 +122,14 @@ type PointerState struct {
 }
 
 // UpdatesRoot is the single updates-volume contract shared by bootstrap,
-// server, updater and readiness. There is no bootstrap-specific override.
+// server, updater and readiness. When BANSOKO_UPDATES_ROOT is unset, it
+// defaults to <BANSOKO_CONFIG_DIR>/updates (/config/updates by default).
 func UpdatesRoot(getenv func(string) string) string {
 	if root := strings.TrimSpace(getenv(EnvUpdatesRoot)); root != "" {
 		return root
+	}
+	if configDir := strings.TrimSpace(getenv("BANSOKO_CONFIG_DIR")); configDir != "" {
+		return filepath.Join(configDir, "updates")
 	}
 	return DefaultUpdatesRoot
 }

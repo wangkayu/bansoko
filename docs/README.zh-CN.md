@@ -6,16 +6,82 @@
 
 ## 快速开始
 
-正式镜像发布在 Docker Hub：`wangkayu/bansoko`（linux/amd64、linux/arm64）。只需要 Docker 和 Compose。
+将下面任一配置保存为 `compose.yaml`，执行 `docker compose up -d` 即可启动（完整注释模板见 [`compose.yaml`](../compose.yaml)）。
 
-```bash
-git clone https://github.com/wangkayu/bansoko.git
-cd bansoko
-docker compose up -d
+### 方案一：内置 PostgreSQL（推荐）
+
+```yaml
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: bansoko
+      POSTGRES_USER: bansoko
+      POSTGRES_PASSWORD: bansoko
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bansoko -d bansoko"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    image: wangkayu/bansoko:latest
+    environment:
+      BANSOKO_DATABASE_URL: postgres://bansoko:bansoko@postgres:5432/bansoko?sslmode=disable
+      PUID: 1000
+      PGID: 1000
+      TZ: Asia/Shanghai
+      # BANSOKO_PORT: 8080
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      - "8000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
 ```
 
-打开 `http://<主机>:8000`，首次访问时创建管理员账号。之后的起步步骤：在设置里连接
-qBittorrent，添加订阅源，订阅一部番剧。升级前请备份数据库和 `config/secrets.json`。
+### 方案二：复用外置 PostgreSQL
+
+需使用 PostgreSQL 17（目前仅验证过该版本），并提前准备专属库及库所有者账号（账号需具备 `CREATEROLE` 权限；启用应用内更新时还需 `CREATEDB`）：
+
+```sql
+CREATE ROLE <user> LOGIN PASSWORD '<password>' CREATEROLE CREATEDB;
+CREATE DATABASE <db> OWNER <user>;
+-- 示例:
+-- CREATE ROLE bansoko LOGIN PASSWORD 'your-password' CREATEROLE CREATEDB;
+-- CREATE DATABASE bansoko OWNER bansoko;
+```
+
+```yaml
+services:
+  app:
+    image: wangkayu/bansoko:latest
+    environment:
+      BANSOKO_DATABASE_URL: postgres://<user>:<password>@<host>:5432/<db>?sslmode=disable
+      # BANSOKO_DATABASE_URL: postgres://bansoko:your-password@192.168.1.10:5432/bansoko?sslmode=disable
+      PUID: 1000
+      PGID: 1000
+      TZ: Asia/Shanghai
+      # BANSOKO_PORT: 8080
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      - "8000:8080"
+    restart: unless-stopped
+```
+
+打开 `http://<主机>:8000`，首次访问时创建管理员账号。
 
 ## 免责声明
 

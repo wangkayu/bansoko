@@ -35,6 +35,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"bansoko/internal/runtime/config"
 	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/runtime/deploymentprovenance"
 	updateradapter "bansoko/internal/update/adapter/pgexec"
@@ -211,7 +212,7 @@ type consumeFlow struct {
 	child   *childProcess
 }
 
-const envListenAddress = "BANSOKO_LISTEN_ADDRESS"
+const envListenAddress = config.EnvListenAddress
 
 func releaseRoot(updatesRoot string) string { return filepath.Join(updatesRoot, releasesDirName) }
 
@@ -1134,7 +1135,8 @@ func verifyBackupSidecar(updatesRoot, backupID string) (string, error) {
 }
 
 // probeTargetBase derives the loopback HTTP endpoint the readiness probe hits,
-// derived from BANSOKO_LISTEN_ADDRESS only (wildcards collapse to 127.0.0.1).
+// derived from the effective listen address (BANSOKO_LISTEN_ADDRESS or
+// BANSOKO_PORT; wildcards collapse to 127.0.0.1).
 func probeTargetBase(listenAddr string) string {
 	host, port, splitErr := net.SplitHostPort(strings.TrimSpace(listenAddr))
 	switch {
@@ -1305,7 +1307,11 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 				return false
 			}
 			client := &http.Client{Timeout: probeHTTPTimeout}
-			resp, err := client.Get("http://" + probeTargetBase(os.Getenv(envListenAddress)) + readyzPath)
+			listenAddr, listenErr := config.ResolveListenAddress(os.Getenv)
+			if listenErr != nil {
+				return false
+			}
+			resp, err := client.Get("http://" + probeTargetBase(listenAddr) + readyzPath)
 			if err != nil {
 				return false
 			}

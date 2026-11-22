@@ -214,7 +214,7 @@ RUN set -eu; \
 # updates root for PUID:PGID (default 1000:1000) and then drops to that account
 # for good before migrating or serving. /app stays root-owned and read-only to
 # the app.
-RUN mkdir -p /var/lib/bansoko/updates /config
+RUN mkdir -p /config
 
 # Image defaults users never set. Updates are on by default: a deployment names
 # the lane it belongs to and the lane names this project's own channel branch
@@ -222,15 +222,16 @@ RUN mkdir -p /var/lib/bansoko/updates /config
 # deployment updates itself in place from the stable lane (the image ENV counts
 # as the explicit mode the production config requires). Set
 # BANSOKO_UPDATE_MODE=manual to pin a deployment to image pulls, or
-# BANSOKO_UPDATE_LANE=test on a test instance. The only required input is
+# BANSOKO_UPDATE_LANE=test on a test instance. The server defaults to listening
+# on 0.0.0.0:8080 (override with BANSOKO_PORT or BANSOKO_LISTEN_ADDRESS) and
+# stores embedded updates at /config/updates (<BANSOKO_CONFIG_DIR>/updates,
+# override with BANSOKO_UPDATES_ROOT). The only required input is
 # BANSOKO_DATABASE_URL (schema owner); secrets are generated into /config on
 # first start. Until a release is published on the lane, a check reports itself
 # unavailable.
 ENV BANSOKO_ENVIRONMENT=production \
-    BANSOKO_LISTEN_ADDRESS=0.0.0.0:8080 \
     BANSOKO_UPDATE_MODE=embedded \
     BANSOKO_UPDATE_LANE=stable \
-    BANSOKO_UPDATES_ROOT=/var/lib/bansoko/updates \
     BANSOKO_SCHEMA_DIR=/app/db/migrations \
     BANSOKO_FRONTEND_DIR=/app/frontend/dist
 
@@ -238,7 +239,7 @@ EXPOSE 8080
 # P0.7: release/restore admission must not depend on DB-ping /system/health;
 # /livez proves process liveness only (readiness is /readyz).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/api/v1/livez || exit 1
+    CMD port="${BANSOKO_PORT:-8080}"; if [ -n "${BANSOKO_LISTEN_ADDRESS:-}" ]; then port="${BANSOKO_LISTEN_ADDRESS##*:}"; fi; wget --no-verbose --tries=1 --spider "http://127.0.0.1:${port}/api/v1/livez" || exit 1
 # The unified binary starts in bootstrap mode by default: bare start migrates
 # the selected tree and then runs the server. Explicit serve and migrate modes
 # are used by bootstrap after it has selected and verified the runtime tree.

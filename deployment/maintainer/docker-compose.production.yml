@@ -18,8 +18,9 @@
 #     bootstrap wrapper, which migrates the selected tree's schema with the
 #     schema-owner BANSOKO_DATABASE_URL, provisions the runtime login role and
 #     then serves with the derived runtime connection. There is no separate
-#     migration service. The config mount carries the durable update workspace
-#     (journal plus staging/release trees) at BANSOKO_UPDATES_ROOT=/config/updates;
+#     migration service. Under /config, updates default to /config/updates
+#     (journal plus staging/release trees; no BANSOKO_UPDATES_ROOT env needed
+#     unless overridden);
 #   - healthcheck uses /api/v1/livez (process liveness only); readiness is
 #     /readyz and must not be gated on DB-ping /system/health.
 #
@@ -57,6 +58,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    stop_grace_period: 30s
     restart: unless-stopped
     logging:
       driver: local
@@ -91,10 +93,10 @@ services:
       # independently supplied base digest would let readiness describe a
       # different image than Compose actually starts.
       BANSOKO_BASE_IMAGE_DIGEST: ${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
-      # Updates live inside the one state mount: the config bind is the single
-      # application-state surface (secrets, recovery, updates), so channel
-      # updates need no second volume.
-      BANSOKO_UPDATES_ROOT: /config/updates
+      # Container HTTP listening port (default 8080).
+      BANSOKO_PORT: ${BANSOKO_PORT:-8080}
+      # Updates default to /config/updates inside the /config mount; no
+      # BANSOKO_UPDATES_ROOT override or second volume is needed unless moving it.
       # Runtime file-effect ownership (PUID/PGID) is deployment-owned. The
       # download roots and the directories the naming templates render are
       # WebUI configuration (DB owner config), not here.
@@ -128,16 +130,17 @@ services:
         source: ${BANSOKO_CONFIG_DIR:?BANSOKO_CONFIG_DIR must be set}
         target: /config
     ports:
-      - "${BANSOKO_APP_PORT:-8000}:8080"
+      - "${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/livez"]
+      test: ["CMD-SHELL", 'port="$${BANSOKO_PORT:-8080}"; if [ -n "$${BANSOKO_LISTEN_ADDRESS:-}" ]; then port="$${BANSOKO_LISTEN_ADDRESS##*:}"; fi; wget --no-verbose --tries=1 --spider "http://127.0.0.1:$${port}/api/v1/livez"']
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
+    stop_grace_period: 30s
     restart: unless-stopped
     # Bounded Docker log rotation: Runtime Log is consumed through container
     # output; the local driver keeps the ring on disk without a second daemon.

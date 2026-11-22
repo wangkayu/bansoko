@@ -85,6 +85,7 @@ func TestFromFlagsAcceptsAllExplicitUpdateModes(t *testing.T) {
 
 func TestFromFlagsDefaultsToLANHTTPListener(t *testing.T) {
 	t.Setenv("BANSOKO_LISTEN_ADDRESS", "")
+	t.Setenv("BANSOKO_PORT", "")
 	t.Setenv("BANSOKO_ENVIRONMENT", "development")
 	t.Setenv("BANSOKO_SKIP_AUTH", "false")
 
@@ -94,6 +95,48 @@ func TestFromFlagsDefaultsToLANHTTPListener(t *testing.T) {
 	}
 	if cfg.ListenAddress != "0.0.0.0:8080" {
 		t.Fatalf("default HTTP listener = %q, want 0.0.0.0:8080", cfg.ListenAddress)
+	}
+}
+
+func TestFromFlagsUsesPortEnvAndListenAddressPrecedence(t *testing.T) {
+	t.Setenv("BANSOKO_ENVIRONMENT", "development")
+	t.Setenv("BANSOKO_LISTEN_ADDRESS", "")
+	t.Setenv("BANSOKO_PORT", " 9000 ")
+	cfg, err := FromFlags(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ListenAddress != "0.0.0.0:9000" {
+		t.Fatalf("BANSOKO_PORT listener = %q, want 0.0.0.0:9000", cfg.ListenAddress)
+	}
+
+	t.Setenv("BANSOKO_LISTEN_ADDRESS", "127.0.0.1:9999")
+	cfg, err = FromFlags(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ListenAddress != "127.0.0.1:9999" {
+		t.Fatalf("BANSOKO_LISTEN_ADDRESS precedence = %q, want 127.0.0.1:9999", cfg.ListenAddress)
+	}
+}
+
+func TestFromFlagsRejectsInvalidPortEnvUnlessFlagOverrides(t *testing.T) {
+	t.Setenv("BANSOKO_ENVIRONMENT", "development")
+	t.Setenv("BANSOKO_LISTEN_ADDRESS", "")
+	for _, invalid := range []string{"0", "65536", "-1", "+8080", "abc"} {
+		t.Run(invalid, func(t *testing.T) {
+			t.Setenv("BANSOKO_PORT", invalid)
+			if _, err := FromFlags(nil); !errors.Is(err, ErrInvalidPort) {
+				t.Fatalf("BANSOKO_PORT=%q error = %v, want ErrInvalidPort", invalid, err)
+			}
+			cfg, err := FromFlags([]string{"-listen", "127.0.0.1:8123"})
+			if err != nil {
+				t.Fatalf("explicit -listen override failed for BANSOKO_PORT=%q: %v", invalid, err)
+			}
+			if cfg.ListenAddress != "127.0.0.1:8123" {
+				t.Fatalf("explicit -listen = %q, want 127.0.0.1:8123", cfg.ListenAddress)
+			}
+		})
 	}
 }
 
