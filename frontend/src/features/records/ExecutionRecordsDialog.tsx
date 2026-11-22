@@ -316,7 +316,7 @@ function RecordList({
           }
         />
       ) : !fresh ? (
-        <StateBlock kind="busy" title={t("records.loading")} />
+        <StateBlock kind="busy" skeleton="list" title={t("records.loading")} />
       ) : items.length === 0 ? (
         filtered ? (
           <StateBlock kind="empty" title={t("records.emptyFiltered")} />
@@ -440,7 +440,7 @@ function RecordDetail({
       </div>
     );
   }
-  if (!query.data) return <StateBlock kind="busy" title={t("records.detail.loading")} />;
+  if (!query.data) return <StateBlock kind="busy" skeleton="list" title={t("records.detail.loading")} />;
   const detail = query.data;
   const compact = detail.record_detail === "compact";
 
@@ -702,7 +702,7 @@ function FileSection({ acquisitionID, receipts }: { acquisitionID: string; recei
         <StateBlock kind="error" title={toUserMessage(query.error, t("records.file.loadFailed"))} />
       );
   } else if (!query.data) {
-    body = <StateBlock kind="busy" title={t("records.file.loading")} />;
+    body = <StateBlock kind="busy" skeleton="list" title={t("records.file.loading")} />;
   } else if (files.length === 0) {
     body = <span className={META}>{t("records.file.empty")}</span>;
   } else {

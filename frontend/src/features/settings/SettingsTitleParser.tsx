@@ -108,7 +108,7 @@ export function SettingsTitleParser() {
     return (
       <section className="settings-title-parser">
         <h2 className="settings-title-parser-title text-title">{t("settings.titleParser.title")}</h2>
-        <StateBlock kind="busy" title={t("settings.titleParser.loading")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.titleParser.loading")} />
       </section>
     );
   }

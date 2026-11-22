@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { wallRowLabel, wallRowOf, wallRows } from "./wallRows";
+import { currentWeekday, wallRowLabel, wallRowOf, wallRows } from "./wallRows";
+
+describe("currentWeekday（JST UTC+9 28 时制换日）", () => {
+  it("日本时间凌晨 04:00（JST 28:00 / 北京时间 03:00）前仍归属前一日，04:00 起切入新一日", () => {
+    // 2026-07-19 is Sunday.
+    // Sunday 27:59 JST = Monday 03:59 JST = Sunday 18:59 UTC (Beijing Monday 02:59) -> still Sunday ("sun")
+    expect(currentWeekday(new Date("2026-07-19T18:59:59Z"))).toBe("sun");
+    // Sunday 28:00 JST = Monday 04:00 JST = Sunday 19:00 UTC (Beijing Monday 03:00) -> switches to Monday ("mon")
+    expect(currentWeekday(new Date("2026-07-19T19:00:00Z"))).toBe("mon");
+  });
+});
 
 describe("wallRowOf", () => {
   it("真实放送日进对应星期行", () => {
@@ -55,7 +65,7 @@ describe("wallRowOf", () => {
 });
 
 describe("wallRows", () => {
-  it("按 周一…周日、剧场版、OVA/ONA、自定义、其他 排序，行内保持输入顺序，跳过空行", () => {
+  it("按指定当日开始轮转星期行（后接剧场版、OVA/ONA、自定义、其他），行内保持输入顺序，跳过空行", () => {
     const items = [
       { id: "a", broadcastDay: "sun" as const },
       { id: "b", broadcastDay: "thu" as const },
@@ -65,14 +75,24 @@ describe("wallRows", () => {
       { id: "f", custom: true },
       { id: "g", format: "ova" as const },
     ];
-    const rows = wallRows(items, (item) => item);
-    expect(rows.map((row) => [row.key, row.items.map((item) => item.id)])).toEqual([
-      ["thu", ["b", "d"]],
-      ["sun", ["a"]],
-      ["movie", ["e"]],
-      ["ova", ["g"]],
-      ["custom", ["f"]],
-      ["other", ["c"]],
+    const rows = wallRows(items, (item) => item, "mon");
+    expect(rows.map((row) => [row.key, row.items.map((item) => item.id), Boolean(row.isToday)])).toEqual([
+      ["thu", ["b", "d"], false],
+      ["sun", ["a"], false],
+      ["movie", ["e"], false],
+      ["ova", ["g"], false],
+      ["custom", ["f"], false],
+      ["other", ["c"], false],
+    ]);
+
+    const rotatedFromSun = wallRows(items, (item) => item, "sun");
+    expect(rotatedFromSun.map((row) => [row.key, row.items.map((item) => item.id), Boolean(row.isToday)])).toEqual([
+      ["sun", ["a"], true],
+      ["thu", ["b", "d"], false],
+      ["movie", ["e"], false],
+      ["ova", ["g"], false],
+      ["custom", ["f"], false],
+      ["other", ["c"], false],
     ]);
   });
 

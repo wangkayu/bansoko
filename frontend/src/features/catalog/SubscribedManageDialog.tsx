@@ -424,7 +424,7 @@ export function SubscribedManageDialog({
 
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">
         {list.isPending ? (
-          <StateBlock kind="busy" title={t("act.reading")} />
+          <StateBlock kind="busy" skeleton="table" title={t("act.reading")} />
         ) : list.isError ? (
           <StateBlock
             kind="error"

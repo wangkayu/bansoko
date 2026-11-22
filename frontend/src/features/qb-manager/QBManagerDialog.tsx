@@ -333,7 +333,7 @@ export function QBManagerDialog({
       <div className="tw:flex tw:min-h-0 tw:flex-col">
         {/* Connection selector + server status bar */}
         {connectionsQuery.isLoading ? (
-          <StateBlock kind="busy" title={t("qb.loadingConnections")} />
+          <StateBlock kind="busy" skeleton="list" title={t("qb.loadingConnections")} />
         ) : connectionsQuery.error ? (
           <StateBlock kind="error"
             title={toUserMessage(connectionsQuery.error, t("qb.loadConnectionsFailed"))}
@@ -409,7 +409,7 @@ export function QBManagerDialog({
         {qbConnections.length > 0 && (
           <div className="tw:min-h-0">
             {torrentsQuery.isLoading ? (
-              <StateBlock kind="busy" title={t("qb.loadingTasks")} />
+              <StateBlock kind="busy" skeleton="list" title={t("qb.loadingTasks")} />
             ) : torrentsQuery.error ? (
               <StateBlock kind="error"
                 title={toUserMessage(torrentsQuery.error, t("qb.loadTasksFailed"))}
@@ -652,7 +652,7 @@ function TorrentRow({
       {expanded && (
         <div className="tw:mt-2 tw:pl-8">
           {filesLoading ? (
-            <StateBlock kind="busy" title={t("qb.loadingFiles")} />
+            <StateBlock kind="busy" skeleton="list" title={t("qb.loadingFiles")} />
           ) : filesError ? (
             <span role="alert" className="tw:text-sm tw:text-destructive">
               {toUserMessage(filesError, t("qb.loadFilesFailed"))}

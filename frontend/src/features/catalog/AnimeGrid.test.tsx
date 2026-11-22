@@ -1033,13 +1033,19 @@ describe("AnimeGrid（fixture 目录）", () => {
     expect(screen.queryByRole("button", { name: /^保存/ })).not.toBeInTheDocument();
   });
 
-  it("隐藏成功 toast 指向已隐藏的番剧", async () => {
+  it("隐藏番剧前需二次确认，确认后 toast 指向已隐藏的番剧", async () => {
     await renderGrid();
     await flush();
 
     const { toast } = await import("sonner");
     await openMenu(screen.getByRole("button", { name: t("grid.card.moreFor", { title: "进击的巨人" }) }));
     fireEvent.click(screen.getByRole("menuitem", { name: t("grid.card.hide") }));
+    await flushLazyEntry("confirm");
+    await flush();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog", { name: t("grid.hideTitle", { title: "进击的巨人" }) })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: t("grid.hideConfirm") }));
     await flush();
     expect(toast.success).toHaveBeenCalledWith(t("grid.blacklistAdded"));
   });
@@ -1100,13 +1106,18 @@ describe("AnimeGrid（fixture 目录）", () => {
     }
   });
 
-  it("浏览区隐藏有订阅的条目：只写隐藏记录，不确认、不结束订阅", async () => {
+  it("浏览区隐藏有订阅的条目：经二次确认后只写隐藏记录，不结束订阅", async () => {
     candidates = [{ ...mikanActivatedCandidate }, { ...mikanSecondOwner }];
     await renderGrid("/?source=mikan");
     await flush();
 
     await openMenu(screen.getByRole("button", { name: t("grid.card.moreFor", { title: "进击的巨人" }) }));
     fireEvent.click(screen.getByRole("menuitem", { name: t("grid.card.hide") }));
+    await flushLazyEntry("confirm");
+    await flush();
+
+    expect(screen.getByRole("alertdialog", { name: t("grid.hideTitle", { title: "进击的巨人" }) })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("grid.hideConfirm") }));
     await flush();
     await flush();
 
@@ -1688,7 +1699,8 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
     expect(screen.queryByText("挂起番剧")).not.toBeInTheDocument();
   });
 
-  it("已订阅墙每天一行：行标签在行首，按周一…周日排序，空行不渲染（owner 2026-10-20）", async () => {
+  it("已订阅墙每天一行：行标签在行首，按当日（JST 28 时制）优先轮转排序，空行不渲染", async () => {
+    // FIXED_NOW is 2026-07-15T12:00:00Z (Wednesday 21:00 JST), so rotation order is wed -> thu -> fri -> sat -> sun -> mon -> tue.
     candidates = [
       { ...activeCandidate, broadcast_day: "sun" },
       { ...holdCandidate, broadcast_day: "thu" },
@@ -1706,6 +1718,29 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
     // The cards no longer carry the broadcast day themselves: each day's wording appears only on the row labels.
     expect(screen.getAllByText(t("grid.weekday.thu"))).toHaveLength(1);
     expect(screen.getAllByText(t("grid.weekday.sun"))).toHaveLength(1);
+  });
+
+  it("已订阅墙长行（>=6 项）显示展开按钮并可切换为网格展开态", async () => {
+    candidates = Array.from({ length: 6 }, (_, i) => ({
+      ...activeCandidate,
+      id: `cand-long-${i}`,
+      origin_entry_ref: `cand-long-${i}`,
+      activated_managed_anime_id: `anime:cand-long-${i}`,
+      title: `长行番剧 ${i + 1}`,
+      broadcast_day: "thu",
+    }));
+    await renderGrid("/?source=all");
+    await flush();
+
+    const row = screen.getByRole("region", { name: t("grid.weekday.thu") });
+    expect(row).not.toHaveAttribute("data-wall-expanded");
+    const expandBtn = within(row).getByRole("button", { name: new RegExp(t("grid.wallRow.expand")) });
+    expect(expandBtn).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(expandBtn);
+    expect(row).toHaveAttribute("data-wall-expanded", "true");
+    const collapseBtn = within(row).getByRole("button", { name: new RegExp(t("grid.wallRow.collapse")) });
+    expect(collapseBtn).toHaveAttribute("aria-expanded", "true");
   });
 
   it("已订阅墙按站点目录的播出形式归剧场版行", async () => {

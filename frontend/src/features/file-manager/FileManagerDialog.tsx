@@ -195,7 +195,7 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
               }
             />
           ) : !roots.data ? (
-            <StateBlock kind="busy" title={t("fileManager.roots.loading")} />
+            <StateBlock kind="busy" skeleton="list" title={t("fileManager.roots.loading")} />
           ) : rootList.length === 0 ? (
             <StateBlock
               kind="empty"
@@ -241,7 +241,7 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
                   }
                 />
               ) : !listing.data ? (
-                <StateBlock kind="busy" title={t("fileManager.listLoading")} />
+                <StateBlock kind="busy" skeleton="list" title={t("fileManager.listLoading")} />
               ) : entries.length === 0 ? (
                 <StateBlock kind="empty" title={t("fileManager.emptyFolder")} />
               ) : (

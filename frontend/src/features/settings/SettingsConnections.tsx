@@ -515,7 +515,7 @@ function ConnectionsCard() {
       </div>
 
       {connections.isLoading && (
-        <StateBlock kind="busy" title={t("settings.connections.loading")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.connections.loading")} />
       )}
       {connections.error && <Alert tone="error" title={toUserMessage(connections.error, t("settings.connections.loadFailed"))} />}
       {connections.data && visibleConnections(connections.data).length === 0 && !draft && (
@@ -786,7 +786,7 @@ function RoutesCard() {
       </div>
 
       {routes.isLoading && (
-        <StateBlock kind="busy" title={t("settings.proxy.loading")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.proxy.loading")} />
       )}
       {routes.error && <Alert tone="error" title={toUserMessage(routes.error, t("settings.proxy.loadFailed"))} />}
       {routes.data && routes.data.length === 0 && !draft && <StateBlock kind="empty" title={t("settings.proxy.empty")} />}

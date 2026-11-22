@@ -152,7 +152,7 @@ export function LogRawView({ active }: { active: boolean }) {
       />
     );
   } else if (feed.status === "loading" && lines.length === 0) {
-    body = <StateBlock kind="busy" title={t("log.rawlog.loading")} />;
+    body = <StateBlock kind="busy" skeleton="log" title={t("log.rawlog.loading")} />;
   } else if (lines.length === 0) {
     body = (
       <StateBlock

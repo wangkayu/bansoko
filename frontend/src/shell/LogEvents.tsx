@@ -326,7 +326,7 @@ function EventsList({
       />
     );
   }
-  if (!query.data) return <StateBlock kind="busy" title={t("log.loadingRecords")} />;
+  if (!query.data) return <StateBlock kind="busy" skeleton="log" title={t("log.loadingRecords")} />;
   if (items.length === 0 && warnings.length === 0) return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
 
   return (

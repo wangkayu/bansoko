@@ -285,7 +285,7 @@ export function RssWorkspace({
       {!enabled && <StateBlock kind="empty" title={t("rss.needTitle")} description={t("rss.needTitleHint")} />}
       {enabled && workspace.refreshError && <StateBlock kind="error" title={workspace.refreshError} />}
       {enabled && workspace.error && <StateBlock kind="error" title={workspace.error} />}
-      {enabled && workspace.pending && !workspace.view && <StateBlock kind="busy" title={t("rss.firstLoad")} />}
+      {enabled && workspace.pending && !workspace.view && <StateBlock kind="busy" skeleton="list" title={t("rss.firstLoad")} />}
       {enabled && workspace.view && (
         <RssListViewPanel
           model={draftWorkspaceModel(workspace.view, {

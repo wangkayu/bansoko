@@ -16,6 +16,7 @@ import { useNextAutomationRun } from "../lib/automationSchedules";
 import { formatDateTime } from "../lib/labels";
 import { cn } from "@/lib/utils";
 import { Dialog, Segmented } from "../ui/base";
+import { settingsTargetFor } from "./connectionSettingsTarget";
 import { isLocale, LOCALE_NAMES, LOCALES, setLocale, t, useLocale } from "../lib/i18n";
 
 // The phone "More" bottom sheet: tool entries (with ↗, opening sheets/dialogs;
@@ -50,12 +51,14 @@ type MoreSheetProps = {
   onClose: () => void;
   onLogout: () => void;
   connections: Connection[];
+  connectionsLoading?: boolean;
   onOpenSearch: () => void;
   onOpenFiles: () => void;
   onOpenRecords: () => void;
   onOpenLog: () => void;
   onOpenSettings: () => void;
   onOpenDownloaderSettings: () => void;
+  onOpenSettingsTarget?: (path: string) => void;
 };
 
 // The downloader leads the system section.
@@ -67,24 +70,27 @@ export function MoreSheet({
   onClose,
   onLogout,
   connections,
+  connectionsLoading = false,
   onOpenSearch,
   onOpenFiles,
   onOpenRecords,
   onOpenLog,
   onOpenSettings,
   onOpenDownloaderSettings,
+  onOpenSettingsTarget,
 }: MoreSheetProps) {
   const { theme, setTheme } = useTheme();
   const locale = useLocale();
   const nextRun = useNextAutomationRun(open);
 
-  const noDownloader = !connections.some((connection) => connection.kind === "qbittorrent" && connection.enabled);
+  const noDownloader = !connectionsLoading && !connections.some((connection) => connection.kind === "qbittorrent" && connection.enabled);
   const statusConnections = connections.filter((connection) => STATUS_ORDER.includes(connection.kind)).sort((a, b) => STATUS_ORDER.indexOf(a.kind) - STATUS_ORDER.indexOf(b.kind));
 
   const launch = (action: () => void) => () => {
     onClose();
     action();
   };
+  const openSettingsAt = (path: string) => launch(() => (onOpenSettingsTarget ? onOpenSettingsTarget(path) : onOpenSettings()));
   return (
     <Dialog open={open} onRequestClose={onClose} tier="S" title={t("nav.more")}>
       <div className="tw:grid tw:gap-0.5">
@@ -109,21 +115,30 @@ export function MoreSheet({
         )}
         <div className="more-sheet-status">
           {statusConnections.map((connection) => (
-            <span key={connection.id} className="more-sheet-status-item">
+            <button
+              key={connection.id}
+              type="button"
+              className="more-sheet-status-item tw:cursor-pointer tw:rounded-md tw:px-1.5 tw:py-1 tw:hover:bg-muted tw:focus-visible:outline-2 tw:focus-visible:outline-ring"
+              onClick={openSettingsAt(settingsTargetFor(connection.kind, connection))}
+            >
               <span
                 aria-hidden
                 className={cn("system-status-dot", connection.enabled ? "system-status-dot-enabled" : "system-status-dot-disabled")}
               />
               {CONNECTION_LABEL()[connection.kind]}
-            </span>
+            </button>
           ))}
         </div>
-        <p className="more-sheet-meta">
+        <button
+          type="button"
+          className="more-sheet-meta tw:w-full tw:cursor-pointer tw:rounded-md tw:py-1 tw:text-left tw:hover:bg-muted tw:focus-visible:outline-2 tw:focus-visible:outline-ring"
+          onClick={openSettingsAt("/settings/automation")}
+        >
           <CalendarDays width={12} height={12} aria-hidden />
           {nextRun
             ? `${t("nav.statusNextRun")} · ${AUTOMATION_KIND_LABEL()[nextRun.kind] ?? nextRun.kind} · ${formatDateTime(nextRun.next_run_at)}`
             : t("nav.automationEmpty")}
-        </p>
+        </button>
 
         <div className="more-sheet-divider" role="separator" />
         <MoreRow icon={<Settings width={18} height={18} />} label={t("nav.settings")} onSelect={launch(onOpenSettings)} />

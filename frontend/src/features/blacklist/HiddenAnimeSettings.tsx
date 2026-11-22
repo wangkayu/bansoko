@@ -119,7 +119,7 @@ export function HiddenAnimeSettings() {
             </div>
 
             {isLoading ? (
-              <StateBlock kind="busy" title={t("act.reading")} />
+              <StateBlock kind="busy" skeleton="list" title={t("act.reading")} />
             ) : entries.length === 0 ? (
               <StateBlock kind="empty" title={t("blacklist.empty")} />
             ) : (

@@ -19,6 +19,9 @@
 
 ## Improved
 
+- The broadcast wall rotates weekday rows starting from today on the Japanese 28-hour broadcast clock (04:00 JST rollover) with a Today badge, and long rows can expand in place into a multi-column grid.
+- On phones, poster cards move View Synopsis into the top-right More menu with enlarged touch targets, and hiding a show from the catalog now asks for confirmation first.
+- Catalog walls, program settings, one-shot downloads, logs, and settings sections show layout skeletons while loading, and batch downloads or subscriptions report live item-by-item progress.
 - The rule for files with unrecognized episode numbers has moved to Subscription policy → Default rules. Existing settings and behavior are unchanged.
 
 - Select a title in the catalog list to open its settings. Saving or subscribing updates the list in place. On phones, the original title sits beside the main title, and synopsis, browse, and quick subscribe no longer take up a separate row.
@@ -45,6 +48,7 @@
 
 ## Fixed
 
+- Top-bar service status checks only enabled connections so disabled optional services no longer show a warning dot, and subscribed program settings can now be saved directly from the RSS tab.
 - The built-in title parser recognizes trailing group names containing @ and reads S1-2 Fin as a pack of seasons 1 and 2 instead of a single episode.
 
 - The event log reports a replacement only when an old version was actually replaced. Expand the event to see the kept and replaced versions and whether a library check triggered the replacement.

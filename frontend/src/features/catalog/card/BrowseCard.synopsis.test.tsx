@@ -72,4 +72,40 @@ describe("BrowseCard 简介入口", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(onOpenConfig).not.toHaveBeenCalled();
   });
+
+  it("移动端收合顶栏独立简介按钮至 ⋯ 菜单内，避免触控热区挤压", async () => {
+    const origMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("600px"),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    try {
+      const user = userEvent.setup();
+      api.read.mockResolvedValue({
+        provider: "mikan",
+        provider_entry_ref: "301",
+        source_url: "https://mikan.example/Home/Bangumi/301",
+        synopsis: "移动端简介内容",
+        episodes: 12,
+        weekday: "mon",
+        season: null,
+        tags: [],
+        official_site: null,
+        bgm_url: null,
+      });
+      renderCard(base);
+      expect(screen.queryByRole("button", { name: t("grid.card.viewSynopsisFor", { title: base.title }) })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: t("grid.card.moreFor", { title: base.title }) }));
+      await user.click(await screen.findByRole("menuitem", { name: t("grid.card.viewSynopsis") }));
+      expect(await screen.findByText("移动端简介内容")).toBeInTheDocument();
+    } finally {
+      window.matchMedia = origMatchMedia;
+    }
+  });
 });

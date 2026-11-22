@@ -11,6 +11,7 @@ import type { CatalogEntryView, ProviderKey } from "../../lib/providers/viewmode
 import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { Button, Checkbox, Dialog, Segmented, Select, StateBlock, Tooltip } from "../../ui/base";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { StatePill } from "../../ui/StatePill";
 import { ThemedToaster } from "../../ui/ThemedToaster";
 import { toast } from "../../ui/toast";
@@ -67,6 +68,7 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
   const [confirm, setConfirm] = useState<CatalogEntryView[]>([]);
   const [startAfter, setStartAfter] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [completed, setCompleted] = useState<ReadonlyMap<string, SubscribeResult>>(() => new Map());
   const [failures, setFailures] = useState<{ key: string; title: string; message: string }[]>([]);
   const [synopsis, setSynopsis] = useState<CatalogEntryView>();
@@ -97,12 +99,15 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
     if (!targets.length) { toast.info(t("catalog.changed")); return; }
     running.current = true;
     setBusy(true);
+    setBatchProgress({ current: 1, total: targets.length });
     setFailures([]);
     const succeeded = new Map<string, SubscribeResult>();
     const failed: typeof failures = [];
     try {
       // Run one activation at a time: starting a subscription also admits scheduler work.
-      for (const entry of targets) {
+      for (let index = 0; index < targets.length; index += 1) {
+        const entry = targets[index]!;
+        setBatchProgress({ current: index + 1, total: targets.length });
         const key = rowKey(entry);
         try {
           succeeded.set(key, await subscribe(entry, startAfter));
@@ -122,6 +127,7 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
     } finally {
       running.current = false;
       setBusy(false);
+      setBatchProgress(null);
     }
   }
 
@@ -201,7 +207,9 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
         <span className="tw:min-w-0 tw:flex-1 tw:text-sm tw:text-muted-foreground" aria-live="polite">{t("grid.list.selected", { n: picked.length })}</span>
         {picked.length > 0 && <Button size="sm" disabled={busy} onClick={() => setSelected(new Set())}>{t("grid.manage.clearSel")}</Button>}
         <Button size="sm" variant="primary" loading={busy} disabled={!picked.length} onClick={() => openConfirm(picked)}>
-          {picked.length ? t("grid.list.batchCount", { n: picked.length }) : t("grid.list.batch")}
+          {busy && batchProgress && batchProgress.total > 1
+            ? t("grid.list.batchProgress", batchProgress)
+            : picked.length ? t("grid.list.batchCount", { n: picked.length }) : t("grid.list.batch")}
         </Button>
       </div>}>
       <ThemedToaster inCatalogList />
@@ -231,7 +239,7 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
         {failures.length > 0 && <ul className="tw:grid tw:gap-1 tw:border-b tw:border-border tw:px-4 tw:py-2 tw:text-sm" aria-live="polite">
           {failures.map(({ key, title, message }) => <li key={key} className="tw:wrap-anywhere"><strong>{title}: </strong>{message}</li>)}
         </ul>}
-        {loading ? <StateBlock kind="busy" title={t("grid.loading")} /> : error ? (
+        {loading ? <StateBlock kind="busy" skeleton="table" title={t("grid.loading")} /> : error ? (
           <StateBlock kind="error" title={error} action={<Button size="sm" onClick={onReload}>{t("grid.retry")}</Button>} />
         ) : !visible.length ? (
           <StateBlock kind="empty" title={t("search.noMatch")} description={t("grid.empty.filteredDesc")} />
@@ -299,7 +307,7 @@ export function CatalogListDialog({ source, season, entries, loading, error, onR
       </div>
       {synopsis && source !== "custom" && <SynopsisDialog entry={synopsis} provider={source} onRequestClose={() => setSynopsis(undefined)} />}
       {children}
-      {editing && <Suspense fallback={null}>
+      {editing && <Suspense fallback={<LazyPendingBar label={editing.title} />}>
         <AnimeConfigDialog open entry={editing} provider={getCatalogProvider(editing.source)} sourceLabel={providerLabel(editing.source)}
           initialTab="metadata" onOpenChange={(open) => { if (!open) setEditing(undefined); }}
           onDraftSaved={() => void onSubscribed()} onCandidateStateChanged={() => void onSubscribed()}

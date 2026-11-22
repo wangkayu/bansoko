@@ -96,6 +96,7 @@ export const enOneshotCopy = {
 
   create: "Start download ({n})",
   creating: "Submitting…",
+  creatingProgress: "Submitting {current}/{total}…",
   createdAll: "{n} one-time downloads submitted",
   adoptedCount: "Used existing library files for {n} releases",
   failedCount: "{n} not submitted",

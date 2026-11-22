@@ -15,7 +15,13 @@ vi.mock("next-themes", () => ({ useTheme: () => ({ theme: "light", setTheme: () 
 const qbConnection = { id: "c-qb", kind: "qbittorrent", name: "qB", enabled: true, version: 1 } as unknown as Connection;
 const mikanConnection = { id: "c-mikan", kind: "mikan", name: "Mikan", enabled: true, version: 1 } as unknown as Connection;
 
-function renderSheet(connections: Connection[], handlers: Partial<Record<"onOpenDownloaderSettings" | "onOpenFiles", () => void>> = {}) {
+function renderSheet(
+  connections: Connection[],
+  handlers: Partial<Record<"onOpenDownloaderSettings" | "onOpenFiles", () => void>> & {
+    connectionsLoading?: boolean;
+    onOpenSettingsTarget?: (path: string) => void;
+  } = {},
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -24,11 +30,13 @@ function renderSheet(connections: Connection[], handlers: Partial<Record<"onOpen
         onClose={() => {}}
         onLogout={() => {}}
         connections={connections}
+        connectionsLoading={handlers.connectionsLoading}
         onOpenSearch={() => {}}
         onOpenRecords={() => {}}
         onOpenLog={() => {}}
         onOpenSettings={() => {}}
         onOpenDownloaderSettings={handlers.onOpenDownloaderSettings ?? (() => {})}
+        onOpenSettingsTarget={handlers.onOpenSettingsTarget}
         onOpenFiles={handlers.onOpenFiles ?? (() => {})}
       />
     </QueryClientProvider>,
@@ -81,5 +89,23 @@ describe("MoreSheet", () => {
     const at = (label: string) => items.findIndex((text) => text.includes(label));
     expect(at("Nyaa")).toBeGreaterThan(at("Mikan"));
     expect(at("Mikan")).toBeGreaterThan(at("AniBT"));
+  });
+
+  it("连接列表加载中时不误报「未配置下载器」", () => {
+    renderSheet([], { connectionsLoading: true });
+    expect(screen.queryByText(t("nav.statusNoDownloader"))).not.toBeInTheDocument();
+  });
+
+  it("点击系统区连接状态或下次任务行跳转到对应设置分区", () => {
+    const onOpenSettingsTarget = vi.fn();
+    renderSheet([qbConnection, mikanConnection], { onOpenSettingsTarget });
+    fireEvent.click(screen.getByRole("button", { name: t("nav.connection.qbittorrent") }));
+    expect(onOpenSettingsTarget).toHaveBeenCalledWith("/settings/download");
+
+    fireEvent.click(screen.getByRole("button", { name: t("nav.connection.mikan") }));
+    expect(onOpenSettingsTarget).toHaveBeenCalledWith("/settings/mikan");
+
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(t("nav.automationEmpty")) }));
+    expect(onOpenSettingsTarget).toHaveBeenCalledWith("/settings/automation");
   });
 });

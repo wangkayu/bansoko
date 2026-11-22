@@ -20,6 +20,10 @@ export const gridCopy = {
   blacklistAdded: "已隐藏，可在设置的“隐藏的番剧”中取消隐藏",
   blacklistFailed: "隐藏失败",
   blockFailed: "隐藏《{title}》失败",
+  hideTitle: "隐藏《{title}》？",
+  hideLine1: "隐藏后该番剧不再出现在浏览区与搜索结果中，可在设置的“隐藏的番剧”中取消隐藏",
+  hideLine2: "不影响已订阅的番剧，已有订阅仍会照常刷新和下载",
+  hideConfirm: "确认隐藏",
   presetDeleted: "已删除预设《{title}》",
   presetDeleteFailed: "删除预设《{title}》失败",
   paused: "已停止订阅",
@@ -43,7 +47,7 @@ export const gridCopy = {
   // 放送星期。服务端给的是稳定枚举键（mon…sun、tbd、none），按此表换成当前语言。
   weekday: { mon: "周一", tue: "周二", wed: "周三", thu: "周四", fri: "周五", sat: "周六", sun: "周日", tbd: "未定", none: "无排期" },
   // 已订阅墙的非星期行（design-language Subscribed wall）与行内横向滚动按钮。
-  wallRow: { movie: "剧场版", ova: "OVA/ONA", custom: "自定义", other: "其他", scrollBack: "向左滚动", scrollForward: "向右滚动" },
+  wallRow: { movie: "剧场版", ova: "OVA/ONA", custom: "自定义", other: "其他", today: "今日", expand: "展开", collapse: "收起", scrollBack: "向左滚动", scrollForward: "向右滚动" },
   filter: "筛选",
   filterPlaceholder: "按标题筛选",
   availableOnly: "只看可用",
@@ -68,6 +72,7 @@ export const gridCopy = {
     selected: "已选 {n} 项",
     batch: "批量订阅",
     batchCount: "批量订阅（{n}）",
+    batchProgress: "正在订阅 {current}/{total}…",
     confirm: "确认订阅",
     confirmTitle: "确认订阅 {n} 项",
     defaults: "新条目采用当前默认设置，已有草稿采用已保存的设置。",

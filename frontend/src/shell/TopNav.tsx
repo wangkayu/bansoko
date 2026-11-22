@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { lazyEntry } from "../lib/lazyEntry";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -50,9 +50,11 @@ import { useLogDialogStore } from "./logDialogStore";
 import { isOneOf, normalizeLogView, ROUTE_DIALOG_STATE, ROUTE_LOG_VIEWS, ROUTE_QB_SEGMENTS, ROUTE_RECORD_LIST, ROUTE_RECORD_SEGMENTS, ROUTE_TOOLS, useRouteDialogs, type RouteLogView } from "./routeDialogs";
 import { CATALOG_TABS, readRememberedBrowseTab, useCatalogTab } from "./catalogTabs";
 import { MoreSheet } from "./MoreSheet";
+import { DOWNLOADER_SETTINGS, settingsTargetFor } from "./connectionSettingsTarget";
 import { BrandMark, BrandWordmark } from "./BrandMark";
 import { loadAnimeConfigDialog } from "../features/anime-config/loadAnimeConfigDialog";
 import { Popover } from "../ui/base";
+import { LazyPendingBar } from "../ui/LazyPendingBar";
 import { t } from "../lib/i18n";
 
 // App shell: one desktop top bar holds the brand, the four catalog section
@@ -173,22 +175,7 @@ export function TopNav({
   const openRecords = () => routeDialogs.open({ record: ROUTE_RECORD_LIST });
   const openSettings = () => navigate("/settings", { state: ROUTE_DIALOG_STATE });
   const openDownloaderSettings = () => navigate(DOWNLOADER_SETTINGS, { state: ROUTE_DIALOG_STATE });
-
-  // “/” opens the global search, mirroring the field's kbd hint. Never fires
-  // from editable elements.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target;
-      if (target instanceof HTMLElement && target.closest("input, textarea, [contenteditable], [role='dialog']")) return;
-      event.preventDefault();
-      openSearch();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  const openSettingsTarget = (to: string) => navigate(to, { state: ROUTE_DIALOG_STATE });
 
   const preloadConfig = () => void loadAnimeConfigDialog();
 
@@ -241,9 +228,6 @@ export function TopNav({
             >
               <Search width={14} height={14} aria-hidden />
               <span className="top-nav-search-placeholder">{t("nav.search")}</span>
-              <kbd className="top-nav-kbd" aria-hidden>
-                /
-              </kbd>
             </button>
           )}
 
@@ -356,17 +340,19 @@ export function TopNav({
           onClose={() => setMoreSheetOpen(false)}
           onLogout={onLogout}
           connections={connections}
+          connectionsLoading={!connectionsQuery.isSuccess}
           onOpenSearch={openSearch}
           onOpenFiles={openFileManager}
           onOpenRecords={openRecords}
           onOpenLog={openLog}
           onOpenSettings={openSettings}
           onOpenDownloaderSettings={openDownloaderSettings}
+          onOpenSettingsTarget={openSettingsTarget}
         />
       )}
 
       {globalSearchRequested && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("search.title")} />}>
           <GlobalSearchDialog
             open={globalSearchOpen}
             onOpenChange={setSearchDialog}
@@ -376,7 +362,7 @@ export function TopNav({
       )}
 
       {qbManagerRequested && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("qb.title")} />}>
           <QBManagerDialogEntry
             open={qbManagerOpen}
             onOpenChange={closeRouteDialog}
@@ -388,7 +374,7 @@ export function TopNav({
       )}
 
       {fileManagerRequested && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("nav.fileManager")} />}>
           <FileManagerDialogEntry
             open={fileManagerOpen}
             path={pathParam ?? undefined}
@@ -401,7 +387,7 @@ export function TopNav({
       )}
 
       {recordsRequested && (
-        <Suspense fallback={<span className="sr-only">{t("nav.recordsLoading")}</span>}>
+        <Suspense fallback={<LazyPendingBar label={t("nav.recordsLoading")} />}>
           <ExecutionRecordsDialogEntry
             open={recordsOpen}
             record={lastRecord}
@@ -418,7 +404,7 @@ export function TopNav({
       )}
 
       {logDialogRequested && (
-        <Suspense fallback={<span className="sr-only">{t("nav.logLoading")}</span>}>
+        <Suspense fallback={<LazyPendingBar label={t("nav.logLoading")} />}>
           <LogDialogEntry
             open={logDialogOpen}
             view={lastLogView}
@@ -513,24 +499,9 @@ const CONNECTION_LABEL = (): Record<Connection["kind"], string> => ({
 // access is only the custom RSS network setting, not a service, and does not
 // enter the status.
 const STATUS_KINDS: Connection["kind"][] = ["qbittorrent", "tmdb", "anibt", "mikan", "nyaa", "bgm", "jackett"];
-
-/** The downloader (the qBittorrent connection) is configured in the download section. */
-const DOWNLOADER_SETTINGS = "/settings/download";
+const STATUS_TEST_TTL_MS = 30_000;
 
 type ReachState = "testing" | "failed" | ConnectionTestResult;
-
-/** Settings-section target of each status-popover row: AniBT/Mikan have their
- *  own site sections; qB is configured under the download section; the other
- *  connections land on the connections section — with a configured row it
- *  carries a ?connection= deep link that opens that connection's edit dialog
- *  directly (consumed in SettingsConnections), unconfigured lands on the
- *  section only. */
-function settingsTargetFor(kind: Connection["kind"], connection: Connection | undefined): string {
-  if (kind === "anibt" || kind === "mikan") return `/settings/${kind}`;
-  if (kind === "qbittorrent") return DOWNLOADER_SETTINGS;
-  if (connection) return `/settings/connections?connection=${encodeURIComponent(connection.id)}`;
-  return "/settings/connections";
-}
 
 function StatusPopover({ connections: allConnections, loading }: { connections: Connection[]; loading: boolean }) {
   const connections = useMemo(() => allConnections.filter((c) => STATUS_KINDS.includes(c.kind)), [allConnections]);
@@ -538,26 +509,55 @@ function StatusPopover({ connections: allConnections, loading }: { connections: 
   const navigate = useNavigate();
   const nextRun = useNextAutomationRun(open);
   const [tests, setTests] = useState<Record<string, ReachState>>({});
+  const connectionsRef = useRef(connections);
+  connectionsRef.current = connections;
+  const lastTestedAtRef = useRef(0);
+  const lastTargetIdsRef = useRef("");
+  const testRunIdRef = useRef(0);
 
-  const runTests = useCallback(() => {
-    const targets = connections.filter((connection) => connection.enabled);
+  const enabledTargetIdsKey = useMemo(
+    () => connections.filter((c) => c.enabled).map((c) => c.id).sort().join(","),
+    [connections],
+  );
+
+  const runTests = useCallback((force = false) => {
+    const targets = connectionsRef.current.filter((connection) => connection.enabled);
+    const targetIdsKey = targets.map((c) => c.id).sort().join(",");
+    const now = Date.now();
+    if (!force && targetIdsKey === lastTargetIdsRef.current && lastTestedAtRef.current > 0 && now - lastTestedAtRef.current < STATUS_TEST_TTL_MS) {
+      return;
+    }
+    lastTargetIdsRef.current = targetIdsKey;
+    lastTestedAtRef.current = now;
+    const runId = ++testRunIdRef.current;
     setTests(Object.fromEntries(targets.map((connection) => [connection.id, "testing" as const])));
     for (const connection of targets) {
       testConnection(connection.id)
-        .then((result) => setTests((prev) => (connection.id in prev ? { ...prev, [connection.id]: result } : prev)))
-        .catch(() => setTests((prev) => (connection.id in prev ? { ...prev, [connection.id]: "failed" as const } : prev)));
+        .then((result) => {
+          if (testRunIdRef.current !== runId) return;
+          setTests((prev) => (connection.id in prev ? { ...prev, [connection.id]: result } : prev));
+        })
+        .catch(() => {
+          if (testRunIdRef.current !== runId) return;
+          setTests((prev) => (connection.id in prev ? { ...prev, [connection.id]: "failed" as const } : prev));
+        });
     }
-  }, [connections]);
+  }, []);
 
   useEffect(() => {
-    if (open) runTests();
-  }, [open, runTests]);
+    if (open) runTests(false);
+  }, [open, enabledTargetIdsKey, runTests]);
 
-  const allEnabled = connections.length > 0 && connections.every((c) => c.enabled);
-  const anyUnreachable = Object.values(tests).some((state) => state === "failed" || (typeof state === "object" && state.health !== "ready"));
+  const enabledIds = new Set(connections.filter((c) => c.enabled).map((c) => c.id));
+  const anyEnabledMissingCredential = connections.some(
+    (c) => c.enabled && "credential_configured" in c && c.credential_configured === false,
+  );
+  const anyUnreachable = Object.entries(tests).some(
+    ([id, state]) => enabledIds.has(id) && (state === "failed" || (typeof state === "object" && state.health !== "ready")),
+  );
   // Without a usable downloader the system can download nothing: the status says as much.
   const noDownloader = !loading && !connections.some((c) => c.kind === "qbittorrent" && c.enabled);
-  const healthy = allEnabled && !anyUnreachable && !noDownloader;
+  const healthy = !noDownloader && !anyEnabledMissingCredential && !anyUnreachable;
   const statusLabel = t("nav.statusAria");
   const summary = t(loading ? "nav.statusLoading" : healthy ? "nav.statusOk" : "nav.statusNeedsAttention");
   const statusDot = loading
@@ -584,7 +584,7 @@ function StatusPopover({ connections: allConnections, loading }: { connections: 
       <div className="system-status-pop">
         <div className="system-status-section system-status-section-row">
           <span>{t("nav.statusConnections")}</span>
-          <button type="button" className="system-status-retest" onClick={runTests}>
+          <button type="button" className="system-status-retest" onClick={() => runTests(true)}>
             {t("nav.statusRetest")}
           </button>
         </div>

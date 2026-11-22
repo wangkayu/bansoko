@@ -101,7 +101,7 @@ export function RssTab({
       />
     );
   }
-  if (!history) return active ? <StateBlock kind="busy" title={t("config.reading")} /> : null;
+  if (!history) return active ? <StateBlock kind="busy" skeleton="list" title={t("config.reading")} /> : null;
   return (
     <OwnerRssTab
       host={{ ...host, workspace: history }}
@@ -623,7 +623,7 @@ function OwnerRssTab({
       {viewQuery.error && !view && (
         <StateBlock kind="error" title={toUserMessage(viewQuery.error, t("rss.loadFailed"))} />
       )}
-      {!view && !viewQuery.error && <StateBlock kind="busy" title={t("rss.loading")} />}
+      {!view && !viewQuery.error && <StateBlock kind="busy" skeleton="list" title={t("rss.loading")} />}
       {view && model && (
         <RssListViewPanel
           model={model}

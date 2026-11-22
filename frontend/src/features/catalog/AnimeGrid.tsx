@@ -25,6 +25,7 @@ import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { isOneOf, ROUTE_ANIME_TABS, ROUTE_RECORD_LIST, useRouteDialogs, type RouteAnimeTab } from "../../shell/routeDialogs";
 import { CATALOG_FILTER_QUERY_KEY, rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
 import { StateBlock } from "../../ui/StateBlock";
+import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
 import { lazyEntry } from "../../lib/lazyEntry";
@@ -177,6 +178,7 @@ export function AnimeGrid() {
   const configRouteOpen = configRow !== null && animeParam === configRow.key;
   const lastConfigTabRef = useRef<RouteAnimeTab>("metadata");
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingHide, setPendingHide] = useState<CatalogEntryView | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CatalogEntryView | null>(null);
   const [pendingUnsubscribe, setPendingUnsubscribe] = useState<CatalogEntryView | null>(null);
   const [pendingLocalCleanup, setPendingLocalCleanup] = useState<CatalogEntryView | null>(null);
@@ -324,9 +326,16 @@ export function AnimeGrid() {
   }, [animeParam, animeTabParam, catalog, dismissRouteDialog, isBlocked, resolvingAnime, rows, subscribedCatalog, tab]);
 
   // The hide control exists only in the browse areas (never on the subscribed wall). Hiding only
-//   writes the catalog suppression — subscription or not: it ends no subscription and needs no
-//   confirmation.
-  function hideEntry(entry: CatalogEntryView) {
+  // writes the catalog suppression — subscription or not: it ends no subscription, and asks for a
+  // confirmation first to prevent accidental taps on mobile cards.
+  function requestHideEntry(entry: CatalogEntryView) {
+    setPendingHide(entry);
+  }
+
+  function confirmHideEntry() {
+    const entry = pendingHide;
+    if (!entry) return;
+    setPendingHide(null);
     void addBlacklist({
       source: entry.source,
       providerEntryRef: entry.providerEntryRef,
@@ -604,7 +613,7 @@ export function AnimeGrid() {
       ) : (
         <BrowseCard
           entry={row.entry}
-          onHide={() => hideEntry(row.entry)}
+          onHide={() => requestHideEntry(row.entry)}
           onOpenConfig={(entry) => {
             if (!openLiveSubscription(entry)) openConfig({ ...row, entry });
           }}
@@ -747,7 +756,7 @@ export function AnimeGrid() {
   );
 
   const seedDialog = seedTarget && (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LazyPendingBar label={t("oneshot.title")} />}>
       <OneShotDialogEntry
         key={`${seedTarget.key}#${seedTarget.seq}`}
         open
@@ -809,7 +818,7 @@ export function AnimeGrid() {
 
       <section aria-live="polite">
         {loading && rows.length === 0 ? (
-          <StateBlock kind="busy" title={t("grid.loading")} />
+          <StateBlock kind="busy" skeleton="cards" title={t("grid.loading")} />
         ) : error ? null : settledEmpty ? (
           <EmptyHint
             tab={tab}
@@ -820,8 +829,8 @@ export function AnimeGrid() {
           <StateBlock kind="empty" title={t("search.noMatch")} description={t("grid.empty.filteredDesc")} />
         ) : wallRowList ? (
           <div className={WALL_ROWS_CLASS}>
-            {wallRowList.map(({ key, items }) => (
-              <WallDayRow key={key} label={wallRowLabel(key)} itemCount={items.length}>
+            {wallRowList.map(({ key, items, isToday }) => (
+              <WallDayRow key={key} label={wallRowLabel(key)} itemCount={items.length} isToday={isToday}>
                 {items.map((row) => (
                   <li key={catalogRowKey(row.entry)} className={WALL_ROW_ITEM_CLASS}>
                     {renderCard(row)}
@@ -841,7 +850,7 @@ export function AnimeGrid() {
 
       {/* The first-level dialog is gone: a card click opens the four-tab config dialog directly. */}
       {configRow && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={configRow.row.entry.title} />}>
           <AnimeConfigDialogEntry
             key={configRow.key}
             open
@@ -869,7 +878,7 @@ export function AnimeGrid() {
       )}
 
       {listOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("grid.list.title", { source: providerLabel(tab as "anibt" | "mikan" | "custom") })} />}>
           <CatalogListDialogEntry
             key={listScope} source={tab} season={season} entries={shownRows.map(({ entry }) => entry)}
             loading={loading} error={error ?? (snapshot?.status === "error" ? snapshot.errorMessage ?? t("grid.siteRefreshFailed") : undefined)}
@@ -885,7 +894,7 @@ export function AnimeGrid() {
       {!seedTarget?.listScope && seedDialog}
 
       {addOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("addPreset.title")} />}>
           <AddCandidateDialogEntry
             open
             onOpenChange={setAddOpen}
@@ -898,8 +907,23 @@ export function AnimeGrid() {
         </Suspense>
       )}
 
+      {pendingHide && (
+        <Suspense fallback={<LazyPendingBar />}>
+          <ConfirmDialogEntry
+            open
+            onOpenChange={(open) => {
+              if (!open) setPendingHide(null);
+            }}
+            title={t("grid.hideTitle", { title: pendingHide.title })}
+            description={<ConfirmLines lines={[t("grid.hideLine1"), t("grid.hideLine2")]} />}
+            confirmLabel={t("grid.hideConfirm")}
+            onConfirm={confirmHideEntry}
+          />
+        </Suspense>
+      )}
+
       {pendingDelete && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar />}>
           <ConfirmDialogEntry
             open
             onOpenChange={(open) => {
@@ -922,7 +946,7 @@ export function AnimeGrid() {
       )}
 
       {pendingUnsubscribe && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar />}>
           <ConfirmDialogEntry
             open
             onOpenChange={(open) => {
@@ -937,7 +961,7 @@ export function AnimeGrid() {
         </Suspense>
       )}
       {pendingDuplicate && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar />}>
           <DuplicateSubscriptionDialogEntry
             entry={pendingDuplicate}
             onOpenChange={(open) => {
@@ -948,7 +972,7 @@ export function AnimeGrid() {
         </Suspense>
       )}
       {filesEntry?.managedAnimeRef && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar />}>
           <AnimeFilesDialogEntry
             animeID={filesEntry.managedAnimeRef}
             title={filesEntry.title}
@@ -959,12 +983,12 @@ export function AnimeGrid() {
         </Suspense>
       )}
       {manageOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("grid.manage.title")} />}>
           <SubscribedManageDialogEntry onClose={() => setManageOpen(false)} onMutated={() => void invalidateCatalog()} />
         </Suspense>
       )}
       {pendingLocalCleanup && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar />}>
           <LocalDataCleanupDialogEntry
             entry={pendingLocalCleanup}
             onOpenChange={(open) => {

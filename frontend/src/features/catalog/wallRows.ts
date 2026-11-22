@@ -3,14 +3,27 @@ import { t } from "../../lib/i18n";
 import type { ReleaseFormat } from "../../lib/api/client";
 
 // The rows of the subscribed wall and the provider browse pages (the design language's Subscribed
-//   wall ruling): Monday through Sunday, movie, OVA/ONA, custom, other — empty rows never render.
-//   The placement rules live in wallRowOf.
+//   wall ruling): weekdays rotated to start from today, then movie, OVA/ONA, custom, other — empty
+//   rows never render. The placement rules live in wallRowOf.
 
-type Weekday = Exclude<BroadcastDay, "tbd" | "none">;
+export type Weekday = Exclude<BroadcastDay, "tbd" | "none">;
 export type WallRowKey = Weekday | "movie" | "ova" | "custom" | "other";
 
 const WEEKDAYS: readonly Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const JS_DAY_TO_WEEKDAY: readonly Weekday[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 export const WALL_ROW_ORDER: readonly WallRowKey[] = [...WEEKDAYS, "movie", "ova", "custom", "other"];
+
+// Provider broadcast days (Mikan / AniBT) follow the Japanese TV broadcast calendar (JST, UTC+9)
+// under the 28-hour late-night convention: a day runs from 04:00 JST to 28:00 JST (04:00 JST next
+// calendar morning, i.e. 03:00 UTC+8). Shifting UTC by +5h (UTC+9 minus 4h) maps 04:00 JST to 00:00
+// of the shifted UTC date so getUTCDay() is timezone-independent across all clients.
+const JST_28H_UTC_OFFSET_MS = (9 - 4) * 60 * 60 * 1000;
+
+/** Returns the active broadcast weekday key ("mon"…"sun") under the fixed JST (UTC+9) 28-hour clock. */
+export function currentWeekday(now: Date = new Date()): Weekday {
+  const shifted = new Date(now.getTime() + JST_28H_UTC_OFFSET_MS);
+  return JS_DAY_TO_WEEKDAY[shifted.getUTCDay()] ?? "mon";
+}
 
 /** The facts row placement needs. */
 export interface WallRowFacts {
@@ -42,10 +55,16 @@ export function wallRowOf(facts: WallRowFacts): WallRowKey {
 export interface WallRow<T> {
   key: WallRowKey;
   items: T[];
+  isToday?: boolean;
 }
 
-/** Splits by WALL_ROW_ORDER, keeps input order within a row, and skips empty rows. */
-export function wallRows<T>(items: readonly T[], factsOf: (item: T) => WallRowFacts): WallRow<T>[] {
+/** Splits by weekday order rotated to start from `today` (followed by movie, ova, custom, other),
+ *  keeps input order within a row, and skips empty rows. */
+export function wallRows<T>(
+  items: readonly T[],
+  factsOf: (item: T) => WallRowFacts,
+  today: Weekday = currentWeekday(),
+): WallRow<T>[] {
   const buckets = new Map<WallRowKey, T[]>();
   for (const item of items) {
     const key = wallRowOf(factsOf(item));
@@ -53,9 +72,13 @@ export function wallRows<T>(items: readonly T[], factsOf: (item: T) => WallRowFa
     if (bucket) bucket.push(item);
     else buckets.set(key, [item]);
   }
-  return WALL_ROW_ORDER.flatMap((key) => {
+  const startIndex = WEEKDAYS.indexOf(today);
+  const rotatedWeekdays =
+    startIndex > 0 ? [...WEEKDAYS.slice(startIndex), ...WEEKDAYS.slice(0, startIndex)] : WEEKDAYS;
+  const order: readonly WallRowKey[] = [...rotatedWeekdays, "movie", "ova", "custom", "other"];
+  return order.flatMap((key) => {
     const bucket = buckets.get(key);
-    return bucket ? [{ key, items: bucket }] : [];
+    return bucket ? [{ key, items: bucket, ...(key === today ? { isToday: true } : {}) }] : [];
   });
 }
 

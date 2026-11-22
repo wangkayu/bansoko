@@ -214,7 +214,7 @@ export function SettingsProviderDetail({
           error && <Alert tone="error" title={error} />
         )}
         {sections.isLoading && (
-          <StateBlock kind="busy" title={t("settings.provider.loading", { label })} />
+          <StateBlock kind="busy" skeleton="settings" title={t("settings.provider.loading", { label })} />
         )}
         {sections.error && <Alert tone="error" title={toUserMessage(sections.error, t("settings.provider.loadFailed", { label }))} />}
 

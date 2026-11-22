@@ -652,8 +652,8 @@ h1, h2, h3, h4, h5, h6 {
 .browse-card-overlay { pointer-events: none; position: absolute; inset-inline: 0; bottom: 0; z-index: 20; display: flex; align-items: flex-end; gap: 0.25rem; padding: 0.625rem; }
 .browse-card-text { min-width: 0; flex: 1 1 0%; }
 /* The browse (one-shot download) small icon: always present at the right end of
-   the info strip, low contrast, its own 2rem hit area, does not open the config. */
-.browse-card-browse { pointer-events: auto; display: inline-flex; flex: none; width: 2rem; height: 2rem; margin: -0.25rem -0.25rem -0.25rem 0; align-items: center; justify-content: center; border: 0; border-radius: 9999px; background: transparent; color: hsl(var(--card-scrim-muted) / 0.8); cursor: pointer; }
+   the info strip, low contrast, its own 2rem hit area (expanded to 44px on coarse pointers), does not open the config. */
+.browse-card-browse { pointer-events: auto; position: relative; display: inline-flex; flex: none; width: 2rem; height: 2rem; margin: -0.25rem -0.25rem -0.25rem 0; align-items: center; justify-content: center; border: 0; border-radius: 9999px; background: transparent; color: hsl(var(--card-scrim-muted) / 0.8); cursor: pointer; }
 .browse-card-browse:hover { background: hsl(var(--card-scrim-foreground) / 0.14); color: hsl(var(--card-scrim-foreground)); }
 .browse-card-browse:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 0; color: hsl(var(--card-scrim-foreground)); }
 .browse-card-browse-icon { width: 1rem; height: 1rem; }
@@ -740,6 +740,13 @@ h1, h2, h3, h4, h5, h6 {
    outside the card), so data-popup-open keeps the trigger visible. */
 .catalog-pw:hover .catalog-pw-more, .catalog-pw:focus-within .catalog-pw-more, .browse-card:hover .catalog-pw-more, .browse-card:focus-within .catalog-pw-more, .catalog-pw-more:hover, .catalog-pw-more:focus-visible, .catalog-pw-more[data-popup-open] { color: hsl(var(--foreground)); opacity: 1; }
 @media (hover: none), (pointer: coarse) { .catalog-pw-more { opacity: 1; } }
+@media (hover: none), (pointer: coarse) {
+  .catalog-pw-more::after, .browse-card-browse::after, .browse-card-synopsis::after {
+    content: "";
+    position: absolute;
+    inset: -0.375rem;
+  }
+}
 .catalog-pw-more-icon { width: 1rem; height: 1rem; }
 .catalog-pw-menu-icon { width: 1rem; height: 1rem; }
 /* The browse card's synopsis entry: left of ⋯, same 2rem hit area and the same
@@ -952,7 +959,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Auth gate (AuthGate). one-accent: the only CTA fill is --primary, hover goes
    through brightness(1.05) (the same language as the ui/base primary button);
    --accent only does hover/tint surfaces, never a CTA, never a gradient. */
-.auth-gate { position: relative; display: flex; min-height: 100vh; align-items: center; justify-content: center; overflow: hidden; background: radial-gradient(ellipse 80% 50% at 50% -10%, hsl(var(--primary) / 0.14), transparent), radial-gradient(ellipse 60% 40% at 80% 90%, hsl(var(--primary) / 0.07), transparent), hsl(var(--background)); padding: 10vh 1rem; }
+.auth-gate { position: relative; display: flex; min-height: 100dvh; align-items: center; justify-content: center; overflow: hidden; background: radial-gradient(ellipse 80% 50% at 50% -10%, hsl(var(--primary) / 0.14), transparent), radial-gradient(ellipse 60% 40% at 80% 90%, hsl(var(--primary) / 0.07), transparent), hsl(var(--background)); padding: 10vh 1rem; }
 .auth-glow { pointer-events: none; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .auth-glow-orb { width: 60vh; height: 60vh; border-radius: 9999px; background: hsl(var(--primary) / 0.1); filter: blur(120px); }
 .auth-card { position: relative; z-index: 10; width: 100%; max-width: 28rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius-dialog); background: hsl(var(--card) / 0.75); padding: 1.75rem; box-shadow: var(--shadow-2); backdrop-filter: blur(24px); }
@@ -1256,7 +1263,7 @@ h1, h2, h3, h4, h5, h6 {
   border-bottom-color: hsl(var(--primary));
 }
 
-/* The permanent search entry: a button with an input look, carrying a "/" shortcut hint. */
+/* The permanent search entry: a button with an input look. */
 .top-nav-search {
   display: flex;
   align-items: center;
@@ -1285,16 +1292,6 @@ h1, h2, h3, h4, h5, h6 {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
-}
-
-.top-nav-kbd {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  border: 1px solid hsl(var(--border));
-  border-radius: 0.25rem;
-  padding: 0 0.3125rem;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--card));
 }
 
 .top-nav-actions {

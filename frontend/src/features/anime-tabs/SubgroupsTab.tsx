@@ -234,7 +234,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
     onChanged();
   }
 
-  if (!edit) return <StateBlock kind="busy" title={t("tabs.subgroups.reading")} />;
+  if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.subgroups.reading")} />;
   return (
     <div className="subgroups-stack">
       {conflict !== undefined && (

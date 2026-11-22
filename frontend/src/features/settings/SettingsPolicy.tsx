@@ -83,7 +83,7 @@ export function SettingsPolicy({ onDirtyChange }: { onDirtyChange?: (dirty: bool
           error && <Alert tone="error" title={error} />
         )}
         {sections.isLoading && (
-          <StateBlock kind="busy" title={t("settings.policy.loading")} />
+          <StateBlock kind="busy" skeleton="settings" title={t("settings.policy.loading")} />
         )}
         {sections.error && <Alert tone="error" title={toUserMessage(sections.error, t("settings.policy.loadFailed"))} />}
         <MaxRssCard value={draft.max_rss} disabled={saving} onChange={(value) => updateDraft((current) => ({ ...current, max_rss: value }))} />

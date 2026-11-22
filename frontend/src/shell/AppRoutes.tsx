@@ -3,6 +3,8 @@ import { lazyEntry } from "../lib/lazyEntry";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { isRouteDialogEntry, ROUTE_DIALOG_STATE } from "./routeDialogs";
 import { AuthGate } from "../features/auth/AuthGate";
+import { LazyPendingBar } from "../ui/LazyPendingBar";
+import { StateBlock } from "../ui/StateBlock";
 import { t } from "../lib/i18n";
 
 // Route table: the catalog's four sections are the only screen (AnimeGrid).
@@ -39,7 +41,7 @@ function SettingsRedirect() {
 }
 
 function StageFallback() {
-  return <div className="stage-fallback text-body">{t("nav.stageLoading")}</div>;
+  return <StateBlock kind="busy" skeleton="cards" title={t("nav.stageLoading")} />;
 }
 
 // The catalog is the base; overlays render on top of it through the Outlet, so
@@ -65,7 +67,7 @@ export function AppRoutes() {
           <Route
             path="settings/:category"
             element={
-              <Suspense fallback={null}>
+              <Suspense fallback={<LazyPendingBar label={t("settings.nav.title")} />}>
                 <SettingsDialog />
               </Suspense>
             }

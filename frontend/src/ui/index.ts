@@ -10,4 +10,5 @@ export { TagInput } from "./base/controls";
 export { SecretField, type SecretMode } from "./SecretField";
 export { ConflictBlock } from "./ConflictBlock";
 export { ErrorBoundary } from "./ErrorBoundary";
+export { LazyPendingBar } from "./LazyPendingBar";
 export { useDirtyConfirm } from "./useDirtyConfirm";

@@ -193,4 +193,21 @@ describe("AuthGate", () => {
 
     expect(await screen.findByText(t("auth.loginRateLimited", { minutes: 15 }))).toBeInTheDocument();
   });
+
+  it("登录与初始化表单带 autoComplete 且密码输入框支持切换可见性", async () => {
+    stubFetch({ mode: "login", bootstrapState: "ready" });
+    renderGate();
+
+    const usernameInput = await screen.findByLabelText(t("auth.username"));
+    const passwordInput = screen.getByLabelText(t("auth.password"));
+    expect(usernameInput).toHaveAttribute("autocomplete", "username");
+    expect(passwordInput).toHaveAttribute("autocomplete", "current-password");
+    expect(passwordInput).toHaveAttribute("type", "password");
+
+    const toggle = screen.getByRole("button", { name: t("ui.show") });
+    fireEvent.click(toggle);
+    expect(passwordInput).toHaveAttribute("type", "text");
+    fireEvent.click(screen.getByRole("button", { name: t("ui.hide") }));
+    expect(passwordInput).toHaveAttribute("type", "password");
+  });
 });

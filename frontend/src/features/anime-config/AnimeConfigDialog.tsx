@@ -514,7 +514,7 @@ function SubscribedBody({
     <>
       {workspace.isLoading && (
         <div className="anime-config-dialog-state">
-          <StateBlock kind="busy" title={t("config.reading")} />
+          <StateBlock kind="busy" skeleton="config" title={t("config.reading")} />
         </div>
       )}
       {workspace.error && (
@@ -1028,7 +1028,7 @@ function DraftBody({
   }
 
   if (!candidateLoaded) {
-    return <div className="anime-config-dialog-loading"><StateBlock kind="busy" title={t("config.reloadingConfig")} /></div>;
+    return <div className="anime-config-dialog-loading"><StateBlock kind="busy" skeleton="config" title={t("config.reloadingConfig")} /></div>;
   }
 
   const draftHost: DraftTabHost = {

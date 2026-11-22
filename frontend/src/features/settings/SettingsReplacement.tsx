@@ -107,7 +107,7 @@ function ReplacementSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean)
         error && <Alert tone="error" title={error} />
       )}
       {query.isLoading && (
-        <StateBlock kind="busy" title={t("settings.replacement.loading")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.replacement.loading")} />
       )}
       {query.error && <Alert tone="error" title={toUserMessage(query.error, t("settings.replacement.loadFailed"))} />}
       {draft && (

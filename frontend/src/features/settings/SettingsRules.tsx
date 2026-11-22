@@ -170,7 +170,7 @@ export function SettingsRules() {
         </div>
 
         {sections.isLoading && (
-          <StateBlock kind="busy" title={t("settings.rules.loading")} />
+          <StateBlock kind="busy" skeleton="settings" title={t("settings.rules.loading")} />
         )}
         {sections.error && <Alert tone="error" title={toUserMessage(sections.error, t("settings.rules.loadFailed"))} />}
 

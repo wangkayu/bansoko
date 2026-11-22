@@ -100,13 +100,19 @@ test.describe("browse synopsis reader", () => {
     test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
   });
 
-  test("opens from the card and keeps the header poster inside its box", async ({ page }) => {
+  test("opens from the card and keeps the header poster inside its box", async ({ page }, testInfo) => {
     await mockReaderShell(page);
     await page.goto("/");
     await selectBrowseSection(page, "anibt");
-    await page
-      .getByRole("button", { name: t("grid.card.viewSynopsisFor", { title: "星屑邮递员" }) })
-      .click();
+    if (testInfo.project.name === "mobile") {
+      await expect(page.getByRole("button", { name: t("grid.card.viewSynopsisFor", { title: "星屑邮递员" }) })).toHaveCount(0);
+      await page.getByRole("button", { name: t("grid.card.moreFor", { title: "星屑邮递员" }) }).click();
+      await page.getByRole("menuitem", { name: t("grid.card.viewSynopsis") }).click();
+    } else {
+      await page
+        .getByRole("button", { name: t("grid.card.viewSynopsisFor", { title: "星屑邮递员" }) })
+        .click();
+    }
 
     const dialog = page.getByRole("dialog").last();
     await expect(dialog).toBeVisible();
@@ -275,7 +281,7 @@ test.describe("browse subscription badge", () => {
       });
       expect(layout.height).toBeCloseTo(16);
       expect(layout.remaining).toBeGreaterThanOrEqual(-0.1);
-      expect(layout.controls).toBe(2);
+      expect(layout.controls).toBe(testInfo.project.name === "mobile" ? 1 : 2);
       expect(layout.clearance).toBeGreaterThanOrEqual(1);
       expect(layout.factTops).toHaveLength(index === 0 ? 2 : index === 1 ? 0 : 1);
       expect(new Set(layout.factTops).size).toBe(index === 1 ? 0 : 1);

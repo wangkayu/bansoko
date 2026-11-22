@@ -578,7 +578,7 @@ export function SettingsNotifications() {
       </div>
 
       {targets.isLoading && (
-        <StateBlock kind="busy" title={t("settings.notifications.loading")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.notifications.loading")} />
       )}
       {targets.error && <Alert tone="error" title={toUserMessage(targets.error, t("settings.notifications.loadFailed"))} />}
       {triggerVocabulary.isError && !draft && (

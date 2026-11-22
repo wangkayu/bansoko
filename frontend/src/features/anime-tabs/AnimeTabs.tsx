@@ -23,8 +23,8 @@ import { AnimeTabNavigationContext } from "./tabNavigation";
 // keeping mounted has no side effect there.
 //
 // The save model (styling-contract S4): in owner mode each tab's edits are a draft and the
-// footer has a single save submitting the current tab's every change; the multiple endpoints
-// behind one tab submit in SAVE_ORDER, stopping at the first failure. A tab with unsaved changes
+// footer has a single save submitting every unsaved change across tabs; the multiple endpoints
+// behind the dialog submit in SAVE_ORDER, stopping at the first failure. A tab with unsaved changes
 // is marked beside its name. In draft mode the caller's footer saves the whole draft, and this
 // shell only marks tabs against savedDraft.
 
@@ -158,24 +158,23 @@ export function AnimeTabs({
   // lifecycleState on its own.
   const readOnly = host.mode === "owner" && host.capability.readOnly;
 
-  // The footer's single save: submits only the current tab's changes (the RSS tab has nothing saveable).
+  // The footer's single save: submits all unsaved changes across tabs in SAVE_ORDER.
   const activeParts = TAB_PARTS[tab];
-  const activeCount = activeParts ? saveParts.count(activeParts) : 0;
-  async function saveActiveTab() {
-    if (!activeParts) return;
-    const run = await saveParts.save(activeParts);
-    if (run.ok) toast.success(run.messages[0] ?? t("act.saved"));
+  const totalCount = saveParts.count();
+  async function saveAllTabs() {
+    const run = await saveParts.save();
+    if (run.ok) toast.success(run.messages.length === 1 ? run.messages[0] : t("act.saved"));
   }
-  const showSave = host.mode === "owner" && !readOnly && activeParts !== undefined;
+  const showSave = host.mode === "owner" && !readOnly && (activeParts !== undefined || totalCount > 0);
   const footer =
     host.mode === "owner" && (footerStart || footerEnd || showSave) ? (
       <div className="anime-config-dialog-footer anime-config-dialog-footer-owner">
         {showSave ? (
-          <SaveStatus count={activeCount} failed={saveParts.failed} className="tw:mr-auto" />
+          <SaveStatus count={totalCount} failed={saveParts.failed} className="tw:mr-auto" />
         ) : null}
         {footerStart}
         {showSave ? (
-          <SaveButton count={activeCount} busy={saveParts.busy} onSave={() => void saveActiveTab()} primary={saveIsPrimary} />
+          <SaveButton count={totalCount} busy={saveParts.busy} onSave={() => void saveAllTabs()} primary={saveIsPrimary} />
         ) : null}
         {footerEnd}
       </div>

@@ -660,21 +660,61 @@ describe("AnimeTabs owner 编辑保活", () => {
     expect(footerSave()).toBeEnabled();
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
-    // Switch to rules: save covers the current tab only, rules unchanged → disabled; the metadata tab's mark remains.
+    // Switch to rules: footer save stays enabled with the cross-tab unsaved count; metadata keeps its dot.
     fireEvent.click(tabNamed(t("tabs.names.rules")));
-    expect(footerSave()).toBeDisabled();
+    expect(footerSave()).toBeEnabled();
+    expect(within(ownerFooter()).getByRole("status")).toHaveTextContent(t("act.unsavedCount", { n: 1 }));
     expect(hasUnsavedDot(tabNamed(t("tabs.names.metadata")))).toBe(true);
     expect(hasUnsavedDot(tabNamed(t("tabs.names.rules")))).toBe(false);
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
-    // The RSS tab has nothing saveable: no save button rendered.
+    // On the RSS tab, save stays visible and enabled while other tabs have unsaved edits.
     fireEvent.click(tabNamed(t("tabs.names.rss")));
-    expect(screen.queryByRole("button", { name: t("act.save"), hidden: true })).not.toBeInTheDocument();
+    expect(footerSave()).toBeEnabled();
 
     // Switching back: the editing state is not destroyed by unmount (the clear button no longer appears = local edit kept)
     fireEvent.click(tabNamed(t("tabs.names.metadata")));
     expect(screen.queryByRole("button", { name: t("forms.clearAria", { label: t("forms.bangumi") }) })).not.toBeInTheDocument();
     expect(footerSave()).toBeEnabled();
+  });
+
+  it("在 RSS 页无未保存修改时不显示保存按钮；有跨 Tab 修改时可从 RSS 页一次保存全部", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/anime/rss-list-view")) {
+        return new Response(JSON.stringify(ownerRssListView()), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/template-catalogs/naming")) {
+        return new Response(JSON.stringify({ language_version: "1", catalog_version: "1", variables: [], functions: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (init?.method === "PATCH" && url.includes("/anime/anime-1/metadata")) {
+        return new Response(JSON.stringify({ ...boundWorkspace().metadata, bgm: null, version: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (init?.method === "PATCH" && url.includes("/anime/anime-1/rules")) {
+        return new Response(JSON.stringify({ rules: boundWorkspace().rules, reevaluation: { managed_anime_id: "anime-1", accepted: true, scheduled_count: 0 } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ code: "IGNORED", message: "ignored" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onChanged = vi.fn();
+    renderTabs({ animeID: "anime-1", workspace: boundWorkspace(), onChanged, initialTab: "rss" });
+
+    expect(screen.queryByRole("button", { name: t("act.save"), hidden: true })).not.toBeInTheDocument();
+
+    // Edit metadata and rules across tabs, then switch to RSS and save all from one click.
+    fireEvent.click(tabNamed(t("tabs.names.metadata")));
+    fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.bangumi") }) }));
+    fireEvent.click(tabNamed(t("tabs.names.rules")));
+    editReleaseFilter();
+    fireEvent.click(tabNamed(t("tabs.names.rss")));
+
+    expect(within(ownerFooter()).getByRole("status")).toHaveTextContent(t("act.unsavedCount", { n: 2 }));
+    clickFooterSave();
+
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("act.saved")));
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/anime/anime-1/metadata") && init?.method === "PATCH")).toBe(true);
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/anime/anime-1/rules") && init?.method === "PATCH")).toBe(true);
   });
 
   it("retired 只读：footer 没有保存按钮", () => {

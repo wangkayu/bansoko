@@ -380,6 +380,7 @@ export function OneShotDialog({
   const [offsetText, setOffsetText] = useState(String(source.initialOffset));
   const [matchProvider, setMatchProvider] = useState<"bgm" | "tmdb">();
   const [submitting, setSubmitting] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState<{ current: number; total: number } | null>(null);
   const [outcomes, setOutcomes] = useState<ReadonlyMap<string, SeedOutcome>>(new Map());
   const [expandErrors, setExpandErrors] = useState<ReadonlyMap<string, string>>(new Map());
   // Per-seed manual file choices (row key -> chosen paths). A seed without an entry downloads its
@@ -748,30 +749,37 @@ export function OneShotDialog({
   async function create(targets: OneShotSeedRow[]) {
     if (targets.length === 0 || !draft) return;
     setSubmitting(true);
+    setSubmitProgress({ current: 1, total: targets.length });
     let prepared: AnimeDraft;
     try {
       // The server re-freezes the draft and compares business_digest: what is submitted must already be the frozen form.
       prepared = await freezeBusinessDraft(draft);
     } catch (cause) {
       setSubmitting(false);
+      setSubmitProgress(null);
       toast.error(toUserMessage(cause, t("rss.oneShotFailed")));
       return;
     }
     const next: SeedOutcome[] = [];
-    for (const row of targets) {
+    for (let index = 0; index < targets.length; index += 1) {
+      const row = targets[index]!;
+      setSubmitProgress({ current: index + 1, total: targets.length });
       const input = requestFor(row, prepared);
+      let outcome: SeedOutcome;
       try {
         const result = await downloadSnapshotSeed(row.snapshotID, row.stableSeedKey, input, idempotencyKeyFor(row, input));
-        next.push({ key: row.key, ok: true, adopted: result.download_task_id === null });
+        outcome = { key: row.key, ok: true, adopted: result.download_task_id === null };
       } catch (cause) {
-        next.push({ key: row.key, ok: false, error: submitErrorOf(cause) });
+        outcome = { key: row.key, ok: false, error: submitErrorOf(cause) };
       }
+      next.push(outcome);
+      setOutcomes((previous) => {
+        const merged = new Map(previous);
+        merged.set(outcome.key, outcome);
+        return merged;
+      });
     }
-    setOutcomes((previous) => {
-      const merged = new Map(previous);
-      for (const outcome of next) merged.set(outcome.key, outcome);
-      return merged;
-    });
+    setSubmitProgress(null);
     setSubmitting(false);
     const queued = next.filter(hasDownloadRecord).length;
     const adopted = next.filter((outcome) => outcome.adopted).length;
@@ -944,12 +952,15 @@ export function OneShotDialog({
             ) : (
               <Button
                 variant="primary"
+                loading={submitting}
                 onClick={() => void create(pendingSubmit)}
                 disabled={submitting || createBlock !== undefined || pendingSubmit.length === 0}
                 title={createBlock}
               >
                 {submitting
-                  ? t("oneshot.creating")
+                  ? submitProgress && submitProgress.total > 1
+                    ? t("oneshot.creatingProgress", submitProgress)
+                    : t("oneshot.creating")
                   : submitted
                     ? t("oneshot.retryFailed", { n: pendingSubmit.length })
                     : t("oneshot.create", { n: pendingSubmit.length })}
@@ -979,7 +990,7 @@ export function OneShotDialog({
                 }
               />
             ) : singleList && source.loading ? (
-              <StateBlock kind="busy" title={t("oneshot.seeding")} />
+              <StateBlock kind="busy" skeleton="list" title={t("oneshot.seeding")} />
             ) : source.fetchRequired || source.fetchBusy ? (
               <StateBlock
                 kind="empty"
@@ -1086,7 +1097,7 @@ export function OneShotDialog({
               <p className="text-caption tw:m-0 tw:text-muted-foreground">{createBlock}</p>
             )}
             {source.pending && selectedRows.length === 0 ? (
-              <StateBlock kind="busy" title={t("oneshot.previewing")} />
+              <StateBlock kind="busy" skeleton="list" title={t("oneshot.previewing")} />
             ) : source.error ? (
               <StateBlock kind="error" title={source.error} />
             ) : selectedRows.length === 0 ? (

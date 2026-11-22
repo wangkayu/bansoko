@@ -720,4 +720,30 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     expect(screen.queryByRole("dialog", { name: t("oneshot.title") })).not.toBeInTheDocument();
     expect(await screen.findByText("全局搜索番剧")).toBeInTheDocument();
   });
+
+  it("关闭并重新打开保留关键词与番剧结果，点清除按钮才清空", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (open: boolean) => (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <GlobalSearchDialog open={open} onOpenChange={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(ui(true));
+    await submitSearch("BanG Dream");
+    expect(await screen.findByText("全局搜索番剧")).toBeInTheDocument();
+
+    rerender(ui(false));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    rerender(ui(true));
+    expect(screen.getByPlaceholderText(t("globalSearch.placeholder"))).toHaveValue("BanG Dream");
+    expect(await screen.findByText("全局搜索番剧")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: t("globalSearch.clearAria") }));
+    expect(screen.getByPlaceholderText(t("globalSearch.placeholder"))).toHaveValue("");
+    expect(screen.queryByText("全局搜索番剧")).not.toBeInTheDocument();
+    expect(screen.getByText(t("globalSearch.start"))).toBeInTheDocument();
+  });
 });

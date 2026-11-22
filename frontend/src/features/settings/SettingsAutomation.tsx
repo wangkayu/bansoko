@@ -205,7 +205,7 @@ function SchedulesCard() {
       </div>
 
       {schedules.isLoading && (
-        <StateBlock kind="busy" title={t("settings.automation.loading")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.automation.loading")} />
       )}
       {schedules.error && <Alert tone="error" title={toUserMessage(schedules.error, t("settings.automation.loadFailed"))} />}
       {schedules.data && schedules.data.length === 0 && <StateBlock kind="empty" title={t("settings.automation.empty")} />}

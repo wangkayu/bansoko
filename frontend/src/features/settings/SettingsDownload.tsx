@@ -120,7 +120,7 @@ export function SettingsDownload() {
         </div>
 
         {sections.isLoading && (
-          <StateBlock kind="busy" title={t("settings.download.loading")} />
+          <StateBlock kind="busy" skeleton="settings" title={t("settings.download.loading")} />
         )}
         {sections.error && <Alert tone="error" title={toUserMessage(sections.error, t("settings.download.loadFailed"))} />}
         <DownloadTimeoutsSettings />
@@ -416,7 +416,7 @@ function QBittorrentCard() {
       </div>
 
       {connections.isLoading && (
-        <StateBlock kind="busy" title={t("settings.download.loadingDownloaders")} />
+        <StateBlock kind="busy" skeleton="settings" title={t("settings.download.loadingDownloaders")} />
       )}
       {connections.error && <Alert tone="error" title={toUserMessage(connections.error, t("settings.connections.loadFailed"))} />}
       {connections.data && downloaders.length === 0 && !draft && (

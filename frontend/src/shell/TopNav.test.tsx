@@ -205,14 +205,17 @@ describe("TopNav 术语（R10）", () => {
     expect(screen.queryByRole("menuitem", { name: "回收站" })).not.toBeInTheDocument();
   });
 
-  it("顶栏图标不带 ↗ 角标；日志和执行记录带文字标签（宽屏显示）", async () => {
+  it("顶栏图标不带 ↗ 角标且不再渲染 / 快捷键角标，按 / 不打开搜索", async () => {
     stubFetch();
-    const { container } = renderTopNav();
+    const { container, router } = renderTopNav();
     await screen.findByRole("button", { name: t("nav.log") });
-    expect(container.querySelector(".top-nav-opn, .top-nav-search-opn, .tabbar-opn")).toBeNull();
+    expect(container.querySelector(".top-nav-opn, .top-nav-search-opn, .tabbar-opn, .top-nav-kbd")).toBeNull();
     expect(container.querySelectorAll("header svg.lucide-arrow-up-right")).toHaveLength(0);
     expect(screen.getByRole("button", { name: t("nav.log") })).toHaveTextContent(t("nav.log"));
     expect(screen.getByRole("button", { name: t("nav.records") })).toHaveTextContent(t("nav.records"));
+
+    fireEvent.keyDown(window, { key: "/" });
+    expect(new URLSearchParams(router.state.location.search).get("tool")).toBeNull();
   });
 
   it("旧的 ?tool=blacklist 链接不再打开任何弹窗，回落到目录底座", async () => {
@@ -511,6 +514,48 @@ describe("顶栏状态条用语", () => {
     fireEvent.click(await screen.findByRole("button", { name: t("nav.statusAria") }));
     fireEvent.click(await screen.findByRole("button", { name: new RegExp(t("nav.automationEmpty")) }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/automation"));
+  });
+
+  it("仅禁用可选站点（如 Bangumi/AniBT）时状态仍为正常；30s 内重复打开弹层复用缓存结果", async () => {
+    let testCalls = 0;
+    const connections = [
+      { id: "c-qb", kind: "qbittorrent", name: "qB", enabled: true, credential_configured: true, version: 1 },
+      { id: "c-bgm", kind: "bgm", name: "BGM", enabled: false, version: 1 },
+      { id: "c-anibt", kind: "anibt", name: "AniBT", enabled: false, version: 1 },
+    ] as unknown as Connection[];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        let body: unknown = [];
+        if (url.endsWith("/config/connections")) body = connections;
+        else if (url.endsWith("/c-qb/test")) {
+          testCalls += 1;
+          body = { connection_id: "c-qb", kind: "qbittorrent", health: "ready", checked_at: "2026-07-21T08:00:00Z" };
+        }
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      }),
+    );
+    renderTopNav();
+
+    const trigger = await screen.findByRole("button", { name: t("nav.statusAria") });
+    await waitFor(() => expect(trigger).toHaveAccessibleDescription(t("nav.statusOk")));
+    expect(trigger.querySelector(".system-status-dot-enabled")).not.toBeNull();
+
+    // First open runs the test once.
+    fireEvent.click(trigger);
+    expect(await screen.findByText(t("nav.statusReachable"))).toBeInTheDocument();
+    expect(testCalls).toBe(1);
+
+    // Close and reopen within 30s: cached result reused, no extra test call.
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    expect(await screen.findByText(t("nav.statusReachable"))).toBeInTheDocument();
+    expect(testCalls).toBe(1);
+
+    // Clicking retest forces a fresh test call.
+    fireEvent.click(screen.getByRole("button", { name: t("nav.statusRetest") }));
+    await waitFor(() => expect(testCalls).toBe(2));
   });
 });
 

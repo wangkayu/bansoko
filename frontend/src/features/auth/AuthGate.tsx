@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ApiError,
@@ -15,7 +15,7 @@ import { BrandMark, BrandWordmark } from "../../shell/BrandMark";
 import { useSessionStore } from "../../shell/sessionStore";
 import { StateBlock } from "../../ui/StateBlock";
 import { HelpTip } from "../../ui/base/HelpTip";
-import { Input } from "../../ui/base/controls";
+import { Input, PasswordInput } from "../../ui/base/controls";
 import { t } from "../../lib/i18n";
 
 // Entry gate. Fresh instances go through the real bootstrap path:
@@ -190,6 +190,7 @@ export function AuthGate() {
           <Field
             label={t("auth.username")}
             hint={t("auth.usernameHint")}
+            autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
@@ -198,6 +199,7 @@ export function AuthGate() {
           <Field
             label={t("auth.passwordNew")}
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -213,8 +215,8 @@ export function AuthGate() {
   return (
     <GateShell title={t("auth.loginTitle")} subtitle={t("auth.loginSubtitle")} error={error}>
       <form onSubmit={submitLogin} className="auth-form">
-        <Field label={t("auth.username")} value={username} onChange={(e) => setUsername(e.target.value)} required />
-        <Field label={t("auth.password")} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <Field label={t("auth.username")} autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+        <Field label={t("auth.password")} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         <SubmitButton busy={busy} busyLabel={t("auth.loggingIn")} label={t("auth.login")} />
         <p className="auth-recovery auth-recovery-row">
           {t("auth.forgot")}
@@ -275,19 +277,16 @@ function SubmitButton({ busy, busyLabel, label }: { busy: boolean; busyLabel: st
   );
 }
 
-function Field({ label, hint, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }) {
-  const control = (
-    <label className={hint ? "auth-field-label" : "auth-field"}>
-      <span>{label}</span>
-      <Input {...props} />
-    </label>
-  );
-  if (!hint) return control;
-  // The hint sits outside the label so it never enters the input's accessible name.
+function Field({ label, hint, type, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }) {
+  const id = useId();
+  const control = type === "password" ? <PasswordInput id={id} {...props} /> : <Input id={id} type={type} {...props} />;
   return (
     <div className="auth-field">
+      <label htmlFor={id} className="auth-field-label">
+        {label}
+      </label>
       {control}
-      <span className="auth-recovery">{hint}</span>
+      {hint ? <span className="auth-recovery">{hint}</span> : null}
     </div>
   );
 }

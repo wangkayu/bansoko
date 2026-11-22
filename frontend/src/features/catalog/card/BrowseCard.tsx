@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BookOpen, EyeOff, MoreHorizontal, ScanSearch, X } from "lucide-react";
 import type { CatalogEntryView } from "../../../lib/providers/viewmodels";
 import { DropdownMenu, Tooltip, type MenuEntry } from "../../../ui/base";
+import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../../lib/useMediaQuery";
 import { Poster } from "./Poster";
 import { CornerBadges } from "./CornerBadges";
 import { SynopsisDialog } from "../SynopsisDialog";
@@ -61,6 +62,7 @@ export function BrowseCard({
 }) {
   const retired = entry.lifecycleState === "retired";
   const isCustom = entry.source === "custom";
+  const isPhone = useMediaQuery(PHONE_MEDIA_QUERY);
   const [synopsisOpen, setSynopsisOpen] = useState(false);
   // Only provider entries have an anime page to read; custom presets and the subscribed wall
   // have none.
@@ -77,8 +79,19 @@ export function BrowseCard({
   const canBrowseSeeds = Boolean(onBrowseSeeds) && !(retired && isCustom) && (!isCustom || Boolean(entry.candidateId));
   const browseSeeds = () => onBrowseSeeds?.(entry);
 
-  // The menu: hide and delete preset.
+  // The menu: on phones the synopsis reader folds into ⋯ so the narrow card corner only carries ⋯;
+  // hide and delete preset follow.
   const menuItems: MenuEntry[] = [
+    ...(isPhone && synopsisProvider
+      ? [
+          {
+            key: "synopsis",
+            icon: <BookOpen className="catalog-pw-menu-icon" />,
+            label: t("grid.card.viewSynopsis"),
+            onSelect: () => setSynopsisOpen(true),
+          },
+        ]
+      : []),
     // Hiding lands on the server's (provider, provider_entry_ref), so only provider entries can hide;
 //     custom presets go through delete-preset. Hiding is catalog curation: it ends no subscription.
     ...(!isCustom && onHide
@@ -138,8 +151,8 @@ export function BrowseCard({
         {statusPill}
       </CornerBadges>
 
-      {/* The book entry opens only the synopsis reader; it is a hit area of its own, left of ⋯. */}
-      {synopsisProvider ? (
+      {/* The book entry opens only the synopsis reader on desktop; on phones it folds into ⋯. */}
+      {synopsisProvider && !isPhone ? (
         <Tooltip content={t("grid.card.viewSynopsis")}>
           <button
             type="button"

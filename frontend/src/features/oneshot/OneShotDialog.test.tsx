@@ -114,7 +114,7 @@ type Scenario = {
   viewErrorBody?: unknown;
   candidate?: unknown;
   customFetch?: { status: number; body?: unknown };
-  download?: (stableSeedKey: string) => Download | "network";
+  download?: (stableSeedKey: string) => Download | "network" | Promise<Download | "network">;
   /** Single-group refresh (POST .../rss): returns the new snapshot identity; by default that group's refresh fails. */
   refresh?: { status: number; body?: unknown };
   /** Seed expansion: by default the fetch succeeds (the container already holds readable bytes). */
@@ -307,7 +307,7 @@ function stubFetch(scenario: Scenario) {
     if (download) {
       const stableSeedKey = decodeURIComponent(download[2]!);
       record(JSON.parse(String(init?.body)));
-      const result = scenario.download?.(stableSeedKey) ?? { status: 200 };
+      const result = (await scenario.download?.(stableSeedKey)) ?? { status: 200 };
       if (result === "network") throw new TypeError("Failed to fetch");
       if (result.status !== 200) {
         return Response.json(result.body ?? { code: "INTERNAL", message: "内部错误" }, { status: result.status });
@@ -816,6 +816,33 @@ describe("OneShotDialog 第二步：配置、渲染与提交", () => {
       expect.stringContaining(t("oneshot.adoptedCount", { n: 1 })),
       mixed ? expect.objectContaining({ action: expect.objectContaining({ label: t("oneshot.viewRecords") }) }) : undefined,
     );
+  });
+
+  it("批量提交多颗种子时按钮显示实时进度（1/2 → 2/2）", async () => {
+    let resolveFirst!: (value: Download) => void;
+    let resolveSecond!: (value: Download) => void;
+    const first = new Promise<Download>((res) => {
+      resolveFirst = res;
+    });
+    const second = new Promise<Download>((res) => {
+      resolveSecond = res;
+    });
+    stubFetch({
+      view: viewOf([seedGroup({ items: [seedItem("seed-a", SEED_A), seedItem("seed-b", SEED_B)] })]),
+      download: (key) => (key === "seed-a" ? first : second),
+    });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A, SEED_B]);
+
+    fireEvent.click(button(t("oneshot.create", { n: 2 })));
+    expect(await screen.findByRole("button", { name: t("oneshot.creatingProgress", { current: 1, total: 2 }) })).toBeInTheDocument();
+
+    resolveFirst({ status: 200 });
+    expect(await screen.findByRole("button", { name: t("oneshot.creatingProgress", { current: 2, total: 2 }) })).toBeInTheDocument();
+    expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument();
+
+    resolveSecond({ status: 200 });
+    await waitFor(() => expect(screen.getAllByText(t("oneshot.resultOk"))).toHaveLength(2));
   });
 
   it("「恢复默认」只在本地复位命名与偏移，之后只有一次读模型重读", async () => {

@@ -98,6 +98,7 @@ export const oneshotCopy = {
   // 提交（在第二步）
   create: "开始下载（{n}）",
   creating: "正在提交…",
+  creatingProgress: "正在提交 {current}/{total}…",
   createdAll: "已提交 {n} 个一次性下载",
   adoptedCount: "{n} 个发布使用了媒体库中的已有文件",
   failedCount: "{n} 个未提交",

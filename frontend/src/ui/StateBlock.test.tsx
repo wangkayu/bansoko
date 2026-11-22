@@ -42,5 +42,10 @@ describe("StateBlock", () => {
     rerender(<StateBlock kind="error" title="读取失败" action={<button type="button">重试</button>} />);
     expect(screen.getByRole("alert")).toHaveTextContent("读取失败");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+
+    rerender(<StateBlock kind="busy" skeleton="cards" title="正在读取目录" />);
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("正在读取目录");
+    expect(status).toHaveAttribute("data-skeleton", "cards");
   });
 });

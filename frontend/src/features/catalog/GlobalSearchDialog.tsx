@@ -13,6 +13,7 @@ import { catalogKeys } from "./queries";
 import { animeKeys } from "../../lib/queryKeys";
 import { configKeys } from "../../lib/queryKeys";
 import { StateBlock } from "../../ui/StateBlock";
+import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { Dialog, Input, Segmented } from "../../ui/base";
 import { Button } from "../../ui/base/controls";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
@@ -107,18 +108,15 @@ export function GlobalSearchDialog({
     return items.filter((item) => !hiddenKeys.has(blacklistKey(item.provider, item.provider_entry_ref)));
   }, [hidden, items]);
 
-  // Closing discards the transient context (query/results/error); in-flight requests are dropped
-  // with it. A second-level dialog opened from here suppresses the discard: its back button
-  // reopens this window with its context intact, and the discard runs once that dialog is gone.
+  // Closing cancels in-flight requests and clears transient error states while
+  // preserving the keyword, mode, site and program results so an accidental
+  // backdrop tap does not discard the search context.
   useEffect(() => {
     if (open || configTarget || seedTarget || searchSeedTarget) return;
     requestSeq.current += 1;
-    setKeyword("");
-    setItems([]);
-    setError(undefined);
     setSearching(false);
-    setSearched(false);
     setSeedSearching(false);
+    setError(undefined);
     setSeedError(undefined);
     setSeedNoMatch(false);
   }, [open, configTarget, seedTarget, searchSeedTarget]);
@@ -292,7 +290,10 @@ export function GlobalSearchDialog({
                 <button
                   type="button"
                   aria-label={t("globalSearch.clearAria")}
-                  onClick={() => setKeyword("")}
+                  onClick={() => {
+                    setKeyword("");
+                    resetResults();
+                  }}
                   className="tw:absolute tw:top-1/2 tw:right-2 tw:grid tw:size-5 tw:-translate-y-1/2 tw:place-items-center tw:rounded-full tw:text-muted-foreground tw:hover:text-foreground"
                 >
                   <X className="tw:size-3.5" />
@@ -318,7 +319,7 @@ export function GlobalSearchDialog({
                 }
               />
             ) : searching ? (
-              <StateBlock kind="busy" title={t("grid.searchingNow")} />
+              <StateBlock kind="busy" skeleton="cards" title={t("grid.searchingNow")} />
             ) : !searched ? (
               <StateBlock kind="empty" title={t("globalSearch.start")} />
             ) : shownItems.length === 0 ? (
@@ -366,7 +367,7 @@ export function GlobalSearchDialog({
       {/* The config dialog after a candidate click: the same AnimeConfigDialogEntry AnimeGrid uses
        *  (the search dialog is already closed by the time the second level opens, so no z-order clash). */}
       {configTarget && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={configTarget.entry.title} />}>
           <AnimeConfigDialogEntry
             open
             onOpenChange={(next) => {
@@ -386,7 +387,7 @@ export function GlobalSearchDialog({
       )}
       {/* The candidate's browse seeds: another second-level dialog sitting alongside the config one. */}
       {seedTarget && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("oneshot.title")} />}>
           <OneShotDialogEntry
             key={`${seedTarget.providerKey}:${seedTarget.entry.providerEntryRef}`}
             open
@@ -400,7 +401,7 @@ export function GlobalSearchDialog({
       {/* A successful keyword search's one-shot download: the same two-step dialog, seeded from
        *  the search snapshot; back returns to the seed input window. */}
       {searchSeedTarget && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LazyPendingBar label={t("oneshot.title")} />}>
           <OneShotDialogEntry
             key={`${searchSeedTarget.provider}:${searchSeedTarget.snapshot.snapshot_id}`}
             open

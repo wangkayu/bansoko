@@ -258,7 +258,7 @@ function OwnerRulesTab({
     onChanged();
   }
 
-  if (!edit) return <StateBlock kind="busy" title={t("tabs.rules.reading")} />;
+  if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.rules.reading")} />;
   const matchesDefaults = businessPreset.data !== undefined
     && !rulesDifferFromPreset(edit, businessPreset.data)
     && (parserKind === undefined || parserKind === businessPreset.data.snapshot.parser.kind);

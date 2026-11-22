@@ -474,7 +474,7 @@ function OwnerMetadataTab({
     onChanged();
   }
 
-  if (!edit) return <StateBlock kind="busy" title={t("tabs.metadata.reading")} />;
+  if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.metadata.reading")} />;
   const effectiveTitle = normalizedTitle(edit.titleOverride) ?? savedTitle;
   const titleSuggestions = [
     ...savedTitleSuggestions(workspace.metadata.title_suggestions, saved.metadata, edit.metadata),
