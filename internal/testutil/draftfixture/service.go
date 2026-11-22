@@ -2,12 +2,8 @@
 package draftfixture
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -51,7 +47,7 @@ func SubscribeAnime(ctx context.Context, svc *draft.Service, input generated.Sub
 			Details: []apperrors.FieldViolation{{Field: &field, Code: "DRAFT_INVALID", Message: fmt.Sprintf("draft transport mapping failed: %v", err)}},
 		}
 	}
-	requestHash, err := canonicalJSONHash(input)
+	requestHash, err := animeapplication.CanonicalJSONHash(input)
 	if err != nil {
 		return generated.SubscribeResult{}, fmt.Errorf("hash subscribe request: %w", err)
 	}
@@ -64,25 +60,6 @@ func SubscribeAnime(ctx context.Context, svc *draft.Service, input generated.Sub
 		return generated.SubscribeResult{}, err
 	}
 	return subscribeResultForHTTP(result), nil
-}
-
-func canonicalJSONHash(value any) (string, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	var decoded any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&decoded); err != nil {
-		return "", err
-	}
-	canonical, err := json.Marshal(decoded)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(canonical)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 func subscribeResultForHTTP(value draft.SubscribeResult) generated.SubscribeResult {
