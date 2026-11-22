@@ -354,7 +354,7 @@ export function GlobalSearchDialog({
                 }
               />
             ) : seedSearching ? (
-              <StateBlock kind="busy" title={t("grid.searchingNow")} />
+              <StateBlock kind="busy" skeleton="list" title={t("grid.searchingNow")} />
             ) : seedNoMatch ? (
               <StateBlock kind="empty" title={t("globalSearch.noMatchSeed")} description={t("grid.searchRetryHint")} />
             ) : (

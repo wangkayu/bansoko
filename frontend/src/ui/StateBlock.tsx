@@ -59,7 +59,7 @@ function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
     case "cards":
       return (
         <div aria-hidden="true" className="tw:grid tw:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] tw:gap-3">
-          {[0, 1, 2, 3, 4, 5].map((index) => (
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => (
             <div
               key={index}
               className="tw:flex tw:aspect-[2/3] tw:flex-col tw:justify-end tw:gap-1.5 tw:rounded-2xl tw:border tw:border-border tw:bg-card tw:p-3"
@@ -82,7 +82,7 @@ function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
               <span key={index} className={cn(skelBar, "tw:h-3.5 tw:w-14")} />
             ))}
           </div>
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2, 3, 4, 5].map((index) => (
             <div key={index} className="tw:grid tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-card tw:p-3">
               <span className={cn(skelBar, "tw:h-3.5 tw:w-1/3")} />
               <span className={cn(skelBar, "tw:h-3 tw:w-4/5")} />
@@ -93,7 +93,7 @@ function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
     case "list":
       return (
         <div aria-hidden="true" className="tw:grid tw:gap-2">
-          {[0, 1, 2, 3].map((index) => (
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((index) => (
             <div
               key={index}
               className="tw:grid tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-card tw:px-3 tw:py-2.5"
@@ -110,7 +110,7 @@ function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
     case "log":
       return (
         <div aria-hidden="true" className="tw:grid tw:gap-1.5">
-          {[0, 1, 2, 3, 4].map((index) => (
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((index) => (
             <div
               key={index}
               className="tw:flex tw:items-center tw:gap-2.5 tw:rounded-md tw:border tw:border-border tw:bg-card tw:px-3 tw:py-2"
@@ -125,7 +125,7 @@ function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
     case "table":
       return (
         <div aria-hidden="true" className="tw:grid tw:divide-y tw:divide-border tw:rounded-control tw:border tw:border-border tw:bg-card">
-          {[0, 1, 2, 3, 4].map((index) => (
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => (
             <div key={index} className="tw:flex tw:items-center tw:gap-3 tw:px-4 tw:py-2.5">
               <span className={cn(skelBar, "tw:size-4 tw:flex-none tw:rounded-sm")} />
               <div className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-1.5">
@@ -140,7 +140,7 @@ function StateSkeleton({ variant }: { variant: StateBlockSkeleton }) {
     case "settings":
       return (
         <div aria-hidden="true" className="tw:grid tw:gap-3">
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2, 3, 4, 5].map((index) => (
             <div key={index} className="tw:grid tw:gap-2.5 tw:rounded-control tw:border tw:border-border tw:bg-card tw:p-4">
               <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
                 <span className={cn(skelBar, "tw:h-3.5 tw:w-36")} />
@@ -177,7 +177,7 @@ export function StateBlock({
   if (kind === "busy") {
     if (skeleton) {
       return (
-        <div role="status" data-state-block="busy" data-skeleton={skeleton} className={cn("tw:grid tw:w-full tw:min-w-0 tw:gap-3 tw:py-2", className)}>
+        <div role="status" data-state-block="busy" data-skeleton={skeleton} className={cn("tw:grid tw:w-full tw:min-w-0 tw:min-h-0 tw:gap-3 tw:py-2 tw:overflow-hidden", className)}>
           <span className="sr-only">{title}</span>
           {description && <span className="sr-only">{description}</span>}
           <StateSkeleton variant={skeleton} />

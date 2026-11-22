@@ -163,7 +163,7 @@ export function SettingsVars() {
         </div>
 
         {state.isLoading && (
-          <StateBlock kind="busy" title={t("varsEditor.loading")} />
+          <StateBlock kind="busy" skeleton="settings" title={t("varsEditor.loading")} />
         )}
         {state.error && <Alert tone="error" title={toUserMessage(state.error, t("varsEditor.loadFailed"))} />}
         {error && <Alert tone="error" title={error} />}

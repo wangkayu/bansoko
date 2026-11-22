@@ -315,7 +315,7 @@ export function SettingsUpdates() {
         <h2 className="settings-updates-title text-title">{t("settings.updates.title")}</h2>
       </div>
 
-      {statusLoading && !visibleStatus && <StateBlock kind="busy" title={t("settings.updates.loading")} />}
+      {statusLoading && !visibleStatus && <StateBlock kind="busy" skeleton="settings" title={t("settings.updates.loading")} />}
 
       {(statusError || statusRefetchError || statusReconnectError) && !activeStatus && (
         <StateBlock

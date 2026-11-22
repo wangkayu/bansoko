@@ -157,7 +157,7 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
         </div>
         <div className="metadata-episode-scroll">
           {pending ? (
-            <StateBlock kind="busy" title={t("forms.episodeLoading")} />
+            <StateBlock kind="busy" skeleton="table" title={t("forms.episodeLoading")} />
           ) : error ? (
             <StateBlock kind="error" title={error} action={<Button size="sm" onClick={() => setReloadTick((value) => value + 1)}>{t("act.retry")}</Button>} />
           ) : shown.length === 0 ? (
