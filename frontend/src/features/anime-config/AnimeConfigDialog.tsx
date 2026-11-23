@@ -303,9 +303,14 @@ export function AnimeConfigDialog({
                   {subscriptionStateLabel(entry.subscriptionState ?? "pending")}
                 </StatePill>
               )
-            ) : headerEntry.metadataMatch.matched ? (
-              <StatePill tone="online" icon={CheckCircle2}>{t("config.metadataMatched")}</StatePill>
-            ) : null}
+            ) : (
+              <>
+                <StatePill tone="muted">{t("anime.state.draft")}</StatePill>
+                {headerEntry.metadataMatch.matched ? (
+                  <StatePill tone="online" icon={CheckCircle2}>{t("config.metadataMatched")}</StatePill>
+                ) : null}
+              </>
+            )}
           </div>
         }
       >
@@ -1100,51 +1105,50 @@ function DraftBody({
         initialTab={initialTab}
         onTabChange={onTabChange}
         banner={
-          <>
-            {/* Keep the complete draft editor in the bounded scroll region.
-                It must not consume the fixed tab/footer geometry on small screens. */}
-            <WorkspaceSummaryRow state="draft" />
-            {error && (
-              <StateBlock
-                kind="error"
-                title={error}
-                className="anime-config-draft-error"
-                action={saveConflict ? (
-                  <span className="anime-config-dialog-actions">
+          (error || problems.length > 0) ? (
+            <>
+              {error && (
+                <StateBlock
+                  kind="error"
+                  title={error}
+                  className="anime-config-draft-error"
+                  action={saveConflict ? (
+                    <span className="anime-config-dialog-actions">
+                      <Button disabled={conflictBusy} onClick={() => void reloadLatestCandidate()}>
+                        {t("config.reloadLatest")}
+                      </Button>
+                      <Button
+                        variant="primary"
+                        disabled={conflictBusy || problems.length > 0}
+                        onClick={() => void overwriteLatestCandidate()}
+                      >
+                        {t("config.overwrite")}
+                      </Button>
+                    </span>
+                  ) : candidateResolutionBlocked ? (
                     <Button disabled={conflictBusy} onClick={() => void reloadLatestCandidate()}>
-                      {t("config.reloadLatest")}
+                      {t("config.refreshReselect")}
                     </Button>
-                    <Button
-                      variant="primary"
-                      disabled={conflictBusy || problems.length > 0}
-                      onClick={() => void overwriteLatestCandidate()}
-                    >
-                      {t("config.overwrite")}
-                    </Button>
-                  </span>
-                ) : candidateResolutionBlocked ? (
-                  <Button disabled={conflictBusy} onClick={() => void reloadLatestCandidate()}>
-                    {t("config.refreshReselect")}
-                  </Button>
-                ) : undefined}
-              />
-            )}
-            {problems.length > 0 && (
-              <StateBlock
-                kind="error"
-                title={t("config.problemsTitle")}
-                description={
-                  <ul className="anime-config-draft-problems">
-                    {problems.map((problem) => (
-                      <li key={`${problem.field}-${problem.message}`}>
-                        {problem.message}
-                      </li>
-                    ))}
-                  </ul>
-                }
-              />
-            )}
-          </>
+                  ) : undefined}
+                />
+              )}
+              {problems.length > 0 && (
+                <StateBlock
+                  kind="error"
+                  title={t("config.problemsTitle")}
+                  description={
+                    <ul className="anime-config-draft-problems">
+                      {problems.map((problem) => (
+                        <li key={`${problem.field}-${problem.message}`}>
+                          {problem.message}
+                        </li>
+                      ))}
+                    </ul>
+                  }
+                />
+              )}
+            </>
+          ) : undefined
         }
       />
 

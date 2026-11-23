@@ -967,7 +967,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     vi.restoreAllMocks();
   });
 
-  it("owner_draft preview shows disabled actions, server file exclusion reason, and never fetches a provider", async () => {
+  it("owner_draft preview triggers automatically on unsaved rules edits when switching to RSS, shows disabled actions, server file exclusion reason, and never fetches a provider", async () => {
     const calls = stubPreviewFetch();
     const workspace = workspaceFixture();
     workspace.subgroups.subgroups.entries = [
@@ -980,30 +980,31 @@ describe("AnimeTabs owner RSS read model preview", () => {
     }];
     renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rules" });
 
-    fireEvent.click(screen.getByRole("button", { name: t("tabs.rules.preview") }));
+    expect(screen.queryByRole("button", { name: t("tabs.rules.preview") })).not.toBeInTheDocument();
+    editReleaseFilter("sample");
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rss") }));
     await screen.findByText(t("rss.previewBadge"));
     await screen.findByRole("button", { name: t("rss.expandGroup", { name: "selected" }) });
     fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "selected" }) }));
     await screen.findByRole("button", { name: t("rss.expandFiles") });
     fireEvent.click(screen.getByRole("button", { name: t("rss.expandFiles") }));
     expect(screen.getByText(new RegExp(t("rss.previewDisabled")))).toBeInTheDocument();
-    expect(calls).toContainEqual({
+    const expectedSections = structuredClone(workspace.rules.sections);
+    expectedSections.release_filter!.value.not_in = "sample";
+    await waitFor(() => expect(calls).toContainEqual({
       url: "/api/v1/anime/rss-list-view",
-      body: { input_source: "owner_draft", managed_anime_id: "anime-1", rules_preview: workspace.rules.sections, limit_per_group: 100 },
-    });
+      body: { input_source: "owner_draft", managed_anime_id: "anime-1", rules_preview: expectedSections, limit_per_group: 100 },
+    }));
     // File-level filtering shows as the row's fate badge: file_* is a rule exclusion, the specific reason on hover.
     expect(screen.getByText(t("rss.fileExcluded.excluded_by_rule"))).toHaveAttribute("title", t("reason.file_not_in_matched"));
     expect(screen.getByRole("button", { name: /处理过程：预览模式下不可操作/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: labelValue(t("rss.retryRelease"), t("rss.previewDisabled")) })).toBeDisabled();
     expect(screen.getByRole("button", { name: t("rss.refresh") })).toBeDisabled();
     expect(screen.getByRole("button", { name: t("rss.scan") })).toBeDisabled();
-    expect(screen.getByRole("checkbox", { name: t("rss.showFiltered") })).toHaveAttribute("aria-disabled", "true");
-    const inputSources = calls.map(({ body }) => body && typeof body === "object" && "input_source" in body ? body.input_source : undefined);
-    // The inactive RSS tab no longer reads the unused owner view before preview.
-    expect(inputSources).toEqual(["owner_draft"]);
+    expect(screen.getByRole("checkbox", { name: t("rss.showFiltered") })).not.toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: t("rss.exitPreview") })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: t("field.subgroup") }));
-    await waitFor(() => expect(screen.queryByText(t("rss.previewBadge"))).not.toBeInTheDocument());
     expect(screen.getByText(t("anime.sources.selected"))).toBeInTheDocument();
   });
 
@@ -1073,15 +1074,26 @@ describe("AnimeTabs owner RSS read model preview", () => {
     expect(within(tags).getByText("CHT")).toBeInTheDocument();
   });
 
-  it("previewing an unsaved rules edit stays in preview mode", async () => {
+  it("unsaved rules edits stay previewed across tab switches and exit preview when reverted", async () => {
     const calls = stubPreviewFetch();
     renderTabs({ animeID: "anime-1", workspace: workspaceFixture(), onChanged: () => {}, initialTab: "rules" });
     editReleaseFilter("sample");
-    fireEvent.click(screen.getByRole("button", { name: t("tabs.rules.preview") }));
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rss") }));
     await screen.findByText(t("rss.previewBadge"));
     await waitFor(() => expect(calls.some(({ body }) => (body as { input_source?: string } | undefined)?.input_source === "owner_draft")).toBe(true));
+    expect(screen.getByRole("checkbox", { name: t("rss.showFiltered") })).not.toHaveAttribute("aria-disabled", "true");
+
+    // Switching away and back keeps previewing unsaved rules.
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.metadata") }));
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
     expect(screen.getByText(t("rss.previewBadge"))).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: t("rss.showFiltered") })).toHaveAttribute("aria-disabled", "true");
+
+    // Reverting the unsaved edit exits preview and re-enables actions.
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rules") }));
+    editReleaseFilter("");
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
+    await waitFor(() => expect(screen.queryByText(t("rss.previewBadge"))).not.toBeInTheDocument());
+    expect(await screen.findByRole("button", { name: t("rss.refresh") })).toBeEnabled();
   });
 
   it("unsaved metadata edits render in the RSS tab without saving (owner_draft metadata_preview)", async () => {
@@ -1102,17 +1114,6 @@ describe("AnimeTabs owner RSS read model preview", () => {
     expect(screen.queryByRole("button", { name: t("rss.exitPreview") })).not.toBeInTheDocument();
     // The preview does not save: the metadata tab still has unsaved changes.
     expect(hasUnsavedDot(tabNamed(t("tabs.names.metadata")))).toBe(true);
-  });
-
-  it("leaving RSS tab exits rules preview", async () => {
-    stubPreviewFetch();
-    renderTabs({ animeID: "anime-1", workspace: workspaceFixture(), onChanged: () => {}, initialTab: "rules" });
-    fireEvent.click(screen.getByRole("button", { name: t("tabs.rules.preview") }));
-    await screen.findByText(t("rss.previewBadge"));
-    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.metadata") }));
-    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
-    await waitFor(() => expect(screen.queryByText(t("rss.previewBadge"))).not.toBeInTheDocument());
-    expect(await screen.findByRole("button", { name: t("rss.refresh") })).toBeEnabled();
   });
 
   it("字幕组编辑不清空最近一次服务端订阅事实", async () => {
@@ -2192,6 +2193,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
     expect(await within(titleRow).findAllByTestId("tag-row-entry")).toHaveLength(1);
     // The candidates are the vocabulary's fixed values, whether or not this anime has seen them
     // (the selected TC is shown as an entry above, not as a candidate).
+    fireEvent.click(within(titleRow).getByRole("button", { name: t("anibtTags.showCandidates") }));
     for (const fixed of ["2160p", "1080p", "720p", "SC", "JPSC"]) {
       expect(within(titleRow).getByRole("button", { name: fixed })).toBeInTheDocument();
     }
@@ -2223,6 +2225,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
     expect(chs).toHaveAttribute("data-role", "require");
     expect(within(card).queryByRole("radio", { name: t("config.useDefaultsConfirm") })).not.toBeInTheDocument();
 
+    fireEvent.click(within(card).getAllByRole("button", { name: t("anibtTags.showCandidates") })[0]!);
     fireEvent.click(within(card).getByRole("button", { name: "1080p" }));
     await waitFor(() => expect(within(card).getAllByTestId("tag-row-entry")).toHaveLength(3));
     clickSave();
@@ -2377,6 +2380,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
 
     expect(screen.queryByText(t("downloadCompletion.title"), { exact: true })).toBeNull();
     const card = tagCard();
+    fireEvent.click(within(card).getAllByRole("button", { name: t("anibtTags.showCandidates") })[0]!);
     fireEvent.click(within(card).getByRole("button", { name: "1080p" }));
     clickSave();
 

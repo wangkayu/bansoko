@@ -77,7 +77,7 @@ export function TagRowEditor({
   const [addDimension, setAddDimension] = useState<string>(vocabulary.defaultAddDimension);
   const [addValue, setAddValue] = useState("");
   const [addError, setAddError] = useState<string>();
-  const [candidatesOpen, setCandidatesOpen] = useState(true);
+  const [candidatesOpen, setCandidatesOpen] = useState(false);
   const disabled = readOnly || !onChange;
   const dimension = vocabulary.dimensions.includes(addDimension) ? addDimension : vocabulary.defaultAddDimension;
   const selected = rowTags(value);

@@ -898,7 +898,7 @@ describe("AnimeGrid（fixture 目录）", () => {
     expect(screen.getByRole("tab", { name: t("tabs.names.metadata") })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: t("field.subgroup") })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: t("tabs.names.rules") })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: t("tabs.names.rssPreview") })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: t("tabs.names.rss") })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "高级配置" })).not.toBeInTheDocument();
   }, 15000);
 
@@ -1304,7 +1304,8 @@ describe("AnimeGrid（fixture 目录）", () => {
     await flush();
 
     expect(new URLSearchParams(router.state.location.search).get("anime")).toBe("mikan:sample-giant");
-    expect(screen.getByRole("tab", { name: t("tabs.names.rssPreview") })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: t("tabs.names.rss") })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("anime.subscribe") })).toBeInTheDocument();
   }, 15000);
 
   it("同一外部 provider ref 关联的两个 owner：已订阅 tab 按各自 managed id/version 结束订阅", async () => {

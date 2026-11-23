@@ -71,7 +71,7 @@ export function RssTab({
   rulesPreviewSections?: RulesSections;
   /** Owner mode: the metadata tab's complete unsaved metadata; when present the display likewise uses the owner_draft read model. */
   metadataPreview?: AnimeMetadataPreview;
-  onExitRulesPreview: () => void;
+  onExitRulesPreview?: () => void;
   /** Reported after each successful read of the server read model (the subgroups tab's subscription-facts source). */
   onViewRead?: (view: RSSListView) => void;
   /** Whether this tab is the active one (all tabs stay mounted; mounted is not the same as viewed). */
@@ -144,30 +144,18 @@ function DraftRssTab({
     : customSource
       ? { provider: "custom" as const, providerEntryRef: undefined }
       : undefined;
+  const feedLocators = customFeedLocators(host.draft.rss_sources);
   return (
     <>
-      <div className="rss-draft-toolbar">
-        <p className="rss-draft-hint text-caption">
-          {t("rss.draftHint")}
-        </p>
-        {customFeedLocators(host.draft.rss_sources).map((locator, index) => (
-          <FeedSiteNote key={index} url={locator} />
-        ))}
-      </div>
-      {/* The pre-subscription's only RSS workspace: subgroups → seeds → torrent file tree.
-          The server composes exact snapshot facts with the parser/evaluator/renderer evaluation
-          into one read model, and the frontend no longer renders a "seed list" and a "preview
-          result" side by side. */}
+      {feedLocators.length > 0 && (
+        <div className="rss-draft-toolbar">
+          {feedLocators.map((locator, index) => (
+            <FeedSiteNote key={index} url={locator} />
+          ))}
+        </div>
+      )}
       {customSource && !customSource.fetch && (
         <p role="status" className="rss-draft-hint text-caption">{t("rss.customBenchSaveFirst")}</p>
-      )}
-      {host.subgroupDiscovery && (
-        <DraftSubgroupRefresh
-          provider={host.subgroupDiscovery.provider}
-          providerEntryRef={host.subgroupDiscovery.providerEntryRef}
-          onDiscovered={host.onDiscovered}
-          showHint={false}
-        />
       )}
       {bench && (
         <RssWorkspace
@@ -183,6 +171,16 @@ function DraftRssTab({
           autoLoad={active}
           onDraftChange={host.onDraftChange}
           onViewRead={onViewRead}
+          toolbarStart={
+            host.subgroupDiscovery ? (
+              <DraftSubgroupRefresh
+                provider={host.subgroupDiscovery.provider}
+                providerEntryRef={host.subgroupDiscovery.providerEntryRef}
+                onDiscovered={host.onDiscovered}
+                showHint={false}
+              />
+            ) : undefined
+          }
         />
       )}
     </>
@@ -220,7 +218,7 @@ function PendingRssBench({
   providerEntryRef?: string;
   rulesPreviewSections?: RulesSections;
   metadataPreview?: AnimeMetadataPreview;
-  onExitRulesPreview: () => void;
+  onExitRulesPreview?: () => void;
   onViewRead?: (view: RSSListView) => void;
   active?: boolean;
 }) {
@@ -269,7 +267,7 @@ function PendingRssBench({
           <p role="status" className="rss-notice-text text-caption">
             {metadataPreview ? t("rss.pendingBenchPreviewEdits") : t("rss.pendingBenchPreview")}
           </p>
-          {rulesPreviewSections && (
+          {rulesPreviewSections && onExitRulesPreview && (
             <Button size="sm" variant="ghost" onClick={onExitRulesPreview}>
               {t("rss.exitPreview")}
             </Button>
@@ -307,7 +305,7 @@ function OwnerRssTab({
   active?: boolean;
   rulesPreviewSections?: RulesSections;
   metadataPreview?: AnimeMetadataPreview;
-  onExitRulesPreview: () => void;
+  onExitRulesPreview?: () => void;
   onViewRead?: (view: RSSListView) => void;
 }) {
   const { animeID, workspace, capability, onChanged } = host;
@@ -339,7 +337,7 @@ function OwnerRssTab({
   // The owner read model's identity is decided by the server's configuration identity:
   // subscription version + rules version. Actions (refresh/retry/release/download) re-read by
   // invalidating this read model, never by the frontend mutating the tree itself.
-  const viewQuery = useQuery({
+  const viewQuery = useQuery<RSSListView>({
     queryKey: rssListKeys.ownerView(
       animeID,
       workspace.subscription.version,
@@ -348,6 +346,7 @@ function OwnerRssTab({
     ),
     retry: false,
     enabled: active,
+    placeholderData: (previous) => previous,
     queryFn: async ({ signal }): Promise<RSSListView> => {
       const view = await readAnimeRSSListView(
         previewMode
@@ -551,28 +550,30 @@ function OwnerRssTab({
         size="sm"
         className="tw:text-muted-foreground"
         checked={showFiltered}
-        disabled={previewDisabled}
-        title={disabledReason}
         onCheckedChange={setShowFiltered}
       >
         {t("rss.showFiltered")}
       </Checkbox>
-      {capability.can("rss.refresh") && (
-        <Button
-          size="sm"
-          disabled={refreshBusy || previewDisabled || notStarted}
-          title={workDisabledReason}
-          onClick={() => void handleRefresh()}
-        >
-          <RefreshCw className={refreshBusy ? "chain-refresh-icon chain-refresh-icon-spin" : "chain-refresh-icon"} />
-          {refreshBusy ? t("act.refreshing") : t("rss.refresh")}
-        </Button>
-      )}
-      {capability.can("targets.scan") && (
-        <Button size="sm" disabled={previewDisabled || notStarted} title={workDisabledReason} onClick={() => setFilesOpen(true)}>
-          <ScanSearch className="chain-refresh-icon" />
-          {t("rss.scan")}
-        </Button>
+      {(capability.can("rss.refresh") || capability.can("targets.scan")) && (
+        <div className="tw:ml-auto tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          {capability.can("rss.refresh") && (
+            <Button
+              size="sm"
+              disabled={refreshBusy || previewDisabled || notStarted}
+              title={workDisabledReason}
+              onClick={() => void handleRefresh()}
+            >
+              <RefreshCw className={refreshBusy ? "chain-refresh-icon chain-refresh-icon-spin" : "chain-refresh-icon"} />
+              {refreshBusy ? t("act.refreshing") : t("rss.refresh")}
+            </Button>
+          )}
+          {capability.can("targets.scan") && (
+            <Button size="sm" disabled={previewDisabled || notStarted} title={workDisabledReason} onClick={() => setFilesOpen(true)}>
+              <ScanSearch className="chain-refresh-icon" />
+              {t("rss.scan")}
+            </Button>
+          )}
+        </div>
       )}
     </>
   );
@@ -595,7 +596,7 @@ function OwnerRssTab({
             {previewDisabledReason()}
           </p>
           {/* Exiting only drops the rules preview; unsaved metadata stops being previewed only after being saved or discarded. */}
-          {rulesPreviewMode && (
+          {rulesPreviewMode && onExitRulesPreview && (
             <Button size="sm" variant="ghost" onClick={onExitRulesPreview}>
               {t("rss.exitPreview")}
             </Button>
@@ -609,14 +610,6 @@ function OwnerRssTab({
         <div className="rss-notice">
           <p role="status" className="rss-notice-text text-caption">
             {t("rss.pendingDisabled")}
-          </p>
-        </div>
-      )}
-      {!previewMode && capability.readOnly && (
-        <div className="rss-notice">
-          <p className="rss-notice-text text-caption">
-            {t("rss.endedNotice")}
-            <HelpTip label={t("rss.help.endedLabel")} className="tw:ml-1 tw:align-middle">{t("rss.help.ended")}</HelpTip>
           </p>
         </div>
       )}

@@ -77,7 +77,7 @@ export const enRssCopy = {
   groupSummaryNotRead: "{selected} · Offset {offset}",
   emptyGroup: "No torrents in this group yet",
   emptyNotSelected: "Torrents of unselected groups are not read, and the subscription will not download them. Set the group to Auto or Always on the \"Groups\" tab, then preview again.",
-  emptyNoGroups: "No groups are available in the current settings. Refresh groups on the \"Groups\" tab first.",
+  emptyNoGroups: "No groups loaded yet. Click \"Refresh Groups\" to fetch groups and preview torrents.",
   emptyOwnerGroup: "No torrents fetched yet. Try refreshing the RSS feed.",
   emptyNoSources: "This subscription has no RSS feed yet. Wait for group discovery, or add a custom RSS feed.",
   manifest: "Files: {n}",

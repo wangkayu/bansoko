@@ -14,6 +14,7 @@ import { subgroupsChangeCount, subgroupsEditFromWorkspace, valuesEqual, type Sub
 import { SelectionOverrideFields, type ServerSelectionFact } from "../anime-forms/SourcesFields";
 import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
 import { StateBlock, Button, ConflictBlock } from "../../ui";
+import { Popconfirm } from "../../ui/base";
 import type { AnimeTabHost, DraftTabHost, OwnerTabHost } from "./host";
 import { useOwnerEdit } from "./useOwnerEdit";
 import { useSubgroupsSelectionPreview } from "./useSubgroupsSelectionPreview";
@@ -104,18 +105,6 @@ function DraftSubgroupsTab({ host }: { host: DraftTabHost }) {
   );
   return (
     <div className="subgroups-stack">
-      {/* Provider entries: the group list can be refreshed proactively even unsubscribed (a
-          read-only discovery, the snapshot stays on the server, no source is created); custom has
-          no provider entry to discover and shows nothing. Discovered groups display as observed
-          rows, never written into entries; seed viewing belongs to the RSS preview tab and is not
-          duplicated here. */}
-      {host.subgroupDiscovery && (
-        <DraftSubgroupRefresh
-          provider={host.subgroupDiscovery.provider}
-          providerEntryRef={host.subgroupDiscovery.providerEntryRef}
-          onDiscovered={host.onDiscovered}
-        />
-      )}
       <SelectionOverrideFields
         value={draft.subgroups}
         onChange={(subgroups) => onDraftChange({ ...draft, subgroups })}
@@ -125,6 +114,15 @@ function DraftSubgroupsTab({ host }: { host: DraftTabHost }) {
         selectionPending={selection.pending}
         selectionError={selection.error}
         observed={host.observedGroups}
+        headerAction={
+          host.subgroupDiscovery ? (
+            <DraftSubgroupRefresh
+              provider={host.subgroupDiscovery.provider}
+              providerEntryRef={host.subgroupDiscovery.providerEntryRef}
+              onDiscovered={host.onDiscovered}
+            />
+          ) : undefined
+        }
       />
     </div>
   );
@@ -138,6 +136,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   const { edit, setEdit, baseline, markSaved } = useOwnerEdit<SubgroupsEdit>(saved, valuesEqual);
   const [busy, setBusy] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
   // Pending GroupActions collected from policy switches since last load.
@@ -235,6 +234,40 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   }
 
   if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.subgroups.reading")} />;
+  const refreshButton = (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={busy || discovering}
+      onClick={() => {
+        if (count > 0) setConfirmRefreshOpen(true);
+        else void discover();
+      }}
+    >
+      {discovering ? t("act.refreshing") : t("config.discovery.refresh")}
+    </Button>
+  );
+  const ownerHeaderAction =
+    workspace.subscription.origin !== "custom"
+      ? count > 0
+        ? (
+            <Popconfirm
+              open={confirmRefreshOpen}
+              onOpenChange={setConfirmRefreshOpen}
+              title={t("tabs.subgroups.refreshConfirmTitle")}
+              description={t("tabs.subgroups.refreshConfirmBody", { n: count })}
+              confirmLabel={t("tabs.subgroups.refreshConfirm")}
+              danger
+              confirmLoading={discovering}
+              onConfirm={() => {
+                setConfirmRefreshOpen(false);
+                void discover();
+              }}
+              trigger={refreshButton}
+            />
+          )
+        : refreshButton
+      : undefined;
   return (
     <div className="subgroups-stack">
       {conflict !== undefined && (
@@ -249,6 +282,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         selectionPending={unsaved && selection.pending}
         selectionError={unsaved ? selection.error : undefined}
         fixedGroupName={workspace.rss_sources[0]?.group_name}
+        headerAction={ownerHeaderAction}
         onGroupAction={(action) =>
           setPendingActions((current) => [
             // Latest switch for the same group wins; order across groups is preserved.
@@ -259,21 +293,6 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
           ])
         }
       />
-      {workspace.subscription.origin !== "custom" && (
-        <div className="subgroups-discover">
-          {/* Discovering subgroups is a configuration action, not automatic scheduling: stopped
-              is allowed too (the one-shot task case); the backend's DiscoverAnimeSubgroups admits
-              both active and stopped. */}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy || discovering}
-            onClick={() => void discover()}
-          >
-            {discovering ? t("act.refreshing") : t("config.discovery.refresh")}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

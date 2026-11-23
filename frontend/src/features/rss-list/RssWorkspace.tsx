@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "../../ui/toast";
 import {
   ApiError,
@@ -12,7 +12,7 @@ import {
   type RSSListView,
 } from "../../lib/api/client";
 import { StateBlock, Button, Field, Input } from "../../ui";
-import { Dialog, HelpTip } from "../../ui/base";
+import { Checkbox, Dialog, HelpTip } from "../../ui/base";
 import { RssListViewPanel } from "./RssListViewPanel";
 import { draftWorkspaceModel, matchDraftSourceIndex, type DraftExpandState } from "./draftModel";
 import { reasonLabel } from "../../lib/i18n/reasons";
@@ -36,6 +36,7 @@ export function RssWorkspace({
   onDraftChange,
   onSaveGroupOffset,
   help,
+  toolbarStart,
 }: {
   /** A custom source (a draft or a not-yet-started subscription) has no provider entry; the snapshot is fetched via customSource. */
   provider: "anibt" | "mikan" | "custom";
@@ -63,6 +64,8 @@ export function RssWorkspace({
   onSaveGroupOffset?: (group: RSSListGroup, offset: number) => Promise<void>;
   /** The toolbar HelpTip's content; defaults to the draft's release note. */
   help?: string;
+  /** Optional leading action merged into the single toolbar row (e.g. "Refresh subgroups" in draft mode). */
+  toolbarStart?: ReactNode;
 }) {
   const workspace = useRssListWorkspace({
     provider,
@@ -259,16 +262,27 @@ export function RssWorkspace({
     }
   }
 
+  const hasGroups = !workspace.view || workspace.view.groups.length > 0;
+
   return (
     <section aria-label={t("rss.listAria")} className="seed-preview">
-      <div className="rss-draft-toolbar">
-        <HelpTip label={t("rss.workspaceHelpLabel")}>{help ?? t("rss.workspaceHint")}</HelpTip>
-        <div className="rss-draft-actions">
-          <Button size="sm" disabled={!enabled || workspace.pending} onClick={() => void workspace.preview()}>
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          <Checkbox
+            size="sm"
+            className="tw:text-muted-foreground"
+            checked={showFiltered}
+            onCheckedChange={setShowFiltered}
+            disabled={!hasGroups}
+          >
+            {t("rss.showFiltered")}
+          </Checkbox>
+          <HelpTip label={t("rss.workspaceHelpLabel")}>{help ?? `${t("rss.draftHint")} ${t("rss.workspaceHint")}`}</HelpTip>
+        </div>
+        <div className="tw:ml-auto tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          {toolbarStart}
+          <Button size="sm" disabled={!enabled || workspace.pending || !hasGroups} onClick={() => void workspace.preview()}>
             {workspace.pending ? t("rss.previewing") : t("rss.preview")}
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setShowFiltered((prev) => !prev)}>
-            {showFiltered ? t("rss.hideFiltered") : t("rss.showFiltered")}
           </Button>
         </div>
       </div>

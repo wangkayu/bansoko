@@ -74,17 +74,12 @@ export function AnimeTabs({
   useEffect(() => {
     if (matchRequest) setTab("metadata");
   }, [matchRequest]);
-  // Rules preview (owner): triggered by the rules tab, the RSS area switches to preview mode.
-  // The preview's input is the **unsaved rules sections**; the actual owner_draft read model is
-  // one side-effect-free read by the RSS tab (`readAnimeRSSListView` owner_draft), with no second
-  // rendering surface.
-  const [rulesPreviewSections, setRulesPreviewSections] = useState<RulesSections>();
+  // Owner mode's unsaved rules feed directly into the RSS tab's automatic owner_draft preview
+  // (RssTab only queries when active, so no debounce timer is needed and switching tabs never races).
+  const [rulesPreview, setRulesPreview] = useState<RulesSections>();
+
   const saveParts = useSaveParts(SAVE_ORDER);
 
-  const exitRulesPreview = useCallback(() => setRulesPreviewSections(undefined), []);
-  // Owner mode's unsaved metadata: the metadata tab reports the complete value and the RSS tab
-  // previews against it (owner_draft) until saved or discarded. The save model is unchanged; this
-  // only hands the value over after debouncing.
   const [metadataPreviewLive, setMetadataPreviewLive] = useState<AnimeMetadataPreview>();
   const [metadataPreview, setMetadataPreview] = useState<AnimeMetadataPreview>();
   useEffect(() => {
@@ -114,9 +109,6 @@ export function AnimeTabs({
     const keys = TAB_PARTS[key];
     return keys ? saveParts.count(keys) : 0;
   };
-  const handleRulesContentChange = useCallback(() => {
-    if (host.mode === "owner") setRulesPreviewSections(undefined);
-  }, [host.mode]);
   useEffect(() => {
     onTabChange?.(tab);
   }, [tab, onTabChange]);
@@ -125,17 +117,9 @@ export function AnimeTabs({
     onDirtyChange?.(anyDirty);
   }, [anyDirty, onDirtyChange]);
 
-  // Leaving the RSS tab exits preview mode (a preview holds only while viewed).
   const handleTabChange = useCallback((next: string) => {
-    if (next !== "rss") setRulesPreviewSections(undefined);
     setTab(next);
   }, []);
-
-  function handleRulesPreview(sections: RulesSections) {
-    if (host.mode !== "owner") return;
-    setRulesPreviewSections(sections);
-    setTab("rss");
-  }
 
   const tabLabel = (key: string, label: string) =>
     tabCount(key) > 0 ? (
@@ -150,7 +134,7 @@ export function AnimeTabs({
     { key: "metadata", label: tabLabel("metadata", t("tabs.names.metadata")) },
     { key: "subgroups", label: tabLabel("subgroups", t("tabs.names.subgroups")) },
     { key: "rules", label: tabLabel("rules", t("tabs.names.rules")) },
-    { key: "rss", label: tabLabel("rss", host.mode === "draft" ? t("tabs.names.rssPreview") : t("tabs.names.rss")) },
+    { key: "rss", label: tabLabel("rss", t("tabs.names.rss")) },
   ];
   // The single decision point of read-only gating: in owner mode the capability decides whether
   // this workspace is read-only (the retired lifecycle). A draft has no lifecycle owner and is
@@ -203,18 +187,15 @@ export function AnimeTabs({
             <RulesTab
               host={host}
               readOnly={readOnly}
-              onContentChange={handleRulesContentChange}
-              onSaved={exitRulesPreview}
               active={tab === "rules"}
-              onPreview={host.mode === "owner" && host.capability.can("rules.preview") ? handleRulesPreview : undefined}
+              onPreviewChange={host.mode === "owner" && host.capability.can("rules.preview") ? setRulesPreview : undefined}
             />
           </TabsPanel>
           <TabsPanel value="rss" keepMounted data-state={tab === "rss" ? "active" : "inactive"}>
             <RssTab
               host={host}
-              rulesPreviewSections={rulesPreviewSections}
+              rulesPreviewSections={host.mode === "owner" ? rulesPreview : undefined}
               metadataPreview={host.mode === "owner" ? metadataPreview : undefined}
-              onExitRulesPreview={exitRulesPreview}
               active={tab === "rss"}
               onViewRead={host.mode === "draft" ? handleViewRead : undefined}
             />

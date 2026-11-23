@@ -74,7 +74,7 @@ export const rssCopy = {
   groupSummaryNotRead: "{selected} · 偏移 {offset}",
   emptyGroup: "该字幕组当前没有种子",
   emptyNotSelected: "未选字幕组不读取种子，订阅后也不会下载。到「字幕组」页签改为自动或必选后再预览。",
-  emptyNoGroups: "当前配置还没有可用的字幕组，请先到「字幕组」页签刷新字幕组",
+  emptyNoGroups: "尚未获取字幕组，点击「刷新字幕组」即可加载可预览的字幕组与种子",
   emptyOwnerGroup: "当前没有已抓取的种子，可重试刷新 RSS 源",
   emptyNoSources: "该订阅还没有 RSS 源，请等待字幕组发现，或配置自定义 RSS 源",
   manifest: "共 {n} 个文件",

@@ -8,7 +8,7 @@ import { useAuthedImage } from "../../lib/useAuthedImage";
 import { matchTitleChoice, type MatchTitleOffer } from "../../lib/metadata/preferredTitle";
 import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { SegmentedControl, Button, Field, Input } from "../../ui";
-import { Checkbox, Dialog, Select, type SelectOption } from "../../ui/base";
+import { Checkbox, Dialog, Popconfirm, Select, type SelectOption } from "../../ui/base";
 import { MetadataEpisodeDialog, type MetadataEpisodeBinding } from "./MetadataEpisodeDialog";
 
 // The metadata binding fact rows: the resting state is only "linked ID with an external link /
@@ -52,6 +52,7 @@ export function MetadataFields({
   onMatchTitle,
   onMatchCandidate,
   titleOffer,
+  onInvalidChange,
 }: {
   value: AnimeMetadataDraft;
   /**
@@ -117,8 +118,23 @@ export function MetadataFields({
    * 标题作为标题候选显示，不必等下一次服务端读取。
    */
   onMatchCandidate?: (candidate: MetadataCandidate) => void;
+  /** Reports whether any direct-edit numeric input currently holds unparseable text. */
+  onInvalidChange?: (invalid: boolean) => void;
 }) {
   const [episodeBinding, setEpisodeBinding] = useState<MetadataEpisodeBinding>();
+  const [, setInvalidFields] = useState<{ season: boolean; total: boolean; year: boolean }>({
+    season: false,
+    total: false,
+    year: false,
+  });
+  function setFieldInvalid(key: "season" | "total" | "year", invalid: boolean) {
+    setInvalidFields((prev) => {
+      if (prev[key] === invalid) return prev;
+      const next = { ...prev, [key]: invalid };
+      onInvalidChange?.(next.season || next.total || next.year);
+      return next;
+    });
+  }
   const { bgm, tmdb } = value;
   const season = value.season ?? null;
   // The kind the server resolves with: the stored kind, else the bound TMDB kind it backfills, else tv.
@@ -158,6 +174,15 @@ export function MetadataFields({
             ? { workId: value.tmdb.work_id, mediaKind: value.tmdb.media_kind, season: value.tmdb.season }
             : undefined
         }
+        confirmClear={
+          directEdit && (value.season != null || value.year != null || value.total_episodes != null)
+            ? {
+                title: t("forms.clearTmdbConfirmTitle"),
+                description: t("forms.clearTmdbConfirmBody"),
+                confirmLabel: t("forms.clearTmdbConfirm"),
+              }
+            : undefined
+        }
         onClear={() =>
           changeTMDB({ ...value, tmdb: null, season: null, year: null, total_episodes: null }, value.tmdb?.media_kind)
         }
@@ -166,68 +191,97 @@ export function MetadataFields({
           provider: "tmdb", workId: tmdb.work_id, season: tmdb.season, title,
         }) : undefined}
       />
-      {onSaveMediaKind && directEdit && (
-        <DirectMediaKindRow
-          idPrefix={idPrefix}
-          mediaKind={resolvedKind}
-          disabled={busy}
-          onChange={(next) => void onSaveMediaKind(next)}
-        />
-      )}
-      {onSaveMediaKind && !directEdit && (
-        <MediaKindRow
-          idPrefix={idPrefix}
-          mediaKind={resolvedKind}
-          busy={busy}
-          onSaveMediaKind={onSaveMediaKind}
-        />
-      )}
-      {showSeason && (readOnly || directEdit) && (
-        <DirectSeasonRow
-          idPrefix={idPrefix}
-          season={season}
-          mediaKind={resolvedKind}
-          readOnly={readOnly}
-          disabled={busy}
-          onChange={(next) => onChange({ ...value, season: next })}
-        />
-      )}
-      {showSeason && !readOnly && !directEdit && (
-        <SeasonRow
-          idPrefix={idPrefix}
-          season={season}
-          mediaKind={resolvedKind}
-          busy={busy}
-          onSaveSeason={async (next) => {
-            onChange({ ...value, season: next });
-            return true;
-          }}
-        />
-      )}
-      {showYear && (
-        <YearRow
-          idPrefix={idPrefix}
-          year={value.year ?? null}
-          readOnly={readOnly}
-          busy={busy}
-          onChange={(year) => onChange({ ...value, year })}
-        />
-      )}
-      {onSaveTotalEpisodes && directEdit && (
-        <DirectTotalEpisodesRow
-          idPrefix={idPrefix}
-          totalEpisodes={value.total_episodes ?? null}
-          disabled={busy}
-          onChange={(total) => void onSaveTotalEpisodes(total)}
-        />
-      )}
-      {onSaveTotalEpisodes && !directEdit && (
-        <TotalEpisodesRow
-          idPrefix={idPrefix}
-          totalEpisodes={value.total_episodes ?? null}
-          busy={busy}
-          onSaveTotalEpisodes={onSaveTotalEpisodes}
-        />
+      {directEdit ? (
+        <>
+          {onSaveMediaKind && (
+            <DirectMediaKindRow
+              idPrefix={idPrefix}
+              mediaKind={resolvedKind}
+              disabled={busy}
+              onChange={(next) => void onSaveMediaKind(next)}
+            />
+          )}
+          {showSeason && (
+            <DirectSeasonRow
+              idPrefix={idPrefix}
+              season={season}
+              mediaKind={resolvedKind}
+              readOnly={readOnly}
+              disabled={busy}
+              onChange={(next) => onChange({ ...value, season: next })}
+              onInvalidChange={(invalid) => setFieldInvalid("season", invalid)}
+            />
+          )}
+          {showYear && (
+            <YearRow
+              idPrefix={idPrefix}
+              year={value.year ?? null}
+              readOnly={readOnly}
+              busy={busy}
+              onChange={(year) => onChange({ ...value, year })}
+              onInvalidChange={(invalid) => setFieldInvalid("year", invalid)}
+            />
+          )}
+          {onSaveTotalEpisodes && (
+            <DirectTotalEpisodesRow
+              idPrefix={idPrefix}
+              totalEpisodes={value.total_episodes ?? null}
+              disabled={busy}
+              onChange={(total) => void onSaveTotalEpisodes(total)}
+              onInvalidChange={(invalid) => setFieldInvalid("total", invalid)}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {onSaveMediaKind && (
+            <MediaKindRow
+              idPrefix={idPrefix}
+              mediaKind={resolvedKind}
+              busy={busy}
+              onSaveMediaKind={onSaveMediaKind}
+            />
+          )}
+          {showSeason && readOnly && (
+            <DirectSeasonRow
+              idPrefix={idPrefix}
+              season={season}
+              mediaKind={resolvedKind}
+              readOnly={readOnly}
+              disabled={busy}
+              onChange={(next) => onChange({ ...value, season: next })}
+            />
+          )}
+          {showSeason && !readOnly && (
+            <SeasonRow
+              idPrefix={idPrefix}
+              season={season}
+              mediaKind={resolvedKind}
+              busy={busy}
+              onSaveSeason={async (next) => {
+                onChange({ ...value, season: next });
+                return true;
+              }}
+            />
+          )}
+          {showYear && (
+            <YearRow
+              idPrefix={idPrefix}
+              year={value.year ?? null}
+              readOnly={readOnly}
+              busy={busy}
+              onChange={(year) => onChange({ ...value, year })}
+            />
+          )}
+          {onSaveTotalEpisodes && (
+            <TotalEpisodesRow
+              idPrefix={idPrefix}
+              totalEpisodes={value.total_episodes ?? null}
+              busy={busy}
+              onSaveTotalEpisodes={onSaveTotalEpisodes}
+            />
+          )}
+        </>
       )}
       {episodeBinding && (
         <MetadataEpisodeDialog binding={episodeBinding} loader={episodeLoader} onClose={() => setEpisodeBinding(undefined)} />
@@ -303,6 +357,7 @@ function MetadataBindingRow({
   label,
   selected,
   readOnly = false,
+  confirmClear,
   onClear,
   onMatch,
   onBrowse,
@@ -313,11 +368,27 @@ function MetadataBindingRow({
   selected?: SelectedMetadata;
   /** A read-only workspace can browse but cannot change bindings. */
   readOnly?: boolean;
+  confirmClear?: { title: string; description: string; confirmLabel: string };
   onClear: () => void;
   onMatch?: () => void;
   onBrowse?: () => void;
 }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const providerName = provider === "bgm" ? t("forms.providerBangumi") : t("forms.providerTmdb");
+  const clearButton = (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={() => {
+        if (confirmClear) setConfirmOpen(true);
+        else onClear();
+      }}
+      aria-label={t("forms.clearAria", { label })}
+    >
+      <Eraser className="metadata-icon" />
+      {t("forms.clear")}
+    </Button>
+  );
   return (
     <section className="metadata-card" aria-labelledby={`${idPrefix}-label`}>
       <div className="metadata-header">
@@ -357,10 +428,23 @@ function MetadataBindingRow({
             </Button>
           )}
           {!readOnly && selected && (
-            <Button size="sm" variant="ghost" onClick={onClear} aria-label={t("forms.clearAria", { label })}>
-              <Eraser className="metadata-icon" />
-              {t("forms.clear")}
-            </Button>
+            confirmClear ? (
+              <Popconfirm
+                open={confirmOpen}
+                onOpenChange={setConfirmOpen}
+                title={confirmClear.title}
+                description={confirmClear.description}
+                confirmLabel={confirmClear.confirmLabel}
+                danger
+                onConfirm={() => {
+                  setConfirmOpen(false);
+                  onClear();
+                }}
+                trigger={clearButton}
+              />
+            ) : (
+              clearButton
+            )
           )}
         </div>
       </div>
@@ -723,6 +807,7 @@ function DirectSeasonRow({
   readOnly = false,
   disabled,
   onChange,
+  onInvalidChange,
 }: {
   idPrefix: string;
   /** The current season; null = not set. */
@@ -731,6 +816,7 @@ function DirectSeasonRow({
   readOnly?: boolean;
   disabled: boolean;
   onChange: (season: number | null) => void;
+  onInvalidChange?: (invalid: boolean) => void;
 }) {
   const [pendingText, setPendingText] = useState<string>();
   const [error, setError] = useState<string>();
@@ -742,16 +828,20 @@ function DirectSeasonRow({
     const trimmed = next.trim();
     if (trimmed === "") {
       setPendingText(undefined);
+      onInvalidChange?.(false);
       onChange(null);
       return;
     }
     const parsed = Number(trimmed);
     if (/^\d+$/.test(trimmed) && validSeason(parsed)) {
       setPendingText(undefined);
+      onInvalidChange?.(false);
       onChange(parsed);
       return;
     }
     setPendingText(next);
+    setError(t("forms.seasonInvalid"));
+    onInvalidChange?.(true);
   }
 
   return (
@@ -801,11 +891,13 @@ function DirectTotalEpisodesRow({
   totalEpisodes,
   disabled,
   onChange,
+  onInvalidChange,
 }: {
   idPrefix: string;
   totalEpisodes: number | null;
   disabled: boolean;
   onChange: (total: number | null) => void;
+  onInvalidChange?: (invalid: boolean) => void;
 }) {
   const [pendingText, setPendingText] = useState<string>();
   const [error, setError] = useState<string>();
@@ -818,15 +910,19 @@ function DirectTotalEpisodesRow({
     const trimmed = next.trim();
     if (trimmed === "") {
       setPendingText(undefined);
+      onInvalidChange?.(false);
       onChange(null);
       return;
     }
     if (/^\d+$/.test(trimmed)) {
       setPendingText(undefined);
+      onInvalidChange?.(false);
       onChange(Number(trimmed));
       return;
     }
     setPendingText(next);
+    setError(t("forms.totalInvalid"));
+    onInvalidChange?.(true);
   }
 
   return (
@@ -876,12 +972,14 @@ function YearRow({
   readOnly,
   busy,
   onChange,
+  onInvalidChange,
 }: {
   idPrefix: string;
   year: number | null;
   readOnly: boolean;
   busy: boolean;
   onChange: (year: number | null) => void;
+  onInvalidChange?: (invalid: boolean) => void;
 }) {
   // The invalid text being typed; undefined means the input mirrors the form value directly (including a match-filled year).
   const [pendingText, setPendingText] = useState<string>();
@@ -894,16 +992,19 @@ function YearRow({
     const trimmed = next.trim();
     if (trimmed === "") {
       setPendingText(undefined);
+      onInvalidChange?.(false);
       onChange(null);
       return;
     }
     const parsed = Number(trimmed);
     if (/^\d+$/.test(trimmed) && validYear(parsed)) {
       setPendingText(undefined);
+      onInvalidChange?.(false);
       onChange(parsed);
       return;
     }
     setPendingText(next);
+    onInvalidChange?.(true);
   }
 
   return (

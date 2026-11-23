@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { disambiguateGroupNames, groupLabel } from "../../lib/groupLabels";
 import type {
   GroupAction,
@@ -8,8 +8,8 @@ import type {
   SubgroupsSection,
   SubscriptionOrigin,
 } from "../../lib/api/client";
-import { SegmentedControl, Button, Field, Input } from "../../ui";
-import { Checkbox, Dialog, type SegmentedTone } from "../../ui/base";
+import { SegmentedControl, Button, Field, Input, StateBlock } from "../../ui";
+import { Dialog, type SegmentedTone } from "../../ui/base";
 import { selectionPolicy, type SelectionPolicy } from "../../lib/labels";
 import { t } from "../../lib/i18n";
 import { reasonView } from "../../lib/i18n/reasons";
@@ -115,6 +115,7 @@ export function SelectionOverrideFields({
   selectionPending = false,
   selectionError,
   observed,
+  headerAction,
 }: {
   value: SubgroupsSection;
   onChange: (next: SubgroupsSection) => void;
@@ -136,6 +137,8 @@ export function SelectionOverrideFields({
    * 该 entry，因此发现永远不会制造积分覆盖。
    */
   observed?: readonly ProviderGroupDiscoveryGroup[];
+  /** Right-aligned action in the top toolbar (e.g. "Refresh subgroups"). */
+  headerAction?: ReactNode;
 }) {
 
   const isCustom = origin !== "anibt" && origin !== "mikan";
@@ -205,7 +208,7 @@ export function SelectionOverrideFields({
 
   // max_rss accepts only integers 0-100; invalid input reports inline and leaves the original value untouched (never silently zeroed).
   const maxRssParsed = maxRssInput.trim() === "" ? Number.NaN : Number(maxRssInput);
-  const maxRssValid = Number.isInteger(maxRssParsed) && maxRssParsed >= 0 && maxRssParsed <= 100;
+  const maxRssValid = /^\d+$/.test(maxRssInput.trim()) && Number.isInteger(maxRssParsed) && maxRssParsed >= 0 && maxRssParsed <= 100;
 
   function saveMaxRss() {
     if (!maxRssValid) return;
@@ -258,11 +261,8 @@ export function SelectionOverrideFields({
     <section className="sources-section">
       {/* Only provider subgroups have subscription slots; custom is a single fixed source and shows no meaningless max_rss. */}
       {!isCustom && (
-        <div className="sources-header">
-          <div className="sources-actions">
-            <Button variant="secondary" onClick={openMaxRssDialog}>
-              {t("forms.sources.maxButton")}
-            </Button>
+        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:justify-between tw:gap-x-3 tw:gap-y-2">
+          <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-1">
             <span
               className={`sources-summary text-caption tw:transition-opacity${selectionPending ? " tw:opacity-60" : ""}`}
               aria-busy={selectionPending || undefined}
@@ -277,6 +277,12 @@ export function SelectionOverrideFields({
                 {selectionError}
               </span>
             )}
+          </div>
+          <div className="tw:flex tw:flex-none tw:flex-wrap tw:items-center tw:gap-2">
+            <Button size="sm" variant="secondary" onClick={openMaxRssDialog}>
+              {t("forms.sources.maxButton")}
+            </Button>
+            {headerAction}
           </div>
         </div>
       )}
@@ -293,9 +299,7 @@ export function SelectionOverrideFields({
           )}
         </p>
       ) : entries.length === 0 ? (
-        <p className="sources-empty text-caption">
-          {t("forms.sources.noGroups")}
-        </p>
+        <StateBlock kind="empty" title={t("forms.sources.noGroups")} />
       ) : (
         <div className="sources-policy-stack">
           {entries.length > 6 && (

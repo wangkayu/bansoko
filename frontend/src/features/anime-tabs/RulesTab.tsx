@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSavePart } from "../../lib/saveParts";
 import {
@@ -41,17 +41,17 @@ export function RulesTab({
   readOnly = false,
   onContentChange,
   onSaved,
-  onPreview,
+  onPreviewChange,
   active = true,
 }: {
   host: AnimeTabHost;
   /** A read-only workspace (a retired owner): every rules edit/save/preview entry is hidden. */
   readOnly?: boolean;
   onContentChange?: () => void;
-  /** Notifies the outer shell after a successful rules save (owner: leaves rules preview mode). */
+  /** Notifies the outer shell after a successful rules save. */
   onSaved?: () => void;
-  /** The owner-mode rules preview entry (on success the shell switches to the RSS tab's preview mode). */
-  onPreview?: (sections: RulesSections) => void;
+  /** Owner mode: reports unsaved rules sections so switching to the RSS tab automatically previews them (undefined when clean). */
+  onPreviewChange?: (sections: RulesSections | undefined) => void;
   active?: boolean;
 }) {
   if (host.mode === "draft") {
@@ -67,7 +67,7 @@ export function RulesTab({
         active={active}
         onContentChange={onContentChange}
         onSaved={onSaved}
-        onPreview={onPreview}
+        onPreviewChange={onPreviewChange}
       />
       <FileEffectPolicySection animeID={host.animeID} onChanged={host.onChanged} active={active} />
       <ReplacementPolicySection animeID={host.animeID} onChanged={host.onChanged} active={active} />
@@ -124,8 +124,41 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
 }
 
 // The read-only rules panel: a retired instance's rules sections are no longer editable (the
-// backend would 409 anyway). No mutation callback is consumed here, so the save row / preview
-// button simply do not exist.
+// backend would 409 anyway), but each section renders a concise summary of its historical values
+// so users can inspect what rules an ended anime used.
+function formatReadOnlySection(section: string, effective: OwnerTabHost["workspace"]["rules"]["effective"]): string | undefined {
+  if (section === "release_filter" || section === "release_rules") {
+    const { must_contain, not_in } = effective.release_filter;
+    const parts = [
+      must_contain ? `${t("settings.rules.titleMust")}: ${must_contain}` : "",
+      not_in ? `${t("settings.rules.titleNot")}: ${not_in}` : "",
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : t("tabs.rules.readOnlyEmpty");
+  }
+  if (section === "file_filter" || section === "file_rules") {
+    const { must_contain, not_in } = effective.file_filter;
+    const parts = [
+      must_contain ? `${t("settings.rules.fileMust")}: ${must_contain}` : "",
+      not_in ? `${t("settings.rules.fileNot")}: ${not_in}` : "",
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : t("tabs.rules.readOnlyEmpty");
+  }
+  if (section === "file_effect") {
+    const { operation, collision_policy } = effective.file_effect;
+    return `${t(`file.operation.${operation}`)} · ${t(`file.collision.${collision_policy}`)}`;
+  }
+  if (section === "parser") {
+    const patterns = effective.parser.episode_patterns;
+    return patterns.length > 0 ? patterns.join(" / ") : undefined;
+  }
+  if (section === "naming" || section === "naming_rules") {
+    const tvDir = effective.naming.tv.directory_template;
+    const tvFile = effective.naming.tv.video_filename_template;
+    return [tvDir, tvFile].filter(Boolean).join(" / ") || t("tabs.rules.readOnlyEmpty");
+  }
+  return undefined;
+}
+
 function ReadOnlyRulesPanel({ host, active }: { host: OwnerTabHost; active: boolean }) {
   return (
     <div className="metadata-stack">
@@ -135,15 +168,19 @@ function ReadOnlyRulesPanel({ host, active }: { host: OwnerTabHost; active: bool
         description={t("anime.rules.endedHint")}
       />
       <div role="group" className="sources-list" aria-label={t("anime.rules.endedAria")}>
-        {Object.keys(host.workspace.rules.sections).map((section) => (
-          <Fragment key={section}>
-            <div className="sources-row">
-              <span className="sources-name-text text-body">{tryT(`tabs.sectionName.${section}`) ?? t("maint.unknown")}</span>
-            </div>
-            {/* The read-only panel has no section body; the parser card follows the "parsing" row directly, matching the editable page's placement. */}
-            {section === "parser" && <ParserPolicySection animeID={host.animeID} readOnly active={active} />}
-          </Fragment>
-        ))}
+        {Object.keys(host.workspace.rules.sections).map((section) => {
+          const summary = formatReadOnlySection(section, host.workspace.rules.effective);
+          return (
+            <Fragment key={section}>
+              <div className="sources-row tw:flex-wrap tw:gap-y-1">
+                <span className="sources-name-text text-body">{tryT(`tabs.sectionName.${section}`) ?? t("maint.unknown")}</span>
+                {summary && <span className="tw:min-w-0 tw:text-xs tw:text-muted-foreground tw:wrap-anywhere">{summary}</span>}
+              </div>
+              {/* The parser card follows the "parsing" row directly, matching the editable page's placement. */}
+              {section === "parser" && <ParserPolicySection animeID={host.animeID} readOnly active={active} />}
+            </Fragment>
+          );
+        })}
       </div>
       <FileEffectPolicySection animeID={host.animeID} onChanged={host.onChanged} readOnly active={active} />
       <ReplacementPolicySection animeID={host.animeID} readOnly active={active} />
@@ -156,13 +193,13 @@ function OwnerRulesTab({
   active = true,
   onContentChange,
   onSaved,
-  onPreview,
+  onPreviewChange,
 }: {
   host: OwnerTabHost;
   active?: boolean;
   onContentChange?: () => void;
   onSaved?: () => void;
-  onPreview?: (sections: RulesSections) => void;
+  onPreviewChange?: (sections: RulesSections | undefined) => void;
 }) {
   const { animeID, workspace, onChanged } = host;
   const saved = useMemo(() => sectionsFromRules(workspace.rules), [workspace.rules]);
@@ -180,6 +217,12 @@ function OwnerRulesTab({
   const rulesVersion =
     localVersion && localVersion.base === workspace.rules.version ? localVersion.next : workspace.rules.version;
   const count = edit && baseline ? changeCount(baseline, edit) : 0;
+  // Unsaved rules feed directly into the RSS tab's automatic owner_draft preview (matching metadata preview).
+  const previewKey = count > 0 && edit ? JSON.stringify(edit) : "";
+  useEffect(() => {
+    onPreviewChange?.(previewKey ? (JSON.parse(previewKey) as RulesSections) : undefined);
+  }, [previewKey, onPreviewChange]);
+  useEffect(() => () => onPreviewChange?.(undefined), [onPreviewChange]);
 
   // The tag filter card: the title-parsing row acts on all seeds and always shows; the AniBT row
   // shows only when the anime has an AniBT source.
@@ -265,18 +308,20 @@ function OwnerRulesTab({
   const modified = modifiedRuleSections(edit, businessPreset.data, parserKind);
   return (
     <div className="metadata-stack">
-      <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
-        <p className="naming-muted text-caption tw:min-w-0">{t("tabs.rules.ownerHint")}</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={resetting}
-          disabled={busy || matchesDefaults}
-          title={matchesDefaults ? t("config.useDefaultsNone") : undefined}
-          onClick={() => void fillDefaults()}
-        >
-          {t("config.useDefaults")}
-        </Button>
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+        <p className="naming-muted text-caption tw:min-w-0 tw:flex-1">{t("tabs.rules.ownerHint")}</p>
+        <div className="tw:flex tw:flex-none tw:flex-wrap tw:items-center tw:gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={resetting}
+            disabled={busy || matchesDefaults}
+            title={matchesDefaults ? t("config.useDefaultsNone") : undefined}
+            onClick={() => void fillDefaults()}
+          >
+            {t("config.useDefaults")}
+          </Button>
+        </div>
       </div>
       {conflict !== undefined && (
         <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
@@ -315,13 +360,6 @@ function OwnerRulesTab({
           />
         )}
       />
-      {onPreview && (
-        <div className="save-row">
-          <Button variant="secondary" disabled={busy} onClick={() => onPreview(edit)}>
-            {t("tabs.rules.preview")}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

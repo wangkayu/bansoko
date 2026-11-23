@@ -8,6 +8,7 @@ import {
   type RSSListObservationRef,
 } from "../../lib/api/client";
 import { Button } from "../../ui";
+import { HelpTip } from "../../ui/base";
 import { t } from "../../lib/i18n";
 
 // Proactive subgroup fetching for an unsubscribed entry: only the "refresh subgroups" button
@@ -53,12 +54,7 @@ export function DraftSubgroupRefresh({
   }
 
   return (
-    <div className="draft-refresh">
-      {showHint && (
-        <p className="draft-refresh-text text-caption">
-          {t("anime.draftRefresh")}
-        </p>
-      )}
+    <span className="tw:inline-flex tw:items-center tw:gap-1.5">
       <Button size="sm" variant="secondary" disabled={discovering} onClick={() => void discover()}>
         {discovering ? (
           <LoaderCircle className="draft-refresh-icon" />
@@ -67,6 +63,11 @@ export function DraftSubgroupRefresh({
         )}
         {discovering ? t("act.refreshing") : t("config.discovery.refresh")}
       </Button>
-    </div>
+      {showHint && (
+        <HelpTip label={t("anime.draftRefresh")}>
+          {t("anime.draftRefresh")}
+        </HelpTip>
+      )}
+    </span>
   );
 }

@@ -1666,8 +1666,8 @@ describe("AnimeConfigDialog 草稿保存与 RSS 预览", () => {
 
     // After saving the RSS preview tab still opens (the download action is judged per seed row's
     // download_action; the dialog header no longer has a one-shot entry).
-    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rssPreview") }));
-    expect(screen.getByRole("tab", { name: t("tabs.names.rssPreview") })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rss") }));
+    expect(screen.getByRole("tab", { name: t("tabs.names.rss") })).toHaveAttribute("aria-selected", "true");
     await flushQuery();
     // Saved: the test bench fetches source snapshots from the saved preset revision and no longer asks to save first.
     expect(screen.queryByText(t("rss.customBenchSaveFirst"))).not.toBeInTheDocument();
@@ -1985,14 +1985,12 @@ describe("AnimeConfigDialog 头部摘要行", () => {
     expect(screen.queryByRole("button", { name: /关联/ })).not.toBeInTheDocument();
   });
 
-  it("draft 模式显示「未订阅」，无数据源格子显示「—」", async () => {
+  it("draft 模式在标题区显示「未订阅」胶囊，不再渲染无数据源的「—」占位摘要行", async () => {
     renderDraftDialog();
     await flushQuery();
 
-    const summary = screen.getByRole("status", { name: t("config.summary.aria") });
-    expect(within(summary).getByText(t("anime.state.draft"))).toBeInTheDocument();
-    // A draft judges no metadata on the info row; with no read model, seeds-collected/last-updated must show placeholders.
-    expect(within(summary).getAllByText("—")).toHaveLength(2);
+    expect(screen.getByText(t("anime.state.draft"))).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: t("config.summary.aria") })).not.toBeInTheDocument();
   });
 });
 
@@ -2037,7 +2035,7 @@ describe("AnimeConfigDialog retired 只读工作区", () => {
 
     // The read-only banner and the owner chain (the history facts) are visible.
     expect(screen.getByText(t("anime.ended.banner"))).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(t("rss.endedNotice")))).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(t("rss.endedNotice")))).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("rss.expandGroup", { name: "测试字幕组" }) })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "测试字幕组" }) }));
     fireEvent.click(screen.getByRole("button", { name: t("records.openFromRelease") }));

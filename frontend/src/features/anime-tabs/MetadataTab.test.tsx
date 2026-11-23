@@ -160,9 +160,10 @@ describe("候选自带的标题", () => {
     expect(texts.some((text) => text.includes("星际邮差艾拉"))).toBe(true);
     expect(texts.some((text) => text.includes("Stellar Postman Ella"))).toBe(true);
 
-    // Cancelling the edit, clearing the binding drops the batch again.
+    // Cancelling the edit, clearing the binding drops the batch again (confirmed via Popconfirm since season/total_episodes were populated).
     fireEvent.click(within(region).getByRole("button", { name: t("act.cancel") }));
     fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));
+    fireEvent.click(await screen.findByRole("button", { name: t("forms.clearTmdbConfirm") }));
     fireEvent.click(within(region).getByRole("button", { name: t("tabs.metadata.editTitleAria") }));
     expect(within(region).queryByRole("group")).not.toBeInTheDocument();
   });

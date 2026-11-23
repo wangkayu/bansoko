@@ -187,6 +187,7 @@ describe("SettingsRules 批次 4", () => {
     expect(screen.getByText(t("anibtTags.none"))).toBeInTheDocument();
     fireEvent.click(await editButtonFor(t("tagFilters.title")));
     const anibtRow = screen.getByRole("region", { name: t("anibtTags.title") });
+    fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.showCandidates") }));
     fireEvent.click(within(anibtRow).getByRole("button", { name: "CHS" }));
     // An added tag leaves the candidates; typing a duplicate by hand shows a hint.
     expect(within(anibtRow).queryByRole("button", { name: "CHS" })).not.toBeInTheDocument();

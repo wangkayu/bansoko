@@ -26,11 +26,12 @@ function entries() {
 }
 
 describe("TagRowEditor（添加型）", () => {
-  it("空行显示不按标签过滤；候选按「添加为」的角色添加，必须与排除分两行显示", () => {
+  it("空行显示不按标签过滤；展开候选后按「添加为」的角色添加，必须与排除分两行显示", () => {
     const onRow = vi.fn();
     render(<Harness initial={{ require: [], exclude: [] }} onRow={onRow} />);
     expect(screen.getByText(t("anibtTags.none"))).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: t("anibtTags.showCandidates") }));
     fireEvent.click(screen.getByRole("button", { name: "CHS" }));
     fireEvent.click(screen.getByRole("radio", { name: t("anibtTags.role.exclude") }));
     fireEvent.click(screen.getByRole("button", { name: "HEVC" }));
@@ -42,17 +43,17 @@ describe("TagRowEditor（添加型）", () => {
     expect(screen.queryByRole("button", { name: "HEVC" })).not.toBeInTheDocument();
   });
 
-  it("候选默认展开，可以收起再展开", () => {
+  it("候选默认收起，可以展开再收起", () => {
     render(<Harness initial={{ require: [], exclude: [] }} onRow={vi.fn()} />);
+    const expand = screen.getByRole("button", { name: t("anibtTags.showCandidates") });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "CHS" })).not.toBeInTheDocument();
+    fireEvent.click(expand);
     const collapse = screen.getByRole("button", { name: t("anibtTags.hideCandidates") });
     expect(collapse).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "CHS" })).toBeInTheDocument();
     fireEvent.click(collapse);
     expect(screen.queryByRole("button", { name: "CHS" })).not.toBeInTheDocument();
-    const expand = screen.getByRole("button", { name: t("anibtTags.showCandidates") });
-    expect(expand).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(expand);
-    expect(screen.getByRole("button", { name: "CHS" })).toBeInTheDocument();
   });
 
   it("已添加的标签可以切换角色和移除，同一标签不会同时在两个列表里", () => {
@@ -65,6 +66,7 @@ describe("TagRowEditor（添加型）", () => {
     expect(onRow).toHaveBeenLastCalledWith({ require: ["codec:HEVC"], exclude: ["language:CHS"] });
     fireEvent.click(screen.getByRole("button", { name: t("anibtTags.removeAria", { tag: tagFullLabel("codec:HEVC") }) }));
     expect(onRow).toHaveBeenLastCalledWith({ require: [], exclude: ["language:CHS"] });
+    fireEvent.click(screen.getByRole("button", { name: t("anibtTags.showCandidates") }));
     expect(screen.getByRole("button", { name: "HEVC" })).toBeInTheDocument();
   });
 
@@ -103,6 +105,7 @@ describe("TagRowEditor（添加型）", () => {
     render(<TagRowEditor vocabulary={vocabulary} value={{ require: ["resolution:1080p"], exclude: [] }} onChange={onChange} />);
     expect(screen.queryByRole("textbox", { name: t("anibtTags.addValue") })).not.toBeInTheDocument();
     // The vocabulary's fixed values are the candidates; the selected one is no longer offered.
+    fireEvent.click(screen.getByRole("button", { name: t("anibtTags.showCandidates") }));
     expect(screen.getByRole("button", { name: "2160p" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "1080p" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: t("anibtTags.role.exclude") }));

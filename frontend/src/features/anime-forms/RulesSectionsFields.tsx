@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { getNamingTemplateLibrary } from "../../lib/api/client";
 import { configKeys } from "../../lib/queryKeys";
@@ -223,36 +225,78 @@ export function RulesSectionsFields({
   );
 }
 
-// The compact section card: title + one-line hint + content. `modified`: this section differs
-// from the current default settings, shown as "modified" beside the title (a marking chip, Chip
-// neutral).
-export function SectionCard({ meta, modified = false, children }: { meta: SectionMeta; modified?: boolean; children: React.ReactNode }) {
+// The compact section card: title + one-line hint + collapsible content. `modified`: this section differs
+// from the current default settings, shown as "modified" beside the title (a marking chip, Chip neutral).
+export function SectionCard({
+  meta,
+  modified = false,
+  defaultOpen = true,
+  children,
+}: {
+  meta: SectionMeta;
+  modified?: boolean;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="rules-card">
       <div className="rules-card-header">
-        <div className="rules-mode-header">
-          <span className="rules-card-title text-body">{meta.title}</span>
-          {modified && <Chip title={t("config.modifiedTitle")}>{t("config.modified")}</Chip>}
-          <span className="rules-card-hint text-caption">
-            {meta.hint}
-            {meta.help && (
-              <HelpTip label={meta.help.label} className="tw:ml-1 tw:align-middle">
-                {meta.help.body}
-              </HelpTip>
-            )}
-          </span>
+        <div className="rules-mode-header tw:w-full tw:justify-between">
+          <div className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-1">
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((current) => !current)}
+              className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-md tw:text-left tw:transition-colors tw:hover:text-primary"
+            >
+              <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className={cn("tw:flex-none tw:text-muted-foreground tw:transition-transform tw:duration-150", !open && "tw:-rotate-90")}
+              />
+              <span className="rules-card-title text-body">{meta.title}</span>
+            </button>
+            {modified && <Chip title={t("config.modifiedTitle")}>{t("config.modified")}</Chip>}
+            <span className="rules-card-hint text-caption">
+              {meta.hint}
+              {meta.help && (
+                <HelpTip label={meta.help.label} className="tw:ml-1 tw:align-middle">
+                  {meta.help.body}
+                </HelpTip>
+              )}
+            </span>
+          </div>
         </div>
       </div>
-      <div className="rules-card-body">{children}</div>
+      {open && <div className="rules-card-body">{children}</div>}
     </section>
   );
 }
 
 function RegexFields({ value, onChange, mustLabel, notLabel }: { value: ReleaseFilterRules; onChange: (next: ReleaseFilterRules) => void; mustLabel: string; notLabel: string }) {
-  return <div className="rules-responsive">
-    <Field label={mustLabel}><Input value={value.must_contain} onChange={(e) => onChange({ ...value, must_contain: e.target.value })} /></Field>
-    <Field label={notLabel}><Input value={value.not_in} onChange={(e) => onChange({ ...value, not_in: e.target.value })} /></Field>
-  </div>;
+  const mustError = value.must_contain.trim() ? validRegex(value.must_contain) : null;
+  const notError = value.not_in.trim() ? validRegex(value.not_in) : null;
+  return (
+    <div className="rules-responsive">
+      <Field label={mustLabel}>
+        <Input
+          value={value.must_contain}
+          aria-invalid={mustError !== null ? true : undefined}
+          onChange={(e) => onChange({ ...value, must_contain: e.target.value })}
+        />
+        {mustError && <p role="alert" className="tw:m-0 tw:text-xs tw:text-destructive">{mustError}</p>}
+      </Field>
+      <Field label={notLabel}>
+        <Input
+          value={value.not_in}
+          aria-invalid={notError !== null ? true : undefined}
+          onChange={(e) => onChange({ ...value, not_in: e.target.value })}
+        />
+        {notError && <p role="alert" className="tw:m-0 tw:text-xs tw:text-destructive">{notError}</p>}
+      </Field>
+    </div>
+  );
 }
 
 function TagRow({

@@ -240,6 +240,7 @@ function MetadataTabView({
   matchProvider,
   onMatchProviderChange,
   onMatchCandidate,
+  onInvalidChange,
   blocked,
   busy = false,
 }: {
@@ -261,6 +262,7 @@ function MetadataTabView({
   onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
   /** A confirmed match hands its candidate to the caller, which offers the candidate's titles. */
   onMatchCandidate?: (candidate: MetadataCandidate) => void;
+  onInvalidChange?: (invalid: boolean) => void;
   blocked?: ReactNode;
   busy?: boolean;
 }) {
@@ -293,6 +295,7 @@ function MetadataTabView({
         matchProvider={readOnly ? undefined : matchProvider}
         onMatchProviderChange={readOnly ? undefined : onMatchProviderChange}
         onMatchCandidate={readOnly ? undefined : onMatchCandidate}
+        onInvalidChange={readOnly ? undefined : onInvalidChange}
       />
     </div>
   );
@@ -417,6 +420,7 @@ function OwnerMetadataTab({
   const { matched, recordMatch } = useMatchedTitleSuggestions();
   const source = usePreferredTitle(!readOnly && matchProvider !== undefined);
   const [busy, setBusy] = useState(false);
+  const [fieldsInvalid, setFieldsInvalid] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
   // Between a successful save and the re-read, the CAS version follows the server's response.
@@ -440,6 +444,10 @@ function OwnerMetadataTab({
   // title changed, and reports how many it scheduled.
   const save = useCallback(async () => {
     if (!edit || !baseline) return { ok: true as const };
+    if (fieldsInvalid) {
+      setError(t("tabs.metadata.fixInvalidFields"));
+      return { ok: false as const };
+    }
     setBusy(true);
     setError(undefined);
     setConflict(undefined);
@@ -463,7 +471,7 @@ function OwnerMetadataTab({
     } finally {
       setBusy(false);
     }
-  }, [animeID, baseline, edit, markSaved, metadataVersion, onChanged, workspace.metadata.version]);
+  }, [animeID, baseline, edit, fieldsInvalid, markSaved, metadataVersion, onChanged, workspace.metadata.version]);
 
   useSavePart("metadata", { count, label: t("tabs.names.metadata"), busy, save });
 
@@ -519,6 +527,10 @@ function OwnerMetadataTab({
       matchProvider={matchProvider}
       onMatchProviderChange={onMatchProviderChange}
       onMatchCandidate={recordMatch}
+      onInvalidChange={(invalid) => {
+        setFieldsInvalid(invalid);
+        if (!invalid) setError(undefined);
+      }}
       blocked={
         <>
           {conflict !== undefined && (
