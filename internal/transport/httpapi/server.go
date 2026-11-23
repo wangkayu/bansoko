@@ -12,6 +12,7 @@ import (
 	"time"
 
 	accessapplication "bansoko/internal/accesscontrol/application"
+	accessdomain "bansoko/internal/accesscontrol/domain"
 	"bansoko/internal/anime/animeconfig"
 	animedomain "bansoko/internal/anime/domain"
 	draftapplication "bansoko/internal/anime/draft/application"
@@ -530,8 +531,17 @@ func (s *Server) Handler() http.Handler {
 	root.Handle("/api/v1/", apiChain)
 	// The in-process MCP server is derived from the OpenAPI catalog (x-mcp) and
 	// replays every tool call against the same chain /api/v1/ serves, with the
-	// MCP caller's own bearer token. It owns no second execution path.
-	root.Handle("/api/v1/mcp", securityHeaders(s.withCommonMiddleware(mcp.Handler(apiChain))))
+	// MCP caller's own bearer token. It owns no second execution path. A caller
+	// holding the secrets scope keeps x-secret values in tool results (the same
+	// values REST would return to that bearer); everyone else gets the withheld
+	// form.
+	mcpHandler := mcp.Handler(apiChain)
+	root.Handle("/api/v1/mcp", securityHeaders(s.withCommonMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if account, ok := AccountFrom(r.Context()); ok && account.HasScope(accessdomain.ScopeSecrets) {
+			r = r.WithContext(mcp.WithSecretsScope(r.Context()))
+		}
+		mcpHandler.ServeHTTP(w, r)
+	}))))
 	root.Handle("/", frontendHandler(s.deps.FrontendDir))
 	return root
 }

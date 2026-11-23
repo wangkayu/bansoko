@@ -2142,11 +2142,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Admits a container-embedded self-update operation. The server re-resolves
-         *     the release through the deployment's configured update lane and verifies
-         *     that target_release_id and manifest_digest still identify the candidate.
-         *     Only a signed-in web session may admit an update: an API token (and so
-         *     MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes.
+        /** @description Admits a container-embedded self-update operation. The server
+         *     re-resolves the release through the deployment's configured update lane
+         *     and verifies that target_release_id and manifest_digest still identify
+         *     the candidate.
+         *     A bearer needs the admin scope (403 TOKEN_SCOPE_INSUFFICIENT otherwise).
          *      */
         post: operations["admitUpdate"];
         delete?: never;
@@ -2232,7 +2232,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Read the published reltitle channel and install a strictly newer build at the one parser path, then re-run the adoption chain and switch the running backend. The download is proven by size and digest, and the temporary file passes that same adoption chain before the live file is replaced. When the channel offers nothing newer, nothing is written and `message` carries the reason. A build that cannot be adopted leaves the previous backend running; the reason appears in `note` and `channel.error`. Only a signed-in web session may install: an API token (and so MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes. */
+        /** @description Read the published reltitle channel and install a strictly newer build at the one parser path, then re-run the adoption chain and switch the running backend. The download is proven by size and digest, and the temporary file passes that same adoption chain before the live file is replaced. When the channel offers nothing newer, nothing is written and `message` carries the reason. A build that cannot be adopted leaves the previous backend running; the reason appears in `note` and `channel.error`. A bearer needs the admin scope (403 TOKEN_SCOPE_INSUFFICIENT otherwise). */
         post: operations["updateTitleParser"];
         delete?: never;
         options?: never;
@@ -3689,10 +3689,10 @@ export interface components {
             other_sessions_revoked: boolean;
         };
         /**
-         * @description read: read-only operations (GET and read-only POST previews). write: operations that change state, including starting work. secrets: fields marked x-secret are returned as stored instead of the fixed placeholder "[secret]". Every token holds read.
+         * @description read: read-only operations (GET and read-only POST previews). write: operations that change state, including starting work. admin: irreversible high-risk operations (destructive deletes, the API token lifecycle, update admission). secrets: fields marked x-secret are returned as stored instead of the fixed placeholder "[secret]". Every token holds read.
          * @enum {string}
          */
-        ApiTokenScope: "read" | "write" | "secrets";
+        ApiTokenScope: "read" | "write" | "admin" | "secrets";
         ApiTokenScopes: components["schemas"]["ApiTokenScope"][];
         ApiTokenCreateInput: {
             name: string;
@@ -9438,6 +9438,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ScopeInsufficient"];
         };
     };
     readApiTokenRaw: {
@@ -13144,7 +13145,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            403: components["responses"]["ScopeInsufficient"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             503: components["responses"]["Unavailable"];
@@ -13259,7 +13260,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            403: components["responses"]["ScopeInsufficient"];
             502: components["responses"]["BadGateway"];
             503: components["responses"]["Unavailable"];
         };

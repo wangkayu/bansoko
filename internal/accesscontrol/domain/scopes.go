@@ -7,15 +7,18 @@ import (
 
 // Bearer scopes (SEC-033). Every OpenAPI operation declares the scope it needs
 // (`x-scope`); fields marked `x-secret` are returned as stored only to bearers
-// holding ScopeSecrets.
+// holding ScopeSecrets. ScopeAdmin gates irreversible high-risk operations
+// (destructive deletes, token lifecycle, update admission); it sits between
+// write and secrets and implies nothing by itself beyond those operations.
 const (
 	ScopeRead    = "read"
 	ScopeWrite   = "write"
+	ScopeAdmin   = "admin"
 	ScopeSecrets = "secrets"
 )
 
 // AllScopes is the canonical order of every scope; a web session holds all.
-var AllScopes = []string{ScopeRead, ScopeWrite, ScopeSecrets}
+var AllScopes = []string{ScopeRead, ScopeWrite, ScopeAdmin, ScopeSecrets}
 
 // DefaultApiTokenScopes is the set a new API token gets when none is chosen:
 // read and write, no secrets.

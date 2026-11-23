@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	accessdomain "bansoko/internal/accesscontrol/domain"
 	"bansoko/internal/filemanager"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -25,10 +26,6 @@ func mapFileManagerTarget(target *generated.FileManagerTarget) *filemanager.Targ
 
 // SubmitFileManagerOperation admits a move, rename, copy or delete of a file.
 func (s *Server) SubmitFileManagerOperation(w http.ResponseWriter, r *http.Request, params generated.SubmitFileManagerOperationParams) {
-	if s.deps.FileManager == nil {
-		writeError(w, r, errors.New("file manager service is not configured"))
-		return
-	}
 	var input generated.FileManagerOperationRequest
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, r, err)
@@ -39,6 +36,20 @@ func (s *Server) SubmitFileManagerOperation(w http.ResponseWriter, r *http.Reque
 		generated.FileManagerOperationRequestKindCopy, generated.FileManagerOperationRequestKindDelete:
 	default:
 		writeError(w, r, badRequest("REQUEST_INVALID", "The operation is not one of move, rename, copy or delete."))
+		return
+	}
+
+	// Delete is destructive: beyond the operation's write scope it requires
+	// the admin scope, which the route's x-scope cannot express per kind.
+	if input.Operation == generated.FileManagerOperationRequestKindDelete {
+		if err := requireBearerScopes(r, []string{accessdomain.ScopeAdmin}); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	if s.deps.FileManager == nil {
+		writeError(w, r, errors.New("file manager service is not configured"))
 		return
 	}
 	op, err := s.deps.FileManager.SubmitOperation(r.Context(), filemanager.OperationRequest{

@@ -26,6 +26,7 @@ import (
 	"bansoko/internal/parserpolicy"
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/testutil/animetest"
+	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/workitems"
 )
 
@@ -100,13 +101,22 @@ func mcpFlowFeedItem(payload animeapplication.TorrentPayload) acquisitiondomain.
 	return item
 }
 
+// mcpFlowEnv holds the authenticating agent-flow rig together with a default
+// read,write agent API token (no secrets scope) for MCP calls and the owner
+// session (all scopes) for HTTP assertions.
+type mcpFlowEnv struct {
+	rig     *testRig
+	agent   map[string]string
+	session map[string]string
+}
+
 // newMCPAgentFlowRig is the httpapi rig plus the collaborators the agent flows
 // need, wired like cmd/bansoko-server: catalog discovery and feed snapshots, a fully
 // configured draft service, and the one-shot service reading seeds from the
 // persisted snapshots.
-func newMCPAgentFlowRig(t *testing.T) *testRig {
+func newMCPAgentFlowRig(t *testing.T) *mcpFlowEnv {
 	t.Helper()
-	rig := newTestRig(t, "development", true)
+	rig := newTestRig(t, "development", false)
 	db := rig.db
 	animetest.InstallRegistries()
 	animetest.PublishRegistries(t, db)
@@ -165,15 +175,28 @@ func newMCPAgentFlowRig(t *testing.T) *testRig {
 	}
 	rig.deps = deps
 	rig.handler = server.Handler()
-	return rig
+
+	recorder, body := rig.do(t, http.MethodPost, "/api/v1/bootstrap/owner",
+		map[string]string{"username": "owner", "password": "correct horse battery", "session_transport": "token"}, nil)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("owner creation failed: %d %s", recorder.Code, body)
+	}
+	owner := decodeBody[generated.LoginResult](t, body)
+	if owner.SessionToken == nil || *owner.SessionToken == "" {
+		t.Fatal("bootstrap owner returned no session token")
+	}
+	session := map[string]string{"Authorization": "Bearer " + *owner.SessionToken}
+	_, agent := createScopedToken(t, rig, session, "mcp-flow-agent")
+	return &mcpFlowEnv{rig: rig, agent: agent, session: session}
 }
 
-// mcpFlowCall calls one tool and returns its structured result, failing the
-// test on a protocol error or a tool error. Every tool output is checked for
-// URL leaks before it is decoded.
-func mcpFlowCall(t *testing.T, rig *testRig, tool string, args map[string]any, forbidden ...string) map[string]any {
+// mcpFlowCall calls one tool as the default read,write agent token (no secrets
+// scope) and returns its structured result, failing the test on a protocol
+// error or a tool error. Every tool output is checked for URL leaks before it
+// is decoded.
+func mcpFlowCall(t *testing.T, env *mcpFlowEnv, tool string, args map[string]any, forbidden ...string) map[string]any {
 	t.Helper()
-	body := mcpCallTool(t, rig, tool, args)
+	body := mcpCallToolAs(t, env.rig, env.agent, tool, args)
 	assertNoMCPURL(t, tool, body, forbidden...)
 	structured, isError, text := decodeMCPToolResult(t, tool, body)
 	if isError {
@@ -183,9 +206,9 @@ func mcpFlowCall(t *testing.T, rig *testRig, tool string, args map[string]any, f
 }
 
 // mcpFlowCallError calls one tool that must fail and returns the error text.
-func mcpFlowCallError(t *testing.T, rig *testRig, tool string, args map[string]any, forbidden ...string) string {
+func mcpFlowCallError(t *testing.T, env *mcpFlowEnv, tool string, args map[string]any, forbidden ...string) string {
 	t.Helper()
-	body := mcpCallTool(t, rig, tool, args)
+	body := mcpCallToolAs(t, env.rig, env.agent, tool, args)
 	assertNoMCPURL(t, tool, body, forbidden...)
 	_, isError, text := decodeMCPToolResult(t, tool, body)
 	if !isError {
@@ -302,14 +325,14 @@ func mcpFlowDraft(entryRef string) map[string]any {
 // mcpFlowSnapshot runs discovery, refresh and the pure snapshot read over MCP
 // and returns the snapshot plus the chosen seed. It also proves the HTTP
 // responses for the same reads carry the URLs the tool outputs withhold.
-func mcpFlowSnapshot(t *testing.T, rig *testRig, entryRef string) (map[string]any, map[string]any) {
+func mcpFlowSnapshot(t *testing.T, env *mcpFlowEnv, entryRef string) (map[string]any, map[string]any) {
 	t.Helper()
-	discovered := mcpFlowCall(t, rig, "discover_feed_groups", map[string]any{"provider": "mikan", "provider_entry_ref": entryRef})
+	discovered := mcpFlowCall(t, env, "discover_feed_groups", map[string]any{"provider": "mikan", "provider_entry_ref": entryRef})
 	group := mcpFlowFirst(t, discovered, "groups")
 	if mcpFlowString(t, group, "group_ref") != mcpFlowGroupRef {
 		t.Fatalf("discovered group = %v, want %s", group, mcpFlowGroupRef)
 	}
-	recorder, body := rig.do(t, http.MethodPost, "/api/v1/catalog/providers/mikan/entries/"+entryRef+"/groups:discover", nil, nil)
+	recorder, body := env.rig.do(t, http.MethodPost, "/api/v1/catalog/providers/mikan/entries/"+entryRef+"/groups:discover", nil, env.session)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("HTTP discovery = %d %s", recorder.Code, body)
 	}
@@ -317,11 +340,11 @@ func mcpFlowSnapshot(t *testing.T, rig *testRig, entryRef string) (map[string]an
 		t.Fatalf("the HTTP discovery result must keep feed_url: %s", body)
 	}
 
-	refreshed := mcpFlowCall(t, rig, "refresh_feed_snapshot", map[string]any{"provider": "mikan", "provider_entry_ref": entryRef, "group_ref": mcpFlowGroupRef})
+	refreshed := mcpFlowCall(t, env, "refresh_feed_snapshot", map[string]any{"provider": "mikan", "provider_entry_ref": entryRef, "group_ref": mcpFlowGroupRef})
 	if mcpFlowString(t, refreshed, "freshness") != "fresh" {
 		t.Fatalf("refreshed snapshot = %v, want fresh", refreshed)
 	}
-	snapshot := mcpFlowCall(t, rig, "get_feed_snapshot", map[string]any{"provider": "mikan", "provider_entry_ref": entryRef, "group_ref": mcpFlowGroupRef})
+	snapshot := mcpFlowCall(t, env, "get_feed_snapshot", map[string]any{"provider": "mikan", "provider_entry_ref": entryRef, "group_ref": mcpFlowGroupRef})
 	for _, key := range []string{"snapshot_id", "snapshot_version", "content_hash"} {
 		if mcpFlowString(t, snapshot, key) != mcpFlowString(t, refreshed, key) {
 			t.Fatalf("get_feed_snapshot %s = %v, refresh returned %v", key, snapshot[key], refreshed[key])
@@ -336,7 +359,7 @@ func mcpFlowSnapshot(t *testing.T, rig *testRig, entryRef string) (map[string]an
 			t.Fatalf("the agent seed view must keep %s: %v", key, seed)
 		}
 	}
-	recorder, body = rig.do(t, http.MethodGet, "/api/v1/catalog/providers/mikan/entries/"+entryRef+"/rss?group_ref="+mcpFlowGroupRef, nil, nil)
+	recorder, body = env.rig.do(t, http.MethodGet, "/api/v1/catalog/providers/mikan/entries/"+entryRef+"/rss?group_ref="+mcpFlowGroupRef, nil, env.session)
 	if recorder.Code != http.StatusOK || !bytes.Contains(body, []byte(mcpFlowSecret)) {
 		t.Fatalf("the HTTP snapshot read must keep download_url: %d %s", recorder.Code, body)
 	}
@@ -346,9 +369,9 @@ func mcpFlowSnapshot(t *testing.T, rig *testRig, entryRef string) (map[string]an
 // mcpFlowLoadBusiness runs the documented draft step: the agent's draft goes
 // through load_business_preset, which returns it with the Global business
 // snapshot and its digest. The pinned group must survive the load.
-func mcpFlowLoadBusiness(t *testing.T, rig *testRig, entryRef string) map[string]any {
+func mcpFlowLoadBusiness(t *testing.T, env *mcpFlowEnv, entryRef string) map[string]any {
 	t.Helper()
-	draft := mcpFlowCall(t, rig, "load_business_preset", map[string]any{"draft": mcpFlowDraft(entryRef)})
+	draft := mcpFlowCall(t, env, "load_business_preset", map[string]any{"draft": mcpFlowDraft(entryRef)})
 	if draft["business"] == nil || mcpFlowString(t, draft, "business_digest") == "" {
 		t.Fatalf("load_business_preset returned no business snapshot: %v", draft)
 	}
@@ -371,19 +394,19 @@ func mcpFlowLoadBusiness(t *testing.T, rig *testRig, entryRef string) map[string
 // business into the draft, save a candidate, preview it with the snapshot
 // identity, activate it.
 func TestMCPAgentProviderSubscriptionFlowWithholdsURLs(t *testing.T) {
-	rig := newMCPAgentFlowRig(t)
+	env := newMCPAgentFlowRig(t)
 	const entryRef = "80901"
-	snapshot, _ := mcpFlowSnapshot(t, rig, entryRef)
+	snapshot, _ := mcpFlowSnapshot(t, env, entryRef)
 
-	draft := mcpFlowLoadBusiness(t, rig, entryRef)
-	candidate := mcpFlowCall(t, rig, "create_candidate", map[string]any{"draft": draft})
+	draft := mcpFlowLoadBusiness(t, env, entryRef)
+	candidate := mcpFlowCall(t, env, "create_candidate", map[string]any{"draft": draft})
 	candidateID := mcpFlowString(t, candidate, "id")
 	revision := candidate["current_revision"]
 	if revision == nil {
 		t.Fatalf("candidate has no revision: %v", candidate)
 	}
 
-	view := mcpFlowCall(t, rig, "rss_list_view", map[string]any{
+	view := mcpFlowCall(t, env, "rss_list_view", map[string]any{
 		"input_source": "candidate_revision", "candidate_id": candidateID, "revision": revision,
 		"feed": []any{map[string]any{
 			"provider": "mikan", "provider_entry_ref": entryRef, "provider_group_ref": mcpFlowGroupRef,
@@ -400,13 +423,13 @@ func TestMCPAgentProviderSubscriptionFlowWithholdsURLs(t *testing.T) {
 		t.Fatalf("preview item = %v", item)
 	}
 
-	activated := mcpFlowCall(t, rig, "activate_candidate", map[string]any{
+	activated := mcpFlowCall(t, env, "activate_candidate", map[string]any{
 		"candidate_id": candidateID, "revision": revision, "expected_version": candidate["version"],
 		"idempotency_key": "mcp-agent-provider-flow-0001",
 	})
 	animeID := mcpFlowString(t, activated, "managed_anime", "id")
 	var linked string
-	if err := rig.db.QueryRowContext(context.Background(), `SELECT activated_managed_anime_id FROM anime_config_candidates WHERE id = $1`, candidateID).Scan(&linked); err != nil || linked != animeID {
+	if err := env.rig.db.QueryRowContext(context.Background(), `SELECT activated_managed_anime_id FROM anime_config_candidates WHERE id = $1`, candidateID).Scan(&linked); err != nil || linked != animeID {
 		t.Fatalf("candidate activation link = %q, %v; want %s", linked, err, animeID)
 	}
 }
@@ -414,16 +437,16 @@ func TestMCPAgentProviderSubscriptionFlowWithholdsURLs(t *testing.T) {
 // One-shot: pick a seed from the snapshot, admit it by reference, read the
 // acquisition. The agent sends no locator and the server resolves it.
 func TestMCPAgentOneShotFlowAdmitsASeedByReference(t *testing.T) {
-	rig := newMCPAgentFlowRig(t)
+	env := newMCPAgentFlowRig(t)
 	const entryRef = "80902"
-	snapshot, seed := mcpFlowSnapshot(t, rig, entryRef)
-	draft := mcpFlowLoadBusiness(t, rig, entryRef)
+	snapshot, seed := mcpFlowSnapshot(t, env, entryRef)
+	draft := mcpFlowLoadBusiness(t, env, entryRef)
 	feed := []any{map[string]any{
 		"provider": "mikan", "provider_entry_ref": entryRef, "provider_group_ref": mcpFlowGroupRef,
 		"snapshot_id": snapshot["snapshot_id"], "snapshot_version": snapshot["snapshot_version"],
 		"content_hash": snapshot["content_hash"],
 	}}
-	preview := mcpFlowCall(t, rig, "rss_list_view", map[string]any{"input_source": "current_input", "draft": draft, "feed": feed})
+	preview := mcpFlowCall(t, env, "rss_list_view", map[string]any{"input_source": "current_input", "draft": draft, "feed": feed})
 	if item := mcpFlowFirst(t, mcpFlowFirst(t, preview, "groups"), "items"); mcpFlowString(t, item, "seed", "title") != mcpFlowTitle {
 		t.Fatalf("current_input preview item = %v", item)
 	}
@@ -436,37 +459,37 @@ func TestMCPAgentOneShotFlowAdmitsASeedByReference(t *testing.T) {
 		"input_source": "current_input", "draft": draft,
 		"selected_seed": reference, "idempotency_key": "mcp-agent-one-shot-flow-0001",
 	}
-	admitted := mcpFlowCall(t, rig, "acquire_seed_once", args)
+	admitted := mcpFlowCall(t, env, "acquire_seed_once", args)
 	oneShotID := mcpFlowString(t, admitted, "one_shot_id")
-	if replayed := mcpFlowCall(t, rig, "acquire_seed_once", args); mcpFlowString(t, replayed, "one_shot_id") != oneShotID {
+	if replayed := mcpFlowCall(t, env, "acquire_seed_once", args); mcpFlowString(t, replayed, "one_shot_id") != oneShotID {
 		t.Fatalf("replayed reference = %v, want %s", replayed, oneShotID)
 	}
 
-	view := mcpFlowCall(t, rig, "get_one_shot_acquisition", map[string]any{"one_shot_id": oneShotID})
+	view := mcpFlowCall(t, env, "get_one_shot_acquisition", map[string]any{"one_shot_id": oneShotID})
 	if mcpFlowString(t, view, "input_snapshot", "selected_seed", "stable_seed_key") != mcpFlowSeedKey {
 		t.Fatalf("acquisition input snapshot = %v", view["input_snapshot"])
 	}
-	recorder, body := rig.do(t, http.MethodGet, "/api/v1/one-shot-acquisitions/"+oneShotID, nil, nil)
+	recorder, body := env.rig.do(t, http.MethodGet, "/api/v1/one-shot-acquisitions/"+oneShotID, nil, env.session)
 	if recorder.Code != http.StatusOK || !bytes.Contains(body, []byte(mcpFlowSecret)) {
 		t.Fatalf("the HTTP acquisition read must keep the resolved locator: %d %s", recorder.Code, body)
 	}
 
 	// A seed key outside the snapshot fails closed with the stale code and no
 	// writes.
-	markers := animetest.CountRows(t, rig.db, "one_shot_acquisitions")
+	markers := animetest.CountRows(t, env.rig.db, "one_shot_acquisitions")
 	unknown := map[string]any{}
 	for key, value := range reference {
 		unknown[key] = value
 	}
 	unknown["stable_seed_key"] = "mcp-flow-seed-missing"
-	text := mcpFlowCallError(t, rig, "acquire_seed_once", map[string]any{
+	text := mcpFlowCallError(t, env, "acquire_seed_once", map[string]any{
 		"input_source": "current_input", "draft": draft,
 		"selected_seed": unknown, "idempotency_key": "mcp-agent-one-shot-flow-0002",
 	})
 	if !strings.Contains(text, "SEED_PREVIEW_STALE") {
 		t.Fatalf("unknown seed key error = %s, want SEED_PREVIEW_STALE", text)
 	}
-	if got := animetest.CountRows(t, rig.db, "one_shot_acquisitions"); got != markers {
+	if got := animetest.CountRows(t, env.rig.db, "one_shot_acquisitions"); got != markers {
 		t.Fatalf("a refused reference wrote a one-shot: %d -> %d", markers, got)
 	}
 }

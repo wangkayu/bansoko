@@ -1012,7 +1012,7 @@ func cmdAPITokenCreate(args []string) error {
 	fs.SetOutput(os.Stderr)
 	cf := newCommonFlags(fs)
 	name := fs.String("name", "", "token name")
-	scopeList := fs.String("scopes", "", "comma-separated scopes: read, write, secrets (default read,write; read is required)")
+	scopeList := fs.String("scopes", "", "comma-separated scopes: read, write, admin, secrets (default read,write; read is required)")
 	if err := fs.Parse(args); err != nil {
 		return parseError(err)
 	}

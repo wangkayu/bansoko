@@ -190,14 +190,14 @@ func buildPollWorkspace(catalog *Catalog, d *dispatcher, spec Composite) (server
 				return mcp.NewToolResultError(spec.Tool + " failed: " + err.Error()), nil
 			}
 			if resp.status >= 400 {
-				return resultFrom(op, resp, echo), nil
+				return resultFrom(op, resp, echo, holdsSecretsScope(ctx)), nil
 			}
 			var workspace generated.AnimeWorkspace
 			if err := json.Unmarshal(resp.body.Bytes(), &workspace); err != nil {
 				return mcp.NewToolResultError(spec.Tool + " failed: workspace response could not be decoded"), nil
 			}
 			snapshot, _ := decodeJSON(resp.body.Bytes())
-			snapshot = op.redact(resp.status, snapshot)
+			snapshot = op.redact(resp.status, snapshot, holdsSecretsScope(ctx))
 			if workspaceStable(workspace) {
 				return mcp.NewToolResultStructuredOnly(map[string]any{"stable": true, "workspace": snapshot}), nil
 			}

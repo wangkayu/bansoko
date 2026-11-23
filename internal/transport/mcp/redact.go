@@ -30,7 +30,10 @@ import (
 // replaced its value with the fixed "[secret]" placeholder for a bearer without
 // the secrets scope, and a bearer with that scope asked for the stored value
 // (which a candidate patch must be able to send back unchanged). A property
-// marked both x-mcp-omit and x-secret is omitted: x-mcp-omit always wins.
+// marked both x-mcp-omit and x-secret is omitted for a bearer without the
+// secrets scope; a secrets holder keeps it, exactly as REST would return it.
+// Properties marked x-mcp-omit alone (cursor, expected_payload_digest) stay
+// omitted for every caller.
 const (
 	omitExtension    = "x-mcp-omit"
 	keepURLExtension = "x-mcp-keep-url"
@@ -65,6 +68,28 @@ var withheldNames = map[string]bool{
 	"torrent_url":             true,
 }
 
+// secretOmittedNames is the subset of withheldNames whose schema properties
+// are marked both x-mcp-omit and x-secret. A caller holding the secrets scope
+// keeps them (REST returns the stored value to that bearer); every other
+// withheld name is removed for every caller.
+var secretOmittedNames = map[string]bool{
+	"download_url":            true,
+	"feed_url":                true,
+	"identity_value":          true,
+	"locator":                 true,
+	"locator_display":         true,
+	"newest_stable_item_key":  true,
+	"release_stable_item_key": true,
+	"source_locator_display":  true,
+	"stable_item_key":         true,
+}
+
+// withheld reports whether a free-form key is removed. A secrets holder keeps
+// the dual-marked (x-mcp-omit + x-secret) names only.
+func withheld(name string, secrets bool) bool {
+	return withheldNames[name] && !(secrets && secretOmittedNames[name])
+}
+
 // maxRedactDepth bounds the walk over a response body. Response bodies are
 // finite trees, so this only guards against a pathological document.
 const maxRedactDepth = 64
@@ -81,6 +106,11 @@ type redactor struct {
 func isOmitted(property any) bool {
 	node, _ := property.(map[string]any)
 	return node[omitExtension] == true
+}
+
+func isSecret(property any) bool {
+	node, _ := property.(map[string]any)
+	return node[secretExtension] == true
 }
 
 // resolve follows a local $ref (several hops) and returns the target schema.
@@ -165,17 +195,20 @@ func keepsURL(variants []map[string]any) bool {
 }
 
 // apply returns value with the three layers applied, following schema. Maps
-// and slices are edited in place; a replaced string is returned.
-func (r redactor) apply(value any, schema map[string]any, depth int) any {
+// and slices are edited in place; a replaced string is returned. secrets is
+// true when the caller holds the secrets scope: dual-marked (x-mcp-omit +
+// x-secret) properties are then kept, because REST returns the stored value
+// to that bearer too.
+func (r redactor) apply(value any, schema map[string]any, depth int, secrets bool) any {
 	if depth > maxRedactDepth {
 		return withheldPlaceholder
 	}
 	if schema == nil {
-		return scrubFree(value, depth)
+		return scrubFree(value, depth, secrets)
 	}
 	variants := r.branches(schema, depth, nil)
 	if freeForm(variants) {
-		return scrubFree(value, depth)
+		return scrubFree(value, depth, secrets)
 	}
 	switch typed := value.(type) {
 	case string:
@@ -195,7 +228,7 @@ func (r redactor) apply(value any, schema map[string]any, depth int) any {
 					continue
 				}
 				declared = true
-				if isOmitted(property) {
+				if isOmitted(property) && !(secrets && isSecret(property)) {
 					omitted = true
 					break
 				}
@@ -203,7 +236,7 @@ func (r redactor) apply(value any, schema map[string]any, depth int) any {
 					childSchemas = append(childSchemas, node)
 				}
 			}
-			if omitted || (!declared && withheldNames[key]) {
+			if omitted || (!declared && withheld(key, secrets)) {
 				delete(typed, key)
 				continue
 			}
@@ -215,11 +248,11 @@ func (r redactor) apply(value any, schema map[string]any, depth int) any {
 				}
 			}
 			if len(childSchemas) == 0 {
-				typed[key] = scrubFree(child, depth+1)
+				typed[key] = scrubFree(child, depth+1, secrets)
 				continue
 			}
 			for _, childSchema := range childSchemas {
-				child = r.apply(child, childSchema, depth+1)
+				child = r.apply(child, childSchema, depth+1, secrets)
 			}
 			typed[key] = child
 		}
@@ -233,11 +266,11 @@ func (r redactor) apply(value any, schema map[string]any, depth int) any {
 		}
 		for index, element := range typed {
 			if len(itemSchemas) == 0 {
-				typed[index] = scrubFree(element, depth+1)
+				typed[index] = scrubFree(element, depth+1, secrets)
 				continue
 			}
 			for _, items := range itemSchemas {
-				element = r.apply(element, items, depth+1)
+				element = r.apply(element, items, depth+1, secrets)
 			}
 			typed[index] = element
 		}
@@ -247,7 +280,7 @@ func (r redactor) apply(value any, schema map[string]any, depth int) any {
 }
 
 // scrubFree applies layers 2 and 3 to a value no schema describes.
-func scrubFree(value any, depth int) any {
+func scrubFree(value any, depth int, secrets bool) any {
 	if depth > maxRedactDepth {
 		return withheldPlaceholder
 	}
@@ -256,16 +289,16 @@ func scrubFree(value any, depth int) any {
 		return withholdURLs(typed)
 	case map[string]any:
 		for key, child := range typed {
-			if withheldNames[key] {
+			if withheld(key, secrets) {
 				delete(typed, key)
 				continue
 			}
-			typed[key] = scrubFree(child, depth+1)
+			typed[key] = scrubFree(child, depth+1, secrets)
 		}
 		return typed
 	case []any:
 		for index, element := range typed {
-			typed[index] = scrubFree(element, depth+1)
+			typed[index] = scrubFree(element, depth+1, secrets)
 		}
 		return typed
 	}

@@ -113,8 +113,10 @@ func TestUpdateAccountRequiresAWebSession(t *testing.T) {
 	session := bootstrapOwner(t, rig, "owner", "original password 12")
 	headers := map[string]string{"Authorization": "Bearer " + session}
 
+	// updateAccount is an admin-scope operation; the token needs admin to
+	// reach the handler's web-session check.
 	recorder, body := rig.do(t, http.MethodPost, "/api/v1/api-tokens",
-		map[string]any{"name": "agent", "scopes": []string{"read", "write"}}, headers)
+		map[string]any{"name": "agent", "scopes": []string{"read", "admin"}}, headers)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("create api token: %d %s", recorder.Code, string(body))
 	}

@@ -181,17 +181,18 @@ describe("SettingsAILab", () => {
     expect(await within(row).findByText("raw-token-64hex")).toBeInTheDocument();
     const createCall = calls.find((c) => c.method === "POST");
     expect(createCall?.body).toContain('"name":"new-bot"');
-    // Default permissions: view + write, without read-sensitive-values.
+    // Default permissions: view + write, without admin or read-sensitive-values.
     expect(JSON.parse(createCall?.body ?? "{}").scopes).toEqual(["read", "write"]);
     expect(within(row).getByText(t("settings.token.scope.list", { scopes: [t("settings.token.scope.read"), t("settings.token.scope.write")].join(t("settings.token.scope.separator")) }))).toBeInTheDocument();
   });
 
-  it("创建时可选权限：取消修改、勾选显示敏感值，按所选发送并在列表显示", async () => {
+  it("创建时可选权限：取消修改、勾选管理与显示敏感值，按所选发送并在列表显示", async () => {
     const { calls } = stubApiTokens();
     renderLab();
 
     fireEvent.change(screen.getByLabelText(t("settings.token.nameLabel")), { target: { value: "reader" } });
     fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.write")}`) }));
+    fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.admin")}`) }));
     fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.secrets")}`) }));
     expect(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.read")}`) })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: t("settings.token.create") }));
@@ -202,10 +203,11 @@ describe("SettingsAILab", () => {
       return found;
     });
     const createCall = calls.find((c) => c.method === "POST");
-    expect(JSON.parse(createCall?.body ?? "{}").scopes).toEqual(["read", "secrets"]);
-    expect(within(row).getByText(t("settings.token.scope.list", { scopes: [t("settings.token.scope.read"), t("settings.token.scope.secrets")].join(t("settings.token.scope.separator")) }))).toBeInTheDocument();
+    expect(JSON.parse(createCall?.body ?? "{}").scopes).toEqual(["read", "admin", "secrets"]);
+    expect(within(row).getByText(t("settings.token.scope.list", { scopes: [t("settings.token.scope.read"), t("settings.token.scope.admin"), t("settings.token.scope.secrets")].join(t("settings.token.scope.separator")) }))).toBeInTheDocument();
     // After creation the selection resets to the default.
     expect(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.write")}`) })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.admin")}`) })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: new RegExp(`^${t("settings.token.scope.secrets")}`) })).not.toBeChecked();
   });
 

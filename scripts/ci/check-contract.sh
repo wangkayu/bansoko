@@ -897,8 +897,11 @@ RUBY
 # token read and the backup export, download ticket and upload, since a backup
 # holds every stored secret). A
 # non-GET operation may be `read` only when the maintenance middleware lists it
-# as side-effect free (readOnlyWritePathPatterns), and an MCP tool's
-# `x-mcp.write` must equal `x-scope == write`. `x-secret` sits on string
+# as side-effect free (readOnlyWritePathPatterns). An MCP tool's `x-mcp.write`
+# must agree with the scope class: a write tool needs `write` or `admin`
+# (admin gates the irreversible high-risk operations), and a read tool never
+# maps to a `write` scope (admin reads such as readEventActionScripts stay
+# read tools). `x-secret` sits on string
 # properties only; the pinned list and the masking behavior are tested in
 # internal/transport/apiscope.
 ruby - "$source" "$root/internal/transport/httpapi/middleware.go" <<'RUBY'
@@ -916,21 +919,25 @@ doc.fetch("paths").each do |path, item|
     anonymous = op.key?("security") && Array(op["security"]).empty?
     concrete = "/api/v1" + path.gsub(/\{[^}]*\}/, "x")
     case
-    when !%w[none read write secrets].include?(scope)
-      bad << "#{id}: x-scope must be none, read, write or secrets (got #{scope.inspect})"
+    when !%w[none read write admin secrets].include?(scope)
+      bad << "#{id}: x-scope must be none, read, write, admin or secrets (got #{scope.inspect})"
     when anonymous != (scope == "none")
       bad << "#{id}: x-scope none is exactly for the anonymous operations"
     when scope == "secrets" && !secrets_operations.include?(id)
       bad << "#{id}: x-scope secrets is reserved for #{secrets_operations.join(", ")}"
     when secrets_operations.include?(id) && scope != "secrets"
       bad << "#{id}: must declare x-scope secrets"
-    when method == "get" && !%w[read secrets none].include?(scope)
-      bad << "#{id}: a GET operation is read (or secrets)"
+    when method == "get" && !%w[read admin secrets none].include?(scope)
+      bad << "#{id}: a GET operation is read (or admin, secrets)"
     when method != "get" && scope == "read" && !(method == "post" && read_only_posts.any? { |re| re.match?(concrete) })
       bad << "#{id}: #{method.upcase} #{path} is x-scope read but the maintenance middleware treats it as a product write"
     end
-    if op["x-mcp"].is_a?(Hash) && op["x-mcp"]["write"] != (scope == "write")
-      bad << "#{id}: x-mcp.write=#{op["x-mcp"]["write"]} disagrees with x-scope #{scope}"
+    if op["x-mcp"].is_a?(Hash)
+      if op["x-mcp"]["write"] && !%w[write admin].include?(scope)
+        bad << "#{id}: a write tool needs x-scope write or admin (got #{scope})"
+      elsif !op["x-mcp"]["write"] && scope == "write"
+        bad << "#{id}: a read tool cannot map to x-scope write"
+      end
     end
   end
 end

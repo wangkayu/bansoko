@@ -38,7 +38,7 @@ func (s *Server) authorizeScope(r *http.Request, account accessdomain.Account, n
 		return next, nil
 	}
 	switch route.Scope {
-	case apiscope.ScopeRead, apiscope.ScopeWrite, apiscope.ScopeSecrets:
+	case apiscope.ScopeRead, apiscope.ScopeWrite, apiscope.ScopeAdmin, apiscope.ScopeSecrets:
 		if !account.HasScope(route.Scope) {
 			return nil, scopeInsufficient(route.Scope)
 		}

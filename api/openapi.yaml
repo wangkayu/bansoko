@@ -183,7 +183,7 @@ paths:
     patch:
       tags: [Auth]
       operationId: updateAccount
-      x-scope: write
+      x-scope: admin
       description: >-
         Change the signed-in owner's username and/or password. The current
         password is always required. Omitted fields stay unchanged. A password
@@ -242,7 +242,7 @@ paths:
     post:
       tags: [Auth]
       operationId: createApiToken
-      x-scope: write
+      x-scope: admin
       description: >-
         Issue a long-lived API token for the owner. The raw token is echoed in
         the response and encrypted at rest, so the UI can keep showing and
@@ -287,7 +287,7 @@ paths:
     delete:
       tags: [Auth]
       operationId: revokeApiToken
-      x-scope: write
+      x-scope: admin
       description: >-
         Permanently delete a long-lived API token. The row is removed (no
         tombstone), so a revoked token never appears in the list again.
@@ -299,10 +299,12 @@ paths:
           description: The API token was revoked (deleted).
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ScopeInsufficient'
     post:
       tags: [Auth]
       operationId: rotateApiToken
-      x-scope: write
+      x-scope: admin
       description: >-
         Atomically delete the current API token and issue a fresh one for the
         same owner in one transaction. The new raw token is echoed in the
@@ -555,7 +557,7 @@ paths:
     delete:
       tags: [Configuration]
       operationId: deleteQBittorrentTorrent
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: delete_qbittorrent_torrent
         group: downloads
@@ -1078,7 +1080,7 @@ paths:
     delete:
       tags: [Configuration]
       operationId: deleteSubgroupGroupDictionaryEntry
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: delete_subgroup_group_entry
         group: configuration
@@ -2164,7 +2166,7 @@ paths:
     delete:
       tags: [Anime]
       operationId: deleteAnimeSubscription
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: delete_subscription
         group: subscription
@@ -2361,7 +2363,7 @@ paths:
     delete:
       tags: [Anime]
       operationId: cleanupAnimeLocalData
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: cleanup_anime_local_data
         group: subscription
@@ -2581,7 +2583,7 @@ paths:
     delete:
       tags: [Anime]
       operationId: deleteAnimeConfigCandidate
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: delete_candidate
         group: subscription
@@ -3080,7 +3082,7 @@ paths:
     post:
       tags: [FileMaintenance]
       operationId: deletePlacement
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: delete_placement
         group: files
@@ -5141,8 +5143,15 @@ paths:
     get:
       tags: [Plugins]
       operationId: listEventActions
-      security: [{browserSession: []}]
       x-scope: read
+      x-mcp:
+        tool: list_event_actions
+        group: records
+        write: false
+        description: >-
+          List the current global event bindings: which lifecycle event runs
+          which script, whether it is enabled, its timeout and whether results
+          are recorded.
       responses:
         '200':
           description: Current global event bindings.
@@ -5156,8 +5165,16 @@ paths:
     put:
       tags: [Plugins]
       operationId: saveEventAction
-      security: [{browserSession: []}]
-      x-scope: write
+      x-scope: admin
+      x-mcp:
+        tool: save_event_action
+        group: configuration
+        write: true
+        description: >-
+          Save one global event binding: attach a script from the scripts
+          directory to a lifecycle event, enable or disable it, set its timeout
+          and result recording. A null script removes the binding. Requires the
+          current version for optimistic concurrency (409 on a stale version).
       requestBody:
         required: true
         content:
@@ -5177,8 +5194,14 @@ paths:
     get:
       tags: [Plugins]
       operationId: readEventActionScripts
-      security: [{browserSession: []}]
-      x-scope: read
+      x-scope: admin
+      x-mcp:
+        tool: read_event_action_scripts
+        group: configuration
+        write: false
+        description: >-
+          List the script files available for event bindings, or read the
+          preflight and bounded source preview of one file by name.
       parameters:
         - name: file
           in: query
@@ -5200,8 +5223,14 @@ paths:
     get:
       tags: [Plugins]
       operationId: listEventActionAttempts
-      security: [{browserSession: []}]
       x-scope: read
+      x-mcp:
+        tool: list_event_action_attempts
+        group: records
+        write: false
+        description: >-
+          List the latest 50 event script attempts; with warnings=true, only the
+          first missing-file attempt of each observed missing period.
       parameters:
         - name: warnings
           in: query
@@ -5313,7 +5342,7 @@ paths:
     delete:
       tags: [Plugins]
       operationId: deletePluginTarget
-      x-scope: write
+      x-scope: admin
       x-mcp:
         tool: delete_plugin_target
         group: configuration
@@ -5457,13 +5486,23 @@ paths:
     post:
       tags: [Update]
       operationId: admitUpdate
-      x-scope: write
+      x-scope: admin
+      x-mcp:
+        tool: admit_update
+        group: configuration
+        write: true
+        description: >-
+          Admit a container-embedded self-update operation. The server
+          re-resolves the release through the deployment's configured update
+          lane and verifies that target_release_id and manifest_digest still
+          identify the candidate.
+          Destructive maintenance: requires the admin scope.
       description: |
-        Admits a container-embedded self-update operation. The server re-resolves
-        the release through the deployment's configured update lane and verifies
-        that target_release_id and manifest_digest still identify the candidate.
-        Only a signed-in web session may admit an update: an API token (and so
-        MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes.
+        Admits a container-embedded self-update operation. The server
+        re-resolves the release through the deployment's configured update lane
+        and verifies that target_release_id and manifest_digest still identify
+        the candidate.
+        A bearer needs the admin scope (403 TOKEN_SCOPE_INSUFFICIENT otherwise).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -5490,7 +5529,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ScopeInsufficient'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -5509,7 +5548,7 @@ paths:
         description: >-
           Read the state of the embedded self-update: the accepted request or the
           journal outcome. It is not a version check; use check_update for that.
-          Starting an update is not available through MCP.
+          Starting an update goes through admit_update (admin scope).
       description: >-
         Read-only projection of the current embedded update. Before bootstrap
         records the durable handoff, status reports the accepted admission or
@@ -5619,7 +5658,15 @@ paths:
     post:
       tags: [Parser]
       operationId: updateTitleParser
-      x-scope: write
+      x-scope: admin
+      x-mcp:
+        tool: update_title_parser
+        group: configuration
+        write: true
+        description: >-
+          Install a strictly newer reltitle build from the published channel and
+          switch the running parser backend. When the channel offers nothing
+          newer, nothing is written. A bearer needs the admin scope.
       description: >-
         Read the published reltitle channel and install a strictly newer build
         at the one parser path, then re-run the adoption chain and switch the
@@ -5628,9 +5675,8 @@ paths:
         replaced. When the channel offers nothing newer, nothing is written and
         `message` carries the reason. A build that cannot be adopted leaves the
         previous backend running; the reason appears in `note` and
-        `channel.error`. Only a signed-in web session may install: an API token
-        (and so MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its
-        scopes.
+        `channel.error`. A bearer needs the admin scope (403
+        TOKEN_SCOPE_INSUFFICIENT otherwise).
       responses:
         '200':
           description: The resulting parser component status.
@@ -5641,7 +5687,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ScopeInsufficient'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -5959,7 +6005,7 @@ paths:
     post:
       tags: [Configuration]
       operationId: saveNamingVarsVersion
-      x-scope: write
+      x-scope: admin
       description: >-
         Validates a program and publishes it as a new immutable version that
         becomes active at once, without a restart. If-Match is the revision the
@@ -6018,7 +6064,7 @@ paths:
     put:
       tags: [Configuration]
       operationId: activateNamingVarsVersion
-      x-scope: write
+      x-scope: admin
       description: >-
         Moves the active pointer to a published revision (a rollback is an
         activation of an older one). If-Match is the revision the caller saw
@@ -6120,7 +6166,7 @@ paths:
     post:
       tags: [Configuration]
       operationId: importNamingVars
-      x-scope: write
+      x-scope: admin
       description: >-
         Owner only. Validates an export document and publishes its program as a
         new active version, with the same checks and compare-and-swap as a save.
@@ -6711,8 +6757,14 @@ paths:
     get:
       tags: [Releases]
       operationId: listAcquisitionScriptReceipts
-      security: [{browserSession: []}]
       x-scope: read
+      x-mcp:
+        tool: list_acquisition_script_receipts
+        group: records
+        write: false
+        description: >-
+          List the script receipts recorded for one acquisition by result-record
+          event bindings.
       parameters:
         - $ref: '#/components/parameters/AcquisitionID'
       responses:
@@ -7062,6 +7114,13 @@ paths:
       tags: [FileManager]
       operationId: listFileManagerRoots
       x-scope: read
+      x-mcp:
+        tool: list_file_manager_roots
+        group: files
+        write: false
+        description: >-
+          List the library directories the owner added. Every file manager path
+          must lie inside one of them.
       description: >-
         The library directories the owner added. They are the file manager's
         whole browsing surface: every browse, detail, target and match must
@@ -7081,7 +7140,15 @@ paths:
     post:
       tags: [FileManager]
       operationId: addFileManagerRoot
-      x-scope: write
+      x-scope: admin
+      x-mcp:
+        tool: add_file_manager_root
+        group: files
+        write: true
+        description: >-
+          Authorize one library directory by absolute path (must exist, no
+          symlink components, not the filesystem root, not application data).
+          409 when the path is already a library directory.
       description: >-
         Authorizes one library directory. The path must be absolute, must name
         an existing directory reached without passing a symbolic link, must not
@@ -7112,7 +7179,15 @@ paths:
     delete:
       tags: [FileManager]
       operationId: removeFileManagerRoot
-      x-scope: write
+      x-scope: admin
+      x-mcp:
+        tool: remove_file_manager_root
+        group: files
+        write: true
+        description: >-
+          Stop authorizing one library directory. Files are never deleted and an
+          operation already admitted keeps its frozen paths; only new reads and
+          writes outside the remaining roots are refused.
       description: >-
         Stops authorizing one library directory. Files are never deleted and an
         operation already admitted keeps its frozen paths; only new reads and
@@ -7135,7 +7210,7 @@ paths:
     get:
       tags: [FileManager]
       operationId: listFileManagerRootPickerEntries
-      x-scope: read
+      x-scope: admin
       description: >-
         One page of the directories directly inside an absolute path, for
         choosing a library directory to add. Unlike the browse endpoints this
@@ -7185,6 +7260,13 @@ paths:
       tags: [FileManager]
       operationId: listFileManagerEntries
       x-scope: read
+      x-mcp:
+        tool: list_file_manager_entries
+        group: files
+        write: false
+        description: >-
+          Browse one absolute directory inside a library directory: a sorted
+          page of entries with their derived ownership state. Read-only.
       description: >-
         One sorted page of one absolute directory (directories first, then
         byte-wise name order), each entry with its derived ownership state and
@@ -7241,6 +7323,14 @@ paths:
       tags: [FileManager]
       operationId: getFileManagerEntry
       x-scope: read
+      x-mcp:
+        tool: get_file_manager_entry
+        group: files
+        write: false
+        description: >-
+          Read-only detail of one absolute entry path: derived state, owners,
+          allowed operations, the latest user operation and the revision every
+          write on it must name.
       description: >-
         Read-only detail of one absolute entry path: its derived state, whether
         the product manages it, the anime and execution record that own it,
@@ -7450,6 +7540,15 @@ paths:
       tags: [FileManager]
       operationId: previewFileManagerRecognition
       x-scope: read
+      x-mcp:
+        tool: preview_file_recognition
+        group: files
+        write: false
+        description: >-
+          Preview what renaming and moving a manually selected set of files
+          would do under the naming rules; writes nothing. Returns each row's
+          target, disposition and blockers plus the plan digest a submit must
+          confirm.
       description: >-
         Shows what renaming and moving a manually selected set of files would
         do, and writes nothing. Every file renders the operation's own naming
@@ -7496,6 +7595,15 @@ paths:
       tags: [FileManager]
       operationId: submitFileManagerRecognition
       x-scope: write
+      x-mcp:
+        tool: submit_file_recognition
+        group: files
+        write: true
+        description: >-
+          Admit the confirmed recognition preview as one batch of move/rename
+          file operations. Pass back the preview's plan digest and conflict
+          choice; a refusal anywhere admits nothing. Idempotent by
+          Idempotency-Key.
       description: >-
         Admits the confirmed recognition plan as one batch of ordinary
         move/rename user file operations: the files stay detached, no placement
@@ -7538,6 +7646,16 @@ paths:
       tags: [FileManager]
       operationId: submitFileManagerOperation
       x-scope: write
+      x-mcp:
+        tool: submit_file_operation
+        group: files
+        write: true
+        description: >-
+          Admit one user file operation (move, rename, copy or delete) on a
+          file. The server re-derives the entry state, compares the revision,
+          then freezes the operation and its work item in one transaction.
+          Move, rename and copy need the write scope; delete is destructive and
+          additionally requires the admin scope.
       description: >-
         Admits one user file operation (move, rename, copy or delete) on a
         file. Move, rename and delete apply only to detached files; copy also
@@ -7587,7 +7705,12 @@ paths:
       tags: [FileManager]
       operationId: getFileManagerOperation
       x-scope: read
-      x-surface-keep: "api: the WebUI treats an admitted operation as submitted and reads the outcome from the folder and execution records; this per-operation read stays for API-token scripts tracking a submitted id"
+      x-mcp:
+        tool: get_file_manager_operation
+        group: files
+        write: false
+        description: >-
+          Read one admitted user file operation and its outcome.
       description: One user file operation and its outcome. Read-only.
       parameters:
         - name: operation_id
@@ -7613,7 +7736,15 @@ paths:
       tags: [FileManager]
       operationId: alignFileManagerEntry
       x-scope: write
-      x-surface-keep: "api: manual alignment of a managed video; managed files are read-only in the redesigned file manager (release only), so no WebUI surface opens it and it stays for API-token scripts"
+      x-mcp:
+        tool: align_file_entry
+        group: files
+        write: true
+        description: >-
+          Align a managed video file with its naming rules through the existing
+          alignment chain (submits a manual reconciliation scan). Requires
+          alignment enabled by the effective file maintenance policy. Idempotent
+          by Idempotency-Key.
       description: >-
         Aligns a managed video file with its naming rules through the existing
         alignment chain: it submits a manual reconciliation scan of the file's
@@ -7650,6 +7781,14 @@ paths:
       tags: [FileManager]
       operationId: locateFileManagerAnime
       x-scope: read
+      x-mcp:
+        tool: locate_file_manager_anime
+        group: files
+        write: false
+        description: >-
+          The browsable directory holding one anime's current files: the deepest
+          common directory of its active placements, walked up to the closest
+          directory that exists.
       description: >-
         The browsable directory holding one anime's current files: the
         deepest common directory of its active placements, walked up to the
@@ -7672,11 +7811,6 @@ paths:
           $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
-    browserSession:
-      type: apiKey
-      in: cookie
-      name: bansoko_session
-      description: Owner browser session. Writes also require the CSRF header. Bearer credentials are not accepted.
     bearerAuth:
       type: http
       scheme: bearer
@@ -7684,8 +7818,9 @@ components:
         Either a short-lived owner session token (POST /auth/login) or a
         long-lived API token (POST /api-tokens). Both are opaque random
         values carried in the Authorization header. Every operation declares
-        the scope it needs in x-scope (read, write or secrets; none for the
-        anonymous operations). A web session holds every scope; an API token
+        the scope it needs in x-scope (read, write, admin or secrets; none
+        for the anonymous operations). A web session holds every scope; an
+        API token
         holds the scopes chosen at creation. A bearer without the needed scope
         gets 403 TOKEN_SCOPE_INSUFFICIENT with required_scope. Properties
         marked x-secret are returned as the fixed placeholder "[secret]" to a
@@ -9614,16 +9749,18 @@ components:
             The current session and API tokens stay valid.
     ApiTokenScope:
       type: string
-      enum: [read, write, secrets]
+      enum: [read, write, admin, secrets]
       description: >-
         read: read-only operations (GET and read-only POST previews). write:
-        operations that change state, including starting work. secrets: fields
-        marked x-secret are returned as stored instead of the fixed placeholder
-        "[secret]". Every token holds read.
+        operations that change state, including starting work. admin:
+        irreversible high-risk operations (destructive deletes, the API token
+        lifecycle, update admission). secrets: fields marked x-secret are
+        returned as stored instead of the fixed placeholder "[secret]". Every
+        token holds read.
     ApiTokenScopes:
       type: array
       minItems: 1
-      maxItems: 3
+      maxItems: 4
       uniqueItems: true
       items:
         $ref: '#/components/schemas/ApiTokenScope'

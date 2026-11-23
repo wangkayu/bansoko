@@ -27,19 +27,19 @@ func (f *admitUpdateRecorder) GetUpdateStatus(context.Context) (updateapplicatio
 	return updateapplication.Status{}, false, nil
 }
 
-func TestAdmitUpdateIsOnlyForTheWebSession(t *testing.T) {
+// The handler no longer distinguishes a web session from a token: the admin
+// scope gate lives in the middleware (x-scope: admin), so any authenticated
+// caller that reached the handler admits the update.
+func TestAdmitUpdateAcceptsAnAuthenticatedCaller(t *testing.T) {
 	service := &admitUpdateRecorder{}
 	server := &Server{deps: Dependencies{EmbeddedUpdate: service}}
-	account := accessdomain.Account{ID: "a", Role: "owner", Scopes: append([]string(nil), accessdomain.AllScopes...)}
+	account := accessdomain.Account{ID: "a", Role: "owner", Scopes: []string{accessdomain.ScopeRead, accessdomain.ScopeAdmin}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/update/admit", strings.NewReader("{}"))
 	request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
 	response := httptest.NewRecorder()
 	server.AdmitUpdate(response, request, generated.AdmitUpdateParams{})
-	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "WEB_SESSION_REQUIRED") {
-		t.Fatalf("token admit = %d %s, want 403 WEB_SESSION_REQUIRED", response.Code, response.Body.String())
-	}
-	if service.called {
-		t.Fatal("a token reached the update admission service")
+	if response.Code != http.StatusCreated || !service.called {
+		t.Fatalf("token admit = %d %s, called = %v", response.Code, response.Body.String(), service.called)
 	}
 
 	account.WebSession = true
@@ -47,7 +47,7 @@ func TestAdmitUpdateIsOnlyForTheWebSession(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
 	response = httptest.NewRecorder()
 	server.AdmitUpdate(response, request, generated.AdmitUpdateParams{})
-	if response.Code != http.StatusCreated || !service.called {
-		t.Fatalf("web session admit = %d %s, called = %v", response.Code, response.Body.String(), service.called)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("web session admit = %d %s", response.Code, response.Body.String())
 	}
 }

@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	accessdomain "bansoko/internal/accesscontrol/domain"
 	"bansoko/internal/filemanager"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/transport/httpapi/generated"
 )
 
 // fakeFileManager records the arguments it was called with and answers a
@@ -449,6 +451,53 @@ func TestFileManagerCommandHandlers(t *testing.T) {
 		`{"path":"/srv/library/a/ep01.mkv","expected_revision":"old"}`)
 	if recorder.Code != http.StatusConflict || body["code"] != filemanager.CodeEntryChanged {
 		t.Fatalf("a changed entry is a typed conflict: %d %v", recorder.Code, body)
+	}
+}
+
+// A delete operation needs the admin scope on top of the operation's write
+// scope (the route's x-scope cannot express it per kind); every other kind
+// stays a plain write.
+func TestFileManagerDeleteRequiresTheAdminScope(t *testing.T) {
+	submit := func(account accessdomain.Account) (*httptest.ResponseRecorder, map[string]any) {
+		t.Helper()
+		service := &fakeFileManager{}
+		server := &Server{deps: Dependencies{FileManager: service, RuntimeLogger: observabilityport.NopRuntimeLogger{}}}
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/file-manager/operations",
+			strings.NewReader(`{"operation":"delete","path":"/srv/library/a/ep01.mkv","expected_revision":"rev"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
+		server.SubmitFileManagerOperation(recorder, request, generated.SubmitFileManagerOperationParams{IdempotencyKey: "key-del"})
+		var body map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatalf("body is not JSON: %s", recorder.Body.String())
+		}
+		return recorder, body
+	}
+
+	writeOnly := accessdomain.Account{ID: "a", Role: "owner", Scopes: []string{accessdomain.ScopeRead, accessdomain.ScopeWrite}}
+	recorder, body := submit(writeOnly)
+	if recorder.Code != http.StatusForbidden || body["code"] != "TOKEN_SCOPE_INSUFFICIENT" {
+		t.Fatalf("delete without admin: %d %v", recorder.Code, body)
+	}
+
+	admin := accessdomain.Account{ID: "a", Role: "owner", Scopes: []string{accessdomain.ScopeRead, accessdomain.ScopeWrite, accessdomain.ScopeAdmin}}
+	recorder, body = submit(admin)
+	if recorder.Code != http.StatusAccepted || body["operation"] != "delete" {
+		t.Fatalf("delete with admin: %d %v", recorder.Code, body)
+	}
+
+	// A move stays a plain write: the write-only account reaches the service.
+	service := &fakeFileManager{}
+	server := &Server{deps: Dependencies{FileManager: service, RuntimeLogger: observabilityport.NopRuntimeLogger{}}}
+	recorder = httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/file-manager/operations",
+		strings.NewReader(`{"operation":"move","path":"/srv/library/a/ep01.mkv","expected_revision":"rev"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request = request.WithContext(context.WithValue(request.Context(), accountKey, writeOnly))
+	server.SubmitFileManagerOperation(recorder, request, generated.SubmitFileManagerOperationParams{IdempotencyKey: "key-mv"})
+	if recorder.Code != http.StatusAccepted || service.operation.Operation != filemanager.UserMove {
+		t.Fatalf("move with write scope: %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 

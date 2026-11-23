@@ -12,19 +12,18 @@ import (
 func (s *Server) SetEventActions(service *eventactions.Service) { s.deps.EventActions = service }
 
 func (s *Server) eventActions(w http.ResponseWriter, r *http.Request) *eventactions.Service {
-	account, ok := AccountFrom(r.Context())
-	cookie, _ := r.Context().Value(cookieAuthKey).(bool)
-	if !ok || account.Role != "owner" || !account.WebSession || !cookie {
-		writeError(w, r, webSessionRequired())
+	// Owner only, for every bearer kind; scope authorization (read or admin
+	// depending on the operation) runs in the middleware before this handler.
+	if !requireOwner(w, r) {
 		return nil
 	}
+
 	w.Header().Set("Cache-Control", "no-store")
 	if s.deps.EventActions == nil {
 		writeError(w, r, unavailable("SERVICE_NOT_CONFIGURED", "Event actions are not configured."))
 	}
 	return s.deps.EventActions
 }
-
 func (s *Server) ListEventActions(w http.ResponseWriter, r *http.Request) {
 	service := s.eventActions(w, r)
 	if service == nil {

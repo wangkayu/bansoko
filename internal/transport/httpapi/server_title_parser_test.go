@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -171,19 +170,19 @@ func TestUpdateTitleParserMapsAnAdoptionFailureTo502(t *testing.T) {
 	}
 }
 
-func TestUpdateTitleParserIsOnlyForTheWebSession(t *testing.T) {
+// The handler no longer distinguishes a web session from a token: the admin
+// scope gate lives in the middleware (x-scope: admin), so any authenticated
+// caller that reached the handler runs the update.
+func TestUpdateTitleParserAcceptsAnAuthenticatedCaller(t *testing.T) {
 	service := &fakeParserComponent{}
 	server := &Server{deps: Dependencies{TitleParser: service}}
-	account := accessdomain.Account{ID: "a", Role: "owner", Scopes: append([]string(nil), accessdomain.AllScopes...)}
+	account := accessdomain.Account{ID: "a", Role: "owner", Scopes: []string{accessdomain.ScopeRead, accessdomain.ScopeAdmin}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/title-parser/update", nil)
 	request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
 	response := httptest.NewRecorder()
 	server.UpdateTitleParser(response, request)
-	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "WEB_SESSION_REQUIRED") {
-		t.Fatalf("token update = %d %s, want 403 WEB_SESSION_REQUIRED", response.Code, response.Body.String())
-	}
-	if service.installCalls != 0 {
-		t.Fatal("a token reached the parser install service")
+	if response.Code != http.StatusOK || service.installCalls != 1 {
+		t.Fatalf("token update = %d %s, calls = %d", response.Code, response.Body.String(), service.installCalls)
 	}
 
 	account.WebSession = true
@@ -191,7 +190,7 @@ func TestUpdateTitleParserIsOnlyForTheWebSession(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
 	response = httptest.NewRecorder()
 	server.UpdateTitleParser(response, request)
-	if response.Code != http.StatusOK || service.installCalls != 1 {
+	if response.Code != http.StatusOK || service.installCalls != 2 {
 		t.Fatalf("web session update = %d %s, calls = %d", response.Code, response.Body.String(), service.installCalls)
 	}
 }

@@ -163,6 +163,14 @@ var pinnedTools = []string{
 	"fetch_seed_search_snapshot", "refresh_catalog_provider", "set_catalog_preference", "suppress_catalog_entry",
 	"unsuppress_catalog_entry", "patch_rss_source_offset", "patch_rss_source_anibt_mode", "retrieve_subgroup_group",
 	"delete_subgroup_group_entry",
+	// MCP 4-level permission surface (SEC-033): file manager browsing and
+	// operations, event actions, and the admin-scope maintenance tools.
+	"list_file_manager_roots", "list_file_manager_entries", "get_file_manager_entry", "get_file_manager_operation", "locate_file_manager_anime",
+	"preview_file_recognition", "submit_file_recognition", "align_file_entry", "submit_file_operation",
+	"add_file_manager_root", "remove_file_manager_root",
+	"list_event_actions", "list_event_action_attempts", "list_acquisition_script_receipts",
+	"read_event_action_scripts", "save_event_action",
+	"admit_update", "update_title_parser",
 }
 
 func TestToolListPinsTheAllowlist(t *testing.T) {
@@ -998,6 +1006,132 @@ func TestToolResultsWithholdOmittedProperties(t *testing.T) {
 	}
 	if got := api.last(t); got.Method != http.MethodGet || !strings.HasPrefix(got.Path, "/api/v1/one-shot-acquisitions/") {
 		t.Fatalf("last request = %s %s", got.Method, got.Path)
+	}
+}
+
+// secretOmittedNames is exactly the set of property names marked both
+// x-mcp-omit and x-secret in the OpenAPI file: the values a secrets holder
+// keeps in tool results. Changing the set is a reviewed contract change.
+func TestSecretOmittedNamesAreDualMarked(t *testing.T) {
+	doc := mustParseSpec(t)
+	dual := map[string]bool{}
+	var walk func(node any)
+	walk = func(node any) {
+		switch typed := node.(type) {
+		case map[string]any:
+			if props, ok := typed["properties"].(map[string]any); ok {
+				for name, property := range props {
+					if isOmitted(property) && isSecret(property) {
+						dual[name] = true
+					}
+				}
+			}
+			for _, child := range typed {
+				walk(child)
+			}
+		case []any:
+			for _, child := range typed {
+				walk(child)
+			}
+		}
+	}
+	walk(doc)
+	if len(dual) == 0 {
+		t.Fatal("no dual-marked (x-mcp-omit + x-secret) property found")
+	}
+	for name := range dual {
+		if !secretOmittedNames[name] {
+			t.Errorf("dual-marked property %q is missing from secretOmittedNames", name)
+		}
+	}
+	for name := range secretOmittedNames {
+		if !dual[name] {
+			t.Errorf("secretOmittedNames entry %q is not dual-marked in the OpenAPI file", name)
+		}
+		if !withheldNames[name] {
+			t.Errorf("secretOmittedNames entry %q is missing from withheldNames", name)
+		}
+	}
+}
+
+// A caller holding the secrets scope keeps the dual-marked values (the same
+// values REST returns to that bearer); the omit-only fields stay withheld.
+func TestSecretsHolderKeepsDualMarkedValues(t *testing.T) {
+	const secret = "https://tracker.example.test/download/1?passkey=SECRETKEY"
+	snapshot := `{"provider":"mikan","provider_entry_ref":"3001","group_ref":"678","snapshot_id":"snap-1",
+		"snapshot_version":4,"freshness":"fresh","content_hash":"sha256:` + strings.Repeat("c", 64) + `",
+		"seeds":[{"stable_seed_key":"seed-1","title":"[G] Show - 01","published_at":"2026-10-01T00:00:00Z",
+		"download_url":"` + secret + `","size_bytes":10,"info_hash":"` + strings.Repeat("a", 40) + `",
+		"expected_payload_digest":"sha256:` + strings.Repeat("d", 64) + `"}]}`
+	api := &fakeAPI{respond: func(r *http.Request) (int, string) { return http.StatusOK, snapshot }}
+	cli := newTestClient(t, api)
+	args := map[string]any{"provider": "mikan", "provider_entry_ref": "3001", "group_ref": "678"}
+
+	result, err := cli.CallTool(WithSecretsScope(context.Background()), mcp.CallToolRequest{Params: mcp.CallToolParams{Name: "get_feed_snapshot", Arguments: args}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error %s", textOf(result))
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), secret) {
+		t.Errorf("secrets holder lost the dual-marked download_url: %s", encoded)
+	}
+	if strings.Contains(string(encoded), "expected_payload_digest") {
+		t.Errorf("omit-only field reached a secrets holder: %s", encoded)
+	}
+
+	// The same call without the secrets scope withholds both.
+	plain := callTool(t, cli, "get_feed_snapshot", args)
+	encoded, err = json.Marshal(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "SECRETKEY") || strings.Contains(string(encoded), "download_url") {
+		t.Errorf("non-secrets caller received a withheld value: %s", encoded)
+	}
+}
+
+// The HTTP context function carries the secrets-scope flag from the outer
+// request into the tool call, so the redaction layers see it.
+func TestSecretsScopeFlowsFromTheHTTPCaller(t *testing.T) {
+	const secret = "https://tracker.example.test/feed?passkey=SECRETKEY"
+	groups := `{"provider":"mikan","provider_entry_ref":"3001","observed_at":"2026-10-01T00:00:00Z","source_version":"v1",
+		"schema_version":"s1","snapshot_version":2,"groups":[{"provider":"mikan","group_ref":"678","display_name":"G",
+		"feed_url":"` + secret + `","observed_at":"2026-10-01T00:00:00Z"}]}`
+	api := &fakeAPI{respond: func(r *http.Request) (int, string) { return http.StatusOK, groups }}
+	mcpHandler := Handler(api)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpHandler.ServeHTTP(w, r.WithContext(WithSecretsScope(r.Context())))
+	}))
+	t.Cleanup(httpServer.Close)
+
+	cli, err := client.NewStreamableHttpClient(httpServer.URL+"/api/v1/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cli.Close() })
+	ctx := context.Background()
+	if err := cli.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.Initialize(ctx, initializeRequest()); err != nil {
+		t.Fatal(err)
+	}
+	result := callTool(t, cli, "discover_feed_groups", map[string]any{"provider": "mikan", "provider_entry_ref": "3001"})
+	if result.IsError {
+		t.Fatalf("unexpected error %s", textOf(result))
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), secret) {
+		t.Errorf("secrets holder lost the dual-marked feed_url: %s", encoded)
 	}
 }
 

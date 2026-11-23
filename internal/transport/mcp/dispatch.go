@@ -25,9 +25,29 @@ type authorizationKey struct{}
 // withAuthorization carries the MCP caller's Authorization header into tool
 // handlers, so each operation is replayed through the HTTP middleware with the
 // caller's own credential (session or API token). The tools therefore grant
-// nothing the same bearer could not do over REST.
+// nothing the same bearer could not do over REST. The caller's secrets-scope
+// flag travels with it: the redaction layers (redact.go) keep dual-marked
+// x-secret values for a secrets holder only.
 func withAuthorization(ctx context.Context, r *http.Request) context.Context {
-	return context.WithValue(ctx, authorizationKey{}, r.Header.Get("Authorization"))
+	ctx = context.WithValue(ctx, authorizationKey{}, r.Header.Get("Authorization"))
+	if holdsSecretsScope(r.Context()) {
+		ctx = context.WithValue(ctx, secretsScopeKey{}, true)
+	}
+	return ctx
+}
+
+type secretsScopeKey struct{}
+
+// WithSecretsScope marks the MCP caller as holding the secrets scope. The
+// transport layer sets it on the outer MCP request after authenticating the
+// bearer; tool results then keep the values REST would return that bearer.
+func WithSecretsScope(ctx context.Context) context.Context {
+	return context.WithValue(ctx, secretsScopeKey{}, true)
+}
+
+func holdsSecretsScope(ctx context.Context) bool {
+	held, _ := ctx.Value(secretsScopeKey{}).(bool)
+	return held
 }
 
 // dispatcher replays a tool call as an in-process HTTP request against the
@@ -55,7 +75,7 @@ func (d *dispatcher) call(ctx context.Context, op *Operation, args map[string]an
 	if err != nil {
 		return mcp.NewToolResultError(op.Tool + " failed: " + err.Error())
 	}
-	return resultFrom(op, resp, echo)
+	return resultFrom(op, resp, echo, holdsSecretsScope(ctx))
 }
 
 // do builds and runs the request. echo holds the path arguments, returned when
@@ -232,7 +252,7 @@ func scalar(value any) (string, error) {
 // resultFrom projects a captured response into the tool result: the decoded
 // JSON body on success, the typed API error (status, code, message) on
 // failure, and a small confirmation for empty bodies.
-func resultFrom(op *Operation, resp *response, echo map[string]any) *mcp.CallToolResult {
+func resultFrom(op *Operation, resp *response, echo map[string]any, secrets bool) *mcp.CallToolResult {
 	raw := bytes.TrimSpace(resp.body.Bytes())
 	contentType := resp.header.Get("Content-Type")
 	if resp.status >= 400 {
@@ -243,7 +263,7 @@ func resultFrom(op *Operation, resp *response, echo map[string]any) *mcp.CallToo
 			}
 		}
 		// An error body is free-form for the withholding layers.
-		failure, _ = scrubFree(failure, 0).(map[string]any)
+		failure, _ = scrubFree(failure, 0, secrets).(map[string]any)
 		failure["status"] = resp.status
 		if _, has := failure["code"]; !has {
 			failure["code"] = "HTTP_" + strconv.Itoa(resp.status)
@@ -264,13 +284,13 @@ func resultFrom(op *Operation, resp *response, echo map[string]any) *mcp.CallToo
 			confirmation = map[string]any{"deleted": true}
 		}
 		for key, value := range echo {
-			confirmation[key] = scrubFree(value, 0)
+			confirmation[key] = scrubFree(value, 0, secrets)
 		}
 		return mcp.NewToolResultStructuredOnly(confirmation)
 	}
 	if strings.HasPrefix(contentType, "application/json") || contentType == "" {
 		if decoded, ok := decodeJSON(raw); ok {
-			return mcp.NewToolResultStructuredOnly(op.redact(resp.status, decoded))
+			return mcp.NewToolResultStructuredOnly(op.redact(resp.status, decoded, secrets))
 		}
 	}
 	if op.Withholds() {

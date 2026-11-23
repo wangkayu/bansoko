@@ -23,11 +23,14 @@ func load(t *testing.T) *Table {
 func TestEveryOperationDeclaresAScope(t *testing.T) {
 	table := load(t)
 	counts := map[string]int{}
-	var secrets []string
+	var secrets, admins []string
 	for _, route := range table.Routes() {
 		counts[route.Scope]++
 		if route.Scope == ScopeSecrets {
 			secrets = append(secrets, route.OperationID)
+		}
+		if route.Scope == ScopeAdmin {
+			admins = append(admins, route.OperationID)
 		}
 	}
 	if counts[ScopeRead] == 0 || counts[ScopeWrite] == 0 || counts[ScopeNone] == 0 {
@@ -39,6 +42,24 @@ func TestEveryOperationDeclaresAScope(t *testing.T) {
 	sort.Strings(secrets)
 	if want := []string{"exportBackup", "prepareBackupDownload", "readApiTokenRaw", "restoreBackup"}; !reflect.DeepEqual(secrets, want) {
 		t.Fatalf("secrets-scope operations = %q, want %q", secrets, want)
+	}
+
+	// The admin scope guards the irreversible high-risk operations: destructive
+	// deletes, the API token lifecycle, update admission, event action writes,
+	// the naming-vars program writes and the file manager root changes. Adding
+	// or removing one is a reviewed contract change.
+	sort.Strings(admins)
+	if want := []string{
+		"activateNamingVarsVersion", "addFileManagerRoot", "admitUpdate",
+		"cleanupAnimeLocalData", "createApiToken", "deleteAnimeConfigCandidate",
+		"deleteAnimeSubscription", "deletePlacement", "deletePluginTarget",
+		"deleteQBittorrentTorrent", "deleteSubgroupGroupDictionaryEntry",
+		"importNamingVars", "listFileManagerRootPickerEntries",
+		"readEventActionScripts", "removeFileManagerRoot", "revokeApiToken",
+		"rotateApiToken", "saveEventAction", "saveNamingVarsVersion",
+		"updateAccount", "updateTitleParser",
+	}; !reflect.DeepEqual(admins, want) {
+		t.Fatalf("admin-scope operations = %q, want %q", admins, want)
 	}
 	if _, err := Parse([]byte("openapi: 3.1.0\npaths:\n  /x:\n    get:\n      operationId: x\n")); err == nil {
 		t.Fatal("an operation without x-scope must be refused")
@@ -154,14 +175,14 @@ func TestMatchFindsTheServingOperation(t *testing.T) {
 		{http.MethodPost, "/api/v1/backup/restore", "restoreBackup", ScopeSecrets},
 		{http.MethodPost, "/api/v1/backup/download-ticket", "prepareBackupDownload", ScopeSecrets},
 		{http.MethodGet, "/api/v1/backup/download", "downloadPreparedBackup", ScopeNone},
-		{http.MethodPost, "/api/v1/api-tokens", "createApiToken", ScopeWrite},
+		{http.MethodPost, "/api/v1/api-tokens", "createApiToken", ScopeAdmin},
 		{http.MethodPost, "/api/v1/auth/login", "login", ScopeNone},
 		{http.MethodPost, "/api/v1/config/business-preset/load", "loadBusinessPresetIntoDraft", ScopeRead},
 		{http.MethodPost, "/api/v1/plugin-targets/p-1/test", "testPluginTarget", ScopeWrite},
 		{http.MethodPost, "/api/v1/config/connections/c%2F1/test", "testConnection", ScopeRead},
 		// Percent-encoded literals reach the same handler through ServeMux.
 		{http.MethodPatch, "/api/v1/anime-config-c%61ndidates/c-1", "patchAnimeConfigCandidate", ScopeWrite},
-		{http.MethodDelete, "/api/v1/api-t%6Fkens/t-1", "revokeApiToken", ScopeWrite},
+		{http.MethodDelete, "/api/v1/api-t%6Fkens/t-1", "revokeApiToken", ScopeAdmin},
 	}
 	for _, tc := range cases {
 		route, ok := table.Match(tc.method, tc.path)

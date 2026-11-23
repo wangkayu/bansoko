@@ -433,18 +433,21 @@ func (o *Operation) Withholds() bool { return o.withholds }
 
 // redact applies the withholding layers (redact.go) to a decoded success body,
 // following the response schema declared for that status, and returns it.
-func (o *Operation) redact(status int, body any) any {
+// secrets is true when the caller holds the secrets scope (redact.go keeps
+// dual-marked properties for it).
+func (o *Operation) redact(status int, body any, secrets bool) any {
 	schema, ok := o.responseSchemas[strconv.Itoa(status)]
 	if ok {
-		return o.redactor.apply(body, schema, 0)
+		return o.redactor.apply(body, schema, 0, secrets)
 	}
 	if len(o.responseSchemas) == 0 {
-		return scrubFree(body, 0)
+		return scrubFree(body, 0, secrets)
 	}
+
 	// An undeclared success status still must not leak: apply every declared
 	// success schema.
 	for _, candidate := range o.responseSchemas {
-		body = o.redactor.apply(body, candidate, 0)
+		body = o.redactor.apply(body, candidate, 0, secrets)
 	}
 	return body
 }

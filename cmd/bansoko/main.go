@@ -138,7 +138,7 @@ Usage:
   bansoko status --anime-id ID [--json]              owner-chain status
   bansoko wait --anime-id ID [--interval S] [--timeout S]
   bansoko retry --owner rss|download|artifact --owner-id ID [--reason R]
-  bansoko api-token create --name N [--scopes read,write] | list | revoke --id ID
+  bansoko api-token create --name N [--scopes read,write,admin,secrets] | list | revoke --id ID
   bansoko guide [--skill] [--name N]                 print the agent guide (SKILL.md with --skill)
 
 Global:

@@ -1,6 +1,6 @@
 // Package apiscope reads the bearer scope model out of the OpenAPI contract
 // (SEC-033). Every operation declares the scope it needs in `x-scope`
-// (`read`, `write`, `secrets`, or `none` for the anonymous operations), and a
+// (`read`, `write`, `admin`, `secrets`, or `none` for the anonymous operations), and a
 // string property marked `x-secret: true` is returned as the fixed placeholder
 // SecretPlaceholder to a bearer that lacks the `secrets` scope.
 //
@@ -33,6 +33,7 @@ const (
 	ScopeNone    = "none"
 	ScopeRead    = "read"
 	ScopeWrite   = "write"
+	ScopeAdmin   = "admin"
 	ScopeSecrets = "secrets"
 )
 
@@ -110,7 +111,7 @@ func Parse(raw []byte) (*Table, error) {
 			id, _ := node["operationId"].(string)
 			scope, _ := node[scopeExtension].(string)
 			switch scope {
-			case ScopeRead, ScopeWrite, ScopeSecrets:
+			case ScopeRead, ScopeWrite, ScopeAdmin, ScopeSecrets:
 				if anonymous(node) {
 					return nil, fmt.Errorf("%s: anonymous operation must declare x-scope none, not %q", id, scope)
 				}
@@ -119,7 +120,7 @@ func Parse(raw []byte) (*Table, error) {
 					return nil, fmt.Errorf("%s: x-scope none is only for anonymous operations (security: [])", id)
 				}
 			default:
-				return nil, fmt.Errorf("%s (%s %s): x-scope must be read, write, secrets or none, got %q", id, strings.ToUpper(method), path, scope)
+				return nil, fmt.Errorf("%s (%s %s): x-scope must be read, write, admin, secrets or none, got %q", id, strings.ToUpper(method), path, scope)
 			}
 			route := &Route{
 				OperationID: id,

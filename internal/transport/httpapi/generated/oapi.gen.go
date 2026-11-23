@@ -17,8 +17,7 @@ import (
 )
 
 const (
-	BearerAuthScopes     = "bearerAuth.Scopes"
-	BrowserSessionScopes = "browserSession.Scopes"
+	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
 // Defines values for AcquireSeedOnceInputInputSource.
@@ -352,6 +351,7 @@ const (
 
 // Defines values for ApiTokenScope.
 const (
+	ApiTokenScopeAdmin   ApiTokenScope = "admin"
 	ApiTokenScopeRead    ApiTokenScope = "read"
 	ApiTokenScopeSecrets ApiTokenScope = "secrets"
 	ApiTokenScopeWrite   ApiTokenScope = "write"
@@ -3939,7 +3939,7 @@ type ApiTokenRaw struct {
 	Token string `json:"token"`
 }
 
-// ApiTokenScope read: read-only operations (GET and read-only POST previews). write: operations that change state, including starting work. secrets: fields marked x-secret are returned as stored instead of the fixed placeholder "[secret]". Every token holds read.
+// ApiTokenScope read: read-only operations (GET and read-only POST previews). write: operations that change state, including starting work. admin: irreversible high-risk operations (destructive deletes, the API token lifecycle, update admission). secrets: fields marked x-secret are returned as stored instead of the fixed placeholder "[secret]". Every token holds read.
 type ApiTokenScope string
 
 // ApiTokenScopes defines model for ApiTokenScopes.
@@ -14067,7 +14067,7 @@ func (siw *ServerInterfaceWrapper) ListAcquisitionScriptReceipts(w http.Response
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -17473,7 +17473,7 @@ func (siw *ServerInterfaceWrapper) ListEventActions(w http.ResponseWriter, r *ht
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -17493,7 +17493,7 @@ func (siw *ServerInterfaceWrapper) SaveEventAction(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -17515,7 +17515,7 @@ func (siw *ServerInterfaceWrapper) ListEventActionAttempts(w http.ResponseWriter
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -17548,7 +17548,7 @@ func (siw *ServerInterfaceWrapper) ReadEventActionScripts(w http.ResponseWriter,
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BrowserSessionScopes, []string{})
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 

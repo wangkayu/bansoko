@@ -20,9 +20,10 @@ An API token carries a fixed set of **scopes**, chosen when it is created and ke
 |---|---|
 | `read` | Every read, including read-only previews sent as POST. Always part of the set. |
 | `write` | Every operation that changes state or starts work (MCP tools marked as writes). |
+| `admin` | High-risk operations that change the instance itself: admitting an update, installing a parser build, saving event actions, adding or removing library roots, deleting a file, managing API tokens. Never needed for subscription or download work. |
 | `secrets` | Reading fields marked secret (feed locators, seed and release locations, item keys) as stored. Without it each such value reads as the placeholder `[secret]`. |
 
-New tokens get `read` and `write`. An agent token should not carry `secrets`. A call outside the token's scopes fails with HTTP 403 `TOKEN_SCOPE_INSUFFICIENT`; `required_scope` names the missing scope. A session token holds every scope. A token can never create, rotate or reveal a token with a scope it does not hold itself.
+New tokens get `read` and `write`. An agent token should not carry `admin` or `secrets`. A call outside the token's scopes fails with HTTP 403 `TOKEN_SCOPE_INSUFFICIENT`; `required_scope` names the missing scope. A session token holds every scope. A token can never create, rotate or reveal a token with a scope it does not hold itself.
 
 Register the MCP server in a client:
 
@@ -56,14 +57,14 @@ There is no "needs attention" inbox. Problems are visible as failed states on th
 ## 3. Safety rules
 
 1. **Confirm before destroying.** `delete_candidate` and `delete_subscription` are irreversible. Ask the human first, and say what will be removed. Prefer `patch_subscription` with `state=stopped` when the human only wants a pause.
-2. **Never reveal secrets.** Do not request, log or repeat download URLs, torrent URLs, RSS locators with embedded keys (passkeys), or API tokens. No MCP tool returns a download, feed or torrent URL: the fields that carry one (feed snapshots, seed and release locations, one-shot readbacks, release identity keys) are withheld, and any other URL with a query string or credentials is replaced with `[withheld]` in every tool result. RSS source read views show a redacted `locator_display` of the configured feed; seeds and releases show no location at all. Address releases by `release_id`, never by an item key. Candidate drafts carry each RSS source's `locator`; without the `secrets` scope it reads as `[secret]`. To edit such a candidate, send the draft back with `[secret]` left in place: `patch_candidate` keeps the stored locator of the same source (same `source_kind`, and the same `locator_display` when you send one). Any other draft write that still holds `[secret]`, or a placeholder that matches no single stored source, fails with `DRAFT_INVALID` and detail code `SECRET_PLACEHOLDER_UNRESOLVED`: ask the human for the real feed address instead of guessing. If your token does hold `secrets`, treat candidate payloads as secret and do not paste them into messages for other people.
+2. **Never reveal secrets.** Do not request, log or repeat download URLs, torrent URLs, RSS locators with embedded keys (passkeys), or API tokens. Without the `secrets` scope no MCP tool returns a download, feed or torrent URL: the fields that carry one (feed snapshots, seed and release locations, one-shot readbacks, release identity keys) are withheld, and any other URL with a query string or credentials is replaced with `[withheld]` in every tool result. With the `secrets` scope those same fields read as stored over MCP too; treat every such result as secret material and never paste it into messages for other people. RSS source read views show a redacted `locator_display` of the configured feed; seeds and releases show no location at all. Address releases by `release_id`, never by an item key. Candidate drafts carry each RSS source's `locator`; without the `secrets` scope it reads as `[secret]`. To edit such a candidate, send the draft back with `[secret]` left in place: `patch_candidate` keeps the stored locator of the same source (same `source_kind`, and the same `locator_display` when you send one). Any other draft write that still holds `[secret]`, or a placeholder that matches no single stored source, fails with `DRAFT_INVALID` and detail code `SECRET_PLACEHOLDER_UNRESOLVED`: ask the human for the real feed address instead of guessing. If your token does hold `secrets`, treat candidate payloads as secret and do not paste them into messages for other people.
 3. **Read before you write.** Every owner mutation needs the current `version` (section 4). Read the owner first; never guess or reuse an old number.
 4. **Do not invent identifiers.** Use ids returned by earlier calls. Do not fabricate a `revision`, `release_id` or `rss_source_id`.
 5. **No manual data edits.** Do not touch the database or the library directly to repair a problem. Use the retry tools.
 6. **Respect maintenance.** While the instance is in maintenance every write fails with `WRITES_REJECTED` (HTTP 503) and reads still work. Wait and retry later; do not loop.
 7. **Overwrite deletes files.** A `file_effect` with `collision_policy=overwrite` replaces an existing file at the target path and permanently deletes it, including a file the library manages: that file's placement becomes `displaced` and its episode is no longer counted for its anime (another instance's or another episode alike). Alignment (moving files to their expected names) follows the same setting and treats a video and its subtitles as one unit. Do not set `overwrite` in a draft unless the human asked for it.
 8. **Saving is not executing.** `save_*_policy`, `put_global_section` and `put_naming_template_library` only store a setting. Nothing is re-evaluated, moved or downloaded until the matching work runs: for files use `replan_file_maintenance` or `align_anime_files`, for releases `reevaluate_releases`. A Global change never reaches existing subscriptions.
-9. **Irreversible tools need confirmation.** `delete_qbittorrent_torrent`, `cleanup_anime_local_data`, `delete_plugin_target` and `delete_subgroup_group_entry` cannot be undone; `test_connection` and `test_network_route` contact the real service. Ask the human first.
+9. **Irreversible tools need confirmation.** `delete_qbittorrent_torrent`, `cleanup_anime_local_data`, `delete_plugin_target` and `delete_subgroup_group_entry` cannot be undone; `test_connection` and `test_network_route` contact the real service. Ask the human first. The same holds for the tools gated behind the `admin` scope (`admit_update`, `update_title_parser`, `save_event_action`, `add_file_manager_root`, `remove_file_manager_root`): they change the instance itself, so confirm with the human before calling them.
 10. **Secrets are write-only.** Connection, network route and notification target credentials can be set but never read back: reads show only `credential_configured`, `has_secret` or `has_signing_secret`. Do not echo a credential the human gave you.
 11. **Do not poll hot.** `poll_workspace` already waits (default 30 seconds, at most 120). `bansoko wait` polls every 2 seconds by default. Do not call read tools in a tight loop.
 
@@ -288,8 +289,23 @@ Both need an `Idempotency-Key` and answer `PLACEMENT_EXIT_UNAVAILABLE` (409) wit
 | Evaluate what the replacement policy would decide now (a dry evaluation; nothing is replaced) | `evaluate_replacement` | `evaluateReplacement` | - |
 | Recompute the file-maintenance plan after a policy or setting change | `replan_file_maintenance` | `replanFileMaintenance` | - |
 
-Browsing is HTTP only and goes by absolute path: `listFileManagerRoots` returns the library directories the owner added, and `listFileManagerEntries` lists one directory by `path`, paged with `cursor`. The roots are the whole browsing surface: every path you send must be absolute and lie inside one of them, and a path outside all of them is refused with `FILE_MANAGER_PATH_OUTSIDE_ROOTS`; a relative path, a path through a symbolic link, and a path inside an application-data or system directory are all refused too. Roots themselves are owner configuration, not agent work: `addFileManagerRoot` and `removeFileManagerRoot` exist for the WebUI. `getFileManagerEntry` reads one entry, and the other file operations and alignment are HTTP only too (`submitFileManagerOperation`, `getFileManagerOperation`, `alignFileManagerEntry`). A changed file or target is refused with `FILE_MANAGER_ENTRY_CHANGED` or `FILE_MANAGER_MATCH_TARGET_CHANGED` and nothing is written: preview again. Writing to a directory that holds files the product manages is refused with `FILE_MANAGER_ENTRY_LOCKED`, whose `details` names the locked paths.
+Browsing goes by absolute path: `list_file_manager_roots` returns the library directories the owner added, and `list_file_manager_entries` lists one directory by `path`, paged with `cursor`. The roots are the whole browsing surface: every path you send must be absolute and lie inside one of them, and a path outside all of them is refused with `FILE_MANAGER_PATH_OUTSIDE_ROOTS`; a relative path, a path through a symbolic link, and a path inside an application-data or system directory are all refused too. `get_file_manager_entry` reads one entry, and `locate_file_manager_anime` names the browsable directory holding one anime's current files. Roots are owner configuration: adding or removing one (`add_file_manager_root`, `remove_file_manager_root`) needs the admin scope and touches no file on disk.
 
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| List the library directories that browsing is limited to | `list_file_manager_roots` | `listFileManagerRoots` | - |
+| Authorize one library directory (admin scope) | `add_file_manager_root` | `addFileManagerRoot` | - |
+| Stop authorizing one library directory (admin scope; files are never deleted) | `remove_file_manager_root` | `removeFileManagerRoot` | - |
+| List one directory by absolute path, paged with `cursor` | `list_file_manager_entries` | `listFileManagerEntries` | - |
+| Read one entry: derived state, owners, allowed operations, the revision writes must name | `get_file_manager_entry` | `getFileManagerEntry` | - |
+| The browsable directory holding one anime's current files | `locate_file_manager_anime` | `locateFileManagerAnime` | - |
+| Move, rename, copy or delete one file (re-derives the entry state and compares the revision; `delete` requires the admin scope) | `submit_file_operation` | `submitFileManagerOperation` | - |
+| Follow one admitted file operation and its outcome | `get_file_manager_operation` | `getFileManagerOperation` | - |
+| Align one managed video file with its naming rules | `align_file_entry` | `alignFileManagerEntry` | - |
+| Preview what renaming and moving a selected set of files would do (writes nothing) | `preview_file_recognition` | `previewFileManagerRecognition` | - |
+| Apply the confirmed recognition preview as one batch of move/rename operations | `submit_file_recognition` | `submitFileManagerRecognition` | - |
+
+A changed file or target is refused with `FILE_MANAGER_ENTRY_CHANGED` or `FILE_MANAGER_MATCH_TARGET_CHANGED` and nothing is written: preview again. Writing to a directory that holds files the product manages is refused with `FILE_MANAGER_ENTRY_LOCKED`, whose `details` names the locked paths. Deleting a file (`submit_file_operation` with `operation=delete`) requires a bearer holding both `write` and `admin` scopes, and applies only to a detached file.
 ### 5.4 Execution records (group `records`)
 
 | Step | MCP tool | operationId | CLI |
@@ -333,14 +349,16 @@ System and schedules:
 | Change one schedule (`enabled`, `interval_value`, `interval_unit`) | `patch_automation_schedule` | `patchAutomationSchedule` | - |
 | Read one automation run by id (the result of `automation_run`) | `get_automation_run` | `getAutomationRun` | - |
 | Read the update status | `get_update_status` | `getUpdateStatus` | - |
-| Ask the update channel whether a newer version exists (changes nothing; applying updates is not an agent operation) | `check_update` | `checkUpdate` | - |
+| Ask the update channel whether a newer version exists (changes nothing) | `check_update` | `checkUpdate` | - |
+| Admit a downloaded update and let the deployment apply it (admin scope; destructive maintenance) | `admit_update` | `admitUpdate` | - |
 
-Parser component. The release-title parser (`reltitle`) has its own channel, separate from the Bansoko application update. Installing a parser build is a human action in the interface, like every other update; agents may read and ask the channel.
+Parser component. The release-title parser (`reltitle`) has its own channel, separate from the Bansoko application update. Reading the running build and asking the channel are ordinary operations; installing a strictly newer build needs the admin scope.
 
 | Step | MCP tool | operationId | CLI |
 |---|---|---|---|
 | Read the running parser build, its dictionary digest, the installed binary path and the last channel answer (never contacts the network) | `get_title_parser` | `getTitleParser` | - |
 | Ask the published reltitle channel whether a newer parser build exists on the running major.minor line (installs nothing) | `check_title_parser` | `checkTitleParser` | - |
+| Install a strictly newer parser build from the channel and switch the running backend (admin scope) | `update_title_parser` | `updateTitleParser` | - |
 
 Global sections, naming and vocabularies:
 
@@ -404,8 +422,17 @@ Connections, routes and notifications. Secrets are write-only:
 
 URLs: a connection `base_url` or proxy endpoint that carries credentials or a query string is refused when saved, and any such value in a result is replaced with `[withheld]`. Put credentials in the credential fields, never in the URL.
 
-API tokens are managed in the web UI or with `bansoko api-token create --name N [--scopes read,write]`, `list`, `revoke`; no MCP tool covers them. Update admission and bootstrap are not agent operations (reading the update status and checking for one are). Database backups are files: a token holding the secrets scope may download one (`GET /backup/export`). Restoring (`POST /backup/restore`, which replaces all data and restarts the service) is only for the owner signed in to the web UI: every API token gets 403 `WEB_SESSION_REQUIRED` whatever its scopes, and no MCP tool performs either. Rotating the secret encryption key or the session secret are server-side commands run by the owner at the deployment (`deployment/scripts/rotate-secret-key.sh`, `deployment/scripts/rotate-session-secret.sh`).
+Event actions. A lifecycle event (such as an acquisition reaching a state) can run one script file from the scripts directory; a binding is enabled or disabled, has a timeout, and may record each run's receipt on the acquisition. Saving a binding or reading the script files needs the admin scope; the bindings, attempts and receipts are ordinary reads.
 
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| List the current event bindings: which event runs which script, enabled, timeout, result recording | `list_event_actions` | `listEventActions` | - |
+| Save one event binding (admin scope; a null script removes it; send the current version) | `save_event_action` | `saveEventAction` | - |
+| List the available script files, or read one file's preflight and bounded preview (admin scope) | `read_event_action_scripts` | `readEventActionScripts` | - |
+| List the latest script attempts (with `warnings`, only the first missing-file attempt of each missing period) | `list_event_action_attempts` | `listEventActionAttempts` | - |
+| List the script receipts recorded for one acquisition | `list_acquisition_script_receipts` | `listAcquisitionScriptReceipts` | - |
+
+API tokens are managed in the web UI or with `bansoko api-token create --name N [--scopes read,write]`, `list`, `revoke`; no MCP tool covers them. Bootstrap is not an agent operation. Database backups are files: a token holding the secrets scope may download one (`GET /backup/export`). Restoring (`POST /backup/restore`, which replaces all data and restarts the service) is only for the owner signed in to the web UI: every API token gets 403 `WEB_SESSION_REQUIRED` whatever its scopes, and no MCP tool performs either. Rotating the secret encryption key or the session secret are server-side commands run by the owner at the deployment (`deployment/scripts/rotate-secret-key.sh`, `deployment/scripts/rotate-session-secret.sh`).
 ### 5.6 Downloads (group `downloads`)
 
 The downloader is run by the human; these tools read it and control the torrents Bansoko added. The stage retries re-run a failed pipeline stage, using the owner id and its `failed_work_item_id` from `get_workspace`.
@@ -425,7 +452,7 @@ The downloader is run by the human; these tools read it and control the torrents
 
 ### Not in MCP
 
-The file manager beyond releasing and matching (browsing, other file operations, alignment of an arbitrary path), naming variables, API tokens, update admission, backup and restore, sessions and login, bootstrap, image streams and the event stream. Use HTTP or the CLI for the ones that exist there.
+Naming variables, API tokens, backup and restore, sessions and login, bootstrap, image streams and the event stream, and deleting a file through the file manager (over HTTP it needs the admin scope; MCP refuses it). Use HTTP or the CLI for the ones that exist there.
 
 ## 6. Repair is re-enqueue
 

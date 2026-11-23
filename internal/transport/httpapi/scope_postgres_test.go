@@ -72,15 +72,16 @@ func assertScopeRefused(t *testing.T, surface string, recorder *httptest.Respons
 }
 
 // TestApiTokenScopesAreEnforced covers the scope model end to end: a read
-// token reads but cannot write (403 naming write); a read,write token cannot
-// read a raw token or mint/rotate a token with secrets (no escalation); an
-// invalid scope set is 422; the list shows each token's scopes; a session
-// holds every scope.
+// token reads but cannot write (403 naming write); the admin scope gates the
+// token lifecycle and implies no write of its own; a read,admin token cannot
+// mint or rotate beyond itself (no escalation to secrets); an invalid scope
+// set is 422; the list shows each token's scopes; a session holds every scope.
 func TestApiTokenScopesAreEnforced(t *testing.T) {
 	rig, session := scopeRig(t)
 
 	readID, readOnly := createScopedToken(t, rig, session, "reader", "read")
 	writerID, writer := createScopedToken(t, rig, session, "writer", "read", "write")
+	_, admin := createScopedToken(t, rig, session, "adminer", "read", "admin")
 	secretID, _ := createScopedToken(t, rig, session, "full", "read", "write", "secrets")
 	_, _ = createScopedToken(t, rig, session, "defaulted")
 
@@ -92,29 +93,41 @@ func TestApiTokenScopesAreEnforced(t *testing.T) {
 		t.Fatalf("a read-only POST preview must not need write: %s", body)
 	}
 
-	// Writes are refused for read, before the handler runs.
+	// Writes are refused for read, before the handler runs; admin does not imply write.
 	recorder, body := rig.do(t, http.MethodPost, "/api/v1/anime-config-candidates", draftPayload(), readOnly)
 	assertScopeRefused(t, "read token candidate save", recorder, body, "write")
-	recorder, body = rig.do(t, http.MethodDelete, "/api/v1/api-tokens/"+writerID, nil, readOnly)
-	assertScopeRefused(t, "read token revoke", recorder, body, "write")
+	recorder, body = rig.do(t, http.MethodPost, "/api/v1/anime-config-candidates", draftPayload(), admin)
+	assertScopeRefused(t, "read,admin token candidate save", recorder, body, "write")
 	if recorder, body := rig.do(t, http.MethodPost, "/api/v1/anime-config-candidates", draftPayload(), writer); recorder.Code != http.StatusCreated {
 		t.Fatalf("read,write token candidate save: %d %s", recorder.Code, body)
 	}
 
-	// The raw value needs secrets; a token never mints or rotates beyond itself.
+	// The token lifecycle is admin: read and read,write tokens cannot create,
+	// revoke or rotate at all.
+	recorder, body = rig.do(t, http.MethodDelete, "/api/v1/api-tokens/"+writerID, nil, readOnly)
+	assertScopeRefused(t, "read token revoke", recorder, body, "admin")
+	recorder, body = rig.do(t, http.MethodPost, "/api/v1/api-tokens", map[string]any{"name": "nope"}, writer)
+	assertScopeRefused(t, "read,write creating a token", recorder, body, "admin")
+	recorder, body = rig.do(t, http.MethodPost, "/api/v1/api-tokens/"+readID, nil, writer)
+	assertScopeRefused(t, "read,write rotating a token", recorder, body, "admin")
+
+	// The raw value needs secrets; an admin token never mints or rotates beyond itself.
 	recorder, body = rig.do(t, http.MethodGet, "/api/v1/api-tokens/"+readID+"/raw", nil, writer)
 	assertScopeRefused(t, "read,write raw read", recorder, body, "secrets")
 	recorder, body = rig.do(t, http.MethodPost, "/api/v1/api-tokens",
-		map[string]any{"name": "escalate", "scopes": []string{"read", "write", "secrets"}}, writer)
-	assertScopeRefused(t, "read,write creating a secrets token", recorder, body, "secrets")
-	recorder, body = rig.do(t, http.MethodPost, "/api/v1/api-tokens/"+secretID, nil, writer)
-	assertScopeRefused(t, "read,write rotating a secrets token", recorder, body, "secrets")
-	if _, child := createScopedToken(t, rig, writer, "child", "read"); child == nil {
-		t.Fatal("a token can mint a narrower token")
+		map[string]any{"name": "escalate-write", "scopes": []string{"read", "write"}}, admin)
+	assertScopeRefused(t, "read,admin creating a write token", recorder, body, "write")
+	recorder, body = rig.do(t, http.MethodPost, "/api/v1/api-tokens",
+		map[string]any{"name": "escalate-secrets", "scopes": []string{"read", "admin", "secrets"}}, admin)
+	assertScopeRefused(t, "read,admin creating a secrets token", recorder, body, "secrets")
+	recorder, body = rig.do(t, http.MethodPost, "/api/v1/api-tokens/"+secretID, nil, admin)
+	assertScopeRefused(t, "read,admin rotating a write+secrets token", recorder, body, "write")
+	if _, child := createScopedToken(t, rig, admin, "child", "read"); child == nil {
+		t.Fatal("an admin token can mint a narrower token")
 	}
 
 	// Invalid sets are refused as input errors.
-	for _, scopes := range [][]string{{"write"}, {"read", "read"}, {"read", "admin"}, {}} {
+	for _, scopes := range [][]string{{"write"}, {"read", "read"}, {"admin"}, {}} {
 		recorder, body := rig.do(t, http.MethodPost, "/api/v1/api-tokens", map[string]any{"name": "bad", "scopes": scopes}, session)
 		if recorder.Code != http.StatusUnprocessableEntity && recorder.Code != http.StatusBadRequest {
 			t.Fatalf("scopes %v: got %d %s, want 422", scopes, recorder.Code, body)
@@ -142,7 +155,7 @@ func TestApiTokenScopesAreEnforced(t *testing.T) {
 	for _, token := range decodeBody[[]generated.ApiToken](t, body) {
 		listed[token.Name] = strings.Join(scopeStrings(token.Scopes), ",")
 	}
-	want := map[string]string{"reader": "read", "writer": "read,write", "full": "read,write,secrets", "defaulted": "read,write", "child": "read"}
+	want := map[string]string{"reader": "read", "writer": "read,write", "adminer": "read,admin", "full": "read,write,secrets", "defaulted": "read,write", "child": "read"}
 	for name, scopes := range want {
 		if listed[name] != scopes {
 			t.Fatalf("list scopes for %s = %q, want %q (all %v)", name, listed[name], scopes, listed)

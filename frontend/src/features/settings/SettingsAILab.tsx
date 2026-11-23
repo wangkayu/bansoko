@@ -28,10 +28,11 @@ import { buildAgentSetup, downloadTextFile } from "./agentSetup";
 //   disappears and the old key dies at once) and, being dangerous, requires confirmation. This
 //   section has no page-level draft; every action takes effect immediately.
 //   Permissions (scopes) are chosen at creation and never changeable: view is always included,
-//   write checked by default, read sensitive values unchecked by default (a token for an AI
-//   assistant should not carry it); each list row shows its token's permissions.
+//   write checked by default; admin (high-risk operations) and read sensitive values are
+//   unchecked by default (a token for an AI assistant should not carry them); each list row
+//   shows its token's permissions.
 
-const SCOPE_ORDER: ApiTokenScope[] = ["read", "write", "secrets"];
+const SCOPE_ORDER: ApiTokenScope[] = ["read", "write", "admin", "secrets"];
 
 function scopeSummary(scopes: ApiTokenScope[]): string {
   const labels = SCOPE_ORDER.filter((scope) => scopes.includes(scope)).map((scope) => t(`settings.token.scope.${scope}`));
@@ -83,6 +84,7 @@ export function SettingsAILab() {
   const tokens = useQuery({ queryKey: apiTokenKeys.all, queryFn: listApiTokens });
   const [name, setName] = useState("");
   const [allowWrite, setAllowWrite] = useState(true);
+  const [allowAdmin, setAllowAdmin] = useState(false);
   const [allowSecrets, setAllowSecrets] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
@@ -97,6 +99,7 @@ export function SettingsAILab() {
     mutationFn: () => {
       const scopes: ApiTokenScope[] = ["read"];
       if (allowWrite) scopes.push("write");
+      if (allowAdmin) scopes.push("admin");
       if (allowSecrets) scopes.push("secrets");
       return createApiToken(name.trim(), scopes);
     },
@@ -105,6 +108,7 @@ export function SettingsAILab() {
       toast.success(t("settings.token.created"));
       setName("");
       setAllowWrite(true);
+      setAllowAdmin(false);
       setAllowSecrets(false);
       void queryClient.invalidateQueries({ queryKey: apiTokenKeys.all });
     },
@@ -242,6 +246,10 @@ export function SettingsAILab() {
             <Checkbox checked={allowWrite} onCheckedChange={setAllowWrite}>
               {t("settings.token.scope.write")}
               <span className="text-caption settings-ai-muted"> · {t("settings.token.scope.writeHint")}</span>
+            </Checkbox>
+            <Checkbox checked={allowAdmin} onCheckedChange={setAllowAdmin}>
+              {t("settings.token.scope.admin")}
+              <span className="text-caption settings-ai-muted"> · {t("settings.token.scope.adminHint")}</span>
             </Checkbox>
             <Checkbox checked={allowSecrets} onCheckedChange={setAllowSecrets}>
               {t("settings.token.scope.secrets")}

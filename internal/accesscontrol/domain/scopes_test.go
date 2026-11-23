@@ -8,11 +8,13 @@ import (
 
 func TestNormalizeApiTokenScopes(t *testing.T) {
 	valid := map[string][]string{
-		"":                   {ScopeRead, ScopeWrite},
-		"read":               {ScopeRead},
-		"write,read":         {ScopeRead, ScopeWrite},
-		"secrets,read":       {ScopeRead, ScopeSecrets},
-		"secrets,write,read": {ScopeRead, ScopeWrite, ScopeSecrets},
+		"":                         {ScopeRead, ScopeWrite},
+		"read":                     {ScopeRead},
+		"write,read":               {ScopeRead, ScopeWrite},
+		"secrets,read":             {ScopeRead, ScopeSecrets},
+		"secrets,write,read":       {ScopeRead, ScopeWrite, ScopeSecrets},
+		"admin,read":               {ScopeRead, ScopeAdmin},
+		"secrets,admin,write,read": {ScopeRead, ScopeWrite, ScopeAdmin, ScopeSecrets},
 	}
 	for input, want := range valid {
 		var requested []string
@@ -27,12 +29,13 @@ func TestNormalizeApiTokenScopes(t *testing.T) {
 			t.Fatalf("%q: stored value does not round-trip: %v", input, decoded)
 		}
 	}
-	for _, invalid := range [][]string{{ScopeWrite}, {ScopeRead, ScopeRead}, {ScopeRead, "admin"}, {""}} {
+	for _, invalid := range [][]string{{ScopeWrite}, {ScopeRead, ScopeRead}, {ScopeRead, "superuser"}, {ScopeAdmin}, {""}} {
 		if _, err := NormalizeApiTokenScopes(invalid); !errors.Is(err, ErrApiTokenInvalid) {
 			t.Fatalf("%v must be refused, got %v", invalid, err)
 		}
 	}
-	for _, stored := range []string{"", "write", "read,admin", "write,read"} {
+
+	for _, stored := range []string{"", "write", "read,superuser", "admin,read", "write,read"} {
 		if decoded := DecodeScopes(stored); decoded != nil {
 			t.Fatalf("a non-canonical stored value %q must decode to no scope, got %v", stored, decoded)
 		}
