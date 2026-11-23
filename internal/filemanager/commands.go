@@ -112,6 +112,9 @@ type MatchInfo struct {
 	ManagedAnimeID string
 	Season         int
 	Episode        int
+	// EpisodeEnd is the range end of a multi-episode match; zero for a single
+	// episode.
+	EpisodeEnd int
 }
 
 // Target is where a move, rename or copy goes.

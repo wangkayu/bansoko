@@ -12,6 +12,8 @@ export const fileNumberingCopy = {
   seasonPlaceholder: "主设置",
   applySeason: "只调整季号",
   sequenceStart: "起始集号",
+  sequenceSpan: "每文件集数",
+  rangeHint: "集数也可填 1-2，表示一个文件包含连续两集；单个文件最多 12 集",
   fillSequence: "勾选项顺序填入",
   restoreChecked: "勾选项恢复自动",
   restoreAll: "全部恢复自动",
@@ -23,7 +25,7 @@ export const fileNumberingCopy = {
   season: "季号",
   episode: "集数",
   checkRow: "批量编辑 {path}",
-  invalid: "勾选项需要有效的集数；季号留空或填写大于等于 0 的整数",
+  invalid: "勾选项需要有效集数：整数或 1-2 形式的连续范围（最多 12 集）；季号留空或填写大于等于 0 的整数",
   confirm: "应用勾选修改（{n}）",
   empty: "没有匹配的文件",
 } as const;

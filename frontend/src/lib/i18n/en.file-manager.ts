@@ -219,7 +219,7 @@ export const enFileManagerCopy = {
     unknownRouteText: "Per the global unknown-files policy these files follow the naming rules' unknown variant",
     unknownSkipText: "Per the global unknown-files policy these files stay as they are",
     unknownShort: "{n} without an episode",
-    invalidNumber: "Episode and offset must be whole numbers",
+    invalidNumber: "Episode accepts a whole number or a consecutive range like 1-2 (at most 12 episodes); offset must be a whole number",
     willProcess: "{n} to process",
     apply: "Apply",
     actions: "File actions",

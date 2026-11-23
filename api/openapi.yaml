@@ -8255,6 +8255,14 @@ components:
         episode:
           type: integer
           minimum: 1
+        episode_end:
+          type: integer
+          description: >-
+            Last episode of the consecutive range this one file covers, for a
+            combined-episode video. Must be at least `episode` and span at most
+            12 episodes; omitted or equal to `episode` is the single-episode
+            form and canonicalizes to omitted.
+          minimum: 1
     SnapshotSeedDownloadInput:
       type: object
       additionalProperties: false
@@ -16746,6 +16754,11 @@ components:
           type: integer
           minimum: 1
           maximum: 99999
+        episode_end:
+          type: integer
+          description: Last covered episode of a multi-episode match; absent for a single episode.
+          minimum: 1
+          maximum: 99999
     FileManagerMatchMediaKind:
       type: string
       description: Only `tv` exists; the value is reserved for movie naming.
@@ -16776,6 +16789,14 @@ components:
         episode:
           type: integer
           description: Final episode number; no offset applies.
+          minimum: 1
+          maximum: 99999
+        episode_end:
+          type: integer
+          description: >-
+            Last episode of the consecutive range this one file covers. Must be
+            at least `episode` and span at most 12 episodes; omitted or equal to
+            `episode` is the single-episode form.
           minimum: 1
           maximum: 99999
     FileManagerMatchBlockerCode:
@@ -16831,6 +16852,9 @@ components:
           type: integer
         episode:
           type: integer
+        episode_end:
+          type: integer
+          description: Last covered episode of a multi-episode match; absent for a single episode.
         target_path:
           type: string
           description: Rendered absolute target; absent when a blocker stops the render.
@@ -16885,6 +16909,14 @@ components:
           type: integer
           minimum: 1
           maximum: 99999
+        episode_end:
+          type: integer
+          description: >-
+            Last episode of the consecutive range this one file covers. Must be
+            at least `episode` and span at most 12 episodes; omitted or equal to
+            `episode` is the single-episode form.
+          minimum: 1
+          maximum: 99999
         expected_target:
           type: string
           description: The `target_path` the preview showed.
@@ -16930,6 +16962,14 @@ components:
           description: >-
             The episode when the file's own name carries none; it applies to
             exactly one video, and `ep.source` reads `manual`.
+          minimum: 1
+          maximum: 99999
+        episode_end:
+          type: integer
+          description: >-
+            Last episode of the consecutive range the one video covers; only
+            meaningful together with `episode`. Must be at least `episode` and
+            span at most 12 episodes; `offset` applies to both ends.
           minimum: 1
           maximum: 99999
         offset:

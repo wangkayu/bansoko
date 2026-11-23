@@ -86,6 +86,9 @@ type MatchRenderInput struct {
 	SizeBytes int64
 	Season    int
 	Episode   int
+	// EpisodeEnd greater than Episode names the consecutive range this one file
+	// covers; zero or equal to Episode is the single-episode form.
+	EpisodeEnd int
 }
 
 // MatchRender is a rendered match target.
@@ -274,6 +277,10 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 	}
 
 	number := strconv.Itoa(in.Episode)
+	numberEnd := ""
+	if in.EpisodeEnd > in.Episode {
+		numberEnd = strconv.Itoa(in.EpisodeEnd)
+	}
 	season := in.Season
 	base := path.Base(strings.ReplaceAll(fileName, "\\", "/"))
 	extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(base)), ".")
@@ -293,7 +300,7 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 		Source: naming.SourceNamingFacts{Kind: lineage.sourceKind, GroupName: strings.TrimSpace(lineage.groupName), Group: providerdomain.GroupRefOrZero(providerdomain.Kind(lineage.sourceProvider), lineage.sourceGroupRef)},
 		Release: naming.ReleaseNamingFacts{
 			ID: lineage.releaseID, Version: lineage.releaseVersion, OriginalTitle: strings.TrimSpace(lineage.releaseTitle),
-			FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: number, Number: number, Display: number, Source: matchEpisodeSource},
+			FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: number, Number: number, NumberEnd: numberEnd, Display: number, Source: matchEpisodeSource},
 		},
 		File: naming.FileNamingFacts{
 			OriginalName: base, Basename: strings.TrimSuffix(base, filepath.Ext(base)), Extension: extension,

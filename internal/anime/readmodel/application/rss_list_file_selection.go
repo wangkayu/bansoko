@@ -122,6 +122,8 @@ func (s rssListFileSelections) identity() string {
 			hash.Write([]byte{0})
 			hash.Write([]byte(strconv.Itoa(override.Episode)))
 			hash.Write([]byte{0})
+			hash.Write([]byte(strconv.Itoa(override.EpisodeEnd)))
+			hash.Write([]byte{0})
 			if override.Season == nil {
 				hash.Write([]byte("inherit"))
 			} else {

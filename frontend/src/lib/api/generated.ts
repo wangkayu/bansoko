@@ -3182,6 +3182,8 @@ export interface components {
             path: string;
             season?: number;
             episode: number;
+            /** @description Last episode of the consecutive range this one file covers, for a combined-episode video. Must be at least `episode` and span at most 12 episodes; omitted or equal to `episode` is the single-episode form and canonicalizes to omitted. */
+            episode_end?: number;
         };
         /** @description One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server. A keyword search seed is the same shape: provider_entry_ref/provider_group_ref are the derived search-scope and search-query refs, the server proves the named snapshot is the `search` kind, and the admission must be a current_input one-shot. */
         SnapshotSeedDownloadInput: {
@@ -6638,6 +6640,8 @@ export interface components {
             managed_anime_id: components["schemas"]["ID"];
             season: number;
             episode: number;
+            /** @description Last covered episode of a multi-episode match; absent for a single episode. */
+            episode_end?: number;
         };
         /**
          * @description Only `tv` exists; the value is reserved for movie naming.
@@ -6654,6 +6658,8 @@ export interface components {
             season: number;
             /** @description Final episode number; no offset applies. */
             episode: number;
+            /** @description Last episode of the consecutive range this one file covers. Must be at least `episode` and span at most 12 episodes; omitted or equal to `episode` is the single-episode form. */
+            episode_end?: number;
         };
         /**
          * @description Why a preview cannot be submitted: the template reads facts the evidence lacks (`facts_missing`, with their paths) or does not render (`template_invalid`), the rendered path is not a usable target, or the file is already at it.
@@ -6677,6 +6683,8 @@ export interface components {
             media_kind: components["schemas"]["FileManagerMatchMediaKind"];
             season: number;
             episode: number;
+            /** @description Last covered episode of a multi-episode match; absent for a single episode. */
+            episode_end?: number;
             /** @description Rendered absolute target; absent when a blocker stops the render. */
             target_path?: string;
             /** @description Absolute directories the match would create, parents first. */
@@ -6696,6 +6704,8 @@ export interface components {
             media_kind?: components["schemas"]["FileManagerMatchMediaKind"];
             season: number;
             episode: number;
+            /** @description Last episode of the consecutive range this one file covers. Must be at least `episode` and span at most 12 episodes; omitted or equal to `episode` is the single-episode form. */
+            episode_end?: number;
             /** @description The `target_path` the preview showed. */
             expected_target: string;
             conflict: components["schemas"]["FileManagerConflictChoice"];
@@ -6719,6 +6729,8 @@ export interface components {
             season?: number;
             /** @description The episode when the file's own name carries none; it applies to exactly one video, and `ep.source` reads `manual`. */
             episode?: number;
+            /** @description Last episode of the consecutive range the one video covers; only meaningful together with `episode`. Must be at least `episode` and span at most 12 episodes; `offset` applies to both ends. */
+            episode_end?: number;
             /**
              * @description Offset applied to every recognized episode of the request.
              * @default 0

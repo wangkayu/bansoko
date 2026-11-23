@@ -69,6 +69,26 @@ func (r *Resolver) Resolve(input EpisodeIdentityInput) EpisodeIdentity {
 	}
 }
 
+// NewManualRangeIdentity resolves an explicit manual consecutive range into
+// one multi-episode identity with no offset. Unlike an inferred filename range
+// it is not bounded by MaxEpisodesPerFile: the user named every covered
+// episode, so the range is evidence by construction. The caller validates
+// 1 <= start < end and bounds the span by MaxManualEpisodesPerFile. The
+// synthetic range evidence keeps the same digest and naming-fact contract as
+// an inferred range.
+func NewManualRangeIdentity(fileRef string, start, end int) EpisodeIdentity {
+	evidence := NewUnsupportedEvidence(EpisodeSourceFileParser, "file_name", ShapeRange,
+		strconv.Itoa(start)+"-"+strconv.Itoa(end), "manual episode range override")
+	input := EpisodeIdentityInput{MediaKind: "tv", FileRef: fileRef, FileEvidence: evidence}
+	r := NewResolver()
+	base := EpisodeIdentity{Kind: KindTVEpisode, ResolverVersion: r.Version, InputDigest: inputDigest(input)}
+	members := make([]EpisodeNumber, 0, end-start+1)
+	for value := start; value <= end; value++ {
+		members = append(members, EpisodeNumber(strconv.Itoa(value)))
+	}
+	return r.resolveMulti(base, evidence, input, members)
+}
+
 // resolveRaw applies the offset exactly once to the selected raw evidence and
 // freezes the final identity.
 func (r *Resolver) resolveRaw(base EpisodeIdentity, evidence EpisodeEvidence, input EpisodeIdentityInput) EpisodeIdentity {

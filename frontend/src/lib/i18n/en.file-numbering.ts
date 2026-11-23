@@ -15,6 +15,8 @@ export const enFileNumberingCopy = {
   seasonPlaceholder: "Main setting",
   applySeason: "Change Season Only",
   sequenceStart: "First episode",
+  sequenceSpan: "Episodes per file",
+  rangeHint: "An episode can also be a range like 1-2 when one file holds consecutive episodes; at most 12 episodes per file",
   fillSequence: "Number Checked in Order",
   restoreChecked: "Restore Checked to Automatic",
   restoreAll: "Restore All to Automatic",
@@ -26,7 +28,7 @@ export const enFileNumberingCopy = {
   season: "Season",
   episode: "Episode",
   checkRow: "Batch edit {path}",
-  invalid: "Checked rows need a valid episode; leave season empty or enter an integer of 0 or more",
+  invalid: "Checked rows need a valid episode: an integer or a consecutive range like 1-2 (at most 12 episodes); leave season empty or enter an integer of 0 or more",
   confirm: "Apply Checked Changes ({n})",
   empty: "No matching files",
 } as const satisfies CopyShape<typeof fileNumberingCopy>;

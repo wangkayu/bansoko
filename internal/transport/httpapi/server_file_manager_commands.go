@@ -189,6 +189,9 @@ func (s *Server) previewFileManagerMatch(ctx context.Context, input generated.Fi
 	if input.MediaKind != nil {
 		request.MediaKind = filemanager.MatchMediaKind(*input.MediaKind)
 	}
+	if input.EpisodeEnd != nil {
+		request.EpisodeEnd = *input.EpisodeEnd
+	}
 	preview, err := s.deps.FileManager.PreviewMatch(ctx, request)
 	if err != nil {
 		return generated.FileManagerMatchPreview{}, err
@@ -225,6 +228,9 @@ func (s *Server) matchFileManagerEntry(ctx context.Context, idempotencyKey strin
 	if input.MediaKind != nil {
 		request.MediaKind = filemanager.MatchMediaKind(*input.MediaKind)
 	}
+	if input.EpisodeEnd != nil {
+		request.EpisodeEnd = *input.EpisodeEnd
+	}
 	op, err := s.deps.FileManager.SubmitMatch(ctx, request)
 	if err != nil {
 		return generated.FileManagerOperationView{}, err
@@ -244,6 +250,10 @@ func mapFileManagerMatchPreview(preview filemanager.MatchPreview) generated.File
 		DirectoriesToCreate: append([]string{}, preview.DirectoriesToCreate...),
 		SubtitlesLeftBehind: append([]string{}, preview.SubtitlesLeftBehind...),
 		Blockers:            make([]generated.FileManagerMatchBlocker, 0, len(preview.Blockers)),
+	}
+	if preview.EpisodeEnd > preview.Episode {
+		end := preview.EpisodeEnd
+		mapped.EpisodeEnd = &end
 	}
 	if preview.TargetPath != "" {
 		target := preview.TargetPath
@@ -364,7 +374,12 @@ func mapFileManagerOperation(op filemanager.UserOperation) generated.FileManager
 		view.ResultPath = &result
 	}
 	if op.Match != nil {
-		view.Match = &generated.FileManagerMatchChoice{ManagedAnimeId: op.Match.ManagedAnimeID, Season: op.Match.Season, Episode: op.Match.Episode}
+		choice := &generated.FileManagerMatchChoice{ManagedAnimeId: op.Match.ManagedAnimeID, Season: op.Match.Season, Episode: op.Match.Episode}
+		if op.Match.EpisodeEnd > op.Match.Episode {
+			end := op.Match.EpisodeEnd
+			choice.EpisodeEnd = &end
+		}
+		view.Match = choice
 		if len(op.CreatedDirs) > 0 {
 			view.CreatedDirectories = &op.CreatedDirs
 		}

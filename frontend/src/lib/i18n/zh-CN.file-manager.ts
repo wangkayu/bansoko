@@ -217,7 +217,7 @@ export const fileManagerCopy = {
     unknownRouteText: "按全局未知文件策略，这些文件按命名的「未知」变体整理",
     unknownSkipText: "按全局未知文件策略，这些文件保持原样",
     unknownShort: "{n} 项无法识别集数",
-    invalidNumber: "集数或偏移需要填写完整的整数",
+    invalidNumber: "集数可填整数或 1-2 形式的连续范围（最多 12 集）；偏移需填写完整的整数",
     willProcess: "将处理 {n} 项",
     apply: "应用",
     actions: "文件操作",

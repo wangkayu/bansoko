@@ -115,9 +115,13 @@ func mapFileManagerRecognitionRequest(paths []string, rules generated.NamingRule
 	if overrides != nil {
 		request.Overrides = make([]filemanager.RecognitionEpisodeOverride, 0, len(*overrides))
 		for _, override := range *overrides {
-			request.Overrides = append(request.Overrides, filemanager.RecognitionEpisodeOverride{
+			mapped := filemanager.RecognitionEpisodeOverride{
 				Path: override.Path, Season: override.Season, Episode: override.Episode,
-			})
+			}
+			if override.EpisodeEnd != nil {
+				mapped.EpisodeEnd = *override.EpisodeEnd
+			}
+			request.Overrides = append(request.Overrides, mapped)
 		}
 	}
 	if parser != nil {
@@ -134,7 +138,7 @@ func mapFileManagerRecognitionRequest(paths []string, rules generated.NamingRule
 	}
 	if match != nil {
 		request.Match = &filemanager.RecognitionMatch{
-			Season: match.Season, Episode: match.Episode,
+			Season: match.Season, Episode: match.Episode, EpisodeEnd: match.EpisodeEnd,
 			Anime: mapFileManagerRecognitionAnimeDraft(match.Anime),
 		}
 		if match.ManagedAnimeId != nil {

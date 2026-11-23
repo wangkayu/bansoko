@@ -51,23 +51,23 @@ var _ filemanager.CommandStore = (*Commands)(nil)
 
 const operationColumns = `id, operation, state, source_path, COALESCE(target_path, ''), COALESCE(result_path, ''),
  COALESCE(failure_code, ''), created_at, completed_at, COALESCE(match_anime_id, ''), COALESCE(match_season, 0),
- COALESCE(match_episode, 0), created_dirs`
+ COALESCE(match_episode, 0), COALESCE(match_episode_end, 0), created_dirs`
 
 type rowScanner interface{ Scan(...any) error }
 
 func scanOperation(row rowScanner, extra ...any) (*filemanager.UserOperation, error) {
 	var op filemanager.UserOperation
 	var kind, state, matchAnime string
-	var matchSeason, matchEpisode int
+	var matchSeason, matchEpisode, matchEpisodeEnd int
 	var completed sql.NullTime
 	var createdDirs []byte
 	targets := append([]any{&op.ID, &kind, &state, &op.SourcePath, &op.TargetPath, &op.ResultPath, &op.Failure,
-		&op.CreatedAt, &completed, &matchAnime, &matchSeason, &matchEpisode, &createdDirs}, extra...)
+		&op.CreatedAt, &completed, &matchAnime, &matchSeason, &matchEpisode, &matchEpisodeEnd, &createdDirs}, extra...)
 	if err := row.Scan(targets...); err != nil {
 		return nil, err
 	}
 	if matchAnime != "" {
-		op.Match = &filemanager.MatchInfo{ManagedAnimeID: matchAnime, Season: matchSeason, Episode: matchEpisode}
+		op.Match = &filemanager.MatchInfo{ManagedAnimeID: matchAnime, Season: matchSeason, Episode: matchEpisode, EpisodeEnd: matchEpisodeEnd}
 	}
 	if len(createdDirs) > 0 {
 		_ = json.Unmarshal(createdDirs, &op.CreatedDirs)
@@ -237,7 +237,7 @@ func toIntakeAdmission(a filemanager.OperationAdmission) filemaintenance.UserOpe
 	}
 	if a.Match != nil {
 		admission.Match = &filemaintenance.UserOperationMatch{
-			ManagedAnimeID: a.Match.ManagedAnimeID, Season: a.Match.Season, Episode: a.Match.Episode,
+			ManagedAnimeID: a.Match.ManagedAnimeID, Season: a.Match.Season, Episode: a.Match.Episode, EpisodeEnd: a.Match.EpisodeEnd,
 		}
 	}
 	return admission

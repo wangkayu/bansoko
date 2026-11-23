@@ -172,7 +172,7 @@ describe("RecognitionDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: t("fileNumbering.title") }));
     const editor = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
     fireEvent.click(within(editor).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: "/media/anime/ep01.mkv" }) }));
-    fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` }), { target: { value: "8" } });
+    fireEvent.change(within(editor).getByRole("textbox", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` }), { target: { value: "8" } });
     fireEvent.click(within(editor).getByRole("button", { name: t("fileNumbering.confirm", { n: 1 }) }));
 
     const overrides = [{ path: "/media/anime/ep01.mkv", episode: 8 }];
@@ -182,11 +182,11 @@ describe("RecognitionDialog", () => {
     // parser's raw evidence plus the current offset, not the manual result.
     fireEvent.click(screen.getByRole("button", { name: t("fileNumbering.title") }));
     const reopened = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
-    const episodeInput = () => within(reopened).getByRole("spinbutton", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` });
-    expect(episodeInput()).toHaveValue(8);
+    const episodeInput = () => within(reopened).getByRole("textbox", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` });
+    expect(episodeInput()).toHaveValue("8");
     fireEvent.click(within(reopened).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: "/media/anime/ep01.mkv" }) }));
     fireEvent.click(within(reopened).getByRole("button", { name: t("fileNumbering.restoreChecked") }));
-    expect(episodeInput()).toHaveValue(1);
+    expect(episodeInput()).toHaveValue("1");
     fireEvent.click(within(reopened).getByRole("button", { name: t("act.cancel") }));
 
     fireEvent.click(screen.getByRole("button", { name: t("fileManager.recognize.apply") }));
@@ -286,7 +286,7 @@ describe("RecognitionDialog", () => {
     await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
 
     // Episode and offset are plain fields of the settings column, no match needed.
-    fireEvent.change(screen.getByRole("spinbutton", { name: t("fileManager.recognize.match.episode") }), { target: { value: "3" } });
+    fireEvent.change(screen.getByRole("textbox", { name: t("fileManager.recognize.match.episode") }), { target: { value: "3" } });
     fireEvent.change(screen.getByRole("spinbutton", { name: t("fileManager.recognize.match.offset") }), { target: { value: "1" } });
     await waitFor(
       () => {

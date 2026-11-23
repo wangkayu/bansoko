@@ -168,7 +168,11 @@ type RecognitionMatch struct {
 	ManagedAnimeID string
 	Season         *int
 	Episode        *int
-	Offset         int
+	// EpisodeEnd, only meaningful together with Episode, covers the consecutive
+	// range Episode..EpisodeEnd for the one video the match names. Nil or equal
+	// to Episode is the single-episode form.
+	EpisodeEnd *int
+	Offset     int
 	// Anime is the settings column's temporary draft. It is the operation's
 	// own copy of the facts the render reads, initialized from the matched
 	// anime and never written back; nil reads the anime's stored rows.
@@ -218,10 +222,14 @@ type RecognitionRequest struct {
 
 // RecognitionEpisodeOverride is one selected video's final manual numbering.
 // A nil season inherits the request's main season; an explicit zero is kept.
+// EpisodeEnd greater than Episode covers the consecutive range
+// Episode..EpisodeEnd (at most episodeidentity.MaxManualEpisodesPerFile episodes);
+// zero or equal to Episode is the single-episode form.
 type RecognitionEpisodeOverride struct {
-	Path    string
-	Season  *int
-	Episode int
+	Path       string
+	Season     *int
+	Episode    int
+	EpisodeEnd int
 }
 
 // RecognitionEpisode is the episode identity recognition gave one file.
@@ -393,6 +401,17 @@ func canonicalRecognitionOverrides(overrides []RecognitionEpisodeOverride) ([]Re
 		if (override.Episode < 1 || override.Episode > maxMatchEpisode) && validationErr == nil {
 			validationErr = invalid(CodeRecognitionInvalid, "an episode override episode is out of range")
 		}
+		if override.EpisodeEnd == override.Episode {
+			// Equal ends are the single-episode form and canonicalize away.
+			override.EpisodeEnd = 0
+		}
+		if override.EpisodeEnd != 0 && validationErr == nil {
+			if override.EpisodeEnd < override.Episode || override.EpisodeEnd > maxMatchEpisode {
+				validationErr = invalid(CodeRecognitionInvalid, "an episode override episode end is out of range")
+			} else if override.EpisodeEnd-override.Episode+1 > episodeidentity.MaxManualEpisodesPerFile {
+				validationErr = invalid(CodeRecognitionInvalid, "an episode override covers too many episodes")
+			}
+		}
 	}
 	sort.SliceStable(canonical, func(left, right int) bool {
 		return canonical[left].Path < canonical[right].Path
@@ -447,6 +466,17 @@ func validateRecognitionMatch(match *RecognitionMatch) error {
 	}
 	if match.Episode != nil && (*match.Episode < 1 || *match.Episode > maxMatchEpisode) {
 		return invalid(CodeRecognitionInvalid, "episode is out of range")
+	}
+	if match.EpisodeEnd != nil {
+		if match.Episode == nil {
+			return invalid(CodeRecognitionInvalid, "an episode end needs an episode")
+		}
+		if *match.EpisodeEnd < *match.Episode || *match.EpisodeEnd > maxMatchEpisode {
+			return invalid(CodeRecognitionInvalid, "episode end is out of range")
+		}
+		if *match.EpisodeEnd-*match.Episode+1 > episodeidentity.MaxManualEpisodesPerFile {
+			return invalid(CodeRecognitionInvalid, "one file covers too many episodes")
+		}
 	}
 	if match.Offset < -maxMatchEpisode || match.Offset > maxMatchEpisode {
 		return invalid(CodeRecognitionInvalid, "offset is out of range")
@@ -672,17 +702,29 @@ func recognitionEpisode(identity episodeidentity.EpisodeIdentity, match *Recogni
 			// baseline; Number alone is the final manual value.
 			raw = string(*identity.RawEpisode)
 		}
-		return &RecognitionEpisode{Raw: raw, Number: number, Source: "manual"}
+		episode := &RecognitionEpisode{Raw: raw, Number: number, Source: "manual"}
+		if override.EpisodeEnd > override.Episode {
+			episode.NumberEnd = strconv.Itoa(override.EpisodeEnd)
+		}
+		return episode
 	}
 	if match != nil && match.Episode != nil {
 		number := *match.Episode + match.Offset
 		if number < 0 {
 			return nil
 		}
-		return &RecognitionEpisode{
+		episode := &RecognitionEpisode{
 			Raw: strconv.Itoa(*match.Episode), Number: strconv.Itoa(number),
 			Offset: match.Offset, Source: "manual",
 		}
+		if match.EpisodeEnd != nil {
+			end := *match.EpisodeEnd + match.Offset
+			if end < 0 {
+				return nil
+			}
+			episode.NumberEnd = strconv.Itoa(end)
+		}
+		return episode
 	}
 	if identity.State != episodeidentity.StateResolved || identity.Episode == nil || identity.RawEpisode == nil {
 		return nil

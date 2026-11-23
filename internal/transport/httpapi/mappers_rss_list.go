@@ -25,6 +25,9 @@ func mapFileEpisodeOverrides(values *[]generated.FileEpisodeOverride) []acquisit
 			season := *value.Season
 			override.Season = &season
 		}
+		if value.EpisodeEnd != nil {
+			override.EpisodeEnd = *value.EpisodeEnd
+		}
 		out = append(out, override)
 	}
 	return out

@@ -174,6 +174,12 @@ type EpisodeIdentity struct {
 // one file holding them all, and keeps no identity.
 const MaxEpisodesPerFile = 4
 
+// MaxManualEpisodesPerFile bounds an explicit manual range: a per-file episode
+// override (or a combined-episode subgroup span) may cover more consecutive
+// episodes than a filename range, because the user named the range directly
+// instead of the resolver inferring it from a possibly collection-style name.
+const MaxManualEpisodesPerFile = 12
+
 // Keys returns every coverage key the identity occupies: all members of a
 // multi-episode file, the one key of a single episode, nothing otherwise. It
 // is the one way to read coverage from an identity.

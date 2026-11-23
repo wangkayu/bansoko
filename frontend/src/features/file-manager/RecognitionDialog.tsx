@@ -34,7 +34,7 @@ import { ParserKindSelect } from "../parser/ParserKindSelect";
 import { useParserKindOptions } from "../parser/useParserKindOptions";
 import { ConflictDialog } from "./ConflictDialog";
 import { FileNumberingDialog } from "../file-numbering/FileNumberingDialog";
-import { sanitizeOverrides, type FileEpisodeOverride, type FileNumberingItem } from "../file-numbering/model";
+import { parseEpisodeInput, sanitizeOverrides, type FileEpisodeOverride, type FileNumberingItem } from "../file-numbering/model";
 import { useIdempotencyKeys } from "./batch";
 
 // RecognitionDialog — the complex window behind 识别…: the naming core one-shot
@@ -163,11 +163,11 @@ export function RecognitionDialog({
     setOverrides([]);
   }
 
-  const episode = wholeNumber(episodeText, 1, 99999);
+  const parsedEpisode = episodeText.trim() === "" ? null : parseEpisodeInput(episodeText);
   const offset = wholeNumber(offsetText, -99999, 99999);
   // A number the user started typing must be whole before it is rendered, so a
   // half-typed value never silently becomes zero or drops a field.
-  const numberInvalid = (episodeText.trim() !== "" && episode === null) || (offsetText.trim() !== "" && offset === null);
+  const numberInvalid = (episodeText.trim() !== "" && parsedEpisode === null) || (offsetText.trim() !== "" && offset === null);
   // An empty title is not an error: without one the request carries no match and
   // the render is a pure parse of the file names, exactly like one-shot's fields
   // left untouched.
@@ -188,14 +188,14 @@ export function RecognitionDialog({
   const request = useMemo<FileManagerRecognitionRequest | null>(() => {
     if (namingEmpty) return null;
     const d = debounced;
-    const dEpisode = wholeNumber(d.episodeText, 1, 99999);
+    const dParsed = d.episodeText.trim() === "" ? null : parseEpisodeInput(d.episodeText);
     const dOffset = wholeNumber(d.offsetText, -99999, 99999);
-    if ((d.episodeText.trim() !== "" && dEpisode === null) || (d.offsetText.trim() !== "" && dOffset === null)) {
+    if ((d.episodeText.trim() !== "" && dParsed === null) || (d.offsetText.trim() !== "" && dOffset === null)) {
       return null;
     }
     const dTitle = d.title.trim();
     const dMediaKind = d.metadata.media_kind ?? d.metadata.tmdb?.media_kind ?? "tv";
-    const dEpisodeWanted = singleVideo && dEpisode !== null;
+    const dEpisodeWanted = singleVideo && dParsed !== null;
     const dOffsetValue = dOffset ?? 0;
     // A match is sent once it carries anything: the draft (which needs a title),
     // a chosen episode or a non-zero offset; with none of them the render is a
@@ -214,7 +214,7 @@ export function RecognitionDialog({
         ? {
             match: {
               ...(dTitle !== "" && d.metadata.season != null ? { season: d.metadata.season } : {}),
-              ...(dEpisodeWanted ? { episode: dEpisode } : {}),
+              ...(dEpisodeWanted && dParsed ? { episode: dParsed.episode, ...(dParsed.episode_end === undefined ? {} : { episode_end: dParsed.episode_end }) } : {}),
               offset: dOffsetValue,
               // The render reads these facts, never a re-read of a stored anime.
               ...(dTitle !== ""
@@ -533,15 +533,12 @@ export function RecognitionDialog({
               <div className="tw:grid tw:gap-1.5">
                 <Field label={t("fileManager.recognize.match.episode")}>
                   <Input
+                    type="text"
                     inputMode="numeric"
-                    type="number"
-                    min={1}
-                    max={99999}
-                    step="1"
                     aria-label={t("fileManager.recognize.match.episode")}
                     value={episodeText}
                     onChange={(event) => update({ episodeText: event.target.value })}
-                    aria-invalid={episodeText !== "" && episode === null ? true : undefined}
+                    aria-invalid={episodeText !== "" && parsedEpisode === null ? true : undefined}
                     autoComplete="off"
                     disabled={busy}
                   />

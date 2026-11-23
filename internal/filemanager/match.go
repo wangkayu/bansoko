@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/episodetitle"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/filemaintenance"
@@ -116,6 +117,10 @@ type MatchRequest struct {
 	MediaKind      MatchMediaKind
 	Season         int
 	Episode        int
+	// EpisodeEnd greater than Episode names the consecutive range
+	// Episode..EpisodeEnd (at most episodeidentity.MaxManualEpisodesPerFile episodes)
+	// this one file covers; zero or equal to Episode is the single-episode form.
+	EpisodeEnd int
 }
 
 // MatchBlockerCode names why a preview cannot be submitted.
@@ -164,6 +169,9 @@ type MatchPreview struct {
 	MediaKind MatchMediaKind
 	Season    int
 	Episode   int
+	// EpisodeEnd is the range end of a multi-episode match; zero for a single
+	// episode.
+	EpisodeEnd int
 	// TargetPath is the absolute rendered target.
 	TargetPath string
 	// DirectoriesToCreate are the absolute directories the match would create,
@@ -190,6 +198,9 @@ type SubmitMatchRequest struct {
 	MediaKind        MatchMediaKind
 	Season           int
 	Episode          int
+	// EpisodeEnd is the range end of a multi-episode match; zero or equal to
+	// Episode is the single-episode form.
+	EpisodeEnd int
 	// ExpectedTarget is the absolute target the preview showed; the submit is
 	// refused when the render now gives another.
 	ExpectedTarget string
@@ -201,6 +212,9 @@ type MatchAdmission struct {
 	ManagedAnimeID string
 	Season         int
 	Episode        int
+	// EpisodeEnd is the range end of a multi-episode match; zero for a single
+	// episode.
+	EpisodeEnd int
 }
 
 // matchSource is a checked match source file and its resolved anime.
@@ -216,12 +230,23 @@ func (s *Service) requireMatch() error {
 	return nil
 }
 
-func validMatchEpisode(mediaKind MatchMediaKind, season, episode int) error {
+func validMatchEpisode(mediaKind MatchMediaKind, season, episode, episodeEnd int) error {
 	if mediaKind != "" && mediaKind != MatchMediaTV {
 		return invalid(CodeMatchInvalid, "only tv matches exist")
 	}
 	if season < 0 || season > maxMatchSeason || episode < 1 || episode > maxMatchEpisode {
 		return invalid(CodeMatchInvalid, "season or episode is out of range")
+	}
+	if episodeEnd == episode {
+		return nil
+	}
+	if episodeEnd != 0 {
+		if episodeEnd < episode || episodeEnd > maxMatchEpisode {
+			return invalid(CodeMatchInvalid, "episode end is out of range")
+		}
+		if episodeEnd-episode+1 > episodeidentity.MaxManualEpisodesPerFile {
+			return invalid(CodeMatchInvalid, "one file covers too many episodes")
+		}
 	}
 	return nil
 }
@@ -286,7 +311,7 @@ func (s *Service) checkMatchSource(ctx context.Context, absolutePath, animeID st
 
 // renderMatch renders the target of the request. A render that cannot produce
 // a path is a blocker (the preview shows it), not an error.
-func (s *Service) renderMatch(ctx context.Context, source matchSource, season, episode int) (filemaintenance.MatchRender, *MatchBlocker, error) {
+func (s *Service) renderMatch(ctx context.Context, source matchSource, season, episode, episodeEnd int) (filemaintenance.MatchRender, *MatchBlocker, error) {
 	lineage := ""
 	if placement := source.inspection.derived.placement; placement != nil && source.inspection.derived.role == RoleVideo {
 		lineage = placement.ID
@@ -298,7 +323,7 @@ func (s *Service) renderMatch(ctx context.Context, source matchSource, season, e
 	rendered, err := s.matchRenderer.RenderMatch(ctx, filemaintenance.MatchRenderInput{
 		ManagedAnimeID: source.anime.ID, LineagePlacementID: lineage, LineagePath: source.inspection.absolute,
 		FileName:  source.inspection.detail.Entry.Name,
-		SizeBytes: size, Season: season, Episode: episode,
+		SizeBytes: size, Season: season, Episode: episode, EpisodeEnd: episodeEnd,
 	})
 	var renderErr *filemaintenance.MatchRenderError
 	switch {
@@ -467,7 +492,7 @@ func (s *Service) PreviewMatch(ctx context.Context, request MatchRequest) (Match
 	if err := s.requireMatch(); err != nil {
 		return MatchPreview{}, err
 	}
-	if err := validMatchEpisode(request.MediaKind, request.Season, request.Episode); err != nil {
+	if err := validMatchEpisode(request.MediaKind, request.Season, request.Episode, request.EpisodeEnd); err != nil {
 		return MatchPreview{}, err
 	}
 	source, err := s.checkMatchSource(ctx, request.Path, request.ManagedAnimeID)
@@ -476,10 +501,11 @@ func (s *Service) PreviewMatch(ctx context.Context, request MatchRequest) (Match
 	}
 	preview := MatchPreview{
 		Revision: source.inspection.detail.Revision, MediaKind: MatchMediaTV, Season: request.Season, Episode: request.Episode,
+		EpisodeEnd:          request.EpisodeEnd,
 		Anime:               AnimeRef{ID: source.anime.ID, Title: source.anime.Title, SubscriptionState: source.anime.SubscriptionState},
 		SubtitlesLeftBehind: leftBehindSubtitles(source.inspection),
 	}
-	rendered, blocker, err := s.renderMatch(ctx, source, request.Season, request.Episode)
+	rendered, blocker, err := s.renderMatch(ctx, source, request.Season, request.Episode, request.EpisodeEnd)
 	if err != nil {
 		return MatchPreview{}, err
 	}
@@ -522,7 +548,7 @@ func (s *Service) SubmitMatch(ctx context.Context, request SubmitMatchRequest) (
 	if err := validKey(request.IdempotencyKey); err != nil {
 		return UserOperation{}, err
 	}
-	if err := validMatchEpisode(request.MediaKind, request.Season, request.Episode); err != nil {
+	if err := validMatchEpisode(request.MediaKind, request.Season, request.Episode, request.EpisodeEnd); err != nil {
 		return UserOperation{}, err
 	}
 	choice := request.Conflict
@@ -536,9 +562,10 @@ func (s *Service) SubmitMatch(ctx context.Context, request SubmitMatchRequest) (
 		Operation                           UserOperationKind
 		Path, Revision, Anime, ExpectedPath string
 		Season, Episode                     int
+		EpisodeEnd                          int
 		Conflict                            ConflictChoice
 	}{UserMatch, request.Path, request.ExpectedRevision, request.ManagedAnimeID, request.ExpectedTarget,
-		request.Season, request.Episode, choice})
+		request.Season, request.Episode, request.EpisodeEnd, choice})
 	if existing, existingDigest, err := s.commands.OperationByKey(ctx, request.IdempotencyKey); err != nil {
 		return UserOperation{}, err
 	} else if existing != nil {
@@ -554,7 +581,7 @@ func (s *Service) SubmitMatch(ctx context.Context, request SubmitMatchRequest) (
 	if source.inspection.detail.Revision != request.ExpectedRevision {
 		return UserOperation{}, conflict(CodeEntryChanged, "entry changed since it was read")
 	}
-	rendered, blocker, err := s.renderMatch(ctx, source, request.Season, request.Episode)
+	rendered, blocker, err := s.renderMatch(ctx, source, request.Season, request.Episode, request.EpisodeEnd)
 	if err != nil {
 		return UserOperation{}, err
 	}
@@ -584,7 +611,7 @@ func (s *Service) SubmitMatch(ctx context.Context, request SubmitMatchRequest) (
 		TargetPath: target.absolute, TargetSpellings: target.spellings, Collision: choice,
 		RequireDetachedSource: true,
 		Match: &MatchAdmission{
-			ManagedAnimeID: source.anime.ID, Season: request.Season, Episode: request.Episode,
+			ManagedAnimeID: source.anime.ID, Season: request.Season, Episode: request.Episode, EpisodeEnd: request.EpisodeEnd,
 		},
 	}
 	if info := source.inspection.info; info != nil {

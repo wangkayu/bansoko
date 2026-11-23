@@ -251,7 +251,7 @@ func previewManifestFilesIn(ctx context.Context, manifest *animecatalogdomain.To
 		if file.MediaKind == "video" {
 			sourcePath := filekinds.NormalizePath(file.SourcePath)
 			if override, ok := byPath[sourcePath]; ok {
-				identity := acquisitiontarget.ManualFileEpisodeIdentity(sourcePath, override.Episode)
+				identity := acquisitiontarget.ManualFileEpisodeIdentity(sourcePath, override.Episode, override.EpisodeEnd)
 				input.FrozenEpisode = acquisitiontarget.ParserEvidence{Identity: identity}.NamingFacts()
 				input.PerFileEpisode = true
 				input.Season = override.Season

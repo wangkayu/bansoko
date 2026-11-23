@@ -100,6 +100,58 @@ func TestFileOverrideCanonicalizationAndScope(t *testing.T) {
 	}
 }
 
+func TestFileOverrideEpisodeRangeCoversConsecutiveEpisodes(t *testing.T) {
+	scenario := batchScenario(t, "Preview Show [E01-E02].mkv", "Preview Show [E01-E02].zh.ass")
+	request := scenario.oneShot()
+	request.Evidence = nil
+	request.Effective.Rules.Naming.Tv.VideoFilenameTemplate = "${ep.s00e00}.${file.ext}"
+	request.Overrides = []FileEpisodeOverride{{Path: "Pack/Preview Show [E01-E02].mkv", Episode: 1, EpisodeEnd: 2}}
+	result := PreflightOneShot(context.Background(), request, FilesystemProbe{})
+	if result.Admission.Admission != AdmissionDownload {
+		t.Fatalf("range override admission = %+v", result.Admission)
+	}
+	entry, _ := result.BatchPlan.File("Pack/Preview Show [E01-E02].mkv")
+	if entry.Identity == nil || entry.Identity.EpisodeEnd == nil || string(*entry.Identity.EpisodeEnd) != "2" {
+		t.Fatalf("range identity = %+v, want episode end 2", entry.Identity)
+	}
+	if got := entry.Keys(); len(got) != 2 || got[0] != "tv:e1" || got[1] != "tv:e2" {
+		t.Fatalf("range coverage = %v, want tv:e1 and tv:e2", got)
+	}
+	if len(result.Set.Targets) == 0 || !strings.Contains(result.Set.Targets[0].TargetPath, "S01E01-E02.mkv") {
+		targets := make([]string, 0, len(result.Set.Targets))
+		for _, target := range result.Set.Targets {
+			targets = append(targets, target.TargetPath)
+		}
+		t.Fatalf("range targets = %v, want S01E01-E02", targets)
+	}
+	subtitle, _ := result.BatchPlan.File("Pack/Preview Show [E01-E02].zh.ass")
+	if subtitle.BoundVideo != entry.SourcePath {
+		t.Fatalf("subtitle binding = %+v, want it to follow the ranged video", subtitle)
+	}
+}
+
+func TestFileOverrideEpisodeRangeCanonicalization(t *testing.T) {
+	// An equal start and end is the single-episode form, with identical
+	// canonical JSON and digest as omitting the end.
+	ranged, err := CanonicalFileEpisodeOverrides([]FileEpisodeOverride{{Path: "Pack/a.mkv", Episode: 3, EpisodeEnd: 3}})
+	if err != nil || len(ranged) != 1 || ranged[0].EpisodeEnd != 0 {
+		t.Fatalf("equal-end range canonicalized to %+v, %v", ranged, err)
+	}
+	twelve, err := CanonicalFileEpisodeOverrides([]FileEpisodeOverride{{Path: "Pack/a.mkv", Episode: 1, EpisodeEnd: 12}})
+	if err != nil || len(twelve) != 1 || twelve[0].EpisodeEnd != 12 {
+		t.Fatalf("12-episode range refused: %+v, %v", twelve, err)
+	}
+	for _, input := range [][]FileEpisodeOverride{
+		{{Path: "Pack/a.mkv", Episode: 2, EpisodeEnd: 1}},
+		{{Path: "Pack/a.mkv", Episode: 1, EpisodeEnd: 13}},
+		{{Path: "Pack/a.mkv", Episode: 0, EpisodeEnd: 2}},
+	} {
+		if _, err := CanonicalFileEpisodeOverrides(input); !errors.Is(err, ErrFileEpisodeOverrideInvalid) {
+			t.Fatalf("invalid range %+v returned %v", input, err)
+		}
+	}
+}
+
 func TestReleaseMediaDigestIncludesCanonicalOverridesOnlyWhenPresent(t *testing.T) {
 	scenario := batchScenario(t, "Preview Show [E01].mkv")
 	planned := PreflightOneShot(context.Background(), scenario.oneShot(), FilesystemProbe{})

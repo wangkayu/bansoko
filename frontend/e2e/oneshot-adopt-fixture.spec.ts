@@ -590,10 +590,10 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await editor.getByRole("button", { name: "勾选项顺序填入" }).click();
     await editor.getByRole("textbox", { name: "按路径筛选文件" }).fill("02");
     await expect(editor.locator("[data-numbering-row]")).toHaveCount(1);
-    await expect(editor.getByRole("spinbutton", { name: `集数 ${TITLE} - 02.mkv` })).toHaveValue("8");
+    await expect(editor.getByRole("textbox", { name: `集数 ${TITLE} - 02.mkv` })).toHaveValue("8");
     await editor.getByRole("button", { name: "取消筛选结果" }).click();
     await editor.getByRole("textbox", { name: "按路径筛选文件" }).clear();
-    await expect(editor.getByRole("spinbutton", { name: `集数 ${TITLE} - 01.mkv` })).toHaveValue("7");
+    await expect(editor.getByRole("textbox", { name: `集数 ${TITLE} - 01.mkv` })).toHaveValue("7");
     await editor.getByRole("button", { name: "应用勾选修改（1）" }).click();
 
     const expected = [{ path: `${TITLE} - 01.mkv`, season: 0, episode: 7 }];
@@ -603,5 +603,102 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await expect.poll(() => download.submittedRequest()).toBeTruthy();
     expect(download.submittedRequest()).toMatchObject({ overrides: expected });
     expect(download.submittedRequest()).not.toHaveProperty("file_selection");
+  });
+
+  test("按文件编号支持连续范围，非法范围被拦截", async ({ page }) => {
+    await mockSignedIn(page);
+    await mockShellReads(page);
+    await mockCandidates(page);
+    await mockDiscovery(page);
+    await mockSeedRead(page);
+    const download = await mockSnapshotDownload(page);
+    const previews: { file_selections?: { overrides?: { path: string; season?: number; episode: number; episode_end?: number }[] }[] }[] = [];
+    await page.route("**/api/v1/anime/rss-list-view", async (route) => {
+      const body = route.request().postDataJSON();
+      previews.push(body);
+      const view = numberingView();
+      const overrides = body.file_selections?.[0]?.overrides ?? [];
+      for (const file of view.groups[0].items[0].files) {
+        const override = overrides.find((candidate: { path: string }) => candidate.path === file.source_path);
+        if (override) {
+          const start = `S00E${String(override.episode).padStart(2, "0")}`;
+          const end = override.episode_end ? `-E${String(override.episode_end).padStart(2, "0")}` : "";
+          file.rendered_target = `${TITLE}/Specials/${TITLE} - ${start}${end}`;
+        }
+      }
+      await ok(route, 200, view);
+    });
+
+    await page.goto("/");
+    if ((page.viewportSize()?.width ?? 1280) <= 600) {
+      await page.getByRole("navigation", { name: "底部导航" }).getByRole("button", { name: "发现", exact: true }).click();
+      await page.getByRole("radiogroup", { name: "主导航" }).getByRole("radio", { name: "AniBT", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "AniBT", exact: true }).click();
+    }
+    const card = page.getByRole("listitem").filter({ hasText: TITLE }).first();
+    await card.getByRole("button", { name: `浏览《${TITLE}》的种子` }).click();
+    const task = page.getByRole("dialog", { name: "浏览种子" });
+    const title = `[${GROUP}] ${TITLE} - 01 [1080p]`;
+    await task.getByRole("checkbox", { name: title }).click();
+    await task.getByRole("button", { name: "下一步（1）" }).click();
+
+    await task.getByRole("button", { name: "设置文件编号", exact: true }).click();
+    const editor = page.getByRole("dialog", { name: "设置文件编号" });
+    await expect(editor).toBeVisible();
+    await editor.getByRole("button", { name: "全选筛选结果" }).click();
+    await editor.getByRole("spinbutton", { name: "统一季号" }).fill("0");
+    await editor.getByRole("spinbutton", { name: "起始集号" }).fill("1");
+    await editor.getByRole("spinbutton", { name: "每文件集数" }).fill("2");
+    await editor.getByRole("button", { name: "勾选项顺序填入" }).click();
+    await expect(editor.getByRole("textbox", { name: `集数 ${TITLE} - 01.mkv` })).toHaveValue("1-2");
+    await expect(editor.getByRole("textbox", { name: `集数 ${TITLE} - 02.mkv` })).toHaveValue("3-4");
+    await expect(editor.getByText("E01-E02")).toBeVisible();
+    await expect(editor.getByText("E03-E04")).toBeVisible();
+
+    // An inverted range is refused inline and blocks the apply, without closing.
+    await editor.getByRole("textbox", { name: `集数 ${TITLE} - 02.mkv` }).fill("2-1");
+    await editor.getByRole("button", { name: "应用勾选修改（2）" }).click();
+    await expect(editor.getByRole("alert")).toBeVisible();
+    await expect(editor).toBeVisible();
+    await editor.screenshot({ path: test.info().outputPath(`file-numbering-range-invalid-${test.info().project.name}.png`), animations: "disabled" });
+
+    await editor.getByRole("textbox", { name: `集数 ${TITLE} - 02.mkv` }).fill("3-4");
+    await editor.getByRole("button", { name: "应用勾选修改（2）" }).click();
+    const expected = [
+      { path: `${TITLE} - 01.mkv`, season: 0, episode: 1, episode_end: 2 },
+      { path: `${TITLE} - 02.mkv`, season: 0, episode: 3, episode_end: 4 },
+    ];
+    await expect.poll(() => previews.at(-1)?.file_selections?.[0]?.overrides).toEqual(expected);
+    await expect(task.getByRole("region", { name: "预览" }).getByText(`${TITLE}/Specials/${TITLE} - S00E01-E02`, { exact: true })).toBeVisible();
+    await expect(task.getByRole("region", { name: "预览" }).getByText(`${TITLE}/Specials/${TITLE} - S00E03-E04`, { exact: true })).toBeVisible();
+
+    // The range editor must not grow past the viewport on either form factor.
+    await task.getByRole("button", { name: "设置文件编号", exact: true }).click();
+    const reopened = page.getByRole("dialog", { name: "设置文件编号" });
+    await expect(reopened).toBeVisible();
+    await expect(reopened.getByRole("textbox", { name: `集数 ${TITLE} - 01.mkv` })).toHaveValue("1-2");
+    const geometry = await reopened.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const rows = [...element.querySelectorAll("[data-numbering-row]")].map((row) => {
+        const box = row.getBoundingClientRect();
+        return { left: box.left, right: box.right, scrollWidth: (row as HTMLElement).scrollWidth, clientWidth: (row as HTMLElement).clientWidth };
+      });
+      return { left: rect.left, right: rect.right, viewport: window.innerWidth, pageWidth: document.documentElement.scrollWidth, rows };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewport);
+    for (const row of geometry.rows) {
+      expect(row.left).toBeGreaterThanOrEqual(geometry.left);
+      expect(row.right).toBeLessThanOrEqual(geometry.right);
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
+    }
+    await reopened.screenshot({ path: test.info().outputPath(`file-numbering-range-${test.info().project.name}.png`), animations: "disabled" });
+    await reopened.getByRole("button", { name: "取消", exact: true }).click();
+
+    await task.getByRole("button", { name: "开始下载（1）" }).click();
+    await expect.poll(() => download.submittedRequest()).toBeTruthy();
+    expect(download.submittedRequest()).toMatchObject({ overrides: expected });
   });
 });

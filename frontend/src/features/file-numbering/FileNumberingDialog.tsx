@@ -8,8 +8,11 @@ import { cn } from "../../lib/utils";
 import {
   automaticDraft,
   draftMap,
+  episodeInputLabel,
+  maxManualEpisodesPerFile,
   mergeCheckedOverrides,
   overrideList,
+  sequenceEpisodeInput,
   validDraft,
   type FileEpisodeDraft,
   type FileEpisodeOverride,
@@ -39,6 +42,7 @@ export function FileNumberingDialog({
   const [filter, setFilter] = useState("");
   const [bulkSeason, setBulkSeason] = useState("");
   const [sequenceStart, setSequenceStart] = useState("1");
+  const [sequenceSpan, setSequenceSpan] = useState("1");
   const [showInvalid, setShowInvalid] = useState(false);
 
   const visible = useMemo(() => {
@@ -97,12 +101,13 @@ export function FileNumberingDialog({
 
   function fillSequence() {
     const start = Number(sequenceStart);
+    const span = Number(sequenceSpan);
     const season = Number(bulkSeason);
-    if (checkedItems.length === 0 || sequenceStart.trim() === "" || !Number.isInteger(start) || start < 1 || (bulkSeason.trim() !== "" && (!Number.isInteger(season) || season < 0))) return;
+    if (checkedItems.length === 0 || sequenceStart.trim() === "" || !Number.isInteger(start) || start < 1 || !Number.isInteger(span) || span < 1 || span > maxManualEpisodesPerFile || (bulkSeason.trim() !== "" && (!Number.isInteger(season) || season < 0))) return;
     setDrafts((current) => {
       const next = new Map(current);
       checkedItems.forEach((item, index) => {
-        const draft = { ...(next.get(item.path) ?? automaticDraft(item)), episode: String(start + index) };
+        const draft = { ...(next.get(item.path) ?? automaticDraft(item)), episode: sequenceEpisodeInput(start, index, span) };
         if (bulkSeason.trim() !== "") draft.season = String(season);
         next.set(item.path, draft);
       });
@@ -163,6 +168,7 @@ export function FileNumberingDialog({
       <div className="tw:grid tw:flex-none tw:gap-2 tw:border-b tw:border-border tw:px-6 tw:py-3 tw:phone:px-4">
         <p className="text-caption tw:m-0 tw:text-muted-foreground">{t("fileNumbering.hint")}</p>
         <p className="text-caption tw:m-0 tw:text-muted-foreground">{t("fileNumbering.seasonHint")}</p>
+        <p className="text-caption tw:m-0 tw:text-muted-foreground">{t("fileNumbering.rangeHint")}</p>
         <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
           <Input
             controlSize="sm"
@@ -187,6 +193,10 @@ export function FileNumberingDialog({
             <span className="text-caption tw:text-muted-foreground">{t("fileNumbering.sequenceStart")}</span>
             <Input controlSize="sm" fullWidth={false} className="tw:w-20" type="number" min={1} step={1} aria-label={t("fileNumbering.sequenceStart")} value={sequenceStart} onChange={(event) => setSequenceStart(event.target.value)} />
           </label>
+          <label className="tw:grid tw:gap-0.5">
+            <span className="text-caption tw:text-muted-foreground">{t("fileNumbering.sequenceSpan")}</span>
+            <Input controlSize="sm" fullWidth={false} className="tw:w-20" type="number" min={1} max={maxManualEpisodesPerFile} step={1} aria-label={t("fileNumbering.sequenceSpan")} value={sequenceSpan} onChange={(event) => setSequenceSpan(event.target.value)} />
+          </label>
           <Button size="sm" disabled={checked.size === 0 || sequenceStart.trim() === ""} onClick={fillSequence}>{t("fileNumbering.fillSequence")}</Button>
           <Button size="sm" variant="ghost" disabled={checked.size === 0} onClick={restoreChecked}>{t("fileNumbering.restoreChecked")}</Button>
         </div>
@@ -202,6 +212,7 @@ export function FileNumberingDialog({
               const manual = drafts.has(item.path);
               const value = valueOf(item);
               const invalid = isChecked && manual && !validDraft(value);
+              const manualLabel = manual ? episodeInputLabel(value.episode) : undefined;
               return (
                 <li key={item.path} data-numbering-row={item.path} className={cn("tw:rounded-control tw:border tw:px-2 tw:py-2", manual ? "tw:border-primary/35 tw:bg-accent/20" : "tw:border-transparent", !isChecked && "tw:bg-muted/15")}>
                   <div className="tw:grid tw:grid-cols-[1.5rem_minmax(0,1fr)_4.5rem_5.5rem] tw:items-center tw:gap-2">
@@ -210,6 +221,7 @@ export function FileNumberingDialog({
                       <p className="text-caption break-anywhere tw:m-0" title={item.path}>{item.path}{item.sizeBytes !== undefined && <span className="tw:text-muted-foreground"> · {formatBytes(item.sizeBytes)}</span>}</p>
                       <p className={cn("text-caption tw:m-0 tw:flex tw:flex-wrap tw:items-center tw:gap-x-1.5", manual ? "tw:text-primary" : "tw:text-muted-foreground")}>
                         <span>{manual ? t("fileNumbering.manual") : item.automaticLabel}</span>
+                        {manualLabel && <span>· {manualLabel}</span>}
                         {item.subtitleCount > 0 && <span>· {t("fileNumbering.subtitles", { n: item.subtitleCount })}</span>}
                         {manual && value.season.trim() === "" && <span>· {t("fileNumbering.inheritedSeason")}</span>}
                         {manual && isChecked && (
@@ -220,7 +232,7 @@ export function FileNumberingDialog({
                       </p>
                     </div>
                     <Input controlSize="sm" aria-label={`${t("fileNumbering.season")} ${item.path}`} aria-invalid={invalid || undefined} disabled={!isChecked} type="number" min={0} step={1} placeholder={t("fileNumbering.seasonPlaceholder")} value={value.season} onChange={(event) => edit(item, "season", event.target.value)} />
-                    <Input controlSize="sm" aria-label={`${t("fileNumbering.episode")} ${item.path}`} aria-invalid={invalid || undefined} disabled={!isChecked} type="number" min={1} step={1} value={value.episode} onChange={(event) => edit(item, "episode", event.target.value)} />
+                    <Input controlSize="sm" aria-label={`${t("fileNumbering.episode")} ${item.path}`} aria-invalid={invalid || undefined} disabled={!isChecked} type="text" inputMode="numeric" value={value.episode} onChange={(event) => edit(item, "episode", event.target.value)} />
                   </div>
                 </li>
               );

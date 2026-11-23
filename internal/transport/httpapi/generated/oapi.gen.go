@@ -5097,9 +5097,12 @@ type FileEffectRulesReplaceMode string
 
 // FileEpisodeOverride One selected video's manual final numbering. An omitted season follows the request's main naming season. Episode is the explicit final integer: the automatic episode offset is never applied to it. Bound subtitles inherit both values from their video. Paths must be unique within one request and name selected videos; stale or duplicate paths are invalid.
 type FileEpisodeOverride struct {
-	Episode int    `json:"episode"`
-	Path    string `json:"path"`
-	Season  *int   `json:"season,omitempty"`
+	Episode int `json:"episode"`
+
+	// EpisodeEnd Last episode of the consecutive range this one file covers, for a combined-episode video. Must be at least `episode` and span at most 12 episodes; omitted or equal to `episode` is the single-episode form and canonicalizes to omitted.
+	EpisodeEnd *int   `json:"episode_end,omitempty"`
+	Path       string `json:"path"`
+	Season     *int   `json:"season,omitempty"`
 }
 
 // FileFilterRules go-re2-v1 search matching with one pattern per field. Empty means unrestricted; not_in takes precedence. Case is controlled only by inline flags such as (?i). Invalid or over-budget patterns are rejected. Each pattern is bounded to 4096 UTF-8 bytes (not Unicode characters). Separate policy instances match the exact release title (8192 bytes maximum) or the filename of a first-level video (the part after the last separator of the torrent-relative path; never a directory, the torrent name, or an OS absolute source path). A file rule containing "/" is rejected on save with the typed validation code FILE_RULE_PATH_SEPARATOR. File rules do not apply to subtitles, which follow a selected video by filename prefix; files below the first level and files that are neither video nor subtitle are never processed. File policies only select organization: no selected video means no download; partial selection downloads and verifies the complete torrent inventory. No manual file selection or filter override is part of this shape.
@@ -5368,9 +5371,12 @@ type FileManagerMatchBlockerCode string
 
 // FileManagerMatchChoice defines model for FileManagerMatchChoice.
 type FileManagerMatchChoice struct {
-	Episode        int `json:"episode"`
-	ManagedAnimeId ID  `json:"managed_anime_id"`
-	Season         int `json:"season"`
+	Episode int `json:"episode"`
+
+	// EpisodeEnd Last covered episode of a multi-episode match; absent for a single episode.
+	EpisodeEnd     *int `json:"episode_end,omitempty"`
+	ManagedAnimeId ID   `json:"managed_anime_id"`
+	Season         int  `json:"season"`
 }
 
 // FileManagerMatchConflict defines model for FileManagerMatchConflict.
@@ -5397,6 +5403,9 @@ type FileManagerMatchPreview struct {
 	DirectoriesToCreate []string `json:"directories_to_create"`
 	Episode             int      `json:"episode"`
 
+	// EpisodeEnd Last covered episode of a multi-episode match; absent for a single episode.
+	EpisodeEnd *int `json:"episode_end,omitempty"`
+
 	// FromLineage Release-level facts came from the file's own acquisition.
 	FromLineage bool `json:"from_lineage"`
 
@@ -5419,6 +5428,9 @@ type FileManagerMatchPreviewRequest struct {
 	// Episode Final episode number; no offset applies.
 	Episode int `json:"episode"`
 
+	// EpisodeEnd Last episode of the consecutive range this one file covers. Must be at least `episode` and span at most 12 episodes; omitted or equal to `episode` is the single-episode form.
+	EpisodeEnd *int `json:"episode_end,omitempty"`
+
 	// ManagedAnimeId The anime to match into; omitted takes the anime the file came from (409 FILE_MANAGER_MATCH_ANIME_REQUIRED when there is none).
 	ManagedAnimeId *ID `json:"managed_anime_id,omitempty"`
 
@@ -5435,9 +5447,12 @@ type FileManagerMatchPreviewRequest struct {
 // FileManagerMatchRequest defines model for FileManagerMatchRequest.
 type FileManagerMatchRequest struct {
 	// Conflict What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one; `overwrite` replaces a plain file at the target (never one a subscription manages or an operation holds).
-	Conflict         FileManagerConflictChoice `json:"conflict"`
-	Episode          int                       `json:"episode"`
-	ExpectedRevision string                    `json:"expected_revision"`
+	Conflict FileManagerConflictChoice `json:"conflict"`
+	Episode  int                       `json:"episode"`
+
+	// EpisodeEnd Last episode of the consecutive range this one file covers. Must be at least `episode` and span at most 12 episodes; omitted or equal to `episode` is the single-episode form.
+	EpisodeEnd       *int   `json:"episode_end,omitempty"`
+	ExpectedRevision string `json:"expected_revision"`
 
 	// ExpectedTarget The `target_path` the preview showed.
 	ExpectedTarget string `json:"expected_target"`
@@ -5583,7 +5598,10 @@ type FileManagerRecognitionMatch struct {
 	Anime *FileManagerRecognitionAnimeDraft `json:"anime,omitempty"`
 
 	// Episode The episode when the file's own name carries none; it applies to exactly one video, and `ep.source` reads `manual`.
-	Episode        *int `json:"episode,omitempty"`
+	Episode *int `json:"episode,omitempty"`
+
+	// EpisodeEnd Last episode of the consecutive range the one video covers; only meaningful together with `episode`. Must be at least `episode` and span at most 12 episodes; `offset` applies to both ends.
+	EpisodeEnd     *int `json:"episode_end,omitempty"`
 	ManagedAnimeId *ID  `json:"managed_anime_id,omitempty"`
 
 	// Offset Offset applied to every recognized episode of the request.

@@ -117,7 +117,7 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 			if !ok {
 				return episodeidentity.EpisodeIdentity{}, false
 			}
-			return ManualFileEpisodeIdentity(sourcePath, override.Episode), true
+			return ManualFileEpisodeIdentity(sourcePath, override.Episode, override.EpisodeEnd), true
 		},
 		NamingSeason: func(sourcePath string) *int {
 			override, ok := byOverride[sourcePath]

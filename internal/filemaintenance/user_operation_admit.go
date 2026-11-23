@@ -46,6 +46,9 @@ type UserOperationMatch struct {
 	ManagedAnimeID string
 	Season         int
 	Episode        int
+	// EpisodeEnd is the range end of a multi-episode match; zero for a single
+	// episode.
+	EpisodeEnd int
 }
 
 // collisionVersion is the file manager's add-a-suffix conflict choice.
@@ -168,7 +171,7 @@ func (i *UserOperationIntake) AdmitTx(ctx context.Context, tx *sql.Tx, a UserOpe
 		}
 		return value
 	}
-	var matchAnime, matchSeason, matchEpisode any
+	var matchAnime, matchSeason, matchEpisode, matchEpisodeEnd any
 	if a.Match != nil {
 		retired, takes, err := MatchAnimeTakesFilesTx(ctx, tx, a.Match.ManagedAnimeID, true)
 		if err != nil {
@@ -181,15 +184,18 @@ func (i *UserOperationIntake) AdmitTx(ctx context.Context, tx *sql.Tx, a UserOpe
 			return false, &AdmissionRefusal{Reason: AdmissionAnimeUnavailable, Message: "the anime does not take matched files"}
 		}
 		matchAnime, matchSeason, matchEpisode = a.Match.ManagedAnimeID, a.Match.Season, a.Match.Episode
+		if a.Match.EpisodeEnd > a.Match.Episode {
+			matchEpisodeEnd = a.Match.EpisodeEnd
+		}
 	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO file_manager_operations
  (id, idempotency_key, request_digest, actor, operation, source_path, target_path, expected_size_bytes,
-  collision, release_placement_id, match_anime_id, match_season, match_episode)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+  collision, release_placement_id, match_anime_id, match_season, match_episode, match_episode_end)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (idempotency_key) DO NOTHING`,
 		a.ID, a.IdempotencyKey, a.Digest, a.Actor, a.Operation, a.SourcePath, nullable(a.TargetPath),
 		a.ExpectedSize, a.Collision, nullable(a.ReleasePlacementID),
-		matchAnime, matchSeason, matchEpisode)
+		matchAnime, matchSeason, matchEpisode, matchEpisodeEnd)
 	if err != nil {
 		return false, fmt.Errorf("admit user operation: %w", err)
 	}
