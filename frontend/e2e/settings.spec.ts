@@ -1016,6 +1016,7 @@ test.describe("settings fixture coverage", () => {
     await expect(editDialog).toBeVisible();
     const titleRow = editDialog.locator('section[aria-label="标题解析"]');
     await expect(titleRow).toBeVisible();
+    await titleRow.getByRole("button", { name: "展开候选", exact: true }).click();
     for (const candidate of ["2160p", "720p", "WEBRip", "JPSC"]) {
       await expect(titleRow.getByRole("button", { name: candidate })).toBeVisible();
     }
@@ -1073,63 +1074,42 @@ test.describe("settings fixture coverage", () => {
     expect(writes).toEqual([{ schema_version: "subscription-title-v1", value: { source: "tmdb_original" } }, { expected_version: 1, unclassified_route: "route" }]);
   });
 
-  test("语言大卡拖动预览保持原卡片尺寸", async ({ page }, testInfo) => {
+  test("比较顺序卡片展开与拖动重排不溢出", async ({ page }, testInfo) => {
     test.skip(isMobile(page), "原生 HTML5 卡片拖动在桌面项目验证");
     await openSettings(page, "/#/settings/replacement");
     const list = page.getByRole("list", { name: "比较顺序", exact: true });
-    const preview = page.locator("[data-quality-compare-drag-preview]");
+    await expect(list).toBeVisible();
 
-    for (const [label, screenshot] of [
-      ["AniBT 标签 · 语言", "anibt-language-drag-preview.png"],
-      ["reltitle · 字幕语言", "rt-sub-language-drag-preview.png"],
+    for (const [key, screenshot] of [
+      ["anibt.language", "anibt-language-card-expanded.png"],
+      ["rt.sub_lang", "rt-sub-language-card-expanded.png"],
     ] as const) {
-      const card = list.locator(":scope > li").filter({
-        has: page.getByRole("button", { name: `移除 ${label}`, exact: true }),
-      });
+      const card = list.locator(`:scope > li[data-compare-item="${key}"]`);
       await expect(card).toBeVisible();
       await card.scrollIntoViewIfNeeded();
-      const box = await card.boundingBox();
-      if (!box) throw new Error(`${label} card has no box`);
-      await page.mouse.move(box.x + 14, box.y + 20);
-      await page.mouse.down();
-      await page.mouse.move(box.x + 80, box.y + 48, { steps: 12 });
-
-      await expect(preview).toBeAttached();
-      const previewBox = await preview.boundingBox();
-      if (!previewBox) throw new Error(`${label} drag preview has no box`);
-      expect(Math.abs(previewBox.width - box.width)).toBeLessThanOrEqual(1);
-      expect(Math.abs(previewBox.height - box.height)).toBeLessThanOrEqual(1);
-      const overflow = await preview.evaluate((element) => ({
+      await card.locator("button[aria-expanded]").first().click();
+      await expect(card.locator("button[aria-expanded='true']").first()).toBeVisible();
+      const overflow = await card.evaluate((element) => ({
         horizontal: element.scrollWidth - element.clientWidth,
-        vertical: element.scrollHeight - element.clientHeight,
       }));
       expect(overflow.horizontal).toBeLessThanOrEqual(1);
-      expect(overflow.vertical).toBeLessThanOrEqual(1);
-
-      // 原生 ghost 不进入 page.screenshot；把同一份 setDragImage 节点临时移入视口，
-      // 直接截取浏览器实际用于拖动预览的 DOM，并不断言页面截图里存在原生 ghost。
-      await preview.evaluate((element) => {
-        const style = (element as HTMLElement).style;
-        style.left = "16px";
-        style.top = "16px";
-        style.zIndex = "10000";
-      });
-      await preview.screenshot({ path: testInfo.outputPath(screenshot) });
-      await page.mouse.up();
-      await expect(preview).toHaveCount(0);
+      await card.screenshot({ path: testInfo.outputPath(screenshot) });
+      await card.locator("button[aria-expanded='true']").first().click();
+      await expect(card.locator("button[aria-expanded='false']").first()).toBeVisible();
     }
 
-    // 修复只覆盖两张大语言卡，普通比较项仍使用浏览器默认拖动预览。
-    const ordinary = list.locator(":scope > li").filter({
-      has: page.getByRole("button", { name: "移除 reltitle · 分辨率", exact: true }),
-    });
-    const ordinaryBox = await ordinary.boundingBox();
-    if (!ordinaryBox) throw new Error("ordinary comparison card has no box");
-    await page.mouse.move(ordinaryBox.x + 14, ordinaryBox.y + 20);
-    await page.mouse.down();
-    await page.mouse.move(ordinaryBox.x + 80, ordinaryBox.y + 48, { steps: 12 });
-    await expect(preview).toHaveCount(0);
-    await page.mouse.up();
+    const beforeKeys = await list.locator(":scope > li[data-compare-item]").evaluateAll((items) =>
+      items.map((item) => item.getAttribute("data-compare-item")),
+    );
+    expect(beforeKeys.length).toBeGreaterThanOrEqual(2);
+    const secondHandle = list.locator(":scope > li[data-compare-item]").nth(1).locator("[data-dim-drag-handle]");
+    const firstCard = list.locator(":scope > li[data-compare-item]").nth(0);
+    await secondHandle.dragTo(firstCard, { targetPosition: { x: 24, y: 4 } });
+    const afterKeys = await list.locator(":scope > li[data-compare-item]").evaluateAll((items) =>
+      items.map((item) => item.getAttribute("data-compare-item")),
+    );
+    expect(afterKeys[0]).toBe(beforeKeys[1]);
+    expect(afterKeys[1]).toBe(beforeKeys[0]);
   });
 
   test("版本与升级默认空态与 AI Lab 可达", async ({ page }) => {

@@ -2029,9 +2029,9 @@ test.describe("AnimeGrid", () => {
     await expect(dialog.getByRole("tab", { name: "元数据" })).toBeVisible();
     await expect(dialog.getByRole("tab", { name: "字幕组" })).toBeVisible();
     await expect(dialog.getByRole("tab", { name: "规则" })).toBeVisible();
-    await expect(dialog.getByRole("tab", { name: "RSS 预览" })).toBeVisible();
-    await dialog.getByRole("tab", { name: "RSS 预览" }).click();
-    await expect(dialog.getByRole("button", { name: "显示被过滤", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("tab", { name: "RSS", exact: true })).toBeVisible();
+    await dialog.getByRole("tab", { name: "RSS", exact: true }).click();
+    await expect(dialog.getByRole("checkbox", { name: "显示被过滤", exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "预览", exact: true })).toBeVisible();
     // 激活 RSS tab 即默认读取选中字幕组的种子；夹具没有这个读模型，所以读取失败
     // 必须被明确显示（而不是空白），再点「预览」是显式重试，结果相同。
@@ -2078,8 +2078,8 @@ test.describe("AnimeGrid", () => {
     await parser.getByLabel("集数识别规则", { exact: true }).fill("自定义解析规则");
     await parser.getByLabel("集数识别规则", { exact: true }).press("Enter");
 
-    await dialog.getByRole("tab", { name: "RSS 预览", exact: true }).click();
-    await expect(dialog.getByRole("button", { name: "显示被过滤", exact: true })).toBeVisible();
+    await dialog.getByRole("tab", { name: "RSS", exact: true }).click();
+    await expect(dialog.getByRole("checkbox", { name: "显示被过滤", exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "预览", exact: true })).toBeVisible();
     // The RSS workspace is the only draft RSS surface; switching to it keeps
     // the dirty marker and does not expose the retired parallel preview block.
@@ -2128,7 +2128,7 @@ test.describe("AnimeGrid", () => {
     await subscribeCard(card);
     const dialog = await openSubscribedConfig(page, "星际邮差艾拉");
     await dialog.getByRole("tab", { name: "字幕组", exact: true }).click();
-    await dialog.getByRole("button", { name: "最多订阅字幕组数", exact: true }).click();
+    await dialog.getByRole("button", { name: "订阅上限", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "最多订阅字幕组数" })).toBeVisible();
     await page.getByRole("dialog", { name: "最多订阅字幕组数" }).getByLabel("最多订阅字幕组数", { exact: true }).fill("5");
     await page.getByRole("dialog", { name: "最多订阅字幕组数" }).getByRole("button", { name: "应用", exact: true }).click();
