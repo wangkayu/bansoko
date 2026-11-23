@@ -100,6 +100,7 @@ function customDraft(): AnimeDraft {
         group_name: t("field.subgroup"),
         title: "自定义番",
         episode_offset: 0,
+        episode_span: 1,
       },
     ],
   } as unknown as AnimeDraft;
@@ -162,7 +163,7 @@ function viewFixture(): RSSListView {
         display_name: "一号组",
         score: 80,
         selection: { source: "configured" as const, effective_selected: true, selection_mode: "auto" },
-        offset: { value: 1, editable: false },
+        offset: { value: 1, span: 1, editable: false },
         feed: { state: "fresh", snapshot_id: "snap-1", snapshot_version: 1, content_hash: "sha256:" + "b".repeat(64) },
         items: [
           {
@@ -730,7 +731,7 @@ describe("订阅前 RSS 工作区：草稿偏移编辑与文件行", () => {
   // Carries the group's offset in provider_group_offsets: the write target of a provider draft's offset editing.
   function offsetDraft(): AnimeDraft {
     const draft = providerDraft();
-    draft.provider_group_offsets = [{ provider_group_ref: "g-1", episode_offset: 2 }];
+    draft.provider_group_offsets = [{ provider_group_ref: "g-1", episode_offset: 2, episode_span: 1 }];
     return draft;
   }
 
@@ -755,12 +756,56 @@ describe("订阅前 RSS 工作区：草稿偏移编辑与文件行", () => {
     // Writes only the group's provider_group_offsets entry, triggering no owner action.
     expect(onDraftChange).toHaveBeenCalledTimes(1);
     const nextDraft = onDraftChange.mock.calls[0][0] as AnimeDraft;
-    expect(nextDraft.provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 5 }]);
+    expect(nextDraft.provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 5, episode_span: 1 }]);
     expect(nextDraft.rss_sources).toEqual([]);
 
     // Follows the draft-change → view-re-read channel: the preview re-reads with the new draft immediately.
     await waitFor(() => expect(mockedView).toHaveBeenCalledTimes(2));
-    expect((mockedView.mock.calls[1][0].draft as AnimeDraft).provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 5 }]);
+    expect((mockedView.mock.calls[1][0].draft as AnimeDraft).provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 5, episode_span: 1 }]);
+  });
+
+  it("合并集 span 默认收起，展开后保存写 episode_span", async () => {
+    mockedView.mockResolvedValue(viewFixture());
+    const { onDraftChange } = renderRssTab({
+      draft: offsetDraft(),
+      subgroupDiscovery: { provider: "anibt", providerEntryRef: "entry-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
+    await screen.findByText("一号组");
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+
+    // Collapsed by default: no span input until the combined-episode row is expanded.
+    expect(within(dialog).queryByLabelText(t("rss.offsetSpan"))).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.offsetSpanToggle") }));
+    const spanInput = within(dialog).getByLabelText(t("rss.offsetSpan"));
+    expect(spanInput).toHaveValue(1);
+    fireEvent.change(spanInput, { target: { value: "2" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
+
+    // offset=2 is already the draft's value; only the span changes.
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+    const nextDraft = onDraftChange.mock.calls[0][0] as AnimeDraft;
+    expect(nextDraft.provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 2, episode_span: 2 }]);
+  });
+
+  it("span 越界内联报错，不保存也不重读", async () => {
+    mockedView.mockResolvedValue(viewFixture());
+    const { onDraftChange } = renderRssTab({
+      draft: offsetDraft(),
+      subgroupDiscovery: { provider: "anibt", providerEntryRef: "entry-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
+    await screen.findByText("一号组");
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.offsetSpanToggle") }));
+    fireEvent.change(within(dialog).getByLabelText(t("rss.offsetSpan")), { target: { value: "13" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
+
+    expect(await within(dialog).findByText(t("rss.offsetSpanInvalid"))).toBeInTheDocument();
+    expect(onDraftChange).not.toHaveBeenCalled();
+    expect(mockedView).toHaveBeenCalledTimes(1);
   });
 
   it("偏移越界内联报错，不保存也不重读", async () => {

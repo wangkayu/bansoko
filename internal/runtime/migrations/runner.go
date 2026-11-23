@@ -172,7 +172,7 @@ var requiredColumns = map[string][]string{
 	"bangumi_data_snapshots":           {"singleton_id", "upstream_version", "payload", "last_modified", "fetched_at", "checked_at"},
 	"anime_metadata":                   {"media_kind", "year", "season"},
 	"subscriptions":                    {"origin", "origin_entry_ref", "instance_label"},
-	"rss_sources":                      {"source_kind", "locator", "locator_display", "group_name", "title", "episode_offset", "provenance", "http_feed_connection_ref", "network_route_ref"},
+	"rss_sources":                      {"source_kind", "locator", "locator_display", "group_name", "title", "episode_offset", "episode_span", "provenance", "http_feed_connection_ref", "network_route_ref"},
 	"provider_group_selections":        {"id", "subscription_id", "provider", "group_ref", "display_name", "selection_mode", "manual_selected", "effective_selected", "effective_score", "version", "available", "availability_generation"},
 	"provider_catalog_snapshots":       {"id", "provider", "season", "status", "observed_at", "source_version", "cursor", "etag", "last_modified", "contract_version", "health_state", "health_code", "health_message", "health_checked_at", "error_code", "error_message", "version", "trace_id", "retention_until"},
 	"provider_feed_snapshots":          {"id", "provider", "provider_entry_ref", "provider_group_ref", "version", "fetched_at", "content_hash", "hash_schema", "projection_schema", "fresh_until", "retention_until", "seed_count", "created_at"},

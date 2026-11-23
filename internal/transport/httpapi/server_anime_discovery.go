@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	animedomain "bansoko/internal/anime/domain"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
 	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
@@ -119,6 +120,7 @@ func mapDiscoverSubgroupsRSSSource(value ownershipapplication.DiscoverRSSSource)
 		LocatorDisplay:        value.LocatorDisplay,
 		NetworkRouteRef:       cloneHTTPString(value.NetworkRouteRef),
 		EpisodeOffset:         value.EpisodeOffset,
+		EpisodeSpan:           animedomain.NormalizeEpisodeSpan(value.EpisodeSpan),
 		SourceKind:            generated.SourceKind(value.SourceKind),
 		SubscriptionId:        generated.ID(value.SubscriptionID),
 		Title:                 value.Title,

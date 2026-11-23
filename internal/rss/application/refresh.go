@@ -172,7 +172,7 @@ func refreshTriggerIsManual(snapshot json.RawMessage) bool {
 func buildFeedEvaluations(ctx context.Context, items []acquisitiondomain.FeedItem, snapshot sourceSnapshot) ([]feedEvaluation, error) {
 	result := make([]feedEvaluation, 0, len(items))
 	input := animedomain.SourceEvaluationInput{
-		Index: 0, GroupName: snapshot.groupName, Offset: snapshot.episodeOffset,
+		Index: 0, GroupName: snapshot.groupName, Offset: snapshot.episodeOffset, Span: snapshot.episodeSpan,
 		Group: providerdomain.GroupRefOrZero(providerdomain.Kind(snapshot.provider), snapshot.providerGroupRef),
 	}
 	seen := make(map[string]struct{}, len(items))

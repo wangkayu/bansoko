@@ -20,10 +20,15 @@ INSERT INTO rss_sources(
     id, subscription_id, source_kind, locator, locator_display, group_name, title
 ) VALUES ('src-1', 'sub-1', 'custom_rss', 'ftp://user:pass@feeds.example/rss.xml', 'ftp://feeds.example/rss.xml', 'Custom', 'Title')`)
 	p.accept("runtime row", `INSERT INTO rss_source_runtime(rss_source_id) VALUES ('src-1')`)
-	var defaultOffset int
-	if err := p.db.QueryRowContext(p.ctx, `SELECT episode_offset FROM rss_sources WHERE id = 'src-1'`).Scan(&defaultOffset); err != nil || defaultOffset != 0 {
-		t.Fatalf("link episode_offset default = %d (%v), want 0", defaultOffset, err)
+	var defaultOffset, defaultSpan int
+	if err := p.db.QueryRowContext(p.ctx, `SELECT episode_offset, episode_span FROM rss_sources WHERE id = 'src-1'`).Scan(&defaultOffset, &defaultSpan); err != nil || defaultOffset != 0 || defaultSpan != 1 {
+		t.Fatalf("link episode_offset/span defaults = %d/%d (%v), want 0/1", defaultOffset, defaultSpan, err)
 	}
+	p.accept("minimum episode span", `INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_span) VALUES ('src-span-1', 'sub-1', 'custom_rss', 'custom://span-1', 'custom://span-1', 'Group', 'Title', 1)`)
+	p.accept("maximum episode span", `INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_span) VALUES ('src-span-12', 'sub-1', 'custom_rss', 'custom://span-12', 'custom://span-12', 'Group', 'Title', 12)`)
+	p.reject("zero episode span", `INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_span) VALUES ('src-span-0', 'sub-1', 'custom_rss', 'custom://span-0', 'custom://span-0', 'Group', 'Title', 0)`)
+	p.reject("out-of-range episode span", `INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_span) VALUES ('src-span-13', 'sub-1', 'custom_rss', 'custom://span-13', 'custom://span-13', 'Group', 'Title', 13)`)
+	p.reject("null episode span", `INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_span) VALUES ('src-span-null', 'sub-1', 'custom_rss', 'custom://span-null', 'custom://span-null', 'Group', 'Title', NULL)`)
 	p.reject("null link episode offset",
 		`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_offset) VALUES ('src-null-offset', 'sub-1', 'custom_rss', 'custom://null-offset', 'custom://null-offset', 'Group', 'Title', NULL)`)
 	p.reject("out-of-range link episode offset",

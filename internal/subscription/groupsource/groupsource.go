@@ -62,11 +62,14 @@ type Source struct {
 	SnapshotVersion string
 	// EpisodeOffset seeds a row this call inserts; an existing row keeps its own.
 	EpisodeOffset int
+	// EpisodeSpan follows the same insert-only ownership rule as EpisodeOffset.
+	EpisodeSpan int
 }
 
 // UpsertTx upserts the provider_group source and ensures its runtime row. A
 // stale discovery snapshot leaves an existing row untouched. inserted reports a
-// row this call created. episode_offset is never written by the conflict path.
+// row this call created. episode_offset and episode_span are never written by
+// the conflict path.
 func UpsertTx(ctx context.Context, tx *sql.Tx, src Source) (sourceID string, inserted bool, err error) {
 	providerKind := providerdomain.Kind(src.Provider)
 	groupRef, err := providerdomain.NewGroupRef(providerKind, src.GroupExternalID)
@@ -82,12 +85,16 @@ func UpsertTx(ctx context.Context, tx *sql.Tx, src Source) (sourceID string, ins
 	}
 
 	sourceID = uuid.NewString()
+	episodeSpan := src.EpisodeSpan
+	if episodeSpan == 0 {
+		episodeSpan = 1
+	}
 	upsertErr := tx.QueryRowContext(ctx, `
 INSERT INTO rss_sources(
     id, subscription_id, source_kind, locator, locator_display, group_name, title,
-    provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version, episode_offset
+    provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version, episode_offset, episode_span
 )
-VALUES ($1, $2, 'provider_group', $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, 'provider_group', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (subscription_id, provider, provider_entry_ref, provider_group_ref)
     WHERE source_kind = 'provider_group' DO UPDATE SET
     locator = EXCLUDED.locator,
@@ -114,7 +121,7 @@ WHERE
     )
 RETURNING id, (xmax = 0)`,
 		sourceID, src.SubscriptionID, src.RSSURL, src.RSSURL, src.DisplayName, src.AnimeTitle,
-		src.Provider, src.CatalogEntryRef, groupRef.ExternalID, src.SnapshotVersion, src.EpisodeOffset).Scan(&sourceID, &inserted)
+		src.Provider, src.CatalogEntryRef, groupRef.ExternalID, src.SnapshotVersion, src.EpisodeOffset, episodeSpan).Scan(&sourceID, &inserted)
 	if upsertErr != nil && !errors.Is(upsertErr, sql.ErrNoRows) {
 		return "", false, fmt.Errorf("upsert rss source: %w", upsertErr)
 	}

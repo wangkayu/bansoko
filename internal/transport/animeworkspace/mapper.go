@@ -817,6 +817,7 @@ func mapRSSSource(value animeapplication.RSSSource) generated.RSSSource {
 		LocatorDisplay:        value.LocatorDisplay,
 		NetworkRouteRef:       cloneWorkspaceString(value.NetworkRouteRef),
 		EpisodeOffset:         value.EpisodeOffset,
+		EpisodeSpan:           animedomain.NormalizeEpisodeSpan(value.EpisodeSpan),
 		ProviderProvenance:    mapProviderProvenance(value.ProviderProvenance),
 		SourceKind:            generated.SourceKind(value.SourceKind),
 		SubscriptionId:        generated.ID(value.SubscriptionID),

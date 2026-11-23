@@ -43,6 +43,9 @@ type ParserEvidence struct {
 	Selection parser.Selection
 	Parsed    parser.EpisodeParseResult
 	Identity  episodeidentity.EpisodeIdentity
+	// Span is the frozen per-source combined-episode setting; zero is the
+	// legacy default 1. It is needed to resolve each file from its own name.
+	Span int
 	// MediaKind is the frozen owner media kind ("tv" or "movie"); empty means
 	// tv. Season is the TMDB season and SeasonBound marks a preserved season 0,
 	// both frozen for naming only.
@@ -109,6 +112,9 @@ func (e ParserEvidence) Provenance() parser.Provenance {
 	provenance.InputDigest = e.Parsed.InputDigest
 	provenance.ResultDigest = e.Parsed.ResultDigest
 	provenance.Offset = e.Identity.Offset
+	if e.Span > 1 {
+		provenance.Span = e.Span
+	}
 	provenance.SourceVersion = e.SourceVersion
 	provenance.ParseStatus = string(e.Parsed.Status)
 	provenance.ParseShape = string(e.Parsed.Shape)
@@ -145,6 +151,7 @@ type ParserSelectionInput struct {
 	Kind            string
 	EpisodePatterns []string
 	Offset          int
+	Span            int
 	// MediaKind is the owner media kind ("tv" or "movie"); empty defaults to
 	// "tv". Season is the TMDB season and SeasonBound marks a preserved season
 	// 0, both frozen for naming only.
@@ -183,6 +190,7 @@ func ResolveParserEvidence(ctx context.Context, selection ParserSelectionInput, 
 	}
 	evidence := ParserEvidence{
 		Selection: chosen, Parsed: parsed,
+		Span:          selection.Span,
 		MediaKind:     selection.MediaKind,
 		Season:        selection.Season,
 		SeasonBound:   selection.SeasonBound,
@@ -196,6 +204,7 @@ func ResolveParserEvidence(ctx context.Context, selection ParserSelectionInput, 
 		// The release-level identity is the title's own evidence; it never
 		// becomes the identity of a file.
 		Offset: chosen.Offset,
+		Span:   selection.Span,
 	})
 	evidence.Identity = identity
 	return evidence, nil
@@ -216,6 +225,7 @@ func ResolveFileEpisode(ctx context.Context, release ParserEvidence, filename st
 		MediaKind:    release.mediaKind(),
 		FileEvidence: parser.Evidence(parsed, parser.InputFileName),
 		Offset:       release.Identity.Offset,
+		Span:         release.Span,
 	})
 	return identity, ParserEvidence{Identity: identity}.NamingFacts(), nil
 }
@@ -247,6 +257,7 @@ type OrdinaryRequest struct {
 	// SourceVersion is the link CAS version it was read from. Offset is used
 	// only when Evidence is not supplied.
 	Offset              int
+	Span                int
 	SourceVersion       int64
 	ParserKind          string
 	ParserPolicyVersion int64
@@ -308,6 +319,7 @@ type OneShotRequest struct {
 	AnimeTitle          string
 	GroupName           string
 	Offset              int
+	Span                int
 	SourceVersion       int64
 	ParserKind          string
 	ParserPolicyVersion int64
@@ -337,6 +349,7 @@ type PlanInput struct {
 	AnimeTitle          string
 	GroupName           string
 	Offset              int
+	Span                int
 	SourceVersion       int64
 	ParserKind          string
 	ParserPolicyVersion int64
@@ -391,6 +404,7 @@ func PreflightOrdinary(ctx context.Context, request OrdinaryRequest, probe Probe
 		GroupName:           request.GroupName,
 		Group:               request.Group,
 		Offset:              request.Offset,
+		Span:                request.Span,
 		SourceVersion:       request.SourceVersion,
 		ParserKind:          request.ParserKind,
 		ParserPolicyVersion: request.ParserPolicyVersion,
@@ -421,6 +435,7 @@ func PreflightOneShot(ctx context.Context, request OneShotRequest, probe Probe) 
 		GroupName:           request.GroupName,
 		Group:               request.Group,
 		Offset:              request.Offset,
+		Span:                request.Span,
 		SourceVersion:       request.SourceVersion,
 		ParserKind:          request.ParserKind,
 		ParserPolicyVersion: request.ParserPolicyVersion,
@@ -496,6 +511,7 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			Kind:              input.ParserKind,
 			EpisodePatterns:   input.Effective.Rules.Parser.EpisodePatterns,
 			Offset:            input.Offset,
+			Span:              input.Span,
 			MediaKind:         input.MediaKind,
 			Season:            input.Season,
 			SeasonBound:       input.SeasonBound,
@@ -544,7 +560,7 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	if animeTitle == "" {
 		animeTitle = strings.TrimSpace(input.Item.Title)
 	}
-	source := animedomain.SourceEvaluationInput{Index: 0, GroupName: input.GroupName, Group: input.Group, Offset: input.Offset}
+	source := animedomain.SourceEvaluationInput{Index: 0, GroupName: input.GroupName, Group: input.Group, Offset: input.Offset, Span: input.Span}
 	entries := make([]Entry, 0, len(files))
 	fileIndex := map[string]int{}
 	// coverage is each planned video's coverage keys; the duplicate-target

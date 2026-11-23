@@ -101,6 +101,7 @@ type DiscoverRSSSource struct {
 	LocatorDisplay        string
 	NetworkRouteRef       *string
 	EpisodeOffset         int
+	EpisodeSpan           int
 	ProviderProvenance    *DiscoverProviderProvenance
 	SourceKind            string
 	SubscriptionID        string
@@ -242,6 +243,7 @@ func (s *Service) readDiscoverSubgroupsOwner(ctx context.Context, managedAnimeID
 			ID:                    source.ID,
 			LocatorDisplay:        source.LocatorDisplay,
 			EpisodeOffset:         source.EpisodeOffset,
+			EpisodeSpan:           source.EpisodeSpan,
 			SourceKind:            string(source.SourceKind),
 			SubscriptionID:        source.SubscriptionID,
 			Title:                 source.Title,

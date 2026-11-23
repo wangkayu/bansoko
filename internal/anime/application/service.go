@@ -70,7 +70,7 @@ type ReplacementTriggerPort interface {
 // inside the RSSSource owner's offset CAS transaction and records the change
 // whose alignment follows.
 type SourceOffsetAlignment interface {
-	AdmitRSSSourceTx(ctx context.Context, scope txscope.Tx, animeID, rssSourceID string, sourceVersion int64, oldEffectiveOffset, newEffectiveOffset int) (changeID string, created bool, err error)
+	AdmitRSSSourceTx(ctx context.Context, scope txscope.Tx, animeID, rssSourceID string, sourceVersion int64, oldEffectiveOffset, newEffectiveOffset, oldEffectiveSpan, newEffectiveSpan int) (changeID string, created bool, err error)
 }
 
 // Service holds the kernel ports the anime owners share: the lifecycle fences,

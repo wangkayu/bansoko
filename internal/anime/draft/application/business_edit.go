@@ -80,7 +80,7 @@ func (s *Service) GetAnimeBusinessEdit(ctx context.Context, animeID string) (Bus
 	if err := tx.QueryRowContext(ctx, `SELECT total_episodes FROM anime_metadata WHERE managed_anime_id=$1`, animeID).Scan(&draft.Metadata.TotalEpisodes); err != nil {
 		return result, err
 	}
-	sources, err := tx.QueryContext(ctx, `SELECT src.source_kind,src.locator,src.locator_display,src.group_name,src.title,src.episode_offset,src.anibt_aux_mode,src.http_feed_connection_ref,src.network_route_ref,src.provenance FROM rss_sources src JOIN subscriptions sub ON sub.id=src.subscription_id WHERE sub.managed_anime_id=$1 ORDER BY src.created_at,src.id`, animeID)
+	sources, err := tx.QueryContext(ctx, `SELECT src.source_kind,src.locator,src.locator_display,src.group_name,src.title,src.episode_offset,src.episode_span,src.anibt_aux_mode,src.http_feed_connection_ref,src.network_route_ref,src.provenance FROM rss_sources src JOIN subscriptions sub ON sub.id=src.subscription_id WHERE sub.managed_anime_id=$1 ORDER BY src.created_at,src.id`, animeID)
 	if err != nil {
 		return result, err
 	}
@@ -88,7 +88,7 @@ func (s *Service) GetAnimeBusinessEdit(ctx context.Context, animeID string) (Bus
 	for sources.Next() {
 		var source animedomain.RSSSourceDraft
 		var provenance []byte
-		if err := sources.Scan(&source.SourceKind, &source.Locator, &source.LocatorDisplay, &source.GroupName, &source.Title, &source.EpisodeOffset, &source.AnibtAuxMode, &source.HttpFeedConnectionRef, &source.NetworkRouteRef, &provenance); err != nil {
+		if err := sources.Scan(&source.SourceKind, &source.Locator, &source.LocatorDisplay, &source.GroupName, &source.Title, &source.EpisodeOffset, &source.EpisodeSpan, &source.AnibtAuxMode, &source.HttpFeedConnectionRef, &source.NetworkRouteRef, &provenance); err != nil {
 			sources.Close()
 			return result, err
 		}

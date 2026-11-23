@@ -61,7 +61,7 @@ export function RssWorkspace({
   /** The in-memory draft write entry: draft-side offset edits update draft.rss_sources through it; when absent no offset entry renders. */
   onDraftChange?: (next: AnimeDraft) => void;
   /** A not-yet-started subscription's offset save (by group identity); the bench shows the entry only on groups the server marks editable. */
-  onSaveGroupOffset?: (group: RSSListGroup, offset: number) => Promise<void>;
+  onSaveGroupOffset?: (group: RSSListGroup, offset: number, span: number) => Promise<void>;
   /** The toolbar HelpTip's content; defaults to the draft's release note. */
   help?: string;
   /** Optional leading action merged into the single toolbar row (e.g. "Refresh subgroups" in draft mode). */
@@ -105,6 +105,8 @@ export function RssWorkspace({
 //   after the draft was updated elsewhere while editing.
   const [offsetTarget, setOffsetTarget] = useState<{ name: string; group: RSSListGroup; current: number }>();
   const [offsetDraft, setOffsetDraft] = useState("");
+  const [spanDraft, setSpanDraft] = useState("1");
+  const [spanOpen, setSpanOpen] = useState(false);
   const [offsetError, setOffsetError] = useState<string>();
   const [offsetSaving, setOffsetSaving] = useState(false);
 
@@ -123,13 +125,27 @@ export function RssWorkspace({
     return onSaveGroupOffset && group.offset.editable ? group.offset.value : undefined;
   }
 
-  const conversion = offsetTarget ? offsetConversionLine(offsetTarget.group, offsetDraft) : undefined;
+  // The combined-episode span lives next to the offset in the same draft/read locations.
+  function groupSpan(group: RSSListGroup): number {
+    if (draft && onDraftChange) {
+      if (draft.origin === "custom") {
+        const index = matchDraftSourceIndex(draft, group);
+        return index === undefined ? 1 : (draft.rss_sources[index]?.episode_span ?? 1);
+      }
+      return draft.provider_group_offsets?.find((entry) => entry.provider_group_ref === group.scope.provider_group_ref)?.episode_span ?? 1;
+    }
+    return group.offset.span;
+  }
+
+  const conversion = offsetTarget ? offsetConversionLine(offsetTarget.group, offsetDraft, spanDraft) : undefined;
 
   function openOffsetDialog(group: RSSListGroup) {
     const current = groupOffset(group);
     if (current === undefined) return;
     setOffsetTarget({ name: group.display_name, group, current });
     setOffsetDraft(String(current));
+    setSpanDraft(String(groupSpan(group)));
+    setSpanOpen(groupSpan(group) > 1);
     setOffsetError(undefined);
   }
 
@@ -137,6 +153,8 @@ export function RssWorkspace({
     if (offsetSaving && !force) return;
     setOffsetTarget(undefined);
     setOffsetDraft("");
+    setSpanDraft("1");
+    setSpanOpen(false);
     setOffsetError(undefined);
   }
 
@@ -153,6 +171,12 @@ export function RssWorkspace({
       setOffsetError(t("rss.offsetInvalid"));
       return;
     }
+    const spanTrimmed = spanDraft.trim();
+    const span = spanTrimmed === "" ? Number.NaN : Number(spanTrimmed);
+    if (!Number.isInteger(span) || span < 1 || span > 12) {
+      setOffsetError(t("rss.offsetSpanInvalid"));
+      return;
+    }
     const group = offsetTarget.group;
     if (draft && onDraftChange) {
       let next: AnimeDraft | undefined;
@@ -161,13 +185,13 @@ export function RssWorkspace({
         const source = index === undefined ? undefined : draft.rss_sources[index];
         if (index !== undefined && source) {
           const nextSources = draft.rss_sources.slice();
-          nextSources[index] = { ...source, episode_offset: offset };
+          nextSources[index] = { ...source, episode_offset: offset, episode_span: span };
           next = { ...draft, rss_sources: nextSources };
         }
       } else {
         const ref = group.scope.provider_group_ref;
         const rest = (draft.provider_group_offsets ?? []).filter((entry) => entry.provider_group_ref !== ref);
-        next = { ...draft, provider_group_offsets: offset === 0 ? rest : [...rest, { provider_group_ref: ref, episode_offset: offset }] };
+        next = { ...draft, provider_group_offsets: offset === 0 && span === 1 ? rest : [...rest, { provider_group_ref: ref, episode_offset: offset, episode_span: span }] };
       }
       closeOffsetDialog();
       if (!next) return;
@@ -182,7 +206,7 @@ export function RssWorkspace({
     setOffsetSaving(true);
     setOffsetError(undefined);
     try {
-      await onSaveGroupOffset(group, offset);
+      await onSaveGroupOffset(group, offset, span);
       toast.success(t("rss.offsetSaved"));
       closeOffsetDialog(true);
       await workspace.preview();
@@ -361,6 +385,30 @@ export function RssWorkspace({
                 }}
               />
             </Field>
+            {/* Combined-episode tuning stays collapsed for ordinary groups; a group already
+                configured with a span opens with the field visible. */}
+            <div>
+              <Button variant="ghost" size="sm" aria-expanded={spanOpen} onClick={() => setSpanOpen((open) => !open)}>
+                {t("rss.offsetSpanToggle")}
+              </Button>
+            </div>
+            {spanOpen && (
+              <Field label={t("rss.offsetSpan")} hint={t("rss.offsetSpanHint")}>
+                <Input
+                  aria-label={t("rss.offsetSpan")}
+                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  max={12}
+                  step="1"
+                  value={spanDraft}
+                  onChange={(event) => {
+                    setSpanDraft(event.target.value);
+                    setOffsetError(undefined);
+                  }}
+                />
+              </Field>
+            )}
             {conversion && <p className="text-caption text-muted">{conversion}</p>}
             {offsetError && (
               <StateBlock kind="error" title={offsetError} />

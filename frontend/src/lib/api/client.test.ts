@@ -55,6 +55,7 @@ const emptyDraft: AnimeDraft = {
       group_name: "测试字幕组",
       title: "测试番剧",
       episode_offset: 0,
+      episode_span: 1,
     },
   ],
 };
@@ -504,6 +505,7 @@ describe("api client", () => {
     const input = {
       candidate_id: "candidate-1",
       revision: 1,
+      episode_span: 1,
       selected_seed: {
         provider: "anibt" as const,
         provider_entry_ref: "entry-1",

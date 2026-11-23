@@ -8321,6 +8321,14 @@ components:
             and the idempotency request identity; it is never read from an
             existing subscription, link or the submitted draft. Omitted means 0.
             Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: >-
+            Consecutive metadata episodes one single-number release file covers.
+            Omitted means 1; the value joins the frozen input and replay identity.
         download_selected_files:
           type: boolean
           description: >-
@@ -8656,6 +8664,15 @@ components:
             offset of its own; a stored link or matching draft source offset
             wins and is never rewritten. With one_shot it is every group's
             offset.
+        episode_span:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: >-
+            Preview-only combined-episode span (null/omitted = 1). A configured
+            source span wins; with one_shot this is every group's span.
         one_shot:
           type: boolean
           description: >-
@@ -8854,7 +8871,7 @@ components:
     RSSListOffset:
       type: object
       additionalProperties: false
-      required: [value, editable, source]
+      required: [value, span, editable, source]
       description: >-
         The episode offset this view resolved for one group, and where it came
         from. There is no inheritance and no second rule: the value is the
@@ -8869,6 +8886,11 @@ components:
           description: >-
             The effective offset this preview parsed and rendered this group
             with; 0 means no offset.
+        span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: The combined-episode span this group preview parsed and rendered with.
         source:
           type: string
           enum: [link, draft_source, preview_input, default]
@@ -11467,6 +11489,12 @@ components:
           minimum: -1000
           maximum: 1000
           description: The episode offset of this RSS link; 0 means no offset.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: Consecutive metadata episodes in one single-number release file; omitted means 1.
         anibt_aux_mode:
           type: string
           nullable: true
@@ -11497,7 +11525,7 @@ components:
       type: object
       additionalProperties: false
       description: Safe ordinary read model; the protected raw locator is never exposed.
-      required: [id, subscription_id, source_kind, locator_display, group_name, title, episode_offset, version]
+      required: [id, subscription_id, source_kind, locator_display, group_name, title, episode_offset, episode_span, version]
       properties:
         id:
           $ref: '#/components/schemas/ID'
@@ -11525,6 +11553,12 @@ components:
           minimum: -1000
           maximum: 1000
           description: The episode offset of this RSS link; 0 means no offset.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: Consecutive metadata episodes in one single-number release file; omitted means 1.
         anibt_aux_mode:
           type: string
           nullable: true
@@ -11766,6 +11800,11 @@ components:
         episode_offset:
           type: integer
           default: 0
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
     ParserSelection:
       type: object
       additionalProperties: false
@@ -15423,6 +15462,14 @@ components:
             and the idempotency request identity; it is never read from an
             existing subscription, link or the submitted draft. Omitted means 0.
             Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: >-
+            Consecutive metadata episodes one single-number release file covers.
+            Omitted means 1; the value joins the frozen input and replay identity.
         overrides:
           type: array
           maxItems: 10000
@@ -15710,6 +15757,11 @@ components:
           description: >-
             The frozen one-shot episode offset from the admission request. Legacy
             marker rows omit it.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Frozen one-shot combined-episode span; legacy rows omit it (default 1).
         overrides:
           type: array
           maxItems: 10000
@@ -17785,6 +17837,12 @@ components:
           minimum: -1000
           maximum: 1000
           description: The new episode offset of this RSS link; 0 means no offset.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: The new combined-episode span; omitted means 1.
     ProviderGroupOffsetPut:
       type: object
       additionalProperties: false
@@ -17800,6 +17858,12 @@ components:
           minimum: -1000
           maximum: 1000
           description: The new episode offset of this group; 0 means no offset.
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+          description: The new combined-episode span; omitted means 1.
     ProviderGroupOffsetDraft:
       type: object
       additionalProperties: false
@@ -17813,6 +17877,11 @@ components:
           type: integer
           minimum: -1000
           maximum: 1000
+        episode_span:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
     RSSSourceAniBTModePatch:
       type: object
       additionalProperties: false

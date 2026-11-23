@@ -17,12 +17,17 @@ func TestResolvedIdentitiesValidate(t *testing.T) {
 	single := resolveFile(t, episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "7"))
 	double := resolveFile(t, episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeRange, "07-08", ""))
 	quad := resolveFile(t, episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeList, "[01][02][03][04]", ""))
+	combined := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
+		MediaKind: "tv", Span: 12,
+		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "2"),
+	})
 	movie := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "movie"})
 	for name, tc := range map[string]struct {
 		identity episodeidentity.EpisodeIdentity
 		schema   string
 	}{
-		"single": {single, "IdentityV1"}, "double": {double, "IdentityV2"}, "quad": {quad, "IdentityV2"}, "movie": {movie, "IdentityV1"},
+		"single": {single, "IdentityV1"}, "double": {double, "IdentityV2"}, "quad": {quad, "IdentityV2"},
+		"combined twelve": {combined, "IdentityV2"}, "movie": {movie, "IdentityV1"},
 	} {
 		if got := IdentitySchema(tc.identity); got != tc.schema {
 			t.Fatalf("%s: schema %s, want %s", name, got, tc.schema)

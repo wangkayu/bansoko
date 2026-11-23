@@ -332,6 +332,7 @@ type sourceSnapshot struct {
 	groupName          string
 	title              string
 	episodeOffset      int
+	episodeSpan        int
 	subscriptionState  string
 	selectionExists    bool
 	providerSelected   bool
@@ -400,6 +401,7 @@ type releaseSnapshot struct {
 	locatorDisplay    string
 	groupName         string
 	episodeOffset     int
+	episodeSpan       int
 	subscriptionState string
 	anibtMode         string
 	sourceKind        string

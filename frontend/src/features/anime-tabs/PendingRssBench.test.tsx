@@ -79,7 +79,7 @@ function benchView(): RSSListView {
         display_name: "一号组",
         score: 80,
         selection: { effective_selected: true, selection_mode: "auto" },
-        offset: { value: 0, editable: false },
+        offset: { value: 0, span: 1, editable: false },
         feed: { state: "fresh", snapshot_id: "snap-1", snapshot_version: 1, content_hash: "sha256:" + "b".repeat(64) },
         items: [
           {
@@ -146,7 +146,7 @@ describe("未开始订阅的 RSS 测试台", () => {
 
   function editableBench(): RSSListView {
     const view = benchView();
-    view.groups[0]!.offset = { value: 0, source: "link", editable: true };
+    view.groups[0]!.offset = { value: 0, span: 1, source: "link", editable: true };
     return view;
   }
 
@@ -164,7 +164,7 @@ describe("未开始订阅的 RSS 测试台", () => {
     expect(within(dialog).getByText(t("rss.offsetConversion", { from: 1, to: 5 }))).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
 
-    await waitFor(() => expect(setProviderGroupOffset).toHaveBeenCalledWith("anime-1", "mikan", "g-1", { expected_version: 0, episode_offset: 4 }));
+    await waitFor(() => expect(setProviderGroupOffset).toHaveBeenCalledWith("anime-1", "mikan", "g-1", { expected_version: 0, episode_offset: 4, episode_span: 1 }));
     await waitFor(() => expect(host.onChanged).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockedView).toHaveBeenCalledTimes(2));
   });
@@ -182,7 +182,7 @@ describe("未开始订阅的 RSS 测试台", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText(t("anime.offset.label")), { target: { value: "2" } });
     fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
-    await waitFor(() => expect(setProviderGroupOffset).toHaveBeenCalledWith("anime-1", "mikan", "g-1", { expected_version: 7, episode_offset: 2 }));
+    await waitFor(() => expect(setProviderGroupOffset).toHaveBeenCalledWith("anime-1", "mikan", "g-1", { expected_version: 7, episode_offset: 2, episode_span: 1 }));
   });
 
   it("服务端标为不可编辑的组没有偏移笔", async () => {

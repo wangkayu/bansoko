@@ -448,6 +448,7 @@ type RecognitionItem struct {
 type RecognitionContext struct {
 	WorkKind      string
 	EpisodeOffset int
+	EpisodeSpan   int
 	Parser        ParserSelection
 }
 
@@ -470,6 +471,9 @@ func Recognize(ctx context.Context, registry *Registry, items []RecognitionItem,
 	if input.WorkKind != "tv" && input.WorkKind != "movie" {
 		return nil, errors.New("recognition work kind must be tv or movie")
 	}
+	if input.EpisodeSpan < 0 || input.EpisodeSpan > episodeidentity.MaxManualEpisodesPerFile {
+		return nil, errors.New("recognition episode span must be between 1 and 12")
+	}
 	if _, err := registry.ValidateSelection(input.Parser); err != nil {
 		return nil, err
 	}
@@ -484,6 +488,7 @@ func Recognize(ctx context.Context, registry *Registry, items []RecognitionItem,
 			MediaKind: input.WorkKind, FileRef: item.ClientRef,
 			FileEvidence: Evidence(parsed, InputFileName),
 			Offset:       input.EpisodeOffset,
+			Span:         input.EpisodeSpan,
 		})
 		mediaKind := "video"
 		if item.MediaKindHint != nil && strings.TrimSpace(*item.MediaKindHint) != "" {

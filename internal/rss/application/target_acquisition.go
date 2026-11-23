@@ -209,6 +209,7 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		GroupName:           snapshot.groupName,
 		Group:               providerdomain.GroupRefOrZero(providerdomain.Kind(snapshot.sourceProvider.String), snapshot.sourceGroupRef.String),
 		Offset:              snapshot.episodeOffset,
+		Span:                snapshot.episodeSpan,
 		SourceVersion:       snapshot.sourceVersion,
 		ParserKind:          string(selectedParserKind(snapshot)),
 		ParserPolicyVersion: snapshot.parserVersion,

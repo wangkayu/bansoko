@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	animeapplication "bansoko/internal/anime/application"
+	animedomain "bansoko/internal/anime/domain"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
 	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
@@ -160,7 +161,7 @@ func mapApplicationRSSSource(value animeapplication.RSSSource) generated.RSSSour
 		GroupName: value.GroupName, Id: value.ID, LocatorDisplay: value.LocatorDisplay,
 		SourceKind: generated.SourceKind(value.SourceKind), SubscriptionId: value.SubscriptionID,
 		Title: value.Title, Version: generated.Version(value.Version),
-		EpisodeOffset: value.EpisodeOffset, HttpFeedConnectionRef: cloneStringPtr(value.HttpFeedConnectionRef),
+		EpisodeOffset: value.EpisodeOffset, EpisodeSpan: animedomain.NormalizeEpisodeSpan(value.EpisodeSpan), HttpFeedConnectionRef: cloneStringPtr(value.HttpFeedConnectionRef),
 		NetworkRouteRef: cloneStringPtr(value.NetworkRouteRef),
 	}
 	if value.AnibtAuxMode != nil {

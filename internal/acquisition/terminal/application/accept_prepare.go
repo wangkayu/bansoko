@@ -61,7 +61,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	}
 	// The one offset is the release's RSS link offset for every config kind; a
 	// one-shot placeholder link carries the one-shot input's own offset.
-	selection := target.ParserSelectionInput{Kind: b.Parser.Kind, EpisodePatterns: effective.Rules.Parser.EpisodePatterns, Offset: c.material.release.offset, SourceVersion: c.material.release.sourceVersion, PolicyVersion: b.Parser.PolicyVersion, ProfileVersion: b.Parser.ProfileVersion, RulesOwnerVersion: b.Parser.RulesOwnerVersion}
+	selection := target.ParserSelectionInput{Kind: b.Parser.Kind, EpisodePatterns: effective.Rules.Parser.EpisodePatterns, Offset: c.material.release.offset, Span: c.material.release.span, SourceVersion: c.material.release.sourceVersion, PolicyVersion: b.Parser.PolicyVersion, ProfileVersion: b.Parser.ProfileVersion, RulesOwnerVersion: b.Parser.RulesOwnerVersion}
 	if c.configKind == "owner" {
 		selection.Kind, selection.PolicyVersion = c.material.parserKind, c.material.parserVersion
 		selection.RulesOwnerVersion = c.material.rulesOwnerVersion
@@ -74,7 +74,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	if len(supplied) > 0 {
 		evidence = supplied[0]
 		p := evidence.Provenance()
-		if p.Kind != selection.Kind || p.PolicyVersion != selection.PolicyVersion || p.Offset != selection.Offset {
+		if p.Kind != selection.Kind || p.PolicyVersion != selection.PolicyVersion || p.Offset != selection.Offset || anime.NormalizeEpisodeSpan(evidence.Span) != anime.NormalizeEpisodeSpan(selection.Span) {
 			return admissionEvaluation{}, acceptError(409, "INPUT_STALE", "parser_policy_changed", nil)
 		}
 	} else {
@@ -245,6 +245,9 @@ func evaluationConfig(c admissionCapture, e target.ParserEvidence, ctx context.C
 		config = json.RawMessage(p.Config)
 	}
 	selection := map[string]any{"kind": p.Kind, "config": config, "config_fingerprint": p.ConfigFingerprint, "config_version": p.ConfigVersion, "implementation_version": p.ImplementationVersion, "output_contract_version": p.OutputContractVersion, "normalizer_version": p.NormalizerVersion, "resolver_version": p.ResolverVersion, "offset": p.Offset}
+	if p.Span > 1 {
+		selection["span"] = p.Span
+	}
 	identity := map[string]any{"kind": "one_shot", "intent_digest": c.requestHash}
 	if c.configKind == "saved_revision" {
 		identity = map[string]any{"kind": "saved_revision", "candidate_ref": c.material.config.candidateID, "revision": c.material.config.revision, "managed_anime_ref": frozenValue("known", c.material.management.managedID)}

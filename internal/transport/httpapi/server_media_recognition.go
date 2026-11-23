@@ -83,8 +83,12 @@ func (s *mediaRecognitionService) Preview(ctx context.Context, input generated.M
 	if input.Context.EpisodeOffset != nil {
 		offset = *input.Context.EpisodeOffset
 	}
+	span := 0
+	if input.Context.EpisodeSpan != nil {
+		span = *input.Context.EpisodeSpan
+	}
 	recognized, err := parser.Recognize(ctx, s.registry, items, parser.RecognitionContext{
-		WorkKind: string(input.Context.WorkKind), EpisodeOffset: offset, Parser: parser.ParserSelection{ID: input.Parser.Id, Config: config},
+		WorkKind: string(input.Context.WorkKind), EpisodeOffset: offset, EpisodeSpan: span, Parser: parser.ParserSelection{ID: input.Parser.Id, Config: config},
 	})
 	if err != nil {
 		return generated.MediaRecognitionPreviewResult{}, err

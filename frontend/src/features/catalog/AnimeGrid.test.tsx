@@ -81,6 +81,7 @@ const customCandidateFixture = {
         group_name: "某字幕组",
         title: "测试番剧",
         episode_offset: 0,
+        episode_span: 1,
       },
     ],
   },

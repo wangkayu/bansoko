@@ -39,7 +39,7 @@ SELECT concat_ws(' | ',
      FROM anime_business_configs WHERE managed_anime_id = $1),
   (SELECT string_agg(concat_ws(',', owner_type, section_name, schema_version, value::text), ';' ORDER BY section_name)
      FROM anime_config_overrides WHERE managed_anime_id = $1),
-  (SELECT string_agg(concat_ws(',', src.source_kind, src.locator, src.locator_display, src.group_name, src.title, src.episode_offset,
+  (SELECT string_agg(concat_ws(',', src.source_kind, src.locator, src.locator_display, src.group_name, src.title, src.episode_offset, src.episode_span,
                                src.anibt_aux_mode, src.provenance::text, src.http_feed_connection_ref, src.network_route_ref), ';'
                      ORDER BY src.locator)
      FROM rss_sources src JOIN subscriptions s ON s.id = src.subscription_id WHERE s.managed_anime_id = $1),
@@ -68,7 +68,7 @@ func TestDuplicateSubscriptionCopiesConfigIntoNewPendingInstance(t *testing.T) {
 	for _, statement := range []string{
 		`UPDATE managed_anime SET title_override = 'Custom Title', provider_title = 'Provider Title' WHERE id = $1`,
 		`UPDATE anime_metadata SET year = 2026, season = 0, total_episodes = 12, media_kind = 'tv' WHERE managed_anime_id = $1`,
-		`UPDATE rss_sources SET episode_offset = -12 WHERE subscription_id = (SELECT id FROM subscriptions WHERE managed_anime_id = $1)`,
+		`UPDATE rss_sources SET episode_offset = -12, episode_span = 3 WHERE subscription_id = (SELECT id FROM subscriptions WHERE managed_anime_id = $1)`,
 		`INSERT INTO anime_config_overrides(managed_anime_id, owner_type, section_name, schema_version, value)
 		 VALUES ($1, 'rules', 'tag_filters', 'tag-filters-v1', '{"include":["1080p"]}')
 		 ON CONFLICT (managed_anime_id, section_name) DO UPDATE SET schema_version = EXCLUDED.schema_version, value = EXCLUDED.value`,
@@ -98,7 +98,7 @@ func TestDuplicateSubscriptionCopiesConfigIntoNewPendingInstance(t *testing.T) {
 	}
 	copyID := copied.ManagedAnime.ID
 	if copyID == sourceID || copied.Subscription.State != subscriptiondomain.SubscriptionPending || copied.Subscription.InstanceLabel == nil ||
-		*copied.Subscription.InstanceLabel != "Group One only" || len(copied.RssSources) != 1 || copied.RssSources[0].EpisodeOffset != -12 {
+		*copied.Subscription.InstanceLabel != "Group One only" || len(copied.RssSources) != 1 || copied.RssSources[0].EpisodeOffset != -12 || copied.RssSources[0].EpisodeSpan != 3 {
 		t.Fatalf("copy = %+v", copied)
 	}
 	if got := duplicateConfigFingerprint(t, db, copyID); got != before {

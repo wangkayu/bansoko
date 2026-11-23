@@ -422,9 +422,14 @@ func (s *Server) SetProviderGroupOffset(w http.ResponseWriter, r *http.Request, 
 		writeError(w, r, err)
 		return
 	}
+	episodeSpan := animedomain.DefaultEpisodeSpan
+	if body.EpisodeSpan != nil {
+		episodeSpan = *body.EpisodeSpan
+	}
 	source, err := ownership.SetProviderGroupOffset(r.Context(), managedAnimeID, string(provider), providerGroupRef, ownershipapplication.ProviderGroupOffsetInput{
 		ExpectedVersion: body.ExpectedVersion,
 		EpisodeOffset:   body.EpisodeOffset,
+		EpisodeSpan:     episodeSpan,
 	})
 	if err != nil {
 		writeError(w, r, err)
@@ -434,9 +439,14 @@ func (s *Server) SetProviderGroupOffset(w http.ResponseWriter, r *http.Request, 
 }
 
 func mapRSSSourceOffsetPatch(value generated.RSSSourceOffsetPatch) ownershipapplication.RSSSourceOffsetPatchInput {
+	episodeSpan := animedomain.DefaultEpisodeSpan
+	if value.EpisodeSpan != nil {
+		episodeSpan = *value.EpisodeSpan
+	}
 	return ownershipapplication.RSSSourceOffsetPatchInput{
 		ExpectedVersion: int64(value.ExpectedVersion),
 		EpisodeOffset:   value.EpisodeOffset,
+		EpisodeSpan:     episodeSpan,
 	}
 }
 
@@ -461,6 +471,7 @@ func mapRSSSource(value animeapplication.RSSSource) generated.RSSSource {
 		LocatorDisplay:        value.LocatorDisplay,
 		NetworkRouteRef:       value.NetworkRouteRef,
 		EpisodeOffset:         value.EpisodeOffset,
+		EpisodeSpan:           animedomain.NormalizeEpisodeSpan(value.EpisodeSpan),
 		ProviderProvenance:    mapProviderProvenance(value.ProviderProvenance),
 		SourceKind:            generated.SourceKind(value.SourceKind),
 		SubscriptionId:        generated.ID(value.SubscriptionID),

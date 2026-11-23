@@ -725,6 +725,8 @@ export function OneShotDialog({
       input_source: "current_input",
       draft: prepared,
       ...(effectiveOffset !== 0 ? { episode_offset: effectiveOffset } : {}),
+      // One-shot has no combined-episode span setting; per-file ranges are overrides instead.
+      episode_span: 1,
       ...(fileChoice ? { file_selection: fileChoice } : {}),
       ...(downloadSubset ? { download_selected_files: true } : {}),
       ...(overrides.length > 0 ? { overrides } : {}),

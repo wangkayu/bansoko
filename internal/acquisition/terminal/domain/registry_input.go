@@ -249,7 +249,8 @@ func registerConfig() {
 		F("kind", registeredParserKind), F("config", Nullable(Ref("ParserProfileV1"))), F("config_fingerprint", DigestOf),
 		F("config_version", Text(1, 128)), F("implementation_version", Text(1, 128)), F("output_contract_version", Text(1, 128)),
 		F("normalizer_version", Text(1, 128)), F("resolver_version", Text(1, 128)), F("offset", Int(-100000, 100000)),
-	))
+		F("span", Int(1, 12)),
+	).Optional("span"))
 	// The parser provenance has no second offset to override and no inheritance to
 	// report: the offset is frozen once, in media.identity.offset and
 	// config.parser.selection.offset.

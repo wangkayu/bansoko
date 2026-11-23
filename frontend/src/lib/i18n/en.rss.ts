@@ -38,6 +38,10 @@ export const enRssCopy = {
   offsetTitleGeneric: "Adjust Offset",
   saveOffset: "Save Offset",
   offsetFieldHint: "Episode offset for this RSS link; 0 means none",
+  offsetSpan: "Episodes per release",
+  offsetSpanToggle: "Combined-episode release",
+  offsetSpanHint: "Combined-episode releases: consecutive episodes one single-number release file covers; 1 keeps ordinary single-episode releases",
+  offsetSpanInvalid: "Episodes per release must be a whole number from 1 to 12",
   offsetConversion: "Episode {from} → Episode {to}",
   offsetImported: "Imported files move to the episode the new offset gives them.",
   offsetMode: {

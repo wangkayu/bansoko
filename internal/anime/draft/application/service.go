@@ -844,12 +844,11 @@ VALUES ('subscribe', $1, $2, $3, $4)`, key, requestHash, animeID, snapshot); err
 	return result, nil
 }
 
-// createProviderGroupOffsetSourcesTx turns the draft's per-group offsets into
-// link rows through the same upsert discovery uses, so the first discovery
-// refreshes them and keeps the offsets. The RSS workspace can save an offset for
-// an observed group before that group enters the subgroup settings, so every
-// non-zero offset gets a row; discovery later replaces the ref fallback with the
-// observed display name. Nothing is fetched and no work is scheduled here.
+// createProviderGroupOffsetSourcesTx turns the draft's per-group numbering
+// settings into link rows through the same upsert discovery uses, so the first
+// discovery refreshes them and keeps the owner's offset and span. The RSS
+// workspace can save either setting for an observed group before that group
+// enters the subgroup settings, so every non-default setting gets a row.
 func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sql.Tx, subscriptionID, title string, draft animedomain.AnimeDraft) error {
 	if len(draft.ProviderGroupOffsets) == 0 || draft.OriginEntryRef == nil {
 		return nil
@@ -857,7 +856,7 @@ func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sq
 	provider := string(draft.Origin)
 	endpoint := groupsource.ReaderEndpoint(ctx, s.connections, providerdomain.Kind(provider))
 	for _, offset := range draft.ProviderGroupOffsets {
-		if offset.EpisodeOffset == 0 {
+		if offset.EpisodeOffset == 0 && animedomain.NormalizeEpisodeSpan(offset.EpisodeSpan) == animedomain.DefaultEpisodeSpan {
 			continue
 		}
 		displayName := offset.ProviderGroupRef
@@ -881,6 +880,7 @@ func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sq
 			RSSURL:          rssURL,
 			SnapshotVersion: groupsource.PendingSnapshotVersion,
 			EpisodeOffset:   offset.EpisodeOffset,
+			EpisodeSpan:     animedomain.NormalizeEpisodeSpan(offset.EpisodeSpan),
 		}); err != nil {
 			return fmt.Errorf("create provider group source: %w", err)
 		}
@@ -893,6 +893,7 @@ func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sq
 // actually refreshed, not while the Subscribe transaction writes the owner.
 func insertRSSSource(ctx context.Context, tx *sql.Tx, subscriptionID string, sourceDraft animedomain.RSSSourceDraft) (RSSSource, error) {
 	sourceID := uuid.NewString()
+	episodeSpan := animedomain.NormalizeEpisodeSpan(sourceDraft.EpisodeSpan)
 	locator := sourceDraft.Locator
 	locatorDisplay := animedomain.LocatorDisplay(locator)
 	var provenance any
@@ -906,11 +907,11 @@ func insertRSSSource(ctx context.Context, tx *sql.Tx, subscriptionID string, sou
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO rss_sources(
     id, subscription_id, source_kind, locator, locator_display, group_name, title,
-    episode_offset, anibt_aux_mode, provenance, http_feed_connection_ref, network_route_ref
+    episode_offset, episode_span, anibt_aux_mode, provenance, http_feed_connection_ref, network_route_ref
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), NULLIF($12, ''))`,
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULLIF($12, ''), NULLIF($13, ''))`,
 		sourceID, subscriptionID, string(sourceDraft.SourceKind), locator, locatorDisplay,
-		strings.TrimSpace(sourceDraft.GroupName), strings.TrimSpace(sourceDraft.Title), sourceDraft.EpisodeOffset,
+		strings.TrimSpace(sourceDraft.GroupName), strings.TrimSpace(sourceDraft.Title), sourceDraft.EpisodeOffset, episodeSpan,
 		nullableAnibtMode(sourceDraft.AnibtAuxMode), provenance,
 		nullableOptionalText(sourceDraft.HttpFeedConnectionRef), nullableOptionalText(sourceDraft.NetworkRouteRef)); err != nil {
 		return RSSSource{}, fmt.Errorf("create rss source: %w", err)
@@ -923,6 +924,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), NULLIF($12, ''
 		GroupName:             strings.TrimSpace(sourceDraft.GroupName),
 		Title:                 strings.TrimSpace(sourceDraft.Title),
 		EpisodeOffset:         sourceDraft.EpisodeOffset,
+		EpisodeSpan:           episodeSpan,
 		AnibtAuxMode:          cloneAnibtModeApplication(sourceDraft.AnibtAuxMode),
 		ProviderProvenance:    cloneProviderProvenance(sourceDraft.ProviderProvenance),
 		HttpFeedConnectionRef: cloneString(sourceDraft.HttpFeedConnectionRef),

@@ -48,7 +48,7 @@ func TestSourceGroupDisplayNameNeverFallsBackToTheIdentity(t *testing.T) {
 
 	// The target plan takes the admission's resolved name, never the seed's
 	// provider group identity, so a one-shot names its files by the display name.
-	request := oneShotTargetRequest("release-1", oneShotTargetDraft(), "LoliHouse", 0, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
+	request := oneShotTargetRequest("release-1", oneShotTargetDraft(), "LoliHouse", 0, 0, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
 	if request.GroupName != "LoliHouse" {
 		t.Fatalf("target request group name = %q, want the admission's display name", request.GroupName)
 	}

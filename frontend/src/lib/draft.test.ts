@@ -25,6 +25,7 @@ describe("draft 基础", () => {
       group_name: "",
       title: "",
       episode_offset: 0,
+      episode_span: 1,
     });
     // The rules sections only become a full copy when the default settings load.
     expect(draft.rules.sections).toEqual({});

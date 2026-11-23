@@ -340,7 +340,7 @@ FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&bgm, &tmdb, &tm
 
 func loadSourceRSSSourceDraftsTx(ctx context.Context, tx *sql.Tx, subscriptionID string) ([]animedomain.RSSSourceDraft, error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT source_kind, locator, group_name, title, episode_offset, anibt_aux_mode, provenance,
+SELECT source_kind, locator, group_name, title, episode_offset, episode_span, anibt_aux_mode, provenance,
        http_feed_connection_ref, network_route_ref
 FROM rss_sources WHERE subscription_id = $1
 ORDER BY created_at, id`, subscriptionID)
@@ -356,7 +356,7 @@ ORDER BY created_at, id`, subscriptionID)
 			auxMode, connRef, route sql.NullString
 			provenance              []byte
 		)
-		if err := rows.Scan(&kind, &draft.Locator, &draft.GroupName, &draft.Title, &draft.EpisodeOffset, &auxMode, &provenance, &connRef, &route); err != nil {
+		if err := rows.Scan(&kind, &draft.Locator, &draft.GroupName, &draft.Title, &draft.EpisodeOffset, &draft.EpisodeSpan, &auxMode, &provenance, &connRef, &route); err != nil {
 			return nil, fmt.Errorf("scan source rss source: %w", err)
 		}
 		draft.SourceKind = animedomain.SourceKind(kind)

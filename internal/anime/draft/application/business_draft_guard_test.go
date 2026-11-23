@@ -44,6 +44,11 @@ func TestCandidateDraftGuardAdmitsProviderGroupOffsets(t *testing.T) {
 		allow  bool
 	}{
 		{"valid", func(v map[string]any) { v["provider_group_offsets"] = offsets(entry("301", -48), entry("302", 0)) }, true},
+		{"valid-span", func(v map[string]any) {
+			e := entry("301", -48)
+			e["episode_span"] = 12
+			v["provider_group_offsets"] = offsets(e)
+		}, true},
 		{"absent", func(map[string]any) {}, true},
 		{"custom-origin", func(v map[string]any) {
 			v["origin"], v["origin_entry_ref"] = "custom", nil
@@ -63,6 +68,21 @@ func TestCandidateDraftGuardAdmitsProviderGroupOffsets(t *testing.T) {
 		{"entry-untrimmed-ref", func(v map[string]any) { v["provider_group_offsets"] = offsets(entry(" 301", -48)) }, false},
 		{"entry-fractional-offset", func(v map[string]any) { v["provider_group_offsets"] = offsets(entry("301", 1.5)) }, false},
 		{"entry-offset-out-of-range", func(v map[string]any) { v["provider_group_offsets"] = offsets(entry("301", 1001)) }, false},
+		{"entry-zero-span", func(v map[string]any) {
+			e := entry("301", 0)
+			e["episode_span"] = 0
+			v["provider_group_offsets"] = offsets(e)
+		}, false},
+		{"entry-span-out-of-range", func(v map[string]any) {
+			e := entry("301", 0)
+			e["episode_span"] = 13
+			v["provider_group_offsets"] = offsets(e)
+		}, false},
+		{"entry-fractional-span", func(v map[string]any) {
+			e := entry("301", 0)
+			e["episode_span"] = 1.5
+			v["provider_group_offsets"] = offsets(e)
+		}, false},
 	} {
 		body := base()
 		tc.mutate(body)
@@ -160,7 +180,7 @@ func TestCandidateSaveAndPatchCarryProviderGroupOffsets(t *testing.T) {
 	draft.OriginEntryRef = &ref
 	draft.Title = "Offset Save Show"
 	draft.ProviderGroupOffsets = []animedomain.ProviderGroupOffsetDraft{
-		{ProviderGroupRef: "301", EpisodeOffset: -48},
+		{ProviderGroupRef: "301", EpisodeOffset: -48, EpisodeSpan: 2},
 	}
 	seedBusinessPrograms(t, db, &draft)
 	saved, err := service.SaveAnimeConfigCandidate(ctx, CandidateDraftInput{Draft: draft})
@@ -181,12 +201,12 @@ func TestCandidateSaveAndPatchCarryProviderGroupOffsets(t *testing.T) {
 		}
 		return body.ProviderGroupOffsets
 	}
-	if got := storedOffsets(t, saved.Id); len(got) != 1 || got[0].ProviderGroupRef != "301" || got[0].EpisodeOffset != -48 {
+	if got := storedOffsets(t, saved.Id); len(got) != 1 || got[0].ProviderGroupRef != "301" || got[0].EpisodeOffset != -48 || got[0].EpisodeSpan != 2 {
 		t.Fatalf("saved offsets = %+v", got)
 	}
 	draft.ProviderGroupOffsets = []animedomain.ProviderGroupOffsetDraft{
-		{ProviderGroupRef: "301", EpisodeOffset: 24},
-		{ProviderGroupRef: "999", EpisodeOffset: 7},
+		{ProviderGroupRef: "301", EpisodeOffset: 24, EpisodeSpan: 4},
+		{ProviderGroupRef: "999", EpisodeOffset: 7, EpisodeSpan: 1},
 	}
 	patched, err := service.PatchAnimeConfigCandidate(ctx, saved.Id, saved.Version, CandidateDraftInput{Draft: draft})
 	if err != nil {
@@ -196,7 +216,7 @@ func TestCandidateSaveAndPatchCarryProviderGroupOffsets(t *testing.T) {
 		t.Fatalf("patched version = %d, want %d", patched.Version, saved.Version+1)
 	}
 	got := storedOffsets(t, patched.Id)
-	if len(got) != 2 || got[0].EpisodeOffset != 24 || got[1].ProviderGroupRef != "999" {
+	if len(got) != 2 || got[0].EpisodeOffset != 24 || got[0].EpisodeSpan != 4 || got[1].ProviderGroupRef != "999" || got[1].EpisodeSpan != 1 {
 		t.Fatalf("patched offsets = %+v", got)
 	}
 }

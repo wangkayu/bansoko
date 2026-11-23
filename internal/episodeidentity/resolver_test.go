@@ -424,3 +424,103 @@ func TestCanonicalCoverageKeyDropsTheV1Season(t *testing.T) {
 		t.Fatal("CanonicalCoverageKeys(nil) must stay nil")
 	}
 }
+
+// A combined-episode subgroup span expands one single positive integer n into
+// [(n-1)*span+1 .. n*span] raw members; the offset applies to every member
+// exactly once.
+func TestResolveSpanExpandsSingleEpisode(t *testing.T) {
+	r := resolver(t)
+	cases := []struct {
+		name     string
+		raw      string
+		span     int
+		offset   int
+		wantEp   string
+		wantEnd  string
+		wantKeys string
+		wantRaw  string
+	}{
+		{"first combined episode", "1", 2, 0, "1", "2", "tv:e1,tv:e2", "1"},
+		{"second combined episode", "2", 2, 0, "3", "4", "tv:e3,tv:e4", "3"},
+		{"offset applies to each member once", "3", 2, 1, "6", "7", "tv:e6,tv:e7", "5"},
+		{"three episode span", "2", 3, 0, "4", "6", "tv:e4,tv:e5,tv:e6", "4"},
+		{"span clamps to the manual maximum", "1", 99, 0, "1", "12", "tv:e1,tv:e2,tv:e3,tv:e4,tv:e5,tv:e6,tv:e7,tv:e8,tv:e9,tv:e10,tv:e11,tv:e12", "1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := tvInput(valueEvidence(EpisodeSourceFileParser, "file_name", tc.raw))
+			input.Span = tc.span
+			input.Offset = tc.offset
+			identity := r.Resolve(input)
+			if identity.State != StateResolved {
+				t.Fatalf("state=%s failure=%v, want resolved", identity.State, identity.FailureCode)
+			}
+			if identity.Episode == nil || string(*identity.Episode) != tc.wantEp ||
+				identity.EpisodeEnd == nil || string(*identity.EpisodeEnd) != tc.wantEnd {
+				t.Fatalf("episodes=%v-%v, want %s-%s", identity.Episode, identity.EpisodeEnd, tc.wantEp, tc.wantEnd)
+			}
+			if identity.RawEpisode == nil || string(*identity.RawEpisode) != tc.wantRaw {
+				t.Fatalf("raw=%v, want %s (pre-offset)", identity.RawEpisode, tc.wantRaw)
+			}
+			if got := strings.Join(identity.Keys(), ","); got != tc.wantKeys {
+				t.Fatalf("keys=%s, want %s", got, tc.wantKeys)
+			}
+			if !identity.MultiEpisode() {
+				t.Fatal("a span-expanded identity is a multi-episode file")
+			}
+		})
+	}
+}
+
+// A span of 0 or 1 is the ordinary single-episode resolve: identical output
+// and identical input digest, so existing identities never change.
+func TestResolveSingleSpanIsByteIdentical(t *testing.T) {
+	r := resolver(t)
+	for _, span := range []int{0, 1} {
+		input := tvInput(valueEvidence(EpisodeSourceFileParser, "file_name", "12"))
+		input.Offset = 3
+		input.Span = span
+		identity := r.Resolve(input)
+		if identity.Episode == nil || *identity.Episode != "15" || identity.EpisodeEnd != nil {
+			t.Fatalf("span=%d: episodes=%v-%v, want single 15", span, identity.Episode, identity.EpisodeEnd)
+		}
+		if len(identity.CoverageKeys) != 0 || identity.CoverageKey == nil || *identity.CoverageKey != "tv:e15" {
+			t.Fatalf("span=%d: coverage=%v/%v, want one tv:e15 key", span, identity.CoverageKey, identity.CoverageKeys)
+		}
+		withoutSpan := input
+		withoutSpan.Span = 0
+		if identity.InputDigest != inputDigest(withoutSpan) {
+			t.Fatalf("span=%d changed the single-episode digest", span)
+		}
+	}
+}
+
+// Explicit filename ranges keep their own range; episode 0 (a special) stays
+// a single episode; movies short-circuit before any span applies.
+func TestResolveSpanDoesNotReExpand(t *testing.T) {
+	r := resolver(t)
+	rangeEvidence := NewUnsupportedEvidence(EpisodeSourceFileParser, "file_name", ShapeRange, "01-02", "filename range")
+	input := tvInput(rangeEvidence)
+	input.Span = 2
+	identity := r.Resolve(input)
+	if identity.Episode == nil || *identity.Episode != "1" || identity.EpisodeEnd == nil || *identity.EpisodeEnd != "2" {
+		t.Fatalf("explicit range expanded to %v-%v, want 1-2", identity.Episode, identity.EpisodeEnd)
+	}
+	if got := strings.Join(identity.Keys(), ","); got != "tv:e1,tv:e2" {
+		t.Fatalf("explicit range keys=%s, want tv:e1,tv:e2", got)
+	}
+
+	special := tvInput(valueEvidence(EpisodeSourceFileParser, "file_name", "0"))
+	special.Span = 2
+	identity = r.Resolve(special)
+	if identity.Episode == nil || *identity.Episode != "0" || identity.EpisodeEnd != nil {
+		t.Fatalf("episode 0 expanded to %v-%v, want single 0", identity.Episode, identity.EpisodeEnd)
+	}
+
+	movie := EpisodeIdentityInput{MediaKind: "movie", Span: 3,
+		FileEvidence: valueEvidence(EpisodeSourceFileParser, "file_name", "5")}
+	identity = r.Resolve(movie)
+	if identity.Kind != KindMovie || identity.Episode == nil || *identity.Episode != "0" || identity.EpisodeEnd != nil {
+		t.Fatalf("movie with span: kind=%s episodes=%v-%v, want movie 0", identity.Kind, identity.Episode, identity.EpisodeEnd)
+	}
+}

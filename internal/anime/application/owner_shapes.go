@@ -110,6 +110,7 @@ type RSSSource struct {
 	LocatorDisplay        string                                  `json:"locator_display"`
 	NetworkRouteRef       *string                                 `json:"network_route_ref"`
 	EpisodeOffset         int                                     `json:"episode_offset"`
+	EpisodeSpan           int                                     `json:"episode_span"`
 	ProviderProvenance    *animedomain.ProviderProvenance         `json:"provider_provenance"`
 	SourceKind            animedomain.SourceKind                  `json:"source_kind"`
 	SubscriptionID        string                                  `json:"subscription_id"`

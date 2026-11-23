@@ -291,7 +291,7 @@ ORDER BY rt.rss_source_id`, subscriptionID)
 
 func (s *Service) readRSSSourcesApplication(ctx context.Context, subscriptionID string) ([]RSSSource, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT rs.id, rs.source_kind, rs.locator_display, rs.group_name, rs.title, rs.episode_offset,
+SELECT rs.id, rs.source_kind, rs.locator_display, rs.group_name, rs.title, rs.episode_offset, rs.episode_span,
        rs.anibt_aux_mode, rs.provenance, rs.http_feed_connection_ref, rs.network_route_ref, rs.version
 FROM rss_sources rs
 LEFT JOIN provider_group_selections pgs ON pgs.subscription_id = rs.subscription_id
@@ -318,7 +318,7 @@ ORDER BY (rs.source_kind = 'custom_rss') DESC,
 		var anibtAuxMode sql.NullString
 		var connectionRef, routeRef sql.NullString
 		var rawProvenance []byte
-		if err := rows.Scan(&source.ID, &sourceKind, &locatorDisplay, &groupName, &title, &source.EpisodeOffset, &anibtAuxMode, &rawProvenance, &connectionRef, &routeRef, &source.Version); err != nil {
+		if err := rows.Scan(&source.ID, &sourceKind, &locatorDisplay, &groupName, &title, &source.EpisodeOffset, &source.EpisodeSpan, &anibtAuxMode, &rawProvenance, &connectionRef, &routeRef, &source.Version); err != nil {
 			return nil, fmt.Errorf("scan rss source: %w", err)
 		}
 		source.SubscriptionID = subscriptionID

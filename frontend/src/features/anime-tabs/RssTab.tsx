@@ -247,13 +247,13 @@ function PendingRssBench({
   );
   // The link is found by provenance; a group without one is saved at version 0, which creates it.
   // The workspace is re-read after the save so the next save carries the new version.
-  async function saveGroupOffset(group: RSSListGroup, offset: number) {
+  async function saveGroupOffset(group: RSSListGroup, offset: number, span: number) {
     if (provider === "custom") return;
     const ref = group.scope.provider_group_ref;
     const link = workspace.rss_sources.find(
       (source) => source.provider_provenance?.provider === provider && source.provider_provenance.provider_group_ref === ref,
     );
-    await setProviderGroupOffset(animeID, provider, ref, { expected_version: link?.version ?? 0, episode_offset: offset });
+    await setProviderGroupOffset(animeID, provider, ref, { expected_version: link?.version ?? 0, episode_offset: offset, episode_span: span });
     host.onChanged();
   }
   return (
@@ -316,6 +316,8 @@ function OwnerRssTab({
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [offsetDrawerSource, setOffsetDrawerSource] = useState<OffsetDrawerSource>();
   const [offsetDraft, setOffsetDraft] = useState("");
+  const [spanDraft, setSpanDraft] = useState("1");
+  const [spanOpen, setSpanOpen] = useState(false);
   const [offsetSaving, setOffsetSaving] = useState(false);
   const [offsetError, setOffsetError] = useState<string>();
   // Scanning the library: opens the anime's "files" dialog where the scan starts and its results show (one scan also refreshes the RSS rows' file states).
@@ -356,8 +358,9 @@ function OwnerRssTab({
               ...(rulesPreviewSections ? { rules_preview: rulesPreviewSections } : {}),
               ...(metadataPreview ? { metadata_preview: metadataPreview } : {}),
               limit_per_group: OWNER_ITEMS_PER_GROUP,
+              episode_span: null,
             }
-          : { input_source: "owner", managed_anime_id: animeID, limit_per_group: OWNER_ITEMS_PER_GROUP },
+          : { input_source: "owner", managed_anime_id: animeID, limit_per_group: OWNER_ITEMS_PER_GROUP, episode_span: null },
         signal,
       );
       // The runtime payload is an external boundary: a response missing groups must fail closed
@@ -461,7 +464,7 @@ function OwnerRssTab({
   }
 
   const ownerConversion = offsetDrawerSource
-    ? offsetConversionLine(view?.groups.find((group) => group.scope.rss_source_id === offsetDrawerSource.id), offsetDraft)
+    ? offsetConversionLine(view?.groups.find((group) => group.scope.rss_source_id === offsetDrawerSource.id), offsetDraft, spanDraft)
     : undefined;
   // An offset change moves the imported files to their new episode: the dialog states what the
   // keep mode and the same-name setting then do with them.
@@ -476,6 +479,8 @@ function OwnerRssTab({
   function openOffsetDrawer(source: OffsetDrawerSource) {
     setOffsetDrawerSource(source);
     setOffsetDraft(String(source.episode_offset));
+    setSpanDraft(String(source.episode_span));
+    setSpanOpen(source.episode_span > 1);
     setOffsetError(undefined);
   }
 
@@ -483,6 +488,8 @@ function OwnerRssTab({
     if (offsetSaving && !force) return;
     setOffsetDrawerSource(undefined);
     setOffsetDraft("");
+    setSpanDraft("1");
+    setSpanOpen(false);
     setOffsetError(undefined);
   }
 
@@ -494,6 +501,12 @@ function OwnerRssTab({
       setOffsetError(t("rss.offsetInvalid"));
       return;
     }
+    const spanTrimmed = spanDraft.trim();
+    const span = spanTrimmed === "" ? Number.NaN : Number(spanTrimmed);
+    if (!Number.isInteger(span) || span < 1 || span > 12) {
+      setOffsetError(t("rss.offsetSpanInvalid"));
+      return;
+    }
     setOffsetSaving(true);
     setOffsetError(undefined);
     try {
@@ -502,6 +515,7 @@ function OwnerRssTab({
         rss_source_id: offsetDrawerSource.id,
         expected_version: offsetDrawerSource.version,
         episode_offset: offset,
+        episode_span: span,
       });
       toast.success(t("rss.offsetSaved"));
       closeOffsetDrawer(true);
@@ -683,6 +697,30 @@ function OwnerRssTab({
                 }}
               />
             </Field>
+            {/* Combined-episode tuning stays collapsed for ordinary groups; a source already
+                configured with a span opens with the field visible. */}
+            <div>
+              <Button variant="ghost" size="sm" aria-expanded={spanOpen} onClick={() => setSpanOpen((open) => !open)}>
+                {t("rss.offsetSpanToggle")}
+              </Button>
+            </div>
+            {spanOpen && (
+              <Field label={t("rss.offsetSpan")} hint={t("rss.offsetSpanHint")}>
+                <Input
+                  aria-label={t("rss.offsetSpan")}
+                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  max={12}
+                  step="1"
+                  value={spanDraft}
+                  onChange={(event) => {
+                    setSpanDraft(event.target.value);
+                    setOffsetError(undefined);
+                  }}
+                />
+              </Field>
+            )}
             {ownerConversion && <p className="text-caption text-muted">{ownerConversion}</p>}
             {hasImported && (
               <div className="text-caption text-muted">

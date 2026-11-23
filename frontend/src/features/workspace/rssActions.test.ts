@@ -14,6 +14,7 @@ const payload: RSSSourceActionPayload = {
   rss_source_id: "source-1",
   expected_version: 4,
   episode_offset: 0,
+  episode_span: 1,
 };
 
 describe("RSS action port", () => {
@@ -46,6 +47,7 @@ function source(id: string, source_kind: RSSSource["source_kind"], groupRef?: st
     group_name: id,
     title: "测试番",
     episode_offset: 0,
+    episode_span: 1,
     provider_provenance: groupRef
       ? {
           provider: "anibt",

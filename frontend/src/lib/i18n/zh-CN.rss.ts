@@ -35,6 +35,10 @@ export const rssCopy = {
   offsetTitleGeneric: "调整偏移",
   saveOffset: "保存偏移",
   offsetFieldHint: "该 RSS 链接的集数偏移，0 表示不偏移",
+  offsetSpan: "每集包含集数",
+  offsetSpanToggle: "合并集发布",
+  offsetSpanHint: "合并集发布：一个单集编号的发布文件连续包含的集数，1 表示普通单集发布",
+  offsetSpanInvalid: "每集包含集数必须是 1 到 12 之间的整数",
   offsetConversion: "第 {from} 集 → 第 {to} 集",
   offsetImported: "已入库的文件会换到新偏移对应的集数。",
   offsetMode: {

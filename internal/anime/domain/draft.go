@@ -145,6 +145,9 @@ func ValidateDraft(draft AnimeDraft) []FieldViolation {
 		if !EpisodeOffsetInRange(entry.EpisodeOffset) {
 			violations = append(violations, FieldViolation{Field: field + ".episode_offset", Code: "DRAFT_INVALID", Message: EpisodeOffsetRangeMessage()})
 		}
+		if !EpisodeSpanInRange(entry.EpisodeSpan) {
+			violations = append(violations, FieldViolation{Field: field + ".episode_span", Code: "DRAFT_INVALID", Message: EpisodeSpanRangeMessage()})
+		}
 	}
 	for index, source := range draft.RssSources {
 		field := fmt.Sprintf("rss_sources[%d]", index)
@@ -180,6 +183,9 @@ func ValidateDraft(draft AnimeDraft) []FieldViolation {
 		}
 		if !EpisodeOffsetInRange(source.EpisodeOffset) {
 			violations = append(violations, FieldViolation{Field: field + ".episode_offset", Code: "DRAFT_INVALID", Message: EpisodeOffsetRangeMessage()})
+		}
+		if !EpisodeSpanInRange(source.EpisodeSpan) {
+			violations = append(violations, FieldViolation{Field: field + ".episode_span", Code: "DRAFT_INVALID", Message: EpisodeSpanRangeMessage()})
 		}
 		if source.AnibtAuxMode != nil {
 			switch *source.AnibtAuxMode {

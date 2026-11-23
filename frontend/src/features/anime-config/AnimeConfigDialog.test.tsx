@@ -124,6 +124,7 @@ function workspaceFixture(): AnimeWorkspace {
       group_name: "测试字幕组",
       title: "测试番",
       episode_offset: 0,
+      episode_span: 1,
       version: 1,
     }],
     rss_source_runtimes: [{ rss_source_id: "source-1", health: "ready", version: 1 }],
@@ -208,7 +209,7 @@ function ownerRssListView(seedTitle = "[测试字幕组] 测试番 - 01"): unkno
         scope: { provider: "custom", provider_entry_ref: "", provider_group_ref: "测试字幕组", rss_source_id: "source-1" },
         display_name: "测试字幕组",
         selection: { source: "configured" as const, effective_selected: true, selection_mode: "auto" },
-        offset: { value: 0, editable: false },
+        offset: { value: 0, span: 1, editable: false },
         feed: { state: "fresh" },
         items: [
           {
@@ -1405,7 +1406,7 @@ describe("AnimeConfigDialog DraftBody 打磨", () => {
             display_name: "测试字幕组",
             score: 0,
             selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
-            offset: { value: 0, editable: false },
+            offset: { value: 0, span: 1, editable: false },
             feed: { state: "snapshot_required" },
             items: [],
           }],

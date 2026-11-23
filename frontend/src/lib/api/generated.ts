@@ -3199,6 +3199,11 @@ export interface components {
             revision?: components["schemas"]["Version"] | null;
             /** @description The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes. */
             episode_offset?: number;
+            /**
+             * @description Consecutive metadata episodes one single-number release file covers. Omitted means 1; the value joins the frozen input and replay identity.
+             * @default 1
+             */
+            episode_span: number;
             /** @description When true, requires an explicit file_selection containing a strict subset of the torrent with at least one video. Only those files are enabled in the new download task. Omitted or false downloads the whole torrent. This does not change the file selection rules for library import. */
             download_selected_files?: boolean;
             /** @description Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. Unless download_selected_files is true, the whole torrent downloads: an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance. */
@@ -3297,6 +3302,11 @@ export interface components {
             limit_per_group: number;
             /** @description Preview-only episode offset (null/omitted = 0) for a group with no offset of its own; a stored link or matching draft source offset wins and is never rewritten. With one_shot it is every group's offset. */
             episode_offset?: number | null;
+            /**
+             * @description Preview-only combined-episode span (null/omitted = 1). A configured source span wins; with one_shot this is every group's span.
+             * @default 1
+             */
+            episode_span: number | null;
             /** @description current_input only (else 400 INPUT_SOURCE_INVALID). A one-shot browse: every configured and observed group lists its supplied snapshot and seeds regardless of group selection (download action never group_not_selected), previews with episode_offset, and every item lists manifest_files. A custom draft binds the custom snapshot its single feed identity names; an origin=one_shot draft binds the named search snapshot (missing/stale/expired: 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched). A pure read. */
             one_shot?: boolean;
             /** @description one_shot only. Per-seed preview of a download's file_selection; unlisted seeds preview their default files. */
@@ -3370,6 +3380,8 @@ export interface components {
         RSSListOffset: {
             /** @description The effective offset this preview parsed and rendered this group with; 0 means no offset. */
             value: number;
+            /** @description The combined-episode span this group preview parsed and rendered with. */
+            span: number;
             /**
              * @description Provenance of value. link: a persisted RSS link's stored offset. draft_source: the matching draft source's episode_offset. preview_input: the read input's preview-only episode_offset, used only because this group has no offset of its own. default: no offset anywhere, value 0.
              * @enum {string}
@@ -4441,6 +4453,11 @@ export interface components {
             /** @description The episode offset of this RSS link; 0 means no offset. */
             episode_offset: number;
             /**
+             * @description Consecutive metadata episodes in one single-number release file; omitted means 1.
+             * @default 1
+             */
+            episode_span: number;
+            /**
              * @description Per-source AniBT auxiliary merge mode (only meaningful for AniBT provider sources). NULL means the source never requested AniBT auxiliary facts; disabled/fill_missing/override select whether valid AniBT provider attributes ignore, fill missing parser values, or override parser values.
              * @enum {string|null}
              */
@@ -4462,6 +4479,11 @@ export interface components {
             title: string;
             /** @description The episode offset of this RSS link; 0 means no offset. */
             episode_offset: number;
+            /**
+             * @description Consecutive metadata episodes in one single-number release file; omitted means 1.
+             * @default 1
+             */
+            episode_span: number;
             /**
              * @description Per-source AniBT auxiliary merge mode (only meaningful for AniBT provider sources). NULL means the source never requested AniBT auxiliary facts; disabled/fill_missing/override select whether valid AniBT provider attributes ignore, fill missing parser values, or override parser values.
              * @enum {string|null}
@@ -4552,6 +4574,8 @@ export interface components {
             work_kind: "tv" | "movie";
             /** @default 0 */
             episode_offset: number;
+            /** @default 1 */
+            episode_span: number;
         };
         ParserSelection: {
             id: string;
@@ -6070,6 +6094,11 @@ export interface components {
             selected_seed: components["schemas"]["SelectedSeedInput"];
             /** @description The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes. */
             episode_offset?: number;
+            /**
+             * @description Consecutive metadata episodes one single-number release file covers. Omitted means 1; the value joins the frozen input and replay identity.
+             * @default 1
+             */
+            episode_span: number;
             /** @description Sparse manual final numbering for selected videos of selected_seed. These values join the frozen input and idempotency request identity. */
             overrides?: components["schemas"]["FileEpisodeOverride"][];
         };
@@ -6167,6 +6196,8 @@ export interface components {
             selected_seed: components["schemas"]["SelectedSeed"];
             /** @description The frozen one-shot episode offset from the admission request. Legacy marker rows omit it. */
             episode_offset?: number;
+            /** @description Frozen one-shot combined-episode span; legacy rows omit it (default 1). */
+            episode_span?: number;
             /** @description The frozen sparse per-file final episode and optional naming-season overrides. Legacy marker rows omit it. */
             overrides?: components["schemas"]["FileEpisodeOverride"][];
             effective_sections: {
@@ -7067,6 +7098,11 @@ export interface components {
             expected_version: components["schemas"]["Version"];
             /** @description The new episode offset of this RSS link; 0 means no offset. */
             episode_offset: number;
+            /**
+             * @description The new combined-episode span; omitted means 1.
+             * @default 1
+             */
+            episode_span: number;
         };
         ProviderGroupOffsetPut: {
             /**
@@ -7076,10 +7112,17 @@ export interface components {
             expected_version: number;
             /** @description The new episode offset of this group; 0 means no offset. */
             episode_offset: number;
+            /**
+             * @description The new combined-episode span; omitted means 1.
+             * @default 1
+             */
+            episode_span: number;
         };
         ProviderGroupOffsetDraft: {
             provider_group_ref: string;
             episode_offset: number;
+            /** @default 1 */
+            episode_span: number;
         };
         RSSSourceAniBTModePatch: {
             expected_version: components["schemas"]["Version"];

@@ -22,6 +22,7 @@ import (
 type RSSSourceOffsetPatchInput struct {
 	ExpectedVersion int64
 	EpisodeOffset   int
+	EpisodeSpan     int
 }
 
 type RSSSourceAniBTModePatchInput struct {
@@ -29,14 +30,18 @@ type RSSSourceAniBTModePatchInput struct {
 	AnibtAuxMode    *animedomain.RSSSourceDraftAnibtAuxMode
 }
 
-// PatchRSSSourceOffset replaces the RSS link's episode offset with
-// expected-version CAS against rss_sources.version. 0 means no offset; there
-// is no inheritance. A changed offset admits one migration generation scoped to
-// this link only.
+// PatchRSSSourceOffset replaces the RSS link's episode offset and span with
+// expected-version CAS against rss_sources.version. 0 means no offset and 1
+// means one episode per release; there is no inheritance. A change admits one
+// alignment/reconciliation generation scoped to this link only.
 func (s *Service) PatchRSSSourceOffset(ctx context.Context, managedAnimeID, rssSourceID string, patch RSSSourceOffsetPatchInput) (RSSSource, error) {
 	if !animedomain.EpisodeOffsetInRange(patch.EpisodeOffset) {
 		return RSSSource{}, &apperrors.BadRequest{Code: "OFFSET_OUT_OF_RANGE", Message: animedomain.EpisodeOffsetRangeMessage() + "."}
 	}
+	if !animedomain.EpisodeSpanInRange(patch.EpisodeSpan) {
+		return RSSSource{}, &apperrors.BadRequest{Code: "SPAN_OUT_OF_RANGE", Message: animedomain.EpisodeSpanRangeMessage() + "."}
+	}
+	patch.EpisodeSpan = animedomain.NormalizeEpisodeSpan(patch.EpisodeSpan)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return RSSSource{}, fmt.Errorf("begin rss source offset patch: %w", err)
@@ -62,13 +67,13 @@ func (s *Service) PatchRSSSourceOffset(ctx context.Context, managedAnimeID, rssS
 // which can hold no release and so needs neither admission nor re-evaluation.
 func (s *Service) applyRSSSourceOffsetTx(ctx context.Context, tx *sql.Tx, managedAnimeID, rssSourceID string, patch RSSSourceOffsetPatchInput, created bool) (RSSSource, error) {
 	var version int64
-	var oldOffset int
+	var oldOffset, oldSpan int
 	err := tx.QueryRowContext(ctx, `
-SELECT src.version, src.episode_offset
+SELECT src.version, src.episode_offset, src.episode_span
 FROM rss_sources src
 JOIN subscriptions sub ON sub.id = src.subscription_id
 WHERE src.id = $1 AND sub.managed_anime_id = $2
-FOR UPDATE OF src, sub`, rssSourceID, managedAnimeID).Scan(&version, &oldOffset)
+FOR UPDATE OF src, sub`, rssSourceID, managedAnimeID).Scan(&version, &oldOffset, &oldSpan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RSSSource{}, &apperrors.NotFound{Resource: "rss_source", ID: rssSourceID}
 	}
@@ -79,20 +84,20 @@ FOR UPDATE OF src, sub`, rssSourceID, managedAnimeID).Scan(&version, &oldOffset)
 		return RSSSource{}, &apperrors.VersionConflict{Owner: "rss_source", CurrentVersion: version}
 	}
 	if _, err := tx.ExecContext(ctx, `
-UPDATE rss_sources SET episode_offset = $2, version = version + 1, updated_at = NOW()
-WHERE id = $1`, rssSourceID, patch.EpisodeOffset); err != nil {
+UPDATE rss_sources SET episode_offset = $2, episode_span = $3, version = version + 1, updated_at = NOW()
+WHERE id = $1`, rssSourceID, patch.EpisodeOffset, patch.EpisodeSpan); err != nil {
 		return RSSSource{}, fmt.Errorf("save rss source offset: %w", err)
 	}
 	if !created {
-		if oldOffset != patch.EpisodeOffset {
+		if oldOffset != patch.EpisodeOffset || oldSpan != patch.EpisodeSpan {
 			if s.offsetAlignment == nil {
-				return RSSSource{}, errors.New("rss link offset change requires offset alignment")
+				return RSSSource{}, errors.New("rss link numbering change requires offset alignment")
 			}
-			if _, _, err := s.offsetAlignment.AdmitRSSSourceTx(ctx, txscope.Wrap(tx), managedAnimeID, rssSourceID, version+1, oldOffset, patch.EpisodeOffset); err != nil {
+			if _, _, err := s.offsetAlignment.AdmitRSSSourceTx(ctx, txscope.Wrap(tx), managedAnimeID, rssSourceID, version+1, oldOffset, patch.EpisodeOffset, oldSpan, patch.EpisodeSpan); err != nil {
 				return RSSSource{}, fmt.Errorf("re-key rss source files: %w", err)
 			}
 		}
-		if oldOffset == patch.EpisodeOffset {
+		if oldOffset == patch.EpisodeOffset && oldSpan == patch.EpisodeSpan {
 			if err := s.scheduleUnsubmittedReleaseEvaluation(ctx, tx, `
 SELECT r.id, r.version
 FROM releases r
@@ -104,12 +109,12 @@ FOR UPDATE OF r`, rssSourceID, "offset_patch"); err != nil {
 	}
 
 	var subscriptionID, sourceKind, locatorDisplay, groupName, title sql.NullString
-	var episodeOffset int
+	var episodeOffset, episodeSpan int
 	var provenance []byte
 	err = tx.QueryRowContext(ctx, `
-SELECT subscription_id, source_kind, locator_display, group_name, title, episode_offset, provenance, version
+SELECT subscription_id, source_kind, locator_display, group_name, title, episode_offset, episode_span, provenance, version
 FROM rss_sources
-WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay, &groupName, &title, &episodeOffset, &provenance, &version)
+WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay, &groupName, &title, &episodeOffset, &episodeSpan, &provenance, &version)
 	if err != nil {
 		return RSSSource{}, fmt.Errorf("read rss source after patch: %w", err)
 	}
@@ -131,6 +136,7 @@ WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay,
 		GroupName:      groupName.String,
 		Title:          title.String,
 		EpisodeOffset:  episodeOffset,
+		EpisodeSpan:    episodeSpan,
 		Version:        version,
 	}
 	if provenance != nil {
@@ -179,6 +185,7 @@ WHERE subscription_id = $1 AND provider = $2 AND group_ref = $3`, subscriptionID
 type ProviderGroupOffsetInput struct {
 	ExpectedVersion int64
 	EpisodeOffset   int
+	EpisodeSpan     int
 }
 
 // SetProviderGroupOffset sets the episode offset of one of the instance's
@@ -191,6 +198,10 @@ func (s *Service) SetProviderGroupOffset(ctx context.Context, managedAnimeID, pr
 	if !animedomain.EpisodeOffsetInRange(in.EpisodeOffset) {
 		return RSSSource{}, &apperrors.BadRequest{Code: "OFFSET_OUT_OF_RANGE", Message: animedomain.EpisodeOffsetRangeMessage() + "."}
 	}
+	if !animedomain.EpisodeSpanInRange(in.EpisodeSpan) {
+		return RSSSource{}, &apperrors.BadRequest{Code: "SPAN_OUT_OF_RANGE", Message: animedomain.EpisodeSpanRangeMessage() + "."}
+	}
+	in.EpisodeSpan = animedomain.NormalizeEpisodeSpan(in.EpisodeSpan)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return RSSSource{}, fmt.Errorf("begin provider group offset: %w", err)
@@ -244,6 +255,7 @@ WHERE subscription_id = $1 AND provider = $2 AND provider_entry_ref = $3
 			AnimeTitle:      animeTitle,
 			RSSURL:          rssURL,
 			SnapshotVersion: groupsource.PendingSnapshotVersion,
+			EpisodeSpan:     in.EpisodeSpan,
 		})
 		if err != nil {
 			return RSSSource{}, err
@@ -256,7 +268,7 @@ WHERE subscription_id = $1 AND provider = $2 AND provider_entry_ref = $3
 		return RSSSource{}, fmt.Errorf("read provider group link: %w", err)
 	}
 
-	result, err := s.applyRSSSourceOffsetTx(ctx, tx, managedAnimeID, rssSourceID, RSSSourceOffsetPatchInput{ExpectedVersion: in.ExpectedVersion, EpisodeOffset: in.EpisodeOffset}, created)
+	result, err := s.applyRSSSourceOffsetTx(ctx, tx, managedAnimeID, rssSourceID, RSSSourceOffsetPatchInput{ExpectedVersion: in.ExpectedVersion, EpisodeOffset: in.EpisodeOffset, EpisodeSpan: in.EpisodeSpan}, created)
 	if err != nil {
 		return RSSSource{}, err
 	}
@@ -432,11 +444,11 @@ FOR UPDATE OF r`, rssSourceID, "anibt_mode_patch"); err != nil {
 		return RSSSource{}, err
 	}
 	var subscriptionID, locatorDisplay, groupName, title sql.NullString
-	var episodeOffset int
+	var episodeOffset, episodeSpan int
 	err = tx.QueryRowContext(ctx, `
-SELECT subscription_id, source_kind, locator_display, group_name, title, episode_offset, version
+SELECT subscription_id, source_kind, locator_display, group_name, title, episode_offset, episode_span, version
 FROM rss_sources
-WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay, &groupName, &title, &episodeOffset, &version)
+WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay, &groupName, &title, &episodeOffset, &episodeSpan, &version)
 	if err != nil {
 		return RSSSource{}, fmt.Errorf("read rss source after patch: %w", err)
 	}
@@ -453,6 +465,7 @@ WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay,
 		GroupName:      groupName.String,
 		Title:          title.String,
 		EpisodeOffset:  episodeOffset,
+		EpisodeSpan:    episodeSpan,
 		Version:        version,
 	}
 	if patch.AnibtAuxMode != nil {

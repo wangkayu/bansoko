@@ -67,6 +67,9 @@ type ReadRSSListViewInput struct {
 	// and never becomes a second offset rule. Owner modes ignore it for the
 	// same reason. 0 (the default) means no shift.
 	PreviewEpisodeOffset int
+	// PreviewEpisodeSpan follows PreviewEpisodeOffset for groups without a
+	// configured source and for one-shot browse. Zero means the default 1.
+	PreviewEpisodeSpan int
 	// OneShot, for current_input only, reads the draft as a one-shot browse: a
 	// one-shot names its seed directly, so every listed group (configured and
 	// observed) carries its snapshot and its seeds whatever the draft's group
@@ -149,6 +152,7 @@ type RSSListGroupSelection struct {
 // still active. Draft/preview rows and retired anime are read-only.
 type RSSListOffset struct {
 	Value    int
+	Span     int
 	Editable bool
 	// Source is the provenance of Value (RSSListOffsetSource*).
 	Source string
@@ -427,6 +431,9 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 	if input.PreviewEpisodeOffset < -1000 || input.PreviewEpisodeOffset > 1000 {
 		return RSSListView{}, &apperrors.Business{Status: 422, Code: "OFFSET_OUT_OF_RANGE", Message: "episode_offset must be between -1000 and 1000."}
 	}
+	if !animedomain.EpisodeSpanInRange(input.PreviewEpisodeSpan) {
+		return RSSListView{}, &apperrors.Business{Status: 422, Code: "SPAN_OUT_OF_RANGE", Message: animedomain.EpisodeSpanRangeMessage() + "."}
+	}
 	if input.OneShot && input.InputSource != "current_input" {
 		return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "one_shot is valid only with input_source=current_input."}
 	}
@@ -446,12 +453,12 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 		if err != nil {
 			return RSSListView{}, err
 		}
-		return s.readRSSListViewForDraft(ctx, *input.Draft, input.Feed, input.Observation, input.PreviewEpisodeOffset, input.OneShot, scope, fileSelections)
+		return s.readRSSListViewForDraft(ctx, *input.Draft, input.Feed, input.Observation, input.PreviewEpisodeOffset, input.PreviewEpisodeSpan, input.OneShot, scope, fileSelections)
 	case "candidate_revision":
 		if strings.TrimSpace(input.CandidateID) == "" || input.Revision < 1 {
 			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "input_source=candidate_revision requires candidate_id and revision."}
 		}
-		return s.readRSSListViewForRevision(ctx, input.CandidateID, input.Revision, input.Feed, input.PreviewEpisodeOffset)
+		return s.readRSSListViewForRevision(ctx, input.CandidateID, input.Revision, input.Feed, input.PreviewEpisodeOffset, input.PreviewEpisodeSpan)
 	case "owner", "owner_draft":
 		if strings.TrimSpace(input.ManagedAnimeID) == "" {
 			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner modes require managed_anime_id."}
@@ -495,7 +502,7 @@ func draftCustomSnapshotScope(draft animedomain.AnimeDraft, input ReadRSSListVie
 	return catalogapplication.CandidateCustomSnapshotIdentity(candidateID, input.Revision), nil
 }
 
-func (s *Service) readRSSListViewForDraft(ctx context.Context, draft animedomain.AnimeDraft, feed []PreviewFeedSnapshotRef, observation *RSSListObservationRef, previewOffset int, oneShot bool, customScope string, fileSelections rssListFileSelections) (RSSListView, error) {
+func (s *Service) readRSSListViewForDraft(ctx context.Context, draft animedomain.AnimeDraft, feed []PreviewFeedSnapshotRef, observation *RSSListObservationRef, previewOffset int, previewSpan int, oneShot bool, customScope string, fileSelections rssListFileSelections) (RSSListView, error) {
 	if violations := animedomain.ValidateDraft(draft); len(violations) > 0 {
 		return RSSListView{}, draftInvalidError(violations)
 	}
@@ -529,12 +536,12 @@ func (s *Service) readRSSListViewForDraft(ctx context.Context, draft animedomain
 		}
 	}
 	if customScope == "" {
-		return s.composeRSSListViewFor(ctx, "current_input", configIdentity, draft, effective, selection, feed, sources, used, previewOffset, oneShot, fileSelections)
+		return s.composeRSSListViewForSpan(ctx, "current_input", configIdentity, draft, effective, selection, feed, sources, used, previewOffset, previewSpan, oneShot, fileSelections)
 	}
 	// The custom projection derives its snapshot scope from the compose
 	// identity; the view keeps the draft's own identity, scoped by the preset
 	// revision whose snapshot it reads.
-	view, err := s.composeRSSListViewFor(ctx, "current_input", customScope, draft, effective, selection, feed, sources, used, previewOffset, oneShot, fileSelections)
+	view, err := s.composeRSSListViewForSpan(ctx, "current_input", customScope, draft, effective, selection, feed, sources, used, previewOffset, previewSpan, oneShot, fileSelections)
 	if err != nil {
 		return RSSListView{}, err
 	}
@@ -664,7 +671,7 @@ func ownerPreviewConfig(ctx context.Context, q animeconfig.Querier, subgroups an
 	return animedomain.NewEffectiveConfig(decoded, tags, completion)
 }
 
-func (s *Service) readRSSListViewForRevision(ctx context.Context, candidateID string, revision int64, feed []PreviewFeedSnapshotRef, previewOffset int) (RSSListView, error) {
+func (s *Service) readRSSListViewForRevision(ctx context.Context, candidateID string, revision int64, feed []PreviewFeedSnapshotRef, previewOffset int, previewSpan int) (RSSListView, error) {
 	row, err := s.ReadVerifiedAnimeConfigCandidateRevision(ctx, candidateID, revision)
 	if err != nil {
 		return RSSListView{}, err
@@ -682,7 +689,7 @@ func (s *Service) readRSSListViewForRevision(ctx context.Context, candidateID st
 		return RSSListView{}, err
 	}
 	identity := catalogapplication.CandidateCustomSnapshotIdentity(candidateID, revision)
-	return s.composeRSSListView(ctx, "candidate_revision", identity, row.Draft, effective, selection, feed, previewOffset)
+	return s.composeRSSListViewForSpan(ctx, "candidate_revision", identity, row.Draft, effective, selection, feed, nil, nil, previewOffset, previewSpan, false, nil)
 }
 
 func (s *Service) readRSSListViewForOwner(ctx context.Context, input ReadRSSListViewInput) (RSSListView, error) {
@@ -807,7 +814,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 			provider, entryRef, groupRef = string(p.Provider), p.ProviderEntryRef, p.ProviderGroupRef
 		}
 		sourcesByID[src.ID] = src
-		group := RSSListGroup{Scope: RSSListGroupScope{Provider: provider, ProviderEntryRef: entryRef, ProviderGroupRef: groupRef, RSSSourceID: src.ID}, DisplayName: src.GroupName, Selection: RSSListGroupSelection{EffectiveSelected: true, SelectionMode: string(animedomain.SelectionModeAuto)}, Offset: RSSListOffset{Value: src.EpisodeOffset, Editable: offsetEditable, Source: RSSListOffsetSourceLink}, Feed: RSSListFeedStatus{State: RSSListFeedFresh}, Items: []RSSListItem{}}
+		group := RSSListGroup{Scope: RSSListGroupScope{Provider: provider, ProviderEntryRef: entryRef, ProviderGroupRef: groupRef, RSSSourceID: src.ID}, DisplayName: src.GroupName, Selection: RSSListGroupSelection{EffectiveSelected: true, SelectionMode: string(animedomain.SelectionModeAuto)}, Offset: RSSListOffset{Value: src.EpisodeOffset, Span: src.EpisodeSpan, Editable: offsetEditable, Source: RSSListOffsetSourceLink}, Feed: RSSListFeedStatus{State: RSSListFeedFresh}, Items: []RSSListItem{}}
 		if runtime, ok := runtimesBySource[src.ID]; ok {
 			group.Feed.State = rssListRuntimeFeedState(runtime.Health)
 			if runtime.ReasonCode != nil {
@@ -877,7 +884,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		if provenance := src.ProviderProvenance; provenance != nil {
 			sourceGroup = providerdomain.GroupRefOrZero(providerdomain.Kind(provenance.Provider), provenance.ProviderGroupRef)
 		}
-		evalInput := animedomain.SourceEvaluationInput{Index: 0, Kind: string(src.SourceKind), GroupName: src.GroupName, Group: sourceGroup, Offset: src.EpisodeOffset}
+		evalInput := animedomain.SourceEvaluationInput{Index: 0, Kind: string(src.SourceKind), GroupName: src.GroupName, Group: sourceGroup, Offset: src.EpisodeOffset, Span: src.EpisodeSpan}
 		// The parser selection belongs to the source and the owner's configuration,
 		// not to the release: it is read once per source.
 		selection, loaded := parserSelections[src.ID]
@@ -1099,6 +1106,24 @@ func (s *Service) composeRSSListViewFor(
 	oneShot bool,
 	fileSelections rssListFileSelections,
 ) (RSSListView, error) {
+	return s.composeRSSListViewForSpan(ctx, mode, configIdentity, draft, effective, selection, feed, sources, observation, previewOffset, 0, oneShot, fileSelections)
+}
+
+func (s *Service) composeRSSListViewForSpan(
+	ctx context.Context,
+	mode string,
+	configIdentity string,
+	draft animedomain.AnimeDraft,
+	effective animedomain.EffectiveConfig,
+	selection acquisitiontarget.ParserSelectionInput,
+	feed []PreviewFeedSnapshotRef,
+	sources map[string]string,
+	observation *RSSListObservation,
+	previewOffset int,
+	previewSpan int,
+	oneShot bool,
+	fileSelections rssListFileSelections,
+) (RSSListView, error) {
 	varsAnime, err := s.draftVarsAnimeEvidence(ctx, draft)
 	if err != nil {
 		return RSSListView{}, err
@@ -1134,7 +1159,7 @@ func (s *Service) composeRSSListViewFor(
 		previews, unused, err = s.resolveRSSListProviderGroupPreviews(ctx, draft, effective, feed)
 		view.UnusedFeedIdentities = unused
 		if err == nil {
-			groupEntries, err = rssListGroupEntriesFor(draft, effective, previewOffset, oneShot)
+			groupEntries, err = rssListGroupEntriesForSpan(draft, effective, previewOffset, previewSpan, oneShot)
 		}
 	} else if draft.Origin == animedomain.SubscriptionOriginOneshot {
 		// The search one-shot browse. An origin=oneshot draft is the form the
@@ -1151,6 +1176,11 @@ func (s *Service) composeRSSListViewFor(
 	}
 	if err != nil {
 		return RSSListView{}, err
+	}
+	if oneShot {
+		for index := range groupEntries {
+			groupEntries[index].offset = oneShotOffsetSpan(previewOffset, previewSpan)
+		}
 	}
 	// Read the switch after the snapshot identities are validated: a malformed
 	// request is refused as such without consulting live policy, and the hold is
@@ -1210,6 +1240,7 @@ func (s *Service) composeRSSListViewFor(
 		// group's seed would resolve it.
 		groupSelection := selection
 		groupSelection.Offset = entry.offset.Value
+		groupSelection.Span = entry.offset.Span
 		if err := s.evaluateFeedItemsWithSelection(ctx, &result, 0, string(sourceKind), preview.GroupName, providerdomain.GroupRefOrZero(providerdomain.Kind(entry.provider), entry.groupRef), groupSelection, effective, hold, draft.Title, varsAnime, preview.Items, preview.Manifests, draft.Business); err != nil {
 			return RSSListView{}, err
 		}
@@ -1432,13 +1463,22 @@ func rssListGroupEntries(draft animedomain.AnimeDraft, effective animedomain.Eff
 // oneShotOffset is the offset every group of a one-shot browse previews with:
 // the one-shot request's own episode_offset, never a draft source's.
 func oneShotOffset(previewOffset int) RSSListOffset {
-	if previewOffset != 0 {
-		return RSSListOffset{Value: previewOffset, Source: RSSListOffsetSourcePreviewInput}
+	return oneShotOffsetSpan(previewOffset, 0)
+}
+
+func oneShotOffsetSpan(previewOffset int, previewSpan int) RSSListOffset {
+	span := animedomain.NormalizeEpisodeSpan(previewSpan)
+	if previewOffset != 0 || span > 1 {
+		return RSSListOffset{Value: previewOffset, Span: span, Source: RSSListOffsetSourcePreviewInput}
 	}
-	return RSSListOffset{Value: 0, Source: RSSListOffsetSourceDefault}
+	return RSSListOffset{Value: 0, Span: span, Source: RSSListOffsetSourceDefault}
 }
 
 func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.EffectiveConfig, previewOffset int, oneShot bool) ([]rssListGroupEntry, error) {
+	return rssListGroupEntriesForSpan(draft, effective, previewOffset, 0, oneShot)
+}
+
+func rssListGroupEntriesForSpan(draft animedomain.AnimeDraft, effective animedomain.EffectiveConfig, previewOffset int, previewSpan int, oneShot bool) ([]rssListGroupEntry, error) {
 	entryRef := ""
 	if draft.OriginEntryRef != nil {
 		entryRef = strings.TrimSpace(*draft.OriginEntryRef)
@@ -1450,7 +1490,7 @@ func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.
 	// same triple. A provider draft has no link rows yet and carries the offsets
 	// subscribe will turn into them (ProviderGroupOffsets). A group with neither
 	// keeps offset 0.
-	offsetsByGroup := make(map[string]int, len(draft.RssSources)+len(draft.ProviderGroupOffsets))
+	offsetsByGroup := make(map[string]RSSListOffset, len(draft.RssSources)+len(draft.ProviderGroupOffsets))
 	for _, source := range draft.RssSources {
 		provenance := source.ProviderProvenance
 		if provenance == nil {
@@ -1459,10 +1499,10 @@ func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.
 		if string(provenance.Provider) != string(draft.Origin) || strings.TrimSpace(provenance.ProviderEntryRef) != entryRef {
 			continue
 		}
-		offsetsByGroup[provenance.ProviderGroupRef] = source.EpisodeOffset
+		offsetsByGroup[provenance.ProviderGroupRef] = RSSListOffset{Value: source.EpisodeOffset, Span: animedomain.NormalizeEpisodeSpan(source.EpisodeSpan), Source: RSSListOffsetSourceDraftSource}
 	}
 	for _, entry := range draft.ProviderGroupOffsets {
-		offsetsByGroup[entry.ProviderGroupRef] = entry.EpisodeOffset
+		offsetsByGroup[entry.ProviderGroupRef] = RSSListOffset{Value: entry.EpisodeOffset, Span: animedomain.NormalizeEpisodeSpan(entry.EpisodeSpan), Source: RSSListOffsetSourceDraftSource}
 	}
 	display := make(map[string]animedomain.SubgroupScoreEntry, len(draft.Subgroups.Entries))
 	for _, entry := range draft.Subgroups.Entries {
@@ -1516,13 +1556,13 @@ func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.
 		// created from. A group with no source of its own previews with the
 		// read's preview-only offset, which is how a browser shows a one-shot's
 		// non-zero offset before any link exists; the provenance says which.
-		offset := RSSListOffset{Value: 0, Source: RSSListOffsetSourceDefault}
+		offset := RSSListOffset{Value: 0, Span: animedomain.NormalizeEpisodeSpan(previewSpan), Source: RSSListOffsetSourceDefault}
 		if oneShot {
-			offset = oneShotOffset(previewOffset)
+			offset = oneShotOffsetSpan(previewOffset, previewSpan)
 		} else if own, ok := offsetsByGroup[entry.GroupRef]; ok {
-			offset = RSSListOffset{Value: own, Source: RSSListOffsetSourceDraftSource}
-		} else if previewOffset != 0 {
-			offset = RSSListOffset{Value: previewOffset, Source: RSSListOffsetSourcePreviewInput}
+			offset = own
+		} else if previewOffset != 0 || animedomain.NormalizeEpisodeSpan(previewSpan) > 1 {
+			offset = RSSListOffset{Value: previewOffset, Span: animedomain.NormalizeEpisodeSpan(previewSpan), Source: RSSListOffsetSourcePreviewInput}
 		}
 		var reasonCode *string
 		// Attach the reason only when replaying the decision reproduces the
@@ -1584,7 +1624,7 @@ func rssListGroupEntryNameKey(entry rssListGroupEntry) string {
 func (s *Service) customOriginGroups(draft animedomain.AnimeDraft) []RSSListGroup {
 	groups := make([]RSSListGroup, 0, len(draft.RssSources))
 	for _, source := range draft.RssSources {
-		offset := RSSListOffset{Value: source.EpisodeOffset, Source: RSSListOffsetSourceDraftSource}
+		offset := RSSListOffset{Value: source.EpisodeOffset, Span: animedomain.NormalizeEpisodeSpan(source.EpisodeSpan), Source: RSSListOffsetSourceDraftSource}
 		groups = append(groups, RSSListGroup{
 			Scope: RSSListGroupScope{
 				Provider:         string(draft.Origin),

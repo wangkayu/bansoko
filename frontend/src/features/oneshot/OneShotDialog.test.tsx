@@ -63,7 +63,7 @@ function seedGroup(overrides: Partial<RSSListGroup> = {}): RSSListGroup {
     scope: { provider: "anibt", provider_entry_ref: "entry-1", provider_group_ref: "g-1" },
     display_name: "组A",
     selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
-    offset: { value: 0, editable: true, source: "link" },
+    offset: { value: 0, span: 1, editable: true, source: "link" },
     feed: { state: "fresh", snapshot_id: "snap-1", snapshot_version: 3, content_hash: "hash-1" },
     items: [seedItem("seed-a", "[组A] 测试番剧 - 01 [1080p]")],
     ...overrides,
@@ -1224,6 +1224,7 @@ describe("OneShotDialog 自定义预设", () => {
       input_source: "current_input",
       one_shot: true,
       episode_offset: 4,
+      episode_span: null,
       draft: { title: "自定义番剧" },
       feed: [{ provider: "custom", snapshot_id: "custom-snap", snapshot_version: 2, content_hash: "custom-hash" }],
     });
@@ -1256,6 +1257,7 @@ describe("OneShotDialog 自定义预设", () => {
       content_hash: "custom-hash",
       input_source: "current_input",
       episode_offset: 4,
+      episode_span: 1,
       draft: { title: "这次的名字" },
     });
     expect(body).not.toHaveProperty("candidate_id");
@@ -1840,7 +1842,7 @@ describe("OneShotDialog 手动选择文件", () => {
     const editor = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
     fireEvent.click(within(editor).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: VIDEO }) }));
     fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.season")} ${VIDEO}` }), { target: { value: "" } });
-    fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.episode")} ${VIDEO}` }), { target: { value: "7" } });
+    fireEvent.change(within(editor).getByRole("textbox", { name: `${t("fileNumbering.episode")} ${VIDEO}` }), { target: { value: "7" } });
     fireEvent.click(within(editor).getByRole("button", { name: t("fileNumbering.confirm", { n: 1 }) }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: t("fileNumbering.title") })).not.toBeInTheDocument());

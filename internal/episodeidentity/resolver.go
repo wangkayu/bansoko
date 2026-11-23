@@ -59,6 +59,11 @@ func (r *Resolver) Resolve(input EpisodeIdentityInput) EpisodeIdentity {
 	}
 	switch evidence.Status {
 	case StatusValue:
+		if input.Span > 1 {
+			if members, ok := spanMembers(evidence, input.Span); ok {
+				return r.resolveMulti(base, evidence, input, members)
+			}
+		}
 		return r.resolveRaw(base, evidence, input)
 	case StatusMissing:
 		base.Shape = evidence.Shape
@@ -369,7 +374,34 @@ func inputDigest(input EpisodeIdentityInput) string {
 		evidenceDigest(input.FileEvidence),
 	}
 	parts = append(parts, toString(input.Offset))
+	if input.Span > 1 {
+		// A single-episode resolve keeps its historical digest byte for byte;
+		// only a combined-episode span distinguishes its identities.
+		parts = append(parts, "span", toString(input.Span))
+	}
 	return InputDigest(parts...)
+}
+
+// spanMembers expands a single positive integer episode n into the raw
+// members of a combined-episode file: [(n-1)*span+1 .. n*span]. The offset
+// applies to each member afterwards, exactly once. Episode 0 (a special) and
+// non-integer or explicit multi-episode evidence never take this path.
+func spanMembers(evidence EpisodeEvidence, span int) ([]EpisodeNumber, bool) {
+	if evidence.Shape != ShapeSingle || evidence.Episode == nil {
+		return nil, false
+	}
+	n, err := strconv.Atoi(string(*evidence.Episode))
+	if err != nil || n < 1 {
+		return nil, false
+	}
+	if span > MaxManualEpisodesPerFile {
+		span = MaxManualEpisodesPerFile
+	}
+	members := make([]EpisodeNumber, 0, span)
+	for value := (n-1)*span + 1; value <= n*span; value++ {
+		members = append(members, EpisodeNumber(strconv.Itoa(value)))
+	}
+	return members, true
 }
 
 func evidenceDigest(evidence EpisodeEvidence) string {

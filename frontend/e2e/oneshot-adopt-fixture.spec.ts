@@ -310,6 +310,7 @@ function unifiedView(): RSSListView {
         },
         offset: {
           value: 0,
+          span: 1,
           editable: false,
           source: "draft_source",
         },

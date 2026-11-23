@@ -177,7 +177,7 @@ func mapCandidateSubscribeResult(value draftapplication.SubscribeResult) generat
 		result.RssSources = make([]generated.RSSSource, len(value.RssSources))
 	}
 	for i, source := range value.RssSources {
-		mapped := generated.RSSSource{GroupName: source.GroupName, HttpFeedConnectionRef: copyCandidateString(source.HttpFeedConnectionRef), Id: generated.ID(source.ID), LocatorDisplay: source.LocatorDisplay, NetworkRouteRef: copyCandidateString(source.NetworkRouteRef), EpisodeOffset: source.EpisodeOffset, SourceKind: generated.SourceKind(source.SourceKind), SubscriptionId: generated.ID(source.SubscriptionID), Title: source.Title, Version: generated.Version(source.Version)}
+		mapped := generated.RSSSource{GroupName: source.GroupName, HttpFeedConnectionRef: copyCandidateString(source.HttpFeedConnectionRef), Id: generated.ID(source.ID), LocatorDisplay: source.LocatorDisplay, NetworkRouteRef: copyCandidateString(source.NetworkRouteRef), EpisodeOffset: source.EpisodeOffset, EpisodeSpan: animedomain.NormalizeEpisodeSpan(source.EpisodeSpan), SourceKind: generated.SourceKind(source.SourceKind), SubscriptionId: generated.ID(source.SubscriptionID), Title: source.Title, Version: generated.Version(source.Version)}
 		if source.AnibtAuxMode != nil {
 			mode := generated.RSSSourceAnibtAuxMode(*source.AnibtAuxMode)
 			mapped.AnibtAuxMode = &mode

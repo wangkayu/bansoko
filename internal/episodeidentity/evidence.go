@@ -136,6 +136,15 @@ type EpisodeIdentityInput struct {
 	// input's own offset; 0 when neither exists. The resolver applies it
 	// exactly once and never chooses between offsets.
 	Offset int
+	// Span is the number of consecutive metadata episodes one release file
+	// covers when its evidence is a single positive integer n: the identity
+	// expands to [(n-1)*Span+1 .. n*Span], with Offset applied to every member
+	// exactly once. Values <= 1 mean one episode (the ordinary single-episode
+	// resolve, byte-identical digest); the resolver clamps larger spans to
+	// MaxManualEpisodesPerFile. Explicit multi-episode filename ranges and
+	// lists keep their own range and are never re-expanded, and movies
+	// short-circuit before any span applies.
+	Span int
 	// Deprecated compatibility fields. Structured AniBT episode/season data is
 	// not admissible evidence about an actual file and is ignored by Resolver.
 	AniBTEvidence *EpisodeEvidence

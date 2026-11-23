@@ -175,3 +175,6 @@ frontend/scripts/snapshot-mutants-*/
 /.gotmp/
 .claude/worktrees/
 /.worktree/
+
+# TypeScript incremental build state
+*.tsbuildinfo

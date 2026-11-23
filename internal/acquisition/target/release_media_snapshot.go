@@ -164,7 +164,7 @@ func ReleaseMediaInputDigest(in ReleaseMediaSnapshotInput) string {
 	if len(overrides) > 0 {
 		overrideDigest = string(overridesRaw)
 	}
-	return episodeidentity.InputDigest(
+	parts := []string{
 		in.Title, e.Parsed.ParserID, e.Parsed.ParserImplementationVersion, e.Parsed.ResultDigest,
 		e.Selection.ConfigFingerprint,
 		e.Selection.Descriptor.ImplementationVersion, e.Selection.Descriptor.ConfigVersion,
@@ -176,5 +176,9 @@ func ReleaseMediaInputDigest(in ReleaseMediaSnapshotInput) string {
 		fmt.Sprintf("%t", e.SeasonBound),
 		fmt.Sprintf("%d", e.Selection.Offset),
 		overrideDigest,
-	)
+	}
+	if e.Span > 1 {
+		parts = append(parts, "span", fmt.Sprintf("%d", e.Span))
+	}
+	return episodeidentity.InputDigest(parts...)
 }

@@ -44,6 +44,7 @@ export function draftFromEntry(entry: CatalogEntryView): AnimeDraft {
         group_name: entry.groupName ?? "",
         title: entry.title,
         episode_offset: 0,
+        episode_span: 1,
       },
     ];
   } else if (origin !== "custom") {

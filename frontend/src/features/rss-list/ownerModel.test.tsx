@@ -41,7 +41,7 @@ const GROUP: RSSListGroup = {
   display_name: "Group",
   score: 77,
   selection: { source: "configured" as const, effective_selected: true, selection_mode: "manual" },
-  offset: { value: 2, editable: true, source: "link" },
+  offset: { value: 2, span: 1, editable: true, source: "link" },
   feed: { state: "fresh" },
   items: [ITEM],
 };

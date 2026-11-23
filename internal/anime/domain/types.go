@@ -127,6 +127,7 @@ type AnimeDraft struct {
 // ProviderGroupOffsetDraft is one provider group's episode offset in a draft.
 type ProviderGroupOffsetDraft struct {
 	EpisodeOffset    int    `json:"episode_offset"`
+	EpisodeSpan      int    `json:"episode_span,omitempty"`
 	ProviderGroupRef string `json:"provider_group_ref"`
 }
 
@@ -138,6 +139,7 @@ type RSSSourceDraft struct {
 	LocatorDisplay        *string                     `json:"locator_display"`
 	NetworkRouteRef       *string                     `json:"network_route_ref"`
 	EpisodeOffset         int                         `json:"episode_offset"`
+	EpisodeSpan           int                         `json:"episode_span,omitempty"`
 	ProviderProvenance    *ProviderProvenance         `json:"provider_provenance"`
 	SourceKind            SourceKind                  `json:"source_kind"`
 	Title                 string                      `json:"title"`

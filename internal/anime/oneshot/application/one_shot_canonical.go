@@ -24,6 +24,8 @@ type oneShotCanonicalRequest struct {
 	// EpisodeOffset is omitted at 0 so an offset-free request keeps its
 	// replay identity; any other value is a different request.
 	EpisodeOffset int `json:"episode_offset,omitempty"`
+	// EpisodeSpan is omitted for the default so legacy replay hashes stay fixed.
+	EpisodeSpan int `json:"episode_span,omitempty"`
 	// FileSelection is omitted without a manual selection so a default
 	// request keeps its replay identity.
 	FileSelection         []string                                `json:"file_selection,omitempty"`
@@ -45,6 +47,7 @@ func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, er
 		EffectiveDigest:       input.EffectiveDigest,
 		SelectedSeed:          input.Seed,
 		EpisodeOffset:         input.EpisodeOffset,
+		EpisodeSpan:           canonicalOneShotEpisodeSpan(input.EpisodeSpan),
 		FileSelection:         input.FileSelection,
 		DownloadSelectedFiles: input.DownloadSelectedFiles,
 		Overrides:             input.Overrides,
@@ -63,6 +66,7 @@ type oneShotCurrentInputCanonicalRequest struct {
 	DraftDigest           string                                  `json:"draft_digest"`
 	SelectedSeed          SelectedSeed                            `json:"selected_seed"`
 	EpisodeOffset         int                                     `json:"episode_offset,omitempty"`
+	EpisodeSpan           int                                     `json:"episode_span,omitempty"`
 	FileSelection         []string                                `json:"file_selection,omitempty"`
 	DownloadSelectedFiles bool                                    `json:"download_selected_files,omitempty"`
 	Overrides             []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
@@ -80,6 +84,7 @@ func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSe
 		DraftDigest:           draftDigest,
 		SelectedSeed:          input.Seed,
 		EpisodeOffset:         input.EpisodeOffset,
+		EpisodeSpan:           canonicalOneShotEpisodeSpan(input.EpisodeSpan),
 		FileSelection:         input.FileSelection,
 		DownloadSelectedFiles: input.DownloadSelectedFiles,
 		Overrides:             input.Overrides,
@@ -128,6 +133,9 @@ func oneShotCurrentInputReplayRequestHash(snapshot OneShotInputSnapshot, input A
 	if snapshot.EpisodeOffset != input.EpisodeOffset {
 		return "", oneShotOffsetReusedError()
 	}
+	if animedomain.NormalizeEpisodeSpan(snapshot.EpisodeSpan) != animedomain.NormalizeEpisodeSpan(input.EpisodeSpan) {
+		return "", oneShotSpanReusedError()
+	}
 	return canonicalOneShotCurrentInputRequestHash(snapshot.DraftDigest, input, key)
 }
 
@@ -153,6 +161,9 @@ func oneShotSavedRevisionReplayRequestHash(snapshot OneShotInputSnapshot, input 
 	}
 	if snapshot.EpisodeOffset != input.EpisodeOffset {
 		return "", oneShotOffsetReusedError()
+	}
+	if animedomain.NormalizeEpisodeSpan(snapshot.EpisodeSpan) != animedomain.NormalizeEpisodeSpan(input.EpisodeSpan) {
+		return "", oneShotSpanReusedError()
 	}
 	if input.EffectiveDigest != "" && input.EffectiveDigest != snapshot.EffectiveDigest {
 		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different effective configuration."}
@@ -195,6 +206,24 @@ func validateOneShotEpisodeOffset(offset int) error {
 
 func oneShotOffsetReusedError() error {
 	return &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different episode_offset."}
+}
+
+func validateOneShotEpisodeSpan(span int) error {
+	if animedomain.EpisodeSpanInRange(span) {
+		return nil
+	}
+	return &apperrors.Business{Status: 422, Code: "SPAN_OUT_OF_RANGE", Message: animedomain.EpisodeSpanRangeMessage() + "."}
+}
+
+func canonicalOneShotEpisodeSpan(span int) int {
+	if span > animedomain.DefaultEpisodeSpan {
+		return span
+	}
+	return 0
+}
+
+func oneShotSpanReusedError() error {
+	return &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different episode_span."}
 }
 
 func optionalStringPointerEqual(left, right *string) bool {

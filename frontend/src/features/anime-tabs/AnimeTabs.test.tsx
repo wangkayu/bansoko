@@ -40,7 +40,7 @@ function ownerGroup(rssSourceID: string, groupName = rssSourceID, selected = tru
     display_name: groupName,
     score,
     selection: { source: "configured" as const, effective_selected: selected, selection_mode: "auto" as const },
-    offset: { value: 0, editable: true, source: "link" as const },
+    offset: { value: 0, span: 1, editable: true, source: "link" as const },
     feed: { state: "fresh" as const, snapshot_id: "snapshot-1", snapshot_version: 1, content_hash: "hash-1" },
     items: [],
   };
@@ -156,6 +156,7 @@ function source(id: string, source_kind: RSSSource["source_kind"], groupRef?: st
     group_name: id,
     title: "测试番",
     episode_offset: 0,
+    episode_span: 1,
     provider_provenance: groupRef
       ? {
           provider: "anibt",
@@ -295,7 +296,7 @@ describe("AnimeTabs RSS read model and refresh", () => {
     ]);
     expect(calls).toContainEqual({
       url: "/api/v1/anime/rss-list-view",
-      body: { input_source: "owner", managed_anime_id: "anime-1", limit_per_group: 100 },
+      body: { input_source: "owner", managed_anime_id: "anime-1", limit_per_group: 100, episode_span: null },
     });
   });
 
@@ -332,7 +333,7 @@ describe("AnimeTabs 四 Tab 人工路径", () => {
       source: {
         id: "selected", subscription_id: "subscription-1", source_kind: "provider_group",
         locator_display: "https://example.test/selected", group_name: "selected", title: "测试番",
-        episode_offset: 3, version: 4,
+        episode_offset: 3, episode_span: 1, version: 4,
       },
     }));
     const workspace = workspaceFixture();
@@ -345,6 +346,30 @@ describe("AnimeTabs 四 Tab 人工路径", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: t("field.offset") }), { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: t("rss.saveOffset") }));
     await waitFor(() => expect(patch).toHaveBeenCalledWith(expect.objectContaining({ episode_offset: 3 })));
+  });
+
+  it("订阅后偏移弹窗：合并集 span 默认收起，展开保存带 episode_span", async () => {
+    const patch = vi.spyOn(rssActions, "saveRSSSourceOffset").mockImplementation(async () => ({
+      action: "save_offset", accepted: true, fixture: false,
+      source: {
+        id: "selected", subscription_id: "subscription-1", source_kind: "provider_group",
+        locator_display: "https://example.test/selected", group_name: "selected", title: "测试番",
+        episode_offset: 0, episode_span: 2, version: 4,
+      },
+    }));
+    const workspace = workspaceFixture();
+    workspace.rss_sources = [source("selected", "provider_group", "selected")];
+    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rss" });
+    await screen.findByRole("button", { name: t("rss.expandGroup", { name: "selected" }) });
+    fireEvent.click(screen.getByRole("button", { name: t("rss.offsetTitle", { name: "selected" }) }));
+
+    expect(screen.queryByLabelText(t("rss.offsetSpan"))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("rss.offsetSpanToggle") }));
+    const spanInput = screen.getByLabelText(t("rss.offsetSpan"));
+    expect(spanInput).toHaveValue(1);
+    fireEvent.change(spanInput, { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: t("rss.saveOffset") }));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(expect.objectContaining({ episode_offset: 0, episode_span: 2 })));
   });
 
   it("偏移弹窗：默认显示当前整数，空值或越界不发送", async () => {
@@ -1020,7 +1045,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     expectedSections.release_filter!.value.not_in = "sample";
     await waitFor(() => expect(calls).toContainEqual({
       url: "/api/v1/anime/rss-list-view",
-      body: { input_source: "owner_draft", managed_anime_id: "anime-1", rules_preview: expectedSections, limit_per_group: 100 },
+      body: { input_source: "owner_draft", managed_anime_id: "anime-1", rules_preview: expectedSections, limit_per_group: 100, episode_span: null },
     }));
     // File-level filtering shows as the row's fate badge: file_* is a rule exclusion, the specific reason on hover.
     expect(screen.getByText(t("rss.fileExcluded.excluded_by_rule"))).toHaveAttribute("title", t("reason.file_not_in_matched"));
@@ -1135,6 +1160,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
         managed_anime_id: "anime-1",
         metadata_preview: { bgm: null, tmdb: null, title_override: "测试番", media_kind: null, total_episodes: null, year: 2031, season: null },
         limit_per_group: 100,
+        episode_span: null,
       },
     }));
     expect(await screen.findByText(t("rss.previewNoticeMetadata"))).toBeInTheDocument();

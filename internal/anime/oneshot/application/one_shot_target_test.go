@@ -132,7 +132,7 @@ func oneShotTargetEffectiveAtRoot(t *testing.T, root string) animedomain.Effecti
 
 func oneShotTargetPlan(t *testing.T, root string) acquisitiontarget.PlanResult {
 	t.Helper()
-	request := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 0, "regex", oneShotTargetEffectiveAtRoot(t, root), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
+	request := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 0, 0, "regex", oneShotTargetEffectiveAtRoot(t, root), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
 	return planOneShotTargets(context.Background(), acquisitiontarget.FilesystemProbe{}, request)
 }
 
@@ -148,7 +148,7 @@ func TestOneShotTargetRequestCarriesTheOrdinaryPlanningFacts(t *testing.T) {
 		t.Fatalf("one-shot anime title = %q, want the plain title when the override is blank", got)
 	}
 
-	offsetRequest := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 3, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
+	offsetRequest := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 3, 0, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
 	if offsetRequest.Offset != 3 {
 		t.Fatalf("request offset = %d, want the request episode_offset 3", offsetRequest.Offset)
 	}
@@ -258,7 +258,7 @@ func TestOneShotTargetFailureKeepsTheTypedReason(t *testing.T) {
 // so the admission continues with a diagnostic and the download proceeds.
 // The typed 503 mapping is available if a future caller chooses to refuse.
 func TestOneShotTargetAdmissionFailsClosedWithoutProbe(t *testing.T) {
-	request := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 0, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
+	request := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 0, 0, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
 	plan := planOneShotTargets(context.Background(), nil, request)
 	if plan.Admission.Reason != "target_probe_unavailable" {
 		t.Fatalf("failure reason = %q, want target_probe_unavailable", plan.Admission.Reason)

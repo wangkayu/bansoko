@@ -33,6 +33,8 @@ type SnapshotSeedDownloadInput struct {
 	// EpisodeOffset is the one-shot request's own episode offset (0 when the
 	// caller omits it); see AcquireSeedInput.EpisodeOffset.
 	EpisodeOffset int
+	// EpisodeSpan is the one-shot request's combined-episode setting.
+	EpisodeSpan int
 	// FileSelection is the manual file selection (nil = the default files);
 	// see AcquireSeedInput.FileSelection.
 	FileSelection         []string
@@ -49,6 +51,9 @@ type SnapshotSeedDownloadInput struct {
 // receives. Every identity problem fails closed with zero owner writes.
 func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDownloadInput, idempotencyKey string) (OneShotAdmissionResult, error) {
 	if err := validateOneShotEpisodeOffset(input.EpisodeOffset); err != nil {
+		return OneShotAdmissionResult{}, err
+	}
+	if err := validateOneShotEpisodeSpan(input.EpisodeSpan); err != nil {
 		return OneShotAdmissionResult{}, err
 	}
 	if s.seedPreviews == nil {
@@ -113,6 +118,7 @@ func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDo
 	admission := AcquireSeedInput{
 		Seed:                  seed,
 		EpisodeOffset:         input.EpisodeOffset,
+		EpisodeSpan:           input.EpisodeSpan,
 		FileSelection:         input.FileSelection,
 		DownloadSelectedFiles: input.DownloadSelectedFiles,
 		Overrides:             input.Overrides,

@@ -52,7 +52,7 @@ func TestPGInflightPlacementAdmissionUsesLatestOffsetForEitherLockOrder(t *testi
 				if err := tx.QueryRow(`UPDATE rss_sources SET episode_offset = 25, version = version + 1 WHERE id = $1 RETURNING version`, "src-"+releaseID).Scan(&version); err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := NewOffsetAlignmentService().AdmitRSSSourceTx(ctx, txscope.Wrap(tx), "anime-1", "src-"+releaseID, version, 0, 25); err != nil {
+				if _, _, err := NewOffsetAlignmentService().AdmitRSSSourceTx(ctx, txscope.Wrap(tx), "anime-1", "src-"+releaseID, version, 0, 25, 1, 1); err != nil {
 					t.Fatal(err)
 				}
 				admitted := make(chan error, 1)
@@ -117,7 +117,7 @@ func changeOffsetForInflightTest(ctx context.Context, f *offsetFixture, releaseI
 	if err := tx.QueryRowContext(ctx, `UPDATE rss_sources SET episode_offset = 25, version = version + 1 WHERE id = $1 RETURNING version`, "src-"+releaseID).Scan(&version); err != nil {
 		return err
 	}
-	if _, _, err := NewOffsetAlignmentService().AdmitRSSSourceTx(ctx, txscope.Wrap(tx), "anime-1", "src-"+releaseID, version, 0, 25); err != nil {
+	if _, _, err := NewOffsetAlignmentService().AdmitRSSSourceTx(ctx, txscope.Wrap(tx), "anime-1", "src-"+releaseID, version, 0, 25, 1, 1); err != nil {
 		return err
 	}
 	return tx.Commit()

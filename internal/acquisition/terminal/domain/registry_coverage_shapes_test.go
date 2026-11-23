@@ -65,4 +65,17 @@ func TestIdentityCoverageAcceptsBothResolverVersions(t *testing.T) {
 			t.Fatalf("coverage_schema %q: err=%v, want valid=%v", schema, err, want)
 		}
 	}
+	combined := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
+		MediaKind: "tv", Span: 2,
+		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "2"),
+	})
+	identity = IdentityValue(combined)
+	value := obj(map[string]Value{
+		"identity":        Known(identity).value(func(v Value) Value { return v }),
+		"coverage_schema": str("episode-identity-v2"),
+		"coverage_keys":   identity.Object["coverage_keys"],
+	})
+	if err := Validate("IdentityCoverageV1", value); err != nil {
+		t.Fatalf("combined-episode identity coverage: %v", err)
+	}
 }

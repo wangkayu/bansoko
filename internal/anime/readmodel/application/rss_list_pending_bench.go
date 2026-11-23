@@ -176,6 +176,7 @@ func pendingBenchDraft(workspace AnimeWorkspace, business *animedomain.BusinessS
 			AnibtAuxMode:       src.AnibtAuxMode,
 			GroupName:          src.GroupName,
 			EpisodeOffset:      src.EpisodeOffset,
+			EpisodeSpan:        src.EpisodeSpan,
 			ProviderProvenance: src.ProviderProvenance,
 			SourceKind:         src.SourceKind,
 			Title:              src.Title,

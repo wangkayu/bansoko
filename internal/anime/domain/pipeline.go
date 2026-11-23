@@ -34,6 +34,8 @@ type SourceEvaluationInput struct {
 	Group providerdomain.GroupRef
 	// Offset is the episode offset of this RSS link (0 when none is set).
 	Offset int
+	// Span is the number of metadata episodes one single-number file covers.
+	Span int
 }
 
 // StableItemKey derives the dedupe identity for one feed item: a stable GUID,

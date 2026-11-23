@@ -180,6 +180,7 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 		GroupName: snapshot.groupName,
 		Group:     providerdomain.GroupRefOrZero(providerdomain.Kind(snapshot.sourceProvider.String), snapshot.sourceGroupRef.String),
 		Offset:    snapshot.episodeOffset,
+		Span:      snapshot.episodeSpan,
 	}, snapshot.effective, snapshot.metadataHold, evidence.Identity)
 	if !snapshot.admitsWork(snapshot.subscriptionState) {
 		result.Verdict = animedomain.ReleaseVerdict("subscription_stopped")
@@ -268,7 +269,7 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
        r.stable_item_key, r.raw_facts, r.source_facts, r.parsed_facts, r.internal_facts,
        r.verdict, r.reason_code, r.reason_detail, r.evaluation_version,
        r.download_task_id, r.version, src.locator, src.locator_display,
-       src.group_name, src.episode_offset, src.version, src.anibt_aux_mode, src.source_kind, src.provider, src.provider_group_ref, sub.state,
+       src.group_name, src.episode_offset, src.episode_span, src.version, src.anibt_aux_mode, src.source_kind, src.provider, src.provider_group_ref, sub.state,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.version, COALESCE(rules.rules_version, 1),
        pp.parser_kind, pp.parser_version,
@@ -293,7 +294,7 @@ WHERE r.id = $1`, releaseID).Scan(
 		&snapshot.stableItemKey, &rawFacts, &sourceFacts, &parsedFacts, &internalFacts,
 		&verdict, &snapshot.reasonCode, &reasonDetail, &evaluationVersion,
 		&downloadTaskID, &snapshot.releaseVersion, &snapshot.locator, &snapshot.locatorDisplay,
-		&snapshot.groupName, &snapshot.episodeOffset, &snapshot.sourceVersion, &anibtMode, &snapshot.sourceKind, &snapshot.sourceProvider, &snapshot.sourceGroupRef, &subscriptionState,
+		&snapshot.groupName, &snapshot.episodeOffset, &snapshot.episodeSpan, &snapshot.sourceVersion, &anibtMode, &snapshot.sourceKind, &snapshot.sourceProvider, &snapshot.sourceGroupRef, &subscriptionState,
 		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 		&snapshot.metadataVersion, &snapshot.rulesVersion,
 		&policyKind, &policyVersion,
@@ -358,6 +359,7 @@ type currentReleaseEvaluationInputs struct {
 	sourceProvider providerdomain.Kind
 	sourceGroupRef string
 	episodeOffset  int
+	episodeSpan    int
 	metadataHold   animedomain.MetadataHold
 	// metadataHoldAllow is the Global release-without-metadata switch folded
 	// into metadataHold; the owner write compares it with the snapshot so a
@@ -389,7 +391,7 @@ func loadCurrentReleaseEvaluationInputs(ctx context.Context, q queryer, snapshot
 	var policyKind sql.NullString
 	var policyVersion sql.NullInt64
 	if err := q.QueryRowContext(ctx, `
-SELECT src.group_name, COALESCE(src.provider, ''), COALESCE(src.provider_group_ref, ''), src.episode_offset,
+SELECT src.group_name, COALESCE(src.provider, ''), COALESCE(src.provider_group_ref, ''), src.episode_offset, src.episode_span,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.version, COALESCE(rules.rules_version, 1),
        pp.parser_kind, pp.parser_version,
@@ -402,7 +404,7 @@ LEFT JOIN anime_business_configs rules
 LEFT JOIN anime_business_configs pp
   ON pp.managed_anime_id = sub.managed_anime_id
 WHERE src.id = $1 AND sub.managed_anime_id = $2`, snapshot.sourceID, snapshot.managedAnimeID).Scan(
-		&inputs.groupName, &inputs.sourceProvider, &inputs.sourceGroupRef, &inputs.episodeOffset,
+		&inputs.groupName, &inputs.sourceProvider, &inputs.sourceGroupRef, &inputs.episodeOffset, &inputs.episodeSpan,
 		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 		&inputs.metadataVersion, &inputs.rulesVersion,
 		&policyKind, &policyVersion,
@@ -587,9 +589,11 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				currentInputs.tmdbWorkID != snapshot.tmdbWorkID ||
 				currentInputs.profileVersion != snapshot.profileVersion ||
 				currentInputs.groupName != snapshot.groupName ||
-				currentInputs.episodeOffset != snapshot.episodeOffset
+				currentInputs.episodeOffset != snapshot.episodeOffset ||
+				currentInputs.episodeSpan != snapshot.episodeSpan
 			snapshot.groupName = currentInputs.groupName
 			snapshot.episodeOffset = currentInputs.episodeOffset
+			snapshot.episodeSpan = currentInputs.episodeSpan
 			snapshot.metadataHold = currentInputs.metadataHold
 			snapshot.metadataHoldAllow = currentInputs.metadataHoldAllow
 			snapshot.mediaKind = currentInputs.mediaKind
@@ -637,6 +641,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 					GroupName: currentInputs.groupName,
 					Group:     providerdomain.GroupRefOrZero(currentInputs.sourceProvider, currentInputs.sourceGroupRef),
 					Offset:    currentInputs.episodeOffset,
+					Span:      currentInputs.episodeSpan,
 				}, currentInputs.effective, currentInputs.metadataHold, resolved.Identity)
 			}
 			markTorrentUnavailable(&result, item)
@@ -664,7 +669,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			configChanged = configChanged || currentInputs.metadataHoldAllow != snapshot.metadataHoldAllow
 			if configChanged || currentInputs.metadataVersion != snapshot.metadataVersion || currentInputs.rulesVersion != snapshot.rulesVersion ||
 				currentInputs.parserKind != snapshot.parserKind || currentInputs.parserVersion != snapshot.parserVersion || currentInputs.profileVersion != snapshot.profileVersion ||
-				currentInputs.groupName != snapshot.groupName || currentInputs.episodeOffset != snapshot.episodeOffset {
+				currentInputs.groupName != snapshot.groupName || currentInputs.episodeOffset != snapshot.episodeOffset || currentInputs.episodeSpan != snapshot.episodeSpan {
 				return 0, errReleaseInputsChanged
 			}
 		}

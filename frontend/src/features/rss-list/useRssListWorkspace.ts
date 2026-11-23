@@ -202,6 +202,7 @@ export function useRssListWorkspace({
         ...(ownerBench?.metadataPreview ? { metadata_preview: ownerBench.metadataPreview } : {}),
         feed,
         limit_per_group: OWNER_ITEMS_PER_GROUP,
+        episode_span: null,
       });
       // A one-shot download's offset belongs to no draft source, and the read model adopts it only
 //   when the group has none of its own; it is preview input, not a write-back, so the draft is
@@ -214,6 +215,7 @@ export function useRssListWorkspace({
           feed,
           ...(observation ? { observation } : {}),
           ...(previewOffset !== 0 ? { episode_offset: previewOffset } : {}),
+          episode_span: null,
           ...(oneShot ? { one_shot: true } : {}),
           // The owner mode's subgroup cap; current_input does not use it, but the contract requires it.
           limit_per_group: OWNER_ITEMS_PER_GROUP,

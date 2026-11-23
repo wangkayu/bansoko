@@ -17,7 +17,7 @@ const draft: AnimeDraft = {
  metadata: { bgm: { work_id: "local" }, tmdb: null },
  subgroups: { max_rss: 1, entries: [{ provider: "mikan", group_ref: "42", display_name: "Manual", selection_mode: "manual", manual_selected: false, effective_selected: false, score: 9 }] },
  rules: { sections: {} },
- rss_sources: [{ source_kind: "custom_rss", locator: "https://local/rss", title: "Local", group_name: "Local", episode_offset: 5 }],
+ rss_sources: [{ source_kind: "custom_rss", locator: "https://local/rss", title: "Local", group_name: "Local", episode_offset: 5, episode_span: 1 }],
 };
 const preset: BusinessPresetView = {
  digest: `sha256:${"a".repeat(64)}`,

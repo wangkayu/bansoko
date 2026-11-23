@@ -14,7 +14,7 @@ export function ownerRSSView(workspace: AnimeWorkspace): RSSListView {
       // observed_default 表示服务端默认补选（UI 据此渲染「默认组」徽标）。fixture
       // 语义是显式选中，故 configured。
       selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
-      offset: { value: source.episode_offset, editable: true, source: "link" },
+      offset: { value: source.episode_offset, span: source.episode_span, editable: true, source: "link" },
       feed: { state: "fresh" },
       items: workspace.releases.filter((release) => release.rss_source_id === source.id).map((release) => ({
         snapshot_id: `release:${release.id}`, stable_seed_key: release.stable_item_key,

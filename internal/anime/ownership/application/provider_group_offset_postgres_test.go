@@ -46,12 +46,12 @@ func TestSetProviderGroupOffsetCreatesTheLinkBeforeStartAndDiscoveryKeepsTheOffs
 	ctx := context.Background()
 	animeID := subscribed.ManagedAnime.Id
 
-	created, err := service.SetProviderGroupOffset(ctx, animeID, "mikan", "202", ProviderGroupOffsetInput{ExpectedVersion: 0, EpisodeOffset: -48})
+	created, err := service.SetProviderGroupOffset(ctx, animeID, "mikan", "202", ProviderGroupOffsetInput{ExpectedVersion: 0, EpisodeOffset: -48, EpisodeSpan: 2})
 	if err != nil {
 		t.Fatalf("set offset without a link: %v", err)
 	}
-	if created.EpisodeOffset != -48 {
-		t.Fatalf("created link offset = %d, want -48", created.EpisodeOffset)
+	if created.EpisodeOffset != -48 || created.EpisodeSpan != 2 {
+		t.Fatalf("created link offset/span = %d/%d, want -48/2", created.EpisodeOffset, created.EpisodeSpan)
 	}
 	var rows, runtimes, work int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rss_sources WHERE subscription_id = $1`, subscribed.Subscription.Id).Scan(&rows); err != nil {
@@ -68,12 +68,12 @@ func TestSetProviderGroupOffsetCreatesTheLinkBeforeStartAndDiscoveryKeepsTheOffs
 	}
 
 	// A later save goes through the existing row with its version.
-	updated, err := service.SetProviderGroupOffset(ctx, animeID, "mikan", "202", ProviderGroupOffsetInput{ExpectedVersion: created.Version, EpisodeOffset: 3})
+	updated, err := service.SetProviderGroupOffset(ctx, animeID, "mikan", "202", ProviderGroupOffsetInput{ExpectedVersion: created.Version, EpisodeOffset: 3, EpisodeSpan: 3})
 	if err != nil {
 		t.Fatalf("update through the existing link: %v", err)
 	}
-	if updated.ID != created.ID || updated.EpisodeOffset != 3 || updated.Version <= created.Version {
-		t.Fatalf("update = %+v, want the same row at offset 3 with a newer version", updated)
+	if updated.ID != created.ID || updated.EpisodeOffset != 3 || updated.EpisodeSpan != 3 || updated.Version <= created.Version {
+		t.Fatalf("update = %+v, want the same row at offset/span 3/3 with a newer version", updated)
 	}
 	_, err = service.SetProviderGroupOffset(ctx, animeID, "mikan", "202", ProviderGroupOffsetInput{ExpectedVersion: created.Version, EpisodeOffset: 4})
 	var conflict *apperrors.VersionConflict
@@ -106,13 +106,13 @@ func TestSetProviderGroupOffsetCreatesTheLinkBeforeStartAndDiscoveryKeepsTheOffs
 	if inserted || sourceID != created.ID {
 		t.Fatalf("discovery inserted=%t id=%s, want the pending link %s", inserted, sourceID, created.ID)
 	}
-	var offset int
+	var offset, span int
 	var snapshotVersion string
-	if err := db.QueryRowContext(ctx, `SELECT episode_offset, discovery_snapshot_version FROM rss_sources WHERE id = $1`, created.ID).Scan(&offset, &snapshotVersion); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT episode_offset, episode_span, discovery_snapshot_version FROM rss_sources WHERE id = $1`, created.ID).Scan(&offset, &span, &snapshotVersion); err != nil {
 		t.Fatal(err)
 	}
-	if offset != 3 || snapshotVersion != "v7" {
-		t.Fatalf("after discovery offset=%d snapshot=%s, want the kept offset 3 and the discovery snapshot v7", offset, snapshotVersion)
+	if offset != 3 || span != 3 || snapshotVersion != "v7" {
+		t.Fatalf("after discovery offset/span=%d/%d snapshot=%s, want the kept offset/span 3/3 and the discovery snapshot v7", offset, span, snapshotVersion)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rss_sources WHERE subscription_id = $1`, subscribed.Subscription.Id).Scan(&rows); err != nil {
 		t.Fatal(err)
@@ -132,15 +132,15 @@ func TestSetProviderGroupOffsetThroughADuplicatedPendingCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("duplicate: %v", err)
 	}
-	firstLink, err := service.SetProviderGroupOffset(ctx, first.ManagedAnime.Id, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: 5})
+	firstLink, err := service.SetProviderGroupOffset(ctx, first.ManagedAnime.Id, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: 5, EpisodeSpan: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondLink, err := service.SetProviderGroupOffset(ctx, second.ManagedAnime.ID, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: -2})
+	secondLink, err := service.SetProviderGroupOffset(ctx, second.ManagedAnime.ID, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: -2, EpisodeSpan: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if firstLink.ID == secondLink.ID || firstLink.EpisodeOffset != 5 || secondLink.EpisodeOffset != -2 {
+	if firstLink.ID == secondLink.ID || firstLink.EpisodeOffset != 5 || firstLink.EpisodeSpan != 2 || secondLink.EpisodeOffset != -2 || secondLink.EpisodeSpan != 4 {
 		t.Fatalf("copies must keep independent links: first=%+v second=%+v", firstLink, secondLink)
 	}
 }

@@ -7,12 +7,13 @@ import (
 	"bansoko/internal/episodeidentity"
 )
 
-// IdentityV2 is IdentityV1 plus multi-episode files: a resolved TV
-// identity of shape range or list occupies 2..MaxEpisodesPerFile consecutive
-// coverage keys, from episode to episode_end, all of one key shape (the keys of
-// a sealed v1 identity all name one season). A single
-// episode, a movie and every non-resolved identity read exactly as in V1, with
-// episode_end absent. IdentityV1 stays frozen.
+// IdentityV2 is IdentityV1 plus multi-episode files: a resolved TV identity
+// occupies consecutive coverage keys from episode to episode_end, all of one
+// key shape. Explicit filename ranges/lists retain shape range/list and the
+// resolver's four-episode bound. A single number expanded by a subgroup span
+// keeps shape single and may cover up to MaxManualEpisodesPerFile episodes. A
+// single episode, a movie and every non-resolved identity read exactly as in
+// V1, with episode_end absent. IdentityV1 stays frozen.
 func init() {
 	register("IdentityV2", Obj(
 		F("state", Enum("resolved", "unresolved", "invalid", "unsupported", "conflict")),
@@ -25,7 +26,8 @@ func init() {
 		F("failure_code", Nullable(Text(1, 128))), F("resolver_version", Text(1, 128)), F("input_digest", DigestOf),
 	).Check(func(r reader, m map[string]Value) error {
 		shape := m["shape"].String
-		multi := m["state"].String == "resolved" && m["kind"].String == "tv_episode" && (shape == "range" || shape == "list")
+		resolvedTV := m["state"].String == "resolved" && m["kind"].String == "tv_episode"
+		multi := resolvedTV && (shape == "range" || shape == "list" || (shape == "single" && fvState(m["episode_end"]) != "absent"))
 		if !multi {
 			if fvState(m["episode_end"]) != "absent" {
 				return constraint(r, "episode_end")
@@ -57,7 +59,11 @@ func init() {
 			return constraint(r, "episode_end")
 		}
 		coverage := m["coverage_keys"].Array
-		if len(coverage) != last-first+1 || len(coverage) < 2 || len(coverage) > episodeidentity.MaxEpisodesPerFile {
+		maximum := episodeidentity.MaxEpisodesPerFile
+		if shape == "single" {
+			maximum = episodeidentity.MaxManualEpisodesPerFile
+		}
+		if len(coverage) != last-first+1 || len(coverage) < 2 || len(coverage) > maximum {
 			return constraint(r, "coverage_keys")
 		}
 		var firstKey episodeidentity.TVCoverageKey

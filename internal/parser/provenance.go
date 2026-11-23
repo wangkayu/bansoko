@@ -32,7 +32,10 @@ type Provenance struct {
 	// evidence instead of reading current configuration; the resolver applies
 	// it exactly once. SourceVersion is the RSS link CAS version the offset was
 	// read from at selection time (0 when unknown).
-	Offset        int   `json:"offset"`
+	Offset int `json:"offset"`
+	// Span is the frozen combined-episode setting. Values above one are
+	// replayed when a filename is resolved; the legacy default one is omitted.
+	Span          int   `json:"span,omitempty"`
 	SourceVersion int64 `json:"source_version,omitempty"`
 	// PolicyVersion is the instance parser-policy owner CAS version and
 	// ProfileVersion is the resolved effective parser-section version that

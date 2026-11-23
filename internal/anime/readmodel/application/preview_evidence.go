@@ -90,7 +90,7 @@ func (s *Service) evaluateFeedItemsWithSelection(
 	manifests map[string]*animecatalogdomain.TorrentManifest,
 	business ...*animedomain.BusinessSnapshot,
 ) error {
-	evalInput := animedomain.SourceEvaluationInput{Index: sourceIndex, Kind: sourceKind, GroupName: groupName, Group: group, Offset: selection.Offset}
+	evalInput := animedomain.SourceEvaluationInput{Index: sourceIndex, Kind: sourceKind, GroupName: groupName, Group: group, Offset: selection.Offset, Span: selection.Span}
 	// The Vars program is pinned by digest and identical for every release of
 	// this call, so it is loaded once, on the first release.
 	var (

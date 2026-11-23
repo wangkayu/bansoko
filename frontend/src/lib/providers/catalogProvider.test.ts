@@ -23,6 +23,7 @@ function makeDraft(overrides: Partial<AnimeDraft> = {}): AnimeDraft {
         group_name: "某字幕组",
         title: "自定义节目",
         episode_offset: 0,
+        episode_span: 1,
       },
     ],
     ...overrides,

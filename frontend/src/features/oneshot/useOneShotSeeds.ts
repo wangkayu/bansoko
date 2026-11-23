@@ -287,6 +287,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
+          episode_span: null,
           ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
       try {
@@ -544,6 +545,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
+          episode_span: null,
           ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
         if (seq === readSeq.current) setView(result);
@@ -695,6 +697,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
+          episode_span: null,
           ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
         if (result === null || typeof result !== "object" || !Array.isArray(result.groups)) throw new Error(t("rss.listBadFormat"));

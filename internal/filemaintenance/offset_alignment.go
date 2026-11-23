@@ -48,8 +48,8 @@ const (
 // offset CAS transaction and records the change. It returns the change id
 // and whether this call created it (a replay of the same link version
 // returns the existing change).
-func (s *OffsetAlignmentService) AdmitRSSSourceTx(ctx context.Context, scope txscope.Tx, animeID, rssSourceID string, sourceVersion int64, oldOffset, newOffset int) (string, bool, error) {
-	if oldOffset == newOffset {
+func (s *OffsetAlignmentService) AdmitRSSSourceTx(ctx context.Context, scope txscope.Tx, animeID, rssSourceID string, sourceVersion int64, oldOffset, newOffset, oldSpan, newSpan int) (string, bool, error) {
+	if oldOffset == newOffset && oldSpan == newSpan {
 		return "", false, nil
 	}
 	tx := scope.SQLTx()
@@ -58,40 +58,45 @@ func (s *OffsetAlignmentService) AdmitRSSSourceTx(ctx context.Context, scope txs
 	}
 	changeID := offsetAlignmentChangeID(rssSourceID, sourceVersion)
 	result, err := tx.ExecContext(ctx, `
-INSERT INTO offset_alignment_changes (id, rss_source_id, source_version, old_offset, new_offset)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (rss_source_id, source_version) DO NOTHING`, changeID, rssSourceID, sourceVersion, oldOffset, newOffset)
+INSERT INTO offset_alignment_changes (id, rss_source_id, source_version, old_offset, new_offset, old_span, new_span)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (rss_source_id, source_version) DO NOTHING`, changeID, rssSourceID, sourceVersion, oldOffset, newOffset, oldSpan, newSpan)
 	if err != nil {
 		return "", false, fmt.Errorf("record offset change: %w", err)
 	}
 	if inserted, err := result.RowsAffected(); err != nil || inserted == 0 {
 		return changeID, false, err
 	}
-	candidates, err := loadOffsetRekeyCandidates(ctx, tx, animeID, rssSourceID)
-	if err != nil {
-		return "", false, err
-	}
 	rekeyed := 0
-	for _, candidate := range candidates {
-		key, ok := offsetRekeyedKey(candidate, newOffset)
-		if !ok || key == candidate.currentKey {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO offset_alignment_change_keys (change_id, placement_id, old_observation_key, new_observation_key)
-VALUES ($1, $2, $3, $4)`, changeID, candidate.placementID, candidate.currentKey, key); err != nil {
-			return "", false, fmt.Errorf("record offset re-key %s: %w", candidate.placementID, err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE placement_coverage SET observation_key = $2 WHERE placement_id = $1`, candidate.placementID, key); err != nil {
-			return "", false, fmt.Errorf("re-key placement %s: %w", candidate.placementID, err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE placements SET version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, candidate.placementID); err != nil {
-			return "", false, fmt.Errorf("re-key placement %s: %w", candidate.placementID, err)
-		}
-		if err := requestAlignmentTx(ctx, tx, candidate.placementID, changeID); err != nil {
+	// Span changes re-evaluate unsubmitted releases through the same change
+	// batch. Already imported multi-episode placements keep their frozen keys;
+	// only an offset-only change can re-key an existing single-episode placement.
+	if oldSpan == newSpan {
+		candidates, err := loadOffsetRekeyCandidates(ctx, tx, animeID, rssSourceID)
+		if err != nil {
 			return "", false, err
 		}
-		rekeyed++
+		for _, candidate := range candidates {
+			key, ok := offsetRekeyedKey(candidate, newOffset)
+			if !ok || key == candidate.currentKey {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+INSERT INTO offset_alignment_change_keys (change_id, placement_id, old_observation_key, new_observation_key)
+VALUES ($1, $2, $3, $4)`, changeID, candidate.placementID, candidate.currentKey, key); err != nil {
+				return "", false, fmt.Errorf("record offset re-key %s: %w", candidate.placementID, err)
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE placement_coverage SET observation_key = $2 WHERE placement_id = $1`, candidate.placementID, key); err != nil {
+				return "", false, fmt.Errorf("re-key placement %s: %w", candidate.placementID, err)
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE placements SET version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, candidate.placementID); err != nil {
+				return "", false, fmt.Errorf("re-key placement %s: %w", candidate.placementID, err)
+			}
+			if err := requestAlignmentTx(ctx, tx, candidate.placementID, changeID); err != nil {
+				return "", false, err
+			}
+			rekeyed++
+		}
 	}
 	state := offsetChangeComparing
 	if rekeyed == 0 {

@@ -13,6 +13,8 @@ export type RSSSourceActionPayload = {
   expected_version: number;
   /** Required integer in -1000..1000; 0 means no offset. */
   episode_offset: number;
+  /** Required integer in 1..12; 1 keeps ordinary single-episode releases. */
+  episode_span: number;
 };
 
 export type RefreshRSSSourcePayload = Pick<RSSSourceActionPayload, "rss_source_id">;
@@ -87,6 +89,7 @@ export const realRSSActions: RSSActionPort = {
       {
         expected_version: payload.expected_version,
         episode_offset: payload.episode_offset,
+        episode_span: payload.episode_span,
       },
     );
     return { action: "save_offset", accepted: true, fixture: false, source };

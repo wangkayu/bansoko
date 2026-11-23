@@ -38,7 +38,7 @@ function viewWith(item: RSSListItem): RSSListView {
     scope: { provider: "anibt", provider_entry_ref: "entry", provider_group_ref: "group", rss_source_id: "source-1" },
     display_name: "Group",
     selection: { source: "configured" as const, effective_selected: true, selection_mode: "manual" },
-    offset: { value: 0, editable: true, source: "link" },
+    offset: { value: 0, span: 1, editable: true, source: "link" },
     feed: { state: "fresh", snapshot_version: 7, content_hash: "hash" },
     items: [item],
   };

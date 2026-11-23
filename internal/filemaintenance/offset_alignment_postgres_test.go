@@ -133,7 +133,7 @@ func (f *offsetFixture) changeOffset(t *testing.T, sourceID string, oldOffset, n
 	if err := tx.QueryRowContext(ctx, `UPDATE rss_sources SET episode_offset = $2, version = version + 1 WHERE id = $1 RETURNING version`, sourceID, newOffset).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	changeID, created, err := NewOffsetAlignmentService().AdmitRSSSourceTx(ctx, txscope.Wrap(tx), "anime-1", sourceID, version, oldOffset, newOffset)
+	changeID, created, err := NewOffsetAlignmentService().AdmitRSSSourceTx(ctx, txscope.Wrap(tx), "anime-1", sourceID, version, oldOffset, newOffset, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestPGOffsetChangeRekeysTheLinkFiles(t *testing.T) {
 	if err := tx.QueryRow(`SELECT version FROM rss_sources WHERE id = 'src-rel-moved'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	replayID, replayCreated, err := NewOffsetAlignmentService().AdmitRSSSourceTx(context.Background(), txscope.Wrap(tx), "anime-1", "src-rel-moved", version, 0, 1)
+	replayID, replayCreated, err := NewOffsetAlignmentService().AdmitRSSSourceTx(context.Background(), txscope.Wrap(tx), "anime-1", "src-rel-moved", version, 0, 1, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

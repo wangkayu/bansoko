@@ -134,6 +134,7 @@ type OneShotInputSnapshot struct {
 	// EpisodeOffset is the one-shot's own episode offset, frozen from the
 	// admission request. Retry reuses it through the placeholder link.
 	EpisodeOffset     int                                     `json:"episode_offset"`
+	EpisodeSpan       int                                     `json:"episode_span,omitempty"`
 	EffectiveSections json.RawMessage                         `json:"effective_sections"`
 	SectionVersions   map[string]int64                        `json:"section_versions"`
 	SectionSchemas    map[string]string                       `json:"section_schemas"`
@@ -167,6 +168,7 @@ type oneShotInputSnapshotJSON struct {
 	Revision          *int64                                  `json:"revision"`
 	SelectedSeed      oneShotSelectedSeedJSON                 `json:"selected_seed"`
 	EpisodeOffset     int                                     `json:"episode_offset"`
+	EpisodeSpan       int                                     `json:"episode_span,omitempty"`
 	EffectiveSections json.RawMessage                         `json:"effective_sections"`
 	SectionVersions   map[string]int64                        `json:"section_versions"`
 	SectionSchemas    map[string]string                       `json:"section_schemas"`
@@ -208,6 +210,7 @@ func (snapshot OneShotInputSnapshot) MarshalJSON() ([]byte, error) {
 	wire := oneShotInputSnapshotJSON{
 		SelectedSeed:      oneShotSelectedSeedJSONFromDomain(snapshot.SelectedSeed),
 		EpisodeOffset:     snapshot.EpisodeOffset,
+		EpisodeSpan:       snapshot.EpisodeSpan,
 		EffectiveSections: snapshot.EffectiveSections,
 		SectionVersions:   snapshot.SectionVersions,
 		SectionSchemas:    snapshot.SectionSchemas,
@@ -245,6 +248,7 @@ func (snapshot *OneShotInputSnapshot) UnmarshalJSON(raw []byte) error {
 	}
 	snapshot.SelectedSeed = value.SelectedSeed.toDomain()
 	snapshot.EpisodeOffset = value.EpisodeOffset
+	snapshot.EpisodeSpan = animedomain.NormalizeEpisodeSpan(value.EpisodeSpan)
 	snapshot.EffectiveSections = append(json.RawMessage(nil), value.EffectiveSections...)
 	snapshot.SectionVersions = value.SectionVersions
 	snapshot.SectionSchemas = value.SectionSchemas
@@ -381,6 +385,8 @@ type AcquireSeedInput struct {
 	// link or the submitted draft. It is written to the placeholder link,
 	// frozen into the input snapshot and part of the replay identity.
 	EpisodeOffset int `json:"episode_offset,omitempty"`
+	// EpisodeSpan is the one-shot's combined-episode setting; omitted means 1.
+	EpisodeSpan int `json:"episode_span,omitempty"`
 	// FileSelection is the explicit manual file selection: the manifest paths
 	// of the seed the user chose (any depth, videos and subtitles only). nil is
 	// the product default (first-level videos and subtitles). It is
@@ -564,6 +570,9 @@ func (s *Service) AcquireSeedOnce(ctx context.Context, input AcquireSeedInput, r
 	// participates in replay identity or stored evidence.
 	input.Seed = canonicalSelectedSeed(input.Seed)
 	if err := validateOneShotEpisodeOffset(input.EpisodeOffset); err != nil {
+		return OneShotAdmissionResult{}, err
+	}
+	if err := validateOneShotEpisodeSpan(input.EpisodeSpan); err != nil {
 		return OneShotAdmissionResult{}, err
 	}
 	// The manual file selection's shape is a request fact: it is canonical
@@ -1010,12 +1019,13 @@ VALUES ($1, $2, 'oneshot', NULL, $3, 'stopped')`,
 	// one-shot request's own episode_offset, which acceptance reads back as the
 	// link offset.
 	episodeOffset := input.EpisodeOffset
+	episodeSpan := animedomain.NormalizeEpisodeSpan(input.EpisodeSpan)
 	sourceID := uuid.NewString()
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_offset)
-VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
+INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, episode_offset, episode_span)
+VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7, $8)`,
 		sourceID, subscriptionID, seed.Locator, animedomain.LocatorDisplay(seed.Locator),
-		groupName, strings.TrimSpace(seed.Title), episodeOffset); err != nil {
+		groupName, strings.TrimSpace(seed.Title), episodeOffset, episodeSpan); err != nil {
 		return OneShotAdmissionResult{}, fmt.Errorf("create one-shot placeholder source: %w", err)
 	}
 
@@ -1023,7 +1033,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	// source facts read the same set.
 	item := rssapplication.FreezeTitleTags(buildOneShotFeedItem(payload, seed))
 	hold := animedomain.MetadataHoldFromBindings(draft.Metadata.Bgm, draft.Metadata.Tmdb)
-	evalInput := animedomain.SourceEvaluationInput{Index: 0, Kind: string(animedomain.SourceKindCustomRss), GroupName: groupName, Offset: episodeOffset}
+	evalInput := animedomain.SourceEvaluationInput{Index: 0, Kind: string(animedomain.SourceKindCustomRss), GroupName: groupName, Offset: episodeOffset, Span: episodeSpan}
 	// One selected parser/profile governs the whole finite command: the same
 	// evidence feeds the verdict, the target/naming plan and the frozen input
 	// snapshot, so no second parser runs. The saved-revision selection is built
@@ -1053,6 +1063,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 		}
 	}
 	selection.Offset = episodeOffset
+	selection.Span = episodeSpan
 	// The manual file selection is proven against this seed's own manifest and
 	// the captured file rules before anything is planned; a selection the
 	// product would not place refuses the command with zero writes.
@@ -1138,7 +1149,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	if s.targetAcquisitionConfigured {
 		parserKind := string(evidence.Selection.Kind())
 		planned := evidence
-		request := oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, parserKind, planConfig, item, evaluation, &planned, route)
+		request := oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, episodeSpan, parserKind, planConfig, item, evaluation, &planned, route)
 		request.FileSelection = fileSelection
 		request.Overrides = input.Overrides
 		targetPlan = planOneShotTargets(ctx, s.targetProbe, request)
@@ -1171,6 +1182,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	inputSnapshot := OneShotInputSnapshot{
 		SelectedSeed:      seed,
 		EpisodeOffset:     episodeOffset,
+		EpisodeSpan:       episodeSpan,
 		EffectiveSections: effectiveSectionsRaw,
 		SectionVersions:   resolved.Versions,
 		SectionSchemas:    resolved.SchemaVersions,

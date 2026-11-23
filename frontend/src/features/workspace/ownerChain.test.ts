@@ -65,6 +65,7 @@ function workspaceFixture(): AnimeWorkspace {
         group_name: "测试字幕组",
         title: "测试番",
         episode_offset: 0,
+        episode_span: 1,
         version: 1,
       },
     ],

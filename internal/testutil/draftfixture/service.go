@@ -8,6 +8,7 @@ import (
 	"time"
 
 	animeapplication "bansoko/internal/anime/application"
+	animedomain "bansoko/internal/anime/domain"
 	draft "bansoko/internal/anime/draft/application"
 	animetransport "bansoko/internal/anime/transport"
 	"bansoko/internal/apperrors"
@@ -117,6 +118,7 @@ func subscribeResultForHTTP(value draft.SubscribeResult) generated.SubscribeResu
 			GroupName:             source.GroupName,
 			Title:                 source.Title,
 			EpisodeOffset:         source.EpisodeOffset,
+			EpisodeSpan:           animedomain.NormalizeEpisodeSpan(source.EpisodeSpan),
 			HttpFeedConnectionRef: cloneString(source.HttpFeedConnectionRef),
 			NetworkRouteRef:       cloneString(source.NetworkRouteRef),
 			Version:               generated.Version(source.Version),

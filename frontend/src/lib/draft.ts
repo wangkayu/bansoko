@@ -21,6 +21,7 @@ export function createEmptySourceDraft(): RSSSourceDraft {
     group_name: "",
     title: "",
     episode_offset: 0,
+    episode_span: 1,
   };
 }
 

@@ -138,7 +138,7 @@ function searchRssView(provider: "anibt" | "jackett" = "anibt"): RSSListView {
         scope: { provider, provider_entry_ref: SCOPE_REF, provider_group_ref: QUERY_REF },
         display_name: QUERY_REF,
         selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
-        offset: { value: 0, editable: true, source: "link" },
+        offset: { value: 0, span: 1, editable: true, source: "link" },
         feed: { state: "fresh", snapshot_id: SEARCH_SNAPSHOT_ID, snapshot_version: 1, content_hash: CONTENT_HASH },
         items: [
           item("seed-key-1", "示例作品 - 01"),

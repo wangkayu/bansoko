@@ -2940,6 +2940,9 @@ type AcquireSeedOnceInput struct {
 	// EpisodeOffset The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
 	EpisodeOffset *int `json:"episode_offset,omitempty"`
 
+	// EpisodeSpan Consecutive metadata episodes one single-number release file covers. Omitted means 1; the value joins the frozen input and replay identity.
+	EpisodeSpan *int `json:"episode_span,omitempty"`
+
 	// InputSource Config input source discriminator. Omitted means the legacy saved-revision body (candidate_id + revision).
 	InputSource *AcquireSeedOnceInputInputSource `json:"input_source,omitempty"`
 
@@ -6186,6 +6189,7 @@ type ManualRetryResultOwnerType string
 // MediaRecognitionContext defines model for MediaRecognitionContext.
 type MediaRecognitionContext struct {
 	EpisodeOffset *int                            `json:"episode_offset,omitempty"`
+	EpisodeSpan   *int                            `json:"episode_span,omitempty"`
 	WorkKind      MediaRecognitionContextWorkKind `json:"work_kind"`
 }
 
@@ -7248,6 +7252,9 @@ type OneShotInputSnapshot struct {
 	// EpisodeOffset The frozen one-shot episode offset from the admission request. Legacy marker rows omit it.
 	EpisodeOffset *int `json:"episode_offset,omitempty"`
 
+	// EpisodeSpan Frozen one-shot combined-episode span; legacy rows omit it (default 1).
+	EpisodeSpan *int `json:"episode_span,omitempty"`
+
 	// InputSource Config input source of the captured admission; null for the legacy saved-revision spelling.
 	InputSource *OneShotInputSnapshotInputSource `json:"input_source"`
 
@@ -7873,6 +7880,7 @@ type ProviderGroupDiscoveryResult struct {
 // ProviderGroupOffsetDraft defines model for ProviderGroupOffsetDraft.
 type ProviderGroupOffsetDraft struct {
 	EpisodeOffset    int    `json:"episode_offset"`
+	EpisodeSpan      *int   `json:"episode_span,omitempty"`
 	ProviderGroupRef string `json:"provider_group_ref"`
 }
 
@@ -7880,6 +7888,9 @@ type ProviderGroupOffsetDraft struct {
 type ProviderGroupOffsetPut struct {
 	// EpisodeOffset The new episode offset of this group; 0 means no offset.
 	EpisodeOffset int `json:"episode_offset"`
+
+	// EpisodeSpan The new combined-episode span; omitted means 1.
+	EpisodeSpan *int `json:"episode_span,omitempty"`
 
 	// ExpectedVersion Version of the group's RSS source; 0 when it has none yet.
 	ExpectedVersion int64 `json:"expected_version"`
@@ -8381,6 +8392,9 @@ type RSSListOffset struct {
 	// Source Provenance of value. link: a persisted RSS link's stored offset. draft_source: the matching draft source's episode_offset. preview_input: the read input's preview-only episode_offset, used only because this group has no offset of its own. default: no offset anywhere, value 0.
 	Source RSSListOffsetSource `json:"source"`
 
+	// Span The combined-episode span this group preview parsed and rendered with.
+	Span int `json:"span"`
+
 	// Value The effective offset this preview parsed and rendered this group with; 0 means no offset.
 	Value int `json:"value"`
 }
@@ -8490,6 +8504,9 @@ type RSSListViewInput struct {
 	// EpisodeOffset Preview-only episode offset (null/omitted = 0) for a group with no offset of its own; a stored link or matching draft source offset wins and is never rewritten. With one_shot it is every group's offset.
 	EpisodeOffset *int `json:"episode_offset"`
 
+	// EpisodeSpan Preview-only combined-episode span (null/omitted = 1). A configured source span wins; with one_shot this is every group's span.
+	EpisodeSpan *int `json:"episode_span"`
+
 	// Feed Optional advisory snapshot identities for current_input, candidate_revision, and pending-subscription owner modes. Matched to effective-selected groups; absent selected identities require snapshot acquisition; unmatched ones return as unused_feed_identities.
 	Feed *[]PreviewFeedSnapshotRef `json:"feed,omitempty"`
 
@@ -8546,8 +8563,11 @@ type RSSSource struct {
 	AnibtAuxMode *RSSSourceAnibtAuxMode `json:"anibt_aux_mode"`
 
 	// EpisodeOffset The episode offset of this RSS link; 0 means no offset.
-	EpisodeOffset int    `json:"episode_offset"`
-	GroupName     string `json:"group_name"`
+	EpisodeOffset int `json:"episode_offset"`
+
+	// EpisodeSpan Consecutive metadata episodes in one single-number release file; omitted means 1.
+	EpisodeSpan int    `json:"episode_span"`
+	GroupName   string `json:"group_name"`
 
 	// HttpFeedConnectionRef Explicit HTTP feed connection reference for custom RSS sources.
 	HttpFeedConnectionRef *string `json:"http_feed_connection_ref"`
@@ -8586,8 +8606,11 @@ type RSSSourceDraft struct {
 	AnibtAuxMode *RSSSourceDraftAnibtAuxMode `json:"anibt_aux_mode"`
 
 	// EpisodeOffset The episode offset of this RSS link; 0 means no offset.
-	EpisodeOffset int    `json:"episode_offset"`
-	GroupName     string `json:"group_name"`
+	EpisodeOffset int `json:"episode_offset"`
+
+	// EpisodeSpan Consecutive metadata episodes in one single-number release file; omitted means 1.
+	EpisodeSpan *int   `json:"episode_span,omitempty"`
+	GroupName   string `json:"group_name"`
 
 	// HttpFeedConnectionRef Explicit HTTP feed connection reference for custom RSS sources.
 	HttpFeedConnectionRef *string `json:"http_feed_connection_ref"`
@@ -8613,7 +8636,10 @@ type RSSSourceDraftAnibtAuxMode string
 // RSSSourceOffsetPatch defines model for RSSSourceOffsetPatch.
 type RSSSourceOffsetPatch struct {
 	// EpisodeOffset The new episode offset of this RSS link; 0 means no offset.
-	EpisodeOffset   int     `json:"episode_offset"`
+	EpisodeOffset int `json:"episode_offset"`
+
+	// EpisodeSpan The new combined-episode span; omitted means 1.
+	EpisodeSpan     *int    `json:"episode_span,omitempty"`
 	ExpectedVersion Version `json:"expected_version"`
 }
 
@@ -9442,6 +9468,9 @@ type SnapshotSeedDownloadInput struct {
 
 	// EpisodeOffset The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
 	EpisodeOffset *int `json:"episode_offset,omitempty"`
+
+	// EpisodeSpan Consecutive metadata episodes one single-number release file covers. Omitted means 1; the value joins the frozen input and replay identity.
+	EpisodeSpan *int `json:"episode_span,omitempty"`
 
 	// FileSelection Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. Unless download_selected_files is true, the whole torrent downloads: an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance.
 	FileSelection *[]string                            `json:"file_selection,omitempty"`

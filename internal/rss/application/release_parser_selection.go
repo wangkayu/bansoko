@@ -22,7 +22,7 @@ func (e releaseParserEvidence) provenance() parser.Provenance                 { 
 func resolveSourceParserEvidence(ctx context.Context, snapshot sourceSnapshot, title string) (releaseParserEvidence, error) {
 	evidence, err := acquisitiontarget.ResolveParserEvidence(ctx, acquisitiontarget.ParserSelectionInput{
 		Kind: string(parser.ParserKind(strings.TrimSpace(snapshot.parserKind))), EpisodePatterns: snapshot.effective.Rules.Parser.EpisodePatterns,
-		Offset: snapshot.episodeOffset, MediaKind: snapshot.mediaKind, Season: snapshot.mediaSeason,
+		Offset: snapshot.episodeOffset, Span: snapshot.episodeSpan, MediaKind: snapshot.mediaKind, Season: snapshot.mediaSeason,
 		SeasonBound: snapshot.mediaSeasonBound, SourceVersion: snapshot.sourceVersion,
 		PolicyVersion: snapshot.parserVersion, ProfileVersion: snapshot.profileVersion, RulesOwnerVersion: snapshot.rulesVersion,
 	}, title)
@@ -43,7 +43,7 @@ func parserUnavailableIdentity() episodeidentity.EpisodeIdentity {
 func releaseParserSelection(snapshot releaseSnapshot) acquisitiontarget.ParserSelectionInput {
 	return acquisitiontarget.ParserSelectionInput{
 		Kind: string(selectedParserKind(snapshot)), EpisodePatterns: snapshot.effective.Rules.Parser.EpisodePatterns,
-		Offset: snapshot.episodeOffset, MediaKind: snapshot.mediaKind, Season: snapshot.mediaSeason,
+		Offset: snapshot.episodeOffset, Span: snapshot.episodeSpan, MediaKind: snapshot.mediaKind, Season: snapshot.mediaSeason,
 		SeasonBound: snapshot.mediaSeasonBound, SourceVersion: snapshot.sourceVersion,
 		PolicyVersion: snapshot.parserVersion, ProfileVersion: snapshot.profileVersion, RulesOwnerVersion: snapshot.rulesVersion,
 	}

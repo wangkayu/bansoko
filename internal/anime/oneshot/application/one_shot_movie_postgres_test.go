@@ -152,6 +152,7 @@ VALUES ('qb-movie-test', 'qbittorrent', 'movie-test', 'http://127.0.0.1:1', 'sec
 		draft,
 		oneShotSeedGroupName,
 		0,
+		0,
 		string(evidence.Selection.Kind()),
 		effective,
 		item,

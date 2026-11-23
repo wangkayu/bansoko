@@ -67,6 +67,9 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 	if value.EpisodeOffset != nil {
 		result.PreviewEpisodeOffset = *value.EpisodeOffset
 	}
+	if value.EpisodeSpan != nil {
+		result.PreviewEpisodeSpan = *value.EpisodeSpan
+	}
 	if value.OneShot != nil && *value.OneShot {
 		if string(value.InputSource) != "current_input" {
 			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "one_shot applies to current_input only."}
@@ -171,6 +174,9 @@ func mapSnapshotSeedDownloadInput(snapshotID, stableSeedKey string, value genera
 	if value.EpisodeOffset != nil {
 		input.EpisodeOffset = *value.EpisodeOffset
 	}
+	if value.EpisodeSpan != nil {
+		input.EpisodeSpan = *value.EpisodeSpan
+	}
 	// An absent selection stays nil (the default files, and the unchanged
 	// request identity); a present one is kept as given, an empty array
 	// included, so the application refuses it with FILE_SELECTION_INVALID.
@@ -272,7 +278,7 @@ func optionalRSSListID(value string) *generated.ID {
 	return &id
 }
 func mapRSSListOffset(offset readmodelapplication.RSSListOffset) generated.RSSListOffset {
-	return generated.RSSListOffset{Value: offset.Value, Editable: offset.Editable, Source: generated.RSSListOffsetSource(offset.Source)}
+	return generated.RSSListOffset{Value: offset.Value, Span: animedomain.NormalizeEpisodeSpan(offset.Span), Editable: offset.Editable, Source: generated.RSSListOffsetSource(offset.Source)}
 }
 
 func mapRSSListFeedStatus(status readmodelapplication.RSSListFeedStatus) generated.RSSListFeedStatus {

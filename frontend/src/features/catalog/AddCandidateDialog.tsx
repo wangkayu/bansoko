@@ -53,6 +53,7 @@ export function AddCandidateDialog({
             group_name: groupName.trim(),
             title: title.trim(),
             episode_offset: 0,
+            episode_span: 1,
           },
         ],
       };

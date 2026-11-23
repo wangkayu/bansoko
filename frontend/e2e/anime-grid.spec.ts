@@ -200,6 +200,7 @@ function workspaceFixture(id: string, title: string, state?: FixtureState): Anim
             discovery_snapshot_version: "fixture-snapshot-1",
           },
           episode_offset: 0,
+          episode_span: 1,
           version: 1,
         },
       ],
@@ -262,6 +263,7 @@ function workspaceFixture(id: string, title: string, state?: FixtureState): Anim
           discovery_snapshot_version: "fixture-snapshot-1",
         },
         episode_offset: 0,
+        episode_span: 1,
         version: 1,
       },
     ],
@@ -549,6 +551,7 @@ async function mockCandidates(page: Page) {
           group_name: source.group_name,
           title: source.title,
           episode_offset: source.episode_offset,
+          episode_span: source.episode_span,
           anibt_aux_mode: source.anibt_aux_mode ?? null,
           provider_provenance: source.provider_provenance ?? null,
           http_feed_connection_ref: source.http_feed_connection_ref ?? null,
@@ -2508,7 +2511,7 @@ test.describe("AnimeGrid", () => {
       unused_feed_identities: [], truncated: false, limit_per_group: 100,
       groups: [{
         scope, display_name: "测试字幕组", selection: { effective_selected: true, selection_mode: "auto" },
-        offset: { value: 0, editable: true }, feed: { ...feed, state: "fresh" }, items: [{
+        offset: { value: 0, span: 1, editable: true }, feed: { ...feed, state: "fresh" }, items: [{
           snapshot_id: feed.snapshot_id, stable_seed_key: "seed-one", seed: { title: seedTitle, locator_display: "https://example.invalid/01.torrent" },
           torrent: { state: "available" }, evaluation: { state: "evaluated", verdict: "accepted_pending_download" },
           files: [], download_action: { allowed: true, kind: "one_shot" },
@@ -2680,7 +2683,7 @@ test.describe("AnimeGrid", () => {
             display_name: "测试台字幕组",
             score: 50,
             selection: { effective_selected: true, selection_mode: "auto" },
-            offset: { value: 0, editable: false },
+            offset: { value: 0, span: 1, editable: false },
             feed: { state: "fresh", snapshot_id: "snap-bench", snapshot_version: 1, content_hash: "sha256:" + "a".repeat(64) },
             items: [{
               snapshot_id: "snap-bench",
@@ -2786,6 +2789,50 @@ test.describe("AnimeGrid", () => {
     expect(refreshedSourceID).toBe("source-fixture-anime-2");
     expect(refreshIdempotencyKey).toBeTruthy();
     expect(automationCalled).toBe(false);
+  });
+
+  test("combined-episode span stays collapsed until expanded and saves with the offset", async ({ page }) => {
+    await mockWorkspace(page);
+    await enterApp(page);
+    const card = await openProvider(page, "AniBT");
+    await subscribeCard(card);
+    const dialog = await openSubscribedConfig(page, "星际邮差艾拉");
+    await dialog.getByRole("tab", { name: "RSS", exact: true }).click();
+    await expect(dialog.getByText("北宇治字幕组", { exact: true })).toBeVisible();
+
+    let savedOffset: { episode_offset?: number; episode_span?: number } | undefined;
+    await page.route("**/api/v1/anime/*/rss-sources/*/offset", async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await fulfillMethodNotAllowed(route, "PATCH");
+        return;
+      }
+      savedOffset = route.request().postDataJSON() as { episode_offset?: number; episode_span?: number };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
+    });
+
+    await dialog.getByRole("button", { name: /调整 .* 偏移/ }).click();
+    const offsetDialog = page.getByRole("dialog", { name: /调整 .* 偏移/ });
+    await expect(offsetDialog.getByRole("spinbutton", { name: "集数偏移" })).toBeVisible();
+    // 默认收起：合并集输入不出现，展开行本身在对话框内。
+    await expect(offsetDialog.getByLabel("每集包含集数")).toHaveCount(0);
+    await offsetDialog.getByRole("button", { name: "合并集发布", exact: true }).click();
+    const spanInput = offsetDialog.getByRole("spinbutton", { name: "每集包含集数" });
+    await expect(spanInput).toBeVisible();
+    await expect(spanInput).toHaveValue("1");
+
+    const dialogBox = await offsetDialog.boundingBox();
+    const inputBox = await spanInput.boundingBox();
+    expect(inputBox!.x).toBeGreaterThanOrEqual(dialogBox!.x);
+    expect(inputBox!.x + inputBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 1);
+    expect(inputBox!.y + inputBox!.height).toBeLessThanOrEqual(dialogBox!.y + dialogBox!.height + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+    await offsetDialog.screenshot({ path: test.info().outputPath(`offset-span-${test.info().project.name}.png`), animations: "disabled" });
+
+    await spanInput.fill("2");
+    await offsetDialog.getByRole("button", { name: "保存偏移", exact: true }).click();
+    await expect(page.getByText("RSS 偏移已保存", { exact: true })).toBeVisible();
+    expect(savedOffset?.episode_span).toBe(2);
+    expect(savedOffset?.episode_offset).toBe(0);
   });
 
   test("opens nested release details from the subscribed card", async ({ page }) => {

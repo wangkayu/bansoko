@@ -37,7 +37,7 @@ function group(overrides: Partial<RSSListGroup> = {}): RSSListGroup {
     scope: { provider: "anibt", provider_entry_ref: "entry-1", provider_group_ref: "g-1" },
     display_name: "组A",
     selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
-    offset: { value: 0, editable: true, source: "link" },
+    offset: { value: 0, span: 1, editable: true, source: "link" },
     feed: { state: "fresh", snapshot_id: "snap-1", snapshot_version: 3, content_hash: "hash-1" },
     items: [item()],
     ...overrides,
