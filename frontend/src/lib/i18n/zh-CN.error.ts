@@ -235,6 +235,7 @@ export const errorCopy = {
   CONNECTION_KIND_MISMATCH: "服务连接类型不匹配，请检查后重试",
   CONNECTION_SECRET_INVALID: "连接密钥无效，请重新填写",
   CONNECTION_ENDPOINT_INVALID: "连接地址不能包含账号密码、查询参数或片段，请改用连接里的凭据字段",
+  JACKETT_ALREADY_CONFIGURED: "已经添加了 Jackett，请直接编辑它",
   ROUTE_SECRET_INVALID: "代理密钥无效，请重新填写",
   PLUGIN_TARGET_CONFIG_INVALID: "通知渠道配置有误，请检查后重试",
   PLUGIN_TARGET_ID_REQUIRED: BAD_REQUEST,

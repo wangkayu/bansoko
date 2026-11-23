@@ -365,6 +365,48 @@ describe("SettingsConnections Jackett 连接", () => {
     await waitFor(() => expect(connectionPutCalls()).toHaveLength(2));
     expect(putBody(connectionPutCalls()[1]!)).toMatchObject({ secret: { mode: "replace", value: "replacement-key" } });
   });
+
+  it("尚未添加 Jackett 时，新建连接的类型选项包含 Jackett", async () => {
+    stubFetch();
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") }));
+    expect(await screen.findByRole("option", { name: "Jackett" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: t("settings.connections.rssKind") })).toBeInTheDocument();
+  });
+
+  it("列表已有 Jackett 时，新建不再提供该类型；已有连接仍可正常编辑", async () => {
+    stubFetch({
+      connections: [
+        {
+          id: "jackett-1",
+          kind: "jackett",
+          name: "聚合检索",
+          enabled: true,
+          base_url: "http://jackett.internal:9117",
+          credential_configured: true,
+          version: 4,
+        },
+      ],
+    });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") }));
+    expect(await screen.findByRole("option", { name: t("settings.connections.rssKind") })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Jackett" })).not.toBeInTheDocument();
+    // Close the list first, then the dialog: the next edit click must open it fresh.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("option", { name: t("settings.connections.rssKind") })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    expect(await screen.findByText(t("settings.connections.editTitle"))).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") })).toBeDisabled();
+    expect(screen.getByLabelText(t("settings.connections.jackettAddress"))).toHaveValue("http://jackett.internal:9117");
+  });
 });
 
 // Session 4: rss_http is a transport-policy connection with a placeholder endpoint and nothing

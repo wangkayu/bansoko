@@ -770,6 +770,21 @@ FROM connections WHERE id = $1 FOR UPDATE`, id).Scan(&existingKind, &existingSec
 			return domain.Connection{}, fmt.Errorf("read existing GitHub connection: %w", otherErr)
 		}
 	}
+	if input.Kind == domain.ConnectionJackett {
+		// The indexer relay drives exactly one Jackett, so a second row is refused. The advisory lock
+		// serializes concurrent creates; an update of the existing row (same id) is always allowed.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('connections:jackett'))`); err != nil {
+			return domain.Connection{}, fmt.Errorf("lock Jackett connection: %w", err)
+		}
+		var otherID string
+		otherErr := tx.QueryRowContext(ctx, `SELECT id FROM connections WHERE kind = 'jackett' AND id <> $1 LIMIT 1`, id).Scan(&otherID)
+		if otherErr == nil {
+			return domain.Connection{}, &apperrors.Business{Status: http.StatusConflict, Code: "JACKETT_ALREADY_CONFIGURED", Message: "A Jackett connection is already configured; edit the existing one."}
+		}
+		if !errors.Is(otherErr, sql.ErrNoRows) {
+			return domain.Connection{}, fmt.Errorf("read existing Jackett connection: %w", otherErr)
+		}
+	}
 	secretRef, err := s.mutateSecretTx(ctx, tx, secretMutation, string(input.Kind)+":"+input.Name, existingSecretRef)
 	if err != nil {
 		return domain.Connection{}, fmt.Errorf("store connection secret: %w", err)

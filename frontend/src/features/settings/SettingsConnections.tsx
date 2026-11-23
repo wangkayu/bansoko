@@ -36,8 +36,10 @@ import { t } from "../../lib/i18n";
 //   it into one user:pass secret.
 //
 //   Built-in connections (mikan/anibt/nyaa/bgm/tmdb) are seeded by instance initialization, exactly one
-//   per kind: they cannot be deleted (the contract has no delete) or created. RSS HTTP and Jackett
-//   may be created freely; Jackett needs only its endpoint and API key beyond the shared fields.
+//   per kind: they cannot be deleted (the contract has no delete) or created. RSS HTTP may be created
+//   freely; Jackett is a singleton (the server refuses a second row with JACKETT_ALREADY_CONFIGURED),
+//   so the create dialog stops offering it once one exists and it needs only its endpoint and API key
+//   beyond the shared fields.
 //
 //   The route form takes a unified URL input: http_proxy fills http://host:port and socks5 fills
 //   socks5://host:port, aligned with the backend's Endpoint scheme validation (http/https and
@@ -126,7 +128,7 @@ type ConnectionDraft = {
 
 function connectionDraftFrom(item?: Connection): ConnectionDraft {
   if (!item) {
-    // Built-in connections are seeded; a new connection starts as RSS access and may switch to Jackett.
+    // Built-in connections are seeded; a new connection starts as RSS access and may switch to Jackett while none is configured yet.
     return {
       version: 0,
       kind: "rss_http",
@@ -394,6 +396,8 @@ function ConnectionsCard() {
   const queryClient = useQueryClient();
   const connections = useQuery({ queryKey: configKeys.connections, queryFn: listConnections });
   const routes = useQuery({ queryKey: configKeys.networkRoutes, queryFn: listNetworkRoutes });
+  // Jackett is a singleton (the server refuses a second row), so the create dialog stops offering it once one exists.
+  const hasJackett = (connections.data ?? []).some((item) => item.kind === "jackett");
   const {
     draft,
     setDraft,
@@ -592,7 +596,7 @@ function ConnectionsCard() {
                 { value: "github", label: "GitHub" },
               ] : [
                 { value: "rss_http", label: t("settings.connections.rssKind") },
-                { value: "jackett", label: "Jackett" },
+                ...(hasJackett ? [] : [{ value: "jackett", label: "Jackett" }]),
               ]} onChange={(kind) => setDraft({ ...draft, kind: kind as ConnectionDraft["kind"] })} />
             </Field>
             <Field label={t("settings.connections.nameLabel")}>

@@ -236,6 +236,7 @@ export const enErrorCopy = {
   CONNECTION_KIND_MISMATCH: "Connection type mismatch. Check it and try again.",
   CONNECTION_SECRET_INVALID: "Invalid connection key. Enter it again.",
   CONNECTION_ENDPOINT_INVALID: "The connection address can't contain a username, password, query or fragment. Use the connection's credential fields instead.",
+  JACKETT_ALREADY_CONFIGURED: "A Jackett connection is already set up. Edit it instead.",
   ROUTE_SECRET_INVALID: "Invalid proxy credentials. Enter them again.",
   PLUGIN_TARGET_CONFIG_INVALID: "The notification channel settings have errors. Check them and try again.",
   PLUGIN_TARGET_ID_REQUIRED: BAD_REQUEST,
