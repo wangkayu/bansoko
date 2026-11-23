@@ -528,7 +528,9 @@ func (s *Server) Handler() http.Handler {
 	})
 	root := http.NewServeMux()
 	apiChain := securityHeaders(s.withCommonMiddleware(api))
-	root.Handle("/api/v1/", apiChain)
+	// Only the REST JSON surface is compressed. The MCP route below replays
+	// against apiChain directly and keeps its own streaming semantics.
+	root.Handle("/api/v1/", compressJSON(apiChain))
 	// The in-process MCP server is derived from the OpenAPI catalog (x-mcp) and
 	// replays every tool call against the same chain /api/v1/ serves, with the
 	// MCP caller's own bearer token. It owns no second execution path. A caller

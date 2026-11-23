@@ -7,6 +7,7 @@
 
 ## Improved
 
+- API JSON responses now negotiate gzip compression: clients sending `Accept-Encoding` receive large responses compressed, significantly reducing transfer volume on slow links; real-time event streams (SSE) and file downloads are unaffected.
 - Redesigned the version comparison editor so dimensions and value priorities can be added, reordered, and edited directly.
 - Refined the four tabs of the anime configuration dialog (Metadata, Subgroups, Rules, and RSS): grouped metadata fields with confirmation before unbinding TMDB and inline validation for numeric inputs; unified the subgroup toolbar with unsaved-edit protection on refresh; added collapsible rule cards and live regex validation; kept the Show Filtered toggle enabled during RSS preview and unified draft/owner preview flows.
 
