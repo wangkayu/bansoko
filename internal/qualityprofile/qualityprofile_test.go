@@ -359,3 +359,75 @@ func TestDefaultRtSubLangRanksCombinedChineseJapanese(t *testing.T) {
 		}
 	}
 }
+
+func TestSubFlagUnknownAllowsOrderingExternalLast(t *testing.T) {
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyRtSubFlag, Ranks: [][]string{{"soft"}, {"hard"}, {UnknownSubFlag}, {"ex"}}},
+	}}
+	if _, err := Parse(mustJSON(t, profile)); err != nil {
+		t.Fatalf("profile with unknown sub_flag rejected: %v", err)
+	}
+	soft := subject(map[string][]string{KeyRtSubFlag: {"soft"}}, nil, nil)
+	missing := subject(map[string][]string{}, nil, nil)
+	external := subject(map[string][]string{KeyRtSubFlag: {"ex"}}, nil, nil)
+
+	if result := Compare(missing, external, profile); !result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("missing sub_flag must beat explicit ex when unknown ranks ahead of ex: %+v", result)
+	}
+	if result := Compare(external, missing, profile); result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("explicit ex must lose to missing sub_flag: %+v", result)
+	}
+	if result := Compare(soft, missing, profile); !result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("soft must beat unknown: %+v", result)
+	}
+	if result := Compare(missing, missing, profile); !result.Equal {
+		t.Fatalf("two missing sub_flags must tie: %+v", result)
+	}
+}
+
+func TestFileSizeDimensionLargerAndSmaller(t *testing.T) {
+	def, ok := Lookup(KeyFileSize)
+	if !ok || def.Namespace != NamespaceFile || def.Kind != KindSize {
+		t.Fatalf("file.size registration = %+v, %v", def, ok)
+	}
+	if defaultProfile := Default(); strings.Contains(strings.Join(defaultProfile.Keys(), ","), KeyFileSize) {
+		t.Fatalf("file.size must not be in default order: %v", defaultProfile.Keys())
+	}
+	for _, bad := range []Profile{
+		{Version: Version, Items: []Item{{Key: KeyFileSize, Ranks: [][]string{{"huge"}}}}},
+		{Version: Version, Items: []Item{{Key: KeyFileSize, Ranks: [][]string{{"larger"}, {"smaller"}}}}},
+		{Version: Version, Items: []Item{{Key: KeyFileSize, Ranks: [][]string{{"larger", "smaller"}}}}},
+	} {
+		if _, err := Parse(mustJSON(t, bad)); err == nil {
+			t.Fatalf("expected invalid file.size profile to be rejected: %+v", bad)
+		}
+	}
+
+	smallBytes, largeBytes := int64(300_000_000), int64(900_000_000)
+	small := Subject{Values: map[string][]string{}, SizeBytes: &smallBytes}
+	large := Subject{Values: map[string][]string{}, SizeBytes: &largeBytes}
+	missing := Subject{Values: map[string][]string{}}
+
+	preferLarger := Profile{Version: Version, Items: []Item{{Key: KeyFileSize, Ranks: [][]string{{SizeLarger}}}}}
+	if _, err := Parse(mustJSON(t, preferLarger)); err != nil {
+		t.Fatalf("valid file.size larger rejected: %v", err)
+	}
+	if result := Compare(large, small, preferLarger); !result.Better || result.Decided != KeyFileSize {
+		t.Fatalf("larger file must win under larger preference: %+v", result)
+	}
+	if result := Compare(small, large, preferLarger); result.Better || result.Decided != KeyFileSize {
+		t.Fatalf("smaller file must lose under larger preference: %+v", result)
+	}
+	if result := Compare(large, missing, preferLarger); !result.Equal {
+		t.Fatalf("missing size on either side must tie: %+v", result)
+	}
+
+	preferSmaller := Profile{Version: Version, Items: []Item{{Key: KeyFileSize, Ranks: [][]string{{SizeSmaller}}}}}
+	if result := Compare(small, large, preferSmaller); !result.Better || result.Decided != KeyFileSize {
+		t.Fatalf("smaller file must win under smaller preference: %+v", result)
+	}
+	skipped := Profile{Version: Version, Items: []Item{{Key: KeyFileSize, Ranks: [][]string{}}}}
+	if result := Compare(large, small, skipped); !result.Equal || len(result.Steps) != 1 || result.Steps[0].Result != StepSkipped {
+		t.Fatalf("empty file.size ranks must skip: %+v", result)
+	}
+}

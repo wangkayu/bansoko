@@ -65,6 +65,7 @@ describe("atomic business load", () => {
   const user=userEvent.setup();
   const pick=async(name:string,option:string)=>{await user.click(screen.getByRole("combobox",{name}));await user.click(await screen.findByRole("option",{name:option}));};
   const resolution=compareItemName("rt.resolution");
+  fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.expandItem",{item:resolution})}));
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"720p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"1080p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.entryEarlier",{value:"1080p"})}));

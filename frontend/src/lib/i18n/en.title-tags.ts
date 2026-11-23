@@ -69,6 +69,7 @@ export const enTitleTagsCopy = {
       hard: "Hard subs",
       soft: "Soft subs",
       ex: "External subs",
+      unknown: "Unknown",
     },
     content_rating: {
       UNCENSORED: "Uncensored",

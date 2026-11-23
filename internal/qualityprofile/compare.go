@@ -7,10 +7,12 @@ import (
 )
 
 // Subject is one side of a comparison: its frozen values, the subscription's
-// score for its subgroup source (nil = no source or no score).
+// score for its subgroup source (nil = no source or no score), and its
+// release-level size in bytes (nil = unknown).
 type Subject struct {
-	Values map[string][]string
-	Score  *int64
+	Values    map[string][]string
+	Score     *int64
+	SizeBytes *int64
 }
 
 // Step results.
@@ -61,7 +63,7 @@ func Compare(candidate, current Subject, profile Profile) Result {
 		if !ok {
 			continue
 		}
-		if def.Ranked() && len(item.Ranks) == 0 {
+		if (def.Ranked() || def.Kind == KindSize) && len(item.Ranks) == 0 {
 			result.Steps = append(result.Steps, Step{Key: item.Key, Result: StepSkipped})
 			continue
 		}
@@ -70,10 +72,16 @@ func Compare(candidate, current Subject, profile Profile) Result {
 		// A ranked layer only compares when both sides have data for it (owner
 		// ruling 2026-10-27): a release without AniBT tags, say, ties on the
 		// AniBT layer and the next item decides. A value that is present but
-		// not listed still ranks lowest.
-		noData := def.Ranked() && (len(candidate.Values[item.Key]) == 0 || len(current.Values[item.Key]) == 0)
-		if def.Kind == KindRevision {
+		// not listed still ranks lowest. For rt.sub_flag, listing "unknown"
+		// opts missing values into ranking at that slot (e.g. soft > hard > unknown > ex).
+		noData := false
+		switch def.Kind {
+		case KindRevision, KindSize:
 			noData = !a.listed || !b.listed
+		case KindSingle, KindMulti:
+			candHave := effectiveValues(item, candidate.Values[item.Key])
+			currHave := effectiveValues(item, current.Values[item.Key])
+			noData = len(candHave) == 0 || len(currHave) == 0
 		}
 		switch {
 		case noData:
@@ -108,14 +116,46 @@ func levelOf(def ItemDef, item Item, subject Subject) level {
 		}
 		number, known := RevisionNumber(label)
 		return level{value: number, label: label, listed: known}
+	case KindSize:
+		if subject.SizeBytes == nil || len(item.Ranks) == 0 || len(item.Ranks[0]) == 0 {
+			return level{}
+		}
+		size := *subject.SizeBytes
+		val := size
+		if item.Ranks[0][0] == SizeSmaller {
+			val = -size
+		}
+		return level{value: val, label: strconv.FormatInt(size, 10), listed: true}
 	default:
-		have := subject.Values[item.Key]
+		have := effectiveValues(item, subject.Values[item.Key])
 		index, ok := RankIndex(item.Ranks, matchValues(item.Key, have))
 		if !ok {
 			return level{value: 0, label: strings.Join(have, "+")}
 		}
 		return level{value: int64(len(item.Ranks) - index), label: strings.Join(item.Ranks[index], "+"), listed: true}
 	}
+}
+
+func effectiveValues(item Item, have []string) []string {
+	if len(have) > 0 {
+		return have
+	}
+	if item.Key == KeyRtSubFlag && ranksContainValue(item.Ranks, UnknownSubFlag) {
+		return []string{UnknownSubFlag}
+	}
+	return nil
+}
+
+func ranksContainValue(ranks [][]string, target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, entry := range ranks {
+		for _, value := range entry {
+			if strings.ToLower(strings.TrimSpace(value)) == target {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // rtCompositeLanguages are the reltitle sub_lang codes that name two

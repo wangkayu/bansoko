@@ -211,7 +211,11 @@ type replacementComparisonSnapshot struct {
 func (c replacementComparisonSnapshot) nativeEvidence() (protocol.Value, error) {
 	subject := func(f replacementFactsSnapshot) map[string]any {
 		values := qualityprofile.FrozenValues{Version: qualityprofile.ValuesVersion, SourceDigest: f.SourceDigest, Values: f.Values, Subgroup: f.Subgroup}
-		return map[string]any{"values": json.RawMessage(values.JSON()), "score": f.Score}
+		out := map[string]any{"values": json.RawMessage(values.JSON()), "score": f.Score}
+		if f.Size != nil {
+			out["size_bytes"] = f.Size
+		}
+		return out
 	}
 	var existing any
 	if !c.ExistingMissing {

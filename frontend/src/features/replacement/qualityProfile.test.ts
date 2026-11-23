@@ -11,6 +11,7 @@ import {
   removeEntry,
   removeItem,
   setKey,
+  splitCandidates,
   suggestions,
   candidateValues,
   unusedItems,
@@ -29,7 +30,7 @@ describe("quality profile model", () => {
   it("matches the backend registry order and namespaces", () => {
     expect(COMPARE_ITEMS.map((item) => item.key)).toEqual([
       "subgroup.score", "anibt.resolution", "anibt.language", "anibt.subtitle", "anibt.format",
-      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec", "rt.content_rating", "rt.revision",
+      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec", "rt.content_rating", "rt.revision", "file.size",
     ]);
     expect(COMPARE_ITEMS.filter((item) => item.kind === "multi").map((item) => item.key)).toEqual(["anibt.language", "rt.sub_lang", "rt.sub_flag"]);
   });
@@ -88,5 +89,25 @@ describe("quality profile model", () => {
     expect(candidateValues("anibt.language", ["jp", "XX"])?.at(-1)).toBe("XX");
     expect(candidateValues("rt.codec", ["AV1"])).toEqual(["AV1"]);
     expect(candidateValues("rt.codec", undefined)).toBeUndefined();
+  });
+
+  it("supports explicit tail insertion and reports insertedAt", () => {
+    const auto = addEntry(profile, "anibt.language", ["JPN", "CHS", "CHT"], "auto");
+    expect(auto.insertedAt).toBe(0);
+    expect(auto.profile?.items[1].ranks[0]).toEqual(["CHS", "CHT", "JPN"]);
+
+    const tail = addEntry(profile, "anibt.language", ["JPN", "CHS", "CHT"], "end");
+    expect(tail.insertedAt).toBe(2);
+    expect(tail.profile?.items[1].ranks.at(-1)).toEqual(["CHS", "CHT", "JPN"]);
+  });
+
+  it("splits long candidate pools into common and overflow values", () => {
+    const lang = splitCandidates("anibt.language", candidateValues("anibt.language", undefined));
+    expect(lang.common).toEqual(["CHS", "CHT", "JP", "EN", "KO"]);
+    expect(lang.overflow.length).toBeGreaterThan(10);
+
+    const res = splitCandidates("anibt.resolution", candidateValues("anibt.resolution", undefined));
+    expect(res.common).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p"]);
+    expect(res.overflow).toEqual([]);
   });
 });

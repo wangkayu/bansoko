@@ -98,7 +98,7 @@ func ParseValues(raw []byte) (FrozenValues, error) {
 	}
 	for key, items := range values.Values {
 		definition, ok := Lookup(key)
-		if !ok || definition.Kind == KindScore || len(items) == 0 {
+		if !ok || definition.Kind == KindScore || definition.Kind == KindSize || len(items) == 0 {
 			return FrozenValues{}, fmt.Errorf("invalid comparison values key %q", key)
 		}
 		seen := map[string]bool{}

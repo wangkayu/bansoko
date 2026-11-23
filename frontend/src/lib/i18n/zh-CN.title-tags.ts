@@ -67,6 +67,7 @@ export const titleTagsCopy = {
       hard: "内嵌",
       soft: "内封",
       ex: "外挂",
+      unknown: "未知",
     },
     content_rating: {
       UNCENSORED: "无修正",

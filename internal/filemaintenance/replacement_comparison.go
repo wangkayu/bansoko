@@ -30,6 +30,7 @@ var approvalDimension = map[string]string{
 	qualityprofile.KeyRtResolution:    "resolution",
 	qualityprofile.KeyRtRevision:      "revision",
 	qualityprofile.KeyRtSource:        "source",
+	qualityprofile.KeyFileSize:        "size",
 }
 
 // comparedDimensions is the sorted category set of configured comparison items.

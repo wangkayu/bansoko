@@ -29,11 +29,24 @@ const (
 	KindScore Kind = "score"
 	// KindRevision ranks by the vN release revision (no value list).
 	KindRevision Kind = "revision"
+	// KindSize ranks by the release's file size (ranks holds [["larger"]] or [["smaller"]], or empty when skipped).
+	KindSize Kind = "size"
 	// KindSingle ranks by an ordered list of single values.
 	KindSingle Kind = "single"
 	// KindMulti ranks by an ordered list of value sets (combinations).
 	KindMulti Kind = "multi"
 )
+
+// Size preference values for KeyFileSize.
+const (
+	SizeLarger  = "larger"
+	SizeSmaller = "smaller"
+)
+
+// UnknownSubFlag is the sortable placeholder value for releases without an
+// rt.sub_flag value (e.g. ranking soft > hard > unknown > ex places explicit
+// external subtitles last).
+const UnknownSubFlag = "unknown"
 
 // Item keys.
 const (
@@ -49,6 +62,7 @@ const (
 	KeyRtSource        = "rt.source"
 	KeyRtCodec         = "rt.codec"
 	KeyRtContentRating = "rt.content_rating"
+	KeyFileSize        = "file.size"
 )
 
 // Namespaces.
@@ -56,6 +70,7 @@ const (
 	NamespaceSubgroup = "subgroup"
 	NamespaceAniBT    = "anibt"
 	NamespaceRt       = "rt"
+	NamespaceFile     = "file"
 )
 
 // ItemDef is one registered comparison item.
@@ -82,6 +97,7 @@ var Items = []ItemDef{
 	{KeyRtCodec, NamespaceRt, KindSingle},
 	{KeyRtContentRating, NamespaceRt, KindSingle},
 	{KeyRtRevision, NamespaceRt, KindRevision},
+	{KeyFileSize, NamespaceFile, KindSize},
 }
 
 // Lookup returns the registered item.
@@ -182,6 +198,15 @@ func (p Profile) Validate() error {
 		seen[item.Key] = true
 		if item.Ranks == nil {
 			return fmt.Errorf("comparison item %q must carry a ranking (empty when unused)", item.Key)
+		}
+		if def.Kind == KindSize {
+			if len(item.Ranks) == 0 {
+				continue
+			}
+			if len(item.Ranks) != 1 || len(item.Ranks[0]) != 1 || (item.Ranks[0][0] != SizeLarger && item.Ranks[0][0] != SizeSmaller) {
+				return fmt.Errorf("comparison item %q must specify %q or %q", item.Key, SizeLarger, SizeSmaller)
+			}
+			continue
 		}
 		if !def.Ranked() {
 			if len(item.Ranks) > 0 {

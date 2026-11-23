@@ -13,7 +13,15 @@ func init() {
 			return r.at("profile").fail(CodeConstraintViolated)
 		}
 		readSubject := func(key string) (qualityprofile.Subject, error) {
-			fields, err := r.at(key).closed(m[key], "values", "score")
+			raw := m[key]
+			if raw.Kind != KindObject {
+				return qualityprofile.Subject{}, r.at(key).fail(CodeTypeInvalid)
+			}
+			want := []string{"values", "score"}
+			if _, hasSize := raw.Object["size_bytes"]; hasSize {
+				want = append(want, "size_bytes")
+			}
+			fields, err := r.at(key).closed(raw, want...)
 			if err != nil {
 				return qualityprofile.Subject{}, err
 			}
@@ -31,6 +39,16 @@ func init() {
 				}
 				score := fields["score"].Int
 				subject.Score = &score
+			}
+			if sizeVal, ok := fields["size_bytes"]; ok && sizeVal.Kind != KindNull {
+				if err := I64.validate(r.at(key).at("size_bytes"), sizeVal); err != nil {
+					return subject, err
+				}
+				if sizeVal.Int < 0 {
+					return subject, r.at(key).at("size_bytes").fail(CodeConstraintViolated)
+				}
+				size := sizeVal.Int
+				subject.SizeBytes = &size
 			}
 			return subject, nil
 		}

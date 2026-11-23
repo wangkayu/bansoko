@@ -31,7 +31,7 @@ type Facts struct {
 }
 
 func (f Facts) subject() qualityprofile.Subject {
-	return qualityprofile.Subject{Values: f.Values, Score: f.Score}
+	return qualityprofile.Subject{Values: f.Values, Score: f.Score, SizeBytes: f.Size}
 }
 
 // withFrozenValues attaches a release's stored compare_values document.

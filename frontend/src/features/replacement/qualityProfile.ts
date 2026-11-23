@@ -7,8 +7,9 @@ import { ANIBT_TAG_PRESETS, isAniBTDimension } from "../../lib/anibtTags";
 // items; ranked items list value sets best first. Edits that the backend would
 // reject are refused here with a problem code, never silently rewritten.
 
-export type CompareNamespace = "subgroup" | "anibt" | "rt";
-export type CompareKind = "score" | "revision" | "single" | "multi";
+export type CompareNamespace = "subgroup" | "anibt" | "rt" | "file";
+export type CompareKind = "score" | "revision" | "size" | "single" | "multi";
+export type SizeDirection = "larger" | "smaller";
 export type CompareItemDef = { key: QualityCompareKey; namespace: CompareNamespace; kind: CompareKind };
 
 /** Registry in catalog order (namespace, then attribute). */
@@ -25,9 +26,10 @@ export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "rt.codec", namespace: "rt", kind: "single" },
   { key: "rt.content_rating", namespace: "rt", kind: "single" },
   { key: "rt.revision", namespace: "rt", kind: "revision" },
+  { key: "file.size", namespace: "file", kind: "size" },
 ];
 
-export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "anibt", "rt"];
+export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "anibt", "rt", "file"];
 
 export const MAX_RANKS = 64;
 export const MAX_SET_VALUES = 8;
@@ -55,8 +57,16 @@ export function unusedItems(profile: QualityProfile): CompareItemDef[] {
 
 export function addItem(profile: QualityProfile, key: QualityCompareKey): QualityProfile {
   if (profile.items.some((item) => item.key === key)) return profile;
-  // A ranked item starts with no values: the user adds and orders them.
-  return { ...profile, items: [...profile.items, { key, ranks: [] }] };
+  const ranks = itemDef(key).kind === "size" ? [["larger"]] : [];
+  return { ...profile, items: [...profile.items, { key, ranks }] };
+}
+
+export function sizeDirection(ranks: readonly string[][]): SizeDirection {
+  return ranks[0]?.[0] === "smaller" ? "smaller" : "larger";
+}
+
+export function setSizeDirection(profile: QualityProfile, direction: SizeDirection): QualityProfile {
+  return withRanks(profile, "file.size", () => [[direction]]);
 }
 
 export function removeItem(profile: QualityProfile, index: number): QualityProfile {
@@ -95,16 +105,25 @@ export function parseEntry(text: string, key: QualityCompareKey): string[] {
 }
 
 export type EntryProblem = "invalid" | "combination" | "tooWide" | "duplicate" | "full";
-export type AddEntryResult = { profile: QualityProfile; problem?: undefined } | { profile?: undefined; problem: EntryProblem };
+export type InsertPosition = "auto" | "end";
+export type AddEntryResult =
+  | { profile: QualityProfile; insertedAt: number; problem?: undefined }
+  | { profile?: undefined; insertedAt?: undefined; problem: EntryProblem };
 
 const encoder = new TextEncoder();
 
 /**
- * Adds one entry to a ranked item. A combination goes before the first
- * narrower entry, so wider sets rank first by default (the best-ranked hit
- * wins, so a narrower entry listed earlier would shadow it).
+ * Adds one entry to a ranked item. In "auto" mode (default), a combination goes
+ * before the first narrower entry, so wider sets rank first by default (the
+ * best-ranked hit wins, so a narrower entry listed earlier would shadow it).
+ * In "end" mode, the entry is appended to the tail.
  */
-export function addEntry(profile: QualityProfile, key: QualityCompareKey, values: readonly string[]): AddEntryResult {
+export function addEntry(
+  profile: QualityProfile,
+  key: QualityCompareKey,
+  values: readonly string[],
+  position: InsertPosition = "auto",
+): AddEntryResult {
   const item = profile.items.find((entry) => entry.key === key);
   if (!item || !isRanked(key)) return { problem: "invalid" };
   const entry = values.map((value) => value.trim());
@@ -120,10 +139,46 @@ export function addEntry(profile: QualityProfile, key: QualityCompareKey, values
   // A combination is written in case-insensitive alphabetical order: the
   // server validates without rewriting, and the client digests what it sends.
   if (entry.length > 1) entry.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  const at = item.ranks.findIndex((existing) => existing.length < entry.length);
+  const at = position === "auto" ? item.ranks.findIndex((existing) => existing.length < entry.length) : -1;
+  const insertedAt = at < 0 ? item.ranks.length : at;
   return {
+    insertedAt,
     profile: withRanks(profile, key, (ranks) => (at < 0 ? [...ranks, entry] : [...ranks.slice(0, at), entry, ...ranks.slice(at)])),
   };
+}
+
+const COMMON_CANDIDATES_BY_KEY: Partial<Record<QualityCompareKey, readonly string[]>> = {
+  "anibt.language": ["CHS", "CHT", "JP", "EN", "KO"],
+  "rt.sub_lang": ["JPSC", "JPTC", "SC", "TC", "ZH", "JPN", "ENG", "MULTI", "RAW"],
+};
+const DEFAULT_COMMON_LIMIT = 8;
+
+/**
+ * Splits a ranked item's candidate pool into high-frequency common choices shown
+ * immediately and overflow choices tucked behind "+ more" to prevent long walls
+ * of chips (e.g. 21 languages).
+ */
+export function splitCandidates(
+  key: QualityCompareKey,
+  candidates: readonly string[] | undefined,
+): { common: string[]; overflow: string[] } {
+  const list = candidates ? [...candidates] : [];
+  if (list.length <= DEFAULT_COMMON_LIMIT) return { common: list, overflow: [] };
+  const preferred = COMMON_CANDIDATES_BY_KEY[key];
+  if (!preferred) {
+    return { common: list.slice(0, DEFAULT_COMMON_LIMIT), overflow: list.slice(DEFAULT_COMMON_LIMIT) };
+  }
+  const preferredSet = new Set(preferred.map((value) => value.toLowerCase()));
+  const common: string[] = [];
+  const overflow: string[] = [];
+  for (const value of list) {
+    if (preferredSet.has(value.toLowerCase())) common.push(value);
+    else overflow.push(value);
+  }
+  if (common.length === 0) {
+    return { common: list.slice(0, DEFAULT_COMMON_LIMIT), overflow: list.slice(DEFAULT_COMMON_LIMIT) };
+  }
+  return { common, overflow };
 }
 
 /**
@@ -132,6 +187,13 @@ export function addEntry(profile: QualityProfile, key: QualityCompareKey, values
  * first spelling wins. Other namespaces offer the server vocabulary as-is.
  */
 export function candidateValues(key: string, seen: readonly string[] | undefined): string[] | undefined {
+  if (key === "rt.sub_flag") {
+    const out = seen ? [...seen] : [];
+    if (!out.some((value) => value.trim().toLowerCase() === "unknown")) {
+      out.push("unknown");
+    }
+    return out;
+  }
   const dimension = key.startsWith("anibt.") ? key.slice("anibt.".length) : "";
   if (!isAniBTDimension(dimension)) return seen ? [...seen] : undefined;
   const out: string[] = [];

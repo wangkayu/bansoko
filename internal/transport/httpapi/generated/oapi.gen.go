@@ -1840,6 +1840,7 @@ const (
 	QualityCompareKeyAnibtLanguage   QualityCompareKey = "anibt.language"
 	QualityCompareKeyAnibtResolution QualityCompareKey = "anibt.resolution"
 	QualityCompareKeyAnibtSubtitle   QualityCompareKey = "anibt.subtitle"
+	QualityCompareKeyFileSize        QualityCompareKey = "file.size"
 	QualityCompareKeyRtCodec         QualityCompareKey = "rt.codec"
 	QualityCompareKeyRtContentRating QualityCompareKey = "rt.content_rating"
 	QualityCompareKeyRtResolution    QualityCompareKey = "rt.resolution"
@@ -8043,7 +8044,7 @@ type QBittorrentTorrentFile struct {
 	Size     int64   `json:"size"`
 }
 
-// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that has an unlisted value ranks last; a missing value on either side makes that layer tie. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and rt.revision take no ranks (subscription subgroup score; numeric frozen rt Version). An absent or non-numeric revision on either side makes that layer tie. rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers.
+// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that has an unlisted value ranks last; a missing value on either side makes that layer tie (except rt.sub_flag when "unknown" is ranked, in which case missing values match "unknown"). Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and rt.revision take no ranks (subscription subgroup score; numeric frozen rt Version). file.size takes [["larger"]] or [["smaller"]] (or empty when skipped). An absent or non-numeric revision or missing size on either side makes that layer tie. rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers.
 type QualityCompareItem struct {
 	Key   QualityCompareKey `json:"key"`
 	Ranks [][]string        `json:"ranks"`

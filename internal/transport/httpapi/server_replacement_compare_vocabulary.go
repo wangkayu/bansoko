@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/parser/reltitletags"
@@ -43,6 +44,11 @@ func (s *Server) GetReplacementCompareVocabulary(w http.ResponseWriter, r *http.
 			values[key] = append([]string{}, byDimension[dimension]...)
 		}
 	}
+	// rt.sub_flag supports ranking missing subtitle flags explicitly via "unknown"
+	// so explicit external subtitles ("ex") can be ordered last.
+	if list := values[qualityprofile.KeyRtSubFlag]; !containsFold(list, qualityprofile.UnknownSubFlag) {
+		values[qualityprofile.KeyRtSubFlag] = append(list, qualityprofile.UnknownSubFlag)
+	}
 	view := generated.ReplacementCompareVocabulary{Items: []generated.RetentionCompareVocabularyItem{}}
 	for _, item := range qualityprofile.Items {
 		if !item.Ranked() {
@@ -55,4 +61,13 @@ func (s *Server) GetReplacementCompareVocabulary(w http.ResponseWriter, r *http.
 		view.Items = append(view.Items, generated.RetentionCompareVocabularyItem{Key: generated.QualityCompareKey(item.Key), Values: list})
 	}
 	writeJSON(w, r.Context(), http.StatusOK, view)
+}
+
+func containsFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
 }

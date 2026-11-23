@@ -81,6 +81,7 @@ describe("SettingsReplacement", () => {
     await screen.findByRole("button", { name: moveResolutionUp() });
     expect(screen.getByRole("button", { name: t("settings.replacement.saveAria") })).toBeDisabled();
     const resolution = compareItemName("rt.resolution");
+    fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.expandItem", { item: resolution }) }));
     const ranks = screen.getByRole("list", { name: t("qualityCompare.ranksAria", { item: resolution }) });
     expect(within(ranks).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["11080p", "2720p", t("qualityCompare.others")]);
     expect(screen.getByText(t("settings.replacement.replacedNote"))).toBeInTheDocument();
