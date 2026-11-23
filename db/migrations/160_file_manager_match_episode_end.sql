@@ -20,7 +20,9 @@ ALTER TABLE file_manager_operations
     );
 
 -- The frozen-choice guard must also cover the new column: after admission a
--- match operation's range is as immutable as its season and episode.
+-- match operation's range is as immutable as its season and episode. The
+-- compared column set is the post-009 one: migration 009 dropped the root
+-- columns, so the guard must not reference them.
 CREATE OR REPLACE FUNCTION file_manager_operations_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -29,13 +31,13 @@ BEGIN
     IF OLD.state IN ('completed', 'blocked', 'failed') THEN
         RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'FILE_MANAGER_OPERATION_TERMINAL';
     END IF;
-    IF (NEW.id, NEW.idempotency_key, NEW.request_digest, NEW.actor, NEW.operation, NEW.root_key, NEW.root_path,
-        NEW.target_root_key, NEW.target_root_path, NEW.source_path, NEW.target_path, NEW.expected_size_bytes,
+    IF (NEW.id, NEW.idempotency_key, NEW.request_digest, NEW.actor, NEW.operation,
+        NEW.source_path, NEW.target_path, NEW.expected_size_bytes,
         NEW.collision, NEW.release_placement_id, NEW.created_at,
         NEW.match_anime_id, NEW.match_season, NEW.match_episode, NEW.match_episode_end, NEW.match_episode_titles)
        IS DISTINCT FROM
-       (OLD.id, OLD.idempotency_key, OLD.request_digest, OLD.actor, OLD.operation, OLD.root_key, OLD.root_path,
-        OLD.target_root_key, OLD.target_root_path, OLD.source_path, OLD.target_path, OLD.expected_size_bytes,
+       (OLD.id, OLD.idempotency_key, OLD.request_digest, OLD.actor, OLD.operation,
+        OLD.source_path, OLD.target_path, OLD.expected_size_bytes,
         OLD.collision, OLD.release_placement_id, OLD.created_at,
         OLD.match_anime_id, OLD.match_season, OLD.match_episode, OLD.match_episode_end, OLD.match_episode_titles) THEN
         RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'FILE_MANAGER_OPERATION_FROZEN';
