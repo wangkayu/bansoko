@@ -38,8 +38,8 @@ export const enAnibtTagsCopy = {
   reasonBlacklisted: "AniBT tags: includes {tags}",
   dimension: {
     resolution: "Resolution",
-    subtitle: "Subtitles",
-    language: "Language",
+    subtitle: "Subtitle type",
+    language: "Subtitle language",
     format: "Format",
     codec: "Codec",
     bitdepth: "Bit depth",

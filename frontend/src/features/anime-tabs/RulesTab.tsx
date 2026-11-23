@@ -3,13 +3,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSavePart } from "../../lib/saveParts";
 import {
   getBusinessPreset,
+  getInstanceParserPolicy,
   getTitleTagVocabulary,
   isVersionConflict,
   patchAnimeRules,
   toUserMessage,
   type RulesSections,
 } from "../../lib/api/client";
-import { configKeys } from "../../lib/queryKeys";
+import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
 import { observedExtraTags } from "../../lib/anibtTags";
 import { countTags } from "../../lib/titleTags";
 import { TagFilterCard } from "../anime-forms/TagFilterCard";
@@ -229,6 +230,13 @@ function OwnerRulesTab({
   const showAniBTRow = workspace.rules.has_anibt_source;
   // "Use defaults everywhere": fills the rules sections, tag filter and parser with a copy of the current default settings, saved by the user.
   const queryClient = useQueryClient();
+  // Shares the same query key as ParserPolicySection so the cached parser_kind is available on
+  // the first render (no post-effect frame lag) and the regex list never flashes while loading.
+  const parserPolicy = useQuery({
+    queryKey: fileMaintenanceKeys.parserPolicy(animeID),
+    queryFn: () => getInstanceParserPolicy(animeID),
+    enabled: active,
+  });
   const businessPreset = useQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset, enabled: active });
   const [resetting, setResetting] = useState(false);
   const titleVocabulary = useQuery({
@@ -302,10 +310,12 @@ function OwnerRulesTab({
   }
 
   if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.rules.reading")} />;
+  const effectiveParserKind = parserKind ?? parserPolicy.data?.parser_kind;
+  const parserKindLoading = effectiveParserKind === undefined && parserPolicy.isPending;
   const matchesDefaults = businessPreset.data !== undefined
     && !rulesDifferFromPreset(edit, businessPreset.data)
-    && (parserKind === undefined || parserKind === businessPreset.data.snapshot.parser.kind);
-  const modified = modifiedRuleSections(edit, businessPreset.data, parserKind);
+    && (effectiveParserKind === undefined || effectiveParserKind === businessPreset.data.snapshot.parser.kind);
+  const modified = modifiedRuleSections(edit, businessPreset.data, effectiveParserKind);
   return (
     <div className="metadata-stack">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
@@ -342,7 +352,8 @@ function OwnerRulesTab({
             reset={parserReset}
           />
         )}
-        parserKind={parserKind}
+        parserKind={effectiveParserKind}
+        parserKindLoading={parserKindLoading}
         modified={modified}
         afterReleaseFilter={(
           <TagFilterCard

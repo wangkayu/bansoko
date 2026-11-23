@@ -809,12 +809,39 @@ describe("AnimeTabs owner 编辑保活", () => {
     expect(parser.getByText(t("settings.rules.episodePatterns"))).toBeInTheDocument();
   });
 
-  it("已保存为 reltitle 时直接隐藏集数识别规则", async () => {
-    stubParserFetch("reltitle");
+  it("已保存为 reltitle 时直接隐藏集数识别规则，加载期间不先闪出正则列表", async () => {
+    let resolvePolicy!: (resp: Response) => void;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/file-maintenance/parser-policy/anime/")) {
+        return new Promise<Response>((resolve) => {
+          resolvePolicy = resolve;
+        });
+      }
+      if (url.includes("/parser-catalog")) {
+        return Promise.resolve(new Response(
+          JSON.stringify([
+            { id: "regex", implementation_version: "regex-v1", output_contract_version: "episode-evidence-v1", display_name: "Regex rules", capabilities: ["release_title"], config_version: "regex-config-v1" },
+            { id: "reltitle", implementation_version: "reltitle@x", output_contract_version: "episode-evidence-v1", display_name: "reltitle episode parser", capabilities: ["release_title"], config_version: "reltitle-config-v1" },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ code: "IGNORED", message: "ignored" }), { status: 400, headers: { "Content-Type": "application/json" } }));
+    }));
     renderTabs({ animeID: "anime-1", workspace: boundWorkspace(), onChanged: () => {}, initialTab: "rules" });
 
     const parserSection = screen.getByText(t("tabs.sectionName.parser")).closest("section");
     const parser = within(parserSection as HTMLElement);
+    // While parser policy is still loading, neither the regex list nor the unused note flashes.
+    expect(parser.getByText(t("act.reading"))).toBeInTheDocument();
+    expect(parser.queryByText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument();
+    expect(parser.queryByText(t("forms.rules.episodePatternsUnused"))).not.toBeInTheDocument();
+
+    resolvePolicy(new Response(
+      JSON.stringify({ managed_anime_id: "anime-1", parser_kind: "reltitle", source_default_version: 1, version: 1 }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ));
     expect(await parser.findByText(t("forms.rules.episodePatternsUnused"))).toBeInTheDocument();
     expect(parser.getByRole("radio", { name: t("policy.parser.kindReltitle") })).toHaveAttribute("aria-checked", "true");
     expect(parser.queryByText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument();

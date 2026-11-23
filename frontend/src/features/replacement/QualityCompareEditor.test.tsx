@@ -141,11 +141,17 @@ describe("QualityCompareEditor", () => {
   it("adds items via the grouped popover and auto-expands the added item", async () => {
     renderWithQuery(<Harness />);
     const rtItem = itemOrder().find((text) => text.includes(t("qualityCompare.item.rt_codec")));
-    expect(rtItem).toContain(t("qualityCompare.rtSource"));
-    expect(screen.getAllByText(t("qualityCompare.rtSource"))).toHaveLength(1);
+    expect(rtItem).toContain(t("qualityCompare.namespace.rt"));
+    expect(rtItem).not.toContain("取值来自");
+    const anibtItem = itemOrder().find((text) => text.includes(t("qualityCompare.namespace.anibt")));
+    expect(anibtItem).toContain(t("qualityCompare.item.anibt_language"));
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
+    const anibtGroup = await screen.findByRole("group", { name: t("qualityCompare.namespace.anibt") });
+    expect(within(anibtGroup).getByText(t("qualityCompare.item.anibt_subtitle"))).toBeInTheDocument();
+    expect(t("qualityCompare.item.anibt_language")).not.toBe(t("qualityCompare.item.anibt_subtitle"));
+
     const rtGroup = await screen.findByRole("group", { name: t("qualityCompare.namespace.rt") });
     expect(within(rtGroup).getByText(t("qualityCompare.item.rt_revision"))).toBeInTheDocument();
     expect(within(rtGroup).getByText(t("qualityCompare.item.rt_sub_lang"))).toBeInTheDocument();
@@ -153,7 +159,6 @@ describe("QualityCompareEditor", () => {
 
     await user.click(within(rtGroup).getByText(t("qualityCompare.item.rt_sub_lang")));
     expect(latest.items.at(-1)).toEqual({ key: "rt.sub_lang", ranks: [] });
-    expect(screen.getAllByText(t("qualityCompare.rtSource"))).toHaveLength(2);
     // Newly added item is auto-expanded.
     expect(screen.getByText(t("qualityCompare.empty"))).toBeInTheDocument();
   });

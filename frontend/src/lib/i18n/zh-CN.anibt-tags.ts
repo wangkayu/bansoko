@@ -36,8 +36,8 @@ export const anibtTagsCopy = {
   reasonBlacklisted: "AniBT 标签：包含 {tags}",
   dimension: {
     resolution: "分辨率",
-    subtitle: "字幕",
-    language: "语言",
+    subtitle: "字幕类型",
+    language: "字幕语言",
     format: "格式",
     codec: "编码",
     bitdepth: "色深",

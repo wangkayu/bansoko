@@ -265,9 +265,6 @@ export function QualityCompareEditor({
                     {t(NAMESPACE_COPY[def.namespace])}
                   </span>
                   <span className="tw:truncate tw:font-semibold tw:text-foreground">{t(ITEM_COPY[item.key])}</span>
-                  {def.namespace === "rt" && (
-                    <span className="tw:hidden tw:text-xs tw:text-muted-foreground tw:sm:inline">{t("qualityCompare.rtSource")}</span>
-                  )}
                 </button>
 
                 {!expanded && (

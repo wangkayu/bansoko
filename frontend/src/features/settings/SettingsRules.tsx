@@ -366,17 +366,19 @@ function ParserSummary({
   const kindLabel = kind === undefined ? undefined : (options.find((option) => option.value === kind)?.label ?? kind);
   const items: { label: string; value: React.ReactNode }[] = [];
   if (kindLabel !== undefined) items.push({ label: t("settings.rules.defaultParser.kindLabel"), value: kindLabel });
-  items.push({
-    label: t("settings.rules.episodePatterns"),
-    value: parserKindUsesPatterns(kind)
-      ? <RegexListSummary value={value.episode_patterns} emptyLabel={t("settings.rules.empty")} />
-      : t("forms.rules.episodePatternsUnused"),
-  });
+  if (!(loading && kind === undefined)) {
+    items.push({
+      label: t("settings.rules.episodePatterns"),
+      value: parserKindUsesPatterns(kind)
+        ? <RegexListSummary value={value.episode_patterns} emptyLabel={t("settings.rules.empty")} />
+        : t("forms.rules.episodePatternsUnused"),
+    });
+  }
   return (
     <>
       {loading && <StatePill busy>{t("settings.rules.loading")}</StatePill>}
       {error != null && <StatePill tone="offline">{toUserMessage(error, t("settings.rules.defaultParser.loadFailed"))}</StatePill>}
-      <DescriptionList items={items} />
+      {items.length > 0 && <DescriptionList items={items} />}
       {kind !== undefined && <p className="text-caption text-muted">{t("settings.rules.defaultParser.help")}</p>}
     </>
   );

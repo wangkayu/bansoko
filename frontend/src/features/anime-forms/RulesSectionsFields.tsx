@@ -98,6 +98,7 @@ export function RulesSectionsFields({
   only,
   parserChoice,
   parserKind,
+  parserKindLoading = false,
   hints,
   afterReleaseFilter,
   afterFileEffect,
@@ -116,9 +117,12 @@ export function RulesSectionsFields({
   parserChoice?: ReactNode;
   /**
    * 显示中的解析器。集数识别规则只对 regex 生效：其他解析器时隐藏规则输入框，
-   * 但不改动已保存的规则。未知（undefined）按 regex 显示。
+   * 但不改动已保存的规则。未知（undefined）按 regex 显示；解析器仍在加载时由
+   * `parserKindLoading` 暂缓渲染，避免先闪出正则列表再收起。
    */
   parserKind?: string;
+  /** True while the instance's parser kind is still loading, suppressing the regex list until the parser is known. */
+  parserKindLoading?: boolean;
   /**
    * Per-section one-line hints replacing the defaults, for a caller whose
    * input is not the anime's own: file-manager recognition parses file names
@@ -163,7 +167,7 @@ export function RulesSectionsFields({
         <SectionCard meta={meta("parser")} modified={modified?.has("parser")}>
           <div className="tw:grid tw:min-w-0 tw:gap-3">
             {parserChoice}
-            {usesPatterns ? (
+            {!parserKindLoading && (usesPatterns ? (
               <div className="rules-responsive-wide">
                 <TagRow
                   label={t("settings.rules.episodePatterns")}
@@ -175,7 +179,7 @@ export function RulesSectionsFields({
               </div>
             ) : (
               <p className="naming-muted text-caption">{t("forms.rules.episodePatternsUnused")}</p>
-            )}
+            ))}
           </div>
         </SectionCard>
       )}
