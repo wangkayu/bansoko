@@ -449,4 +449,25 @@ describe("SelectionOverrideFields · 草稿发现观察行", () => {
     // With a final score present, ordering follows the final score.
     expect(rows[0].textContent).toContain("Ranked 组");
   });
+
+  it("字幕组较多时也直接展示完整列表，不渲染筛选输入框", () => {
+    const manyEntries = Array.from({ length: 10 }, (_, idx) => ({
+      provider: "anibt" as const,
+      group_ref: `ref-${idx}`,
+      display_name: `字幕组 ${idx + 1}`,
+      selection_mode: "auto" as const,
+      manual_selected: null,
+      effective_selected: false,
+      score: 50,
+    }));
+    render(
+      <SelectionOverrideFields
+        value={{ max_rss: 3, entries: manyEntries }}
+        origin="anibt"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: t("forms.sources.listAria") })).getAllByRole("listitem")).toHaveLength(10);
+  });
 });

@@ -168,7 +168,6 @@ export function SelectionOverrideFields({
 
   const [maxRssDialogOpen, setMaxRssDialogOpen] = useState(false);
   const [maxRssInput, setMaxRssInput] = useState("");
-  const [filter, setFilter] = useState("");
 
   // Only same-named subgroups get a site name or short tag appended to the name.
   const displayNames = disambiguateGroupNames(
@@ -188,10 +187,6 @@ export function SelectionOverrideFields({
   const sorted = [...entries].sort(
     (a, b) => statusRank(a) - statusRank(b) || rankScore(b) - rankScore(a) || nameOf(a).localeCompare(nameOf(b)),
   );
-  const keyword = filter.trim().toLowerCase();
-  const visible = keyword
-    ? sorted.filter((entry) => entry.display_name.toLowerCase().includes(keyword))
-    : sorted;
 
   // Facts are located by provider + group_ref: a same-named group of another provider does not participate.
   const factsForProvider = serverSelection?.filter((fact) => fact.provider === activeProvider);
@@ -302,20 +297,8 @@ export function SelectionOverrideFields({
         <StateBlock kind="empty" title={t("forms.sources.noGroups")} />
       ) : (
         <div className="sources-policy-stack">
-          {entries.length > 6 && (
-            <Input
-              aria-label={t("forms.sources.filterAria")}
-              placeholder={t("forms.sources.filterPlaceholder")}
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              className="sources-filter-input"
-            />
-          )}
-          {visible.length === 0 && (
-            <p className="sources-empty text-caption">{t("forms.sources.noMatch")}</p>
-          )}
           <ul className="sources-list" aria-label={t("forms.sources.listAria")}>
-            {visible.map((entry) => {
+            {sorted.map((entry) => {
               const policy = selectionPolicy(entry);
               const selection = factByGroupRef.get(entry.group_ref);
               // Reasons come only from the server's conclusion: selected rows explain nothing,

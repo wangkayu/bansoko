@@ -2459,7 +2459,6 @@ h1, h2, h3, h4, h5, h6 {
 .naming-help-function-example { display: block; margin-top: 0.125rem; color: hsl(var(--muted-foreground) / 0.8); }
 .naming-resolved-key { color: hsl(var(--muted-foreground)); }
 
-.sources-filter-input { max-width: 12rem; }
 .sources-error { margin: 0; color: hsl(var(--status-offline)); }
 
 .description-list-label {
