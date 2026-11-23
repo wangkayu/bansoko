@@ -1,6 +1,6 @@
 ## New
 
-- One-shot downloads and file-manager recognition accept per-file episode ranges: enter `1-2` (consecutive, at most 12 episodes) for a video that holds several metadata episodes in one combined-episode release. Targets render as `S01E01-E02`, bound subtitles inherit the same numbering, placements record every covered episode, and the existing multi-episode unit replacement rules are unchanged. Sequential fill gains an episodes-per-file step, numbering checked files as 1-2, 3-4, 5-6.
+- One-shot downloads and file-manager recognition accept per-file episode ranges: enter 1-2 (consecutive, at most 12 episodes) for a video that holds several metadata episodes in one combined-episode release. Targets render as S01E01-E02, bound subtitles inherit the same numbering, placements record every covered episode, and the existing multi-episode unit replacement rules are unchanged. Sequential fill gains an episodes-per-file step, numbering checked files as 1-2, 3-4, 5-6.
 - qBittorrent downloader connections now let you choose between username/password login and stateless API key authentication (qBittorrent 5.2+); username/password login also accepts the 204 No Content success response introduced in qBittorrent 5.2.
 - Added a fourth Admin (admin) permission level for API tokens and MCP (unchecked by default) to gate high-risk actions including destructive deletes, file manager root management, system and title-parser updates, and event-action script writes; hidden naming variables remain excluded from MCP.
 - Exposed file manager read/write, event-action, and update tools through MCP, and made MCP honor the secrets scope so tokens granted secrets receive stored secret fields while tokens without it keep existing redaction.
@@ -8,7 +8,7 @@
 
 ## Improved
 
-- API JSON responses now negotiate gzip compression: clients sending `Accept-Encoding` receive large responses compressed, significantly reducing transfer volume on slow links; real-time event streams (SSE) and file downloads are unaffected.
+- API JSON responses now negotiate gzip compression: clients sending Accept-Encoding receive large responses compressed, significantly reducing transfer volume on slow links; real-time event streams (SSE) and file downloads are unaffected.
 - Redesigned the version comparison editor so dimensions and value priorities can be added, reordered, and edited directly.
 - Refined the four tabs of the anime configuration dialog (Metadata, Subgroups, Rules, and RSS): grouped metadata fields with confirmation before unbinding TMDB and inline validation for numeric inputs; unified the subgroup toolbar with unsaved-edit protection on refresh; added collapsible rule cards and live regex validation; kept the Show Filtered toggle enabled during RSS preview and unified draft/owner preview flows.
 
