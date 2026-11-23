@@ -3745,6 +3745,11 @@ export interface components {
             mode: "remove";
         };
         ConnectionSecret: components["schemas"]["ConnectionSecretKeep"] | components["schemas"]["ConnectionSecretReplace"] | components["schemas"]["ConnectionSecretRemove"];
+        /**
+         * @description How the connection authenticates to qBittorrent. credentials uses the username and the stored password with the session login; api_key sends the stored secret as an `Authorization: Bearer` token and never logs in (qBittorrent 5.2+ / WebAPI 2.14.1+).
+         * @enum {string}
+         */
+        QBittorrentAuthMode: "credentials" | "api_key";
         QBittorrentConnectionInput: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3755,7 +3760,8 @@ export interface components {
             enabled: boolean;
             /** Format: uri */
             base_url: string;
-            username: string;
+            auth_mode?: components["schemas"]["QBittorrentAuthMode"];
+            username?: string;
             secret: components["schemas"]["ConnectionSecret"];
             route_id?: components["schemas"]["ID"];
             /** @description Required absolute path as the download client sees it; blank values are rejected. */
@@ -3874,6 +3880,7 @@ export interface components {
             enabled: boolean;
             /** Format: uri */
             base_url: string;
+            auth_mode?: components["schemas"]["QBittorrentAuthMode"];
             username: string;
             credential_configured: boolean;
             route_id?: components["schemas"]["ID"];

@@ -103,7 +103,7 @@ func TestConnectionInputMapsSecretThroughQBittorrentAndTMDB(t *testing.T) {
 	qbTags := []string{"bangumi", "v2"}
 	qb := mustConnectionInput(t, func(input *generated.ConnectionInput) error {
 		return input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-			Kind: "qbittorrent", Name: "qb", Enabled: true, BaseUrl: "http://qb.local:8080", Username: "u", Secret: remove,
+			Kind: "qbittorrent", Name: "qb", Enabled: true, BaseUrl: "http://qb.local:8080", Username: strPtr("u"), Secret: remove,
 			Category: &qbCategory, UserTags: &qbTags,
 		})
 	})

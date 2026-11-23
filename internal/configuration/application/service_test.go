@@ -12,6 +12,11 @@ import (
 	"bansoko/internal/persistence/txscope"
 )
 
+// strPtr lifts a literal into the pointer fields of the generated optional
+// schema members (for example the qBittorrent username, which is only set
+// for credentials authentication).
+func strPtr(value string) *string { return &value }
+
 type testResolver map[string]string
 
 func (r testResolver) Resolve(ref string) (string, bool) { value, ok := r[ref]; return value, ok }
@@ -85,6 +90,77 @@ func TestProviderConnectionTesterQBittorrent(t *testing.T) {
 	missing := tester.Test(context.Background(), domain.Connection{ID: "qb", Kind: domain.ConnectionQBittorrent, Endpoint: server.URL, QBittorrentConfig: &domain.QBittorrentConnectionConfig{Username: "admin"}})
 	if missing.Code != "missing_credentials" {
 		t.Fatalf("missing secret should be explicit: %+v", missing)
+	}
+}
+
+func TestProviderConnectionTesterQBittorrentCredentialsLoginNoContent(t *testing.T) {
+	// qBittorrent 5.2+ answers a successful login with 204 No Content instead
+	// of 200 with the body "Ok.".
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/auth/login" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseForm(); err != nil || r.Form.Get("username") != "admin" || r.Form.Get("password") != "secret" {
+			http.Error(w, "bad credentials", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	tester := ProviderConnectionTester{ResolveSecret: testResolver{"mem:password": "secret"}}
+	connection := domain.Connection{ID: "qb", Kind: domain.ConnectionQBittorrent, Endpoint: server.URL, QBittorrentConfig: &domain.QBittorrentConnectionConfig{AuthMode: domain.QBittorrentAuthCredentials, Username: "admin"}, SecretRef: "mem:password"}
+	snapshot := tester.Test(context.Background(), connection)
+	if snapshot.State != domain.ConnectionConfigured || snapshot.Code != "ok" {
+		t.Fatalf("a 204 login should succeed: %+v", snapshot)
+	}
+
+	rejected := (ProviderConnectionTester{ResolveSecret: testResolver{"mem:password": "wrong"}}).Test(context.Background(), connection)
+	if rejected.Code != "http_401" || rejected.State != domain.ConnectionDegraded {
+		t.Fatalf("a refused login should be an explicit auth failure: %+v", rejected)
+	}
+}
+
+func TestProviderConnectionTesterQBittorrentAPIKey(t *testing.T) {
+	var seenAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/auth/login" {
+			t.Error("api_key mode must never call the session login")
+			http.Error(w, "unexpected login", http.StatusBadRequest)
+			return
+		}
+		if r.URL.Path != "/api/v2/app/version" {
+			http.NotFound(w, r)
+			return
+		}
+		seenAuth = r.Header.Get("Authorization")
+		if seenAuth != "Bearer qb-api-key" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte("v5.2.0"))
+	}))
+	defer server.Close()
+
+	connection := domain.Connection{ID: "qb", Kind: domain.ConnectionQBittorrent, Endpoint: server.URL, QBittorrentConfig: &domain.QBittorrentConnectionConfig{AuthMode: domain.QBittorrentAuthAPIKey}, SecretRef: "mem:apikey"}
+	tester := ProviderConnectionTester{ResolveSecret: testResolver{"mem:apikey": "qb-api-key"}}
+	snapshot := tester.Test(context.Background(), connection)
+	if snapshot.State != domain.ConnectionConfigured || snapshot.Code != "ok" {
+		t.Fatalf("unexpected api_key health snapshot: %+v", snapshot)
+	}
+	if seenAuth != "Bearer qb-api-key" {
+		t.Fatalf("the api key must ride as a bearer token, got %q", seenAuth)
+	}
+
+	rejected := (ProviderConnectionTester{ResolveSecret: testResolver{"mem:apikey": "wrong-key"}}).Test(context.Background(), connection)
+	if rejected.Code != "http_403" || rejected.State != domain.ConnectionDegraded {
+		t.Fatalf("a refused api key should be an explicit auth failure: %+v", rejected)
+	}
+
+	missing := (ProviderConnectionTester{}).Test(context.Background(), connection)
+	if missing.Code != "missing_credentials" {
+		t.Fatalf("a missing api key should be explicit: %+v", missing)
 	}
 }
 

@@ -132,7 +132,13 @@ func ConnectionInput(input generated.ConnectionInput, id string) (configurationd
 		if err != nil {
 			return result, err
 		}
-		result.Name, result.Endpoint, result.QBittorrentConfig = v.Name, v.BaseUrl, &configurationdomain.QBittorrentConnectionConfig{Username: v.Username}
+		result.Name, result.Endpoint, result.QBittorrentConfig = v.Name, v.BaseUrl, &configurationdomain.QBittorrentConnectionConfig{}
+		if v.AuthMode != nil {
+			result.QBittorrentConfig.AuthMode = configurationdomain.QBittorrentAuthMode(*v.AuthMode)
+		}
+		if v.Username != nil {
+			result.QBittorrentConfig.Username = *v.Username
+		}
 		result.Enabled = v.Enabled
 		result.QBittorrentConfig.SaveRoot = v.DownloadRoot
 		if v.DownloaderRoot != nil {
@@ -279,6 +285,10 @@ func ConnectionView(item configurationdomain.Connection) (generated.Connection, 
 	switch item.Kind {
 	case configurationdomain.ConnectionQBittorrent:
 		v := generated.QBittorrentConnection{Id: item.ID, Kind: "qbittorrent", Name: item.Name, BaseUrl: item.Endpoint, Username: item.QBittorrentConfig.Username, Enabled: item.State != configurationdomain.ConnectionDisabled, CredentialConfigured: item.SecretRef != "", Version: item.Version}
+		if item.QBittorrentConfig.AuthMode != "" {
+			authMode := generated.QBittorrentAuthMode(item.QBittorrentConfig.AuthMode)
+			v.AuthMode = &authMode
+		}
 		if item.QBittorrentConfig.SaveRoot != "" {
 			v.DownloadRoot = &item.QBittorrentConfig.SaveRoot
 		}

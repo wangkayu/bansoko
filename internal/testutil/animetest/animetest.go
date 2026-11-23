@@ -298,7 +298,7 @@ VALUES ('secret-qb', 'qbittorrent', '012345678912', '0123456789abcdef')`); err !
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO connections(id, kind, name, endpoint, secret_ref, state, config)
 VALUES ('qb-1', 'qbittorrent', 'qb', 'http://qb.example.com:8080', 'secret-qb', 'configured',
-    '{"username":"admin","category":"","save_root":"","downloader_root":"","user_tags":[]}'::jsonb)`); err != nil {
+    '{"auth_mode":"credentials","username":"admin","category":"","save_root":"","downloader_root":"","user_tags":[]}'::jsonb)`); err != nil {
 		t.Fatal(err)
 	}
 }

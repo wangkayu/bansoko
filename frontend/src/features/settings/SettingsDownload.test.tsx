@@ -24,12 +24,21 @@ const qbConnection: Connection = {
   name: "QB",
   enabled: true,
   base_url: "http://qb.local:8080",
+  auth_mode: "credentials",
   username: "u",
   credential_configured: true,
   download_root: "/downloads",
   category: "anime",
   user_tags: ["bangumi", "v2"],
   version: 5,
+};
+
+const qbApiKeyConnection: Connection = {
+  ...qbConnection,
+  id: "qb-api-1",
+  name: "QB API",
+  auth_mode: "api_key",
+  username: "",
 };
 
 function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[] } = {}) {
@@ -119,6 +128,7 @@ describe("SettingsDownload qBittorrent 下载器", () => {
       name: "主 qB",
       enabled: true,
       base_url: "http://qb.local:8080",
+      auth_mode: "credentials",
       username: "admin",
       download_root: "/downloads",
       downloader_root: "/user/downloads",
@@ -234,6 +244,87 @@ describe("SettingsDownload qBittorrent 下载器", () => {
     expect(await screen.findByText("QB")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("settings.download.test") })).toBeInTheDocument();
   });
+
+  it("新建下载器：API 密钥模式隐藏用户名，提交 auth_mode 与密钥", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+
+    await userEvent.click(within(dialog).getByRole("combobox", { name: t("settings.download.authMode") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.download.authModeApiKey") }));
+    expect(within(dialog).queryByLabelText(t("settings.download.username"))).not.toBeInTheDocument();
+    expect(within(dialog).getByText(t("settings.download.authModeApiKeyHint"))).toBeInTheDocument();
+
+    fillDownloader(dialog);
+    const save = within(dialog).getByRole("button", { name: t("settings.download.save") });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("settings.download.downloaderSaved")));
+    expect(connectionPutCalls()).toHaveLength(1);
+    const body = putBody(connectionPutCalls()[0]!);
+    expect(body).toMatchObject({
+      kind: "qbittorrent",
+      auth_mode: "api_key",
+      secret: { mode: "replace", value: "pw" },
+    });
+    expect(body.username).toBeUndefined();
+  });
+
+  it("编辑 API 密钥下载器：凭据为 API 密钥、默认 keep，提交不带用户名", async () => {
+    stubFetch({ connections: [qbApiKeyConnection] });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.download.edit") }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByLabelText(t("settings.download.username"))).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText(t("secret.keep"))).toBeChecked();
+    expect(within(dialog).getAllByText(t("settings.download.apiKey")).length).toBeGreaterThan(0);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.download.save") }));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("settings.download.downloaderSaved")));
+    const body = putBody(connectionPutCalls()[0]!);
+    expect(body).toMatchObject({ auth_mode: "api_key", secret: { mode: "keep" } });
+    expect(body.username).toBeUndefined();
+  });
+
+  it("切换认证方式强制重新填写凭据，切回已保存方式恢复 keep", async () => {
+    stubFetch({ connections: [qbConnection] });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.download.edit") }));
+    const dialog = await screen.findByRole("dialog");
+    const authMode = () => within(dialog).getByRole("combobox", { name: t("settings.download.authMode") });
+
+    // Leaving the saved credentials mode hides keep and demands the new key.
+    await userEvent.click(authMode());
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.download.authModeApiKey") }));
+    expect(within(dialog).queryByLabelText(t("secret.keep"))).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(t("settings.download.username"))).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText(t("settings.download.apiKey"))).toBeInTheDocument();
+    expect(within(dialog).getByText(t("settings.download.apiKeySwitchHint"))).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+
+    // Switching back to the saved mode restores keep without re-entering.
+    await userEvent.click(authMode());
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.download.authModeCredentials") }));
+    expect(within(dialog).getByLabelText(t("secret.keep"))).toBeChecked();
+    expect(within(dialog).queryByLabelText(t("settings.download.password"))).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeEnabled();
+
+    // Switching away again still forces a fresh credential, which saves as replace.
+    await userEvent.click(authMode());
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.download.authModeApiKey") }));
+    fireEvent.change(within(dialog).getByLabelText(t("settings.download.apiKey")), { target: { value: "new-api-key" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.download.save") }));
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(1));
+    expect(putBody(connectionPutCalls()[0]!)).toMatchObject({
+      auth_mode: "api_key",
+      secret: { mode: "replace", value: "new-api-key" },
+    });
+  });
 });
 
 describe("SettingsDownload 文件效果", () => {
@@ -282,8 +373,11 @@ function fillDownloader(dialog: HTMLElement, overrides: Partial<Record<"name" | 
   const values = { name: "主 qB", address: "http://qb.local:8080", username: "admin", password: "pw", downloadDir: "/downloads", localDir: "", ...overrides };
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.name")), { target: { value: values.name } });
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.address")), { target: { value: values.address } });
-  fireEvent.change(within(dialog).getByLabelText(t("settings.download.username")), { target: { value: values.username } });
-  fireEvent.change(within(dialog).getByLabelText(t("settings.download.password")), { target: { value: values.password } });
+  // The username only exists for the credentials method; the credential input is the password or the API key.
+  const usernameField = within(dialog).queryByLabelText(t("settings.download.username"));
+  if (usernameField) fireEvent.change(usernameField, { target: { value: values.username } });
+  const passwordField = within(dialog).queryByLabelText(t("settings.download.password"));
+  fireEvent.change(passwordField ?? within(dialog).getByLabelText(t("settings.download.apiKey")), { target: { value: values.password } });
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.downloadDir")), { target: { value: values.downloadDir } });
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.localDir")), { target: { value: values.localDir } });
 }
@@ -405,7 +499,7 @@ describe("SettingsDownload 下载器对话框校验与提交", () => {
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   });
 
-  it("字段顺序：名称、地址、用户名、密码、网络代理、下载目录、访问路径、分类、标签、启用", async () => {
+  it("字段顺序：名称、地址、认证方式、用户名、密码、网络代理、下载目录、访问路径、分类、标签、启用", async () => {
     stubFetch();
     renderSettings();
     const dialog = await openNewDownloader();
@@ -413,6 +507,7 @@ describe("SettingsDownload 下载器对话框校验与提交", () => {
     const order = [
       within(dialog).getByLabelText(t("settings.download.name")),
       within(dialog).getByLabelText(t("settings.download.address")),
+      within(dialog).getByRole("combobox", { name: t("settings.download.authMode") }),
       within(dialog).getByLabelText(t("settings.download.username")),
       within(dialog).getByLabelText(t("settings.download.password")),
       within(dialog).getByRole("combobox", { name: t("settings.download.proxyLabel") }),

@@ -66,6 +66,7 @@ func (s QBManagementService) client(ctx context.Context, connectionID string) (q
 	}
 	return qbittorrent.Client{
 		Endpoint: connection.Endpoint,
+		AuthMode: qbittorrent.AuthMode(connection.QBittorrentConfig.AuthMode),
 		Username: connection.QBittorrentConfig.Username,
 		Password: password,
 		HTTP:     s.http,

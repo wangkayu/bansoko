@@ -43,7 +43,7 @@ func movieOneShotFixture(t *testing.T, seedTitle string, tmdb *animedomain.TMDBB
 	if _, err := db.ExecContext(context.Background(), `
 INSERT INTO connections(id, kind, name, endpoint, secret_ref, state, config)
 VALUES ('qb-movie-test', 'qbittorrent', 'movie-test', 'http://127.0.0.1:1', 'secret-ref', 'configured',
-        '{"username":"tester","category":"","save_root":"/downloads","downloader_root":"/downloads","user_tags":[]}'::jsonb)`); err != nil {
+        '{"auth_mode":"credentials","username":"tester","category":"","save_root":"/downloads","downloader_root":"/downloads","user_tags":[]}'::jsonb)`); err != nil {
 		t.Fatalf("seed qb connection: %v", err)
 	}
 

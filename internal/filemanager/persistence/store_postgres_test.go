@@ -45,7 +45,7 @@ func TestStoreDerivesStatesFromRealOwnerRows(t *testing.T) {
 	}
 	exec(`INSERT INTO connections(id, kind, name, endpoint, secret_ref, state, config)
 VALUES ('qb-main', 'qbittorrent', 'Main', 'http://qb.local', 'secret-qb', 'configured', $1::jsonb)`,
-		`{"username":"admin","category":"anime","save_root":"/remote/downloads","downloader_root":"`+downloads+`","user_tags":[]}`)
+		`{"auth_mode":"credentials","username":"admin","category":"anime","save_root":"/remote/downloads","downloader_root":"`+downloads+`","user_tags":[]}`)
 	exec(`INSERT INTO managed_anime(id, title) VALUES ('anime-a', 'Show A'), ('anime-r', 'Show R'), ('anime-o', 'Movie O')`)
 	exec(`INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state)
 VALUES ('sub-a', 'anime-a', 'custom', 'Show A', 'stopped'), ('sub-r', 'anime-r', 'custom', 'Show R', 'stopped'),

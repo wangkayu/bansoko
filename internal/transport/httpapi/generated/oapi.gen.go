@@ -1810,6 +1810,12 @@ const (
 	ProviderRSSPreviewResultProviderNyaa    ProviderRSSPreviewResultProvider = "nyaa"
 )
 
+// Defines values for QBittorrentAuthMode.
+const (
+	QBittorrentAuthModeApiKey      QBittorrentAuthMode = "api_key"
+	QBittorrentAuthModeCredentials QBittorrentAuthMode = "credentials"
+)
+
 // Defines values for QBittorrentConnectionKind.
 const (
 	QBittorrentConnectionKindQbittorrent QBittorrentConnectionKind = "qbittorrent"
@@ -7942,11 +7948,16 @@ type ProviderRSSPreviewSeed struct {
 	Title         string `json:"title"`
 }
 
+// QBittorrentAuthMode How the connection authenticates to qBittorrent. credentials uses the username and the stored password with the session login; api_key sends the stored secret as an `Authorization: Bearer` token and never logs in (qBittorrent 5.2+ / WebAPI 2.14.1+).
+type QBittorrentAuthMode string
+
 // QBittorrentConnection defines model for QBittorrentConnection.
 type QBittorrentConnection struct {
-	BaseUrl              string  `json:"base_url"`
-	Category             *string `json:"category,omitempty"`
-	CredentialConfigured bool    `json:"credential_configured"`
+	// AuthMode How the connection authenticates to qBittorrent. credentials uses the username and the stored password with the session login; api_key sends the stored secret as an `Authorization: Bearer` token and never logs in (qBittorrent 5.2+ / WebAPI 2.14.1+).
+	AuthMode             *QBittorrentAuthMode `json:"auth_mode,omitempty"`
+	BaseUrl              string               `json:"base_url"`
+	Category             *string              `json:"category,omitempty"`
+	CredentialConfigured bool                 `json:"credential_configured"`
 
 	// DownloadRoot Redacted canonical root display.
 	DownloadRoot *string `json:"download_root,omitempty"`
@@ -7968,8 +7979,10 @@ type QBittorrentConnectionKind string
 
 // QBittorrentConnectionInput defines model for QBittorrentConnectionInput.
 type QBittorrentConnectionInput struct {
-	BaseUrl  string  `json:"base_url"`
-	Category *string `json:"category,omitempty"`
+	// AuthMode How the connection authenticates to qBittorrent. credentials uses the username and the stored password with the session login; api_key sends the stored secret as an `Authorization: Bearer` token and never logs in (qBittorrent 5.2+ / WebAPI 2.14.1+).
+	AuthMode *QBittorrentAuthMode `json:"auth_mode,omitempty"`
+	BaseUrl  string               `json:"base_url"`
+	Category *string              `json:"category,omitempty"`
 
 	// DownloadRoot Required absolute path as the download client sees it; blank values are rejected.
 	DownloadRoot string `json:"download_root"`
@@ -7982,7 +7995,7 @@ type QBittorrentConnectionInput struct {
 	RouteId        *ID                            `json:"route_id,omitempty"`
 	Secret         ConnectionSecret               `json:"secret"`
 	UserTags       *[]string                      `json:"user_tags,omitempty"`
-	Username       string                         `json:"username"`
+	Username       *string                        `json:"username,omitempty"`
 }
 
 // QBittorrentConnectionInputKind defines model for QBittorrentConnectionInput.Kind.

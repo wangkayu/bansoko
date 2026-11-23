@@ -215,7 +215,10 @@ func TestRSSHTTPConnectionRoundTripPostgres(t *testing.T) {
 	}
 }
 
-func TestConnectionSecretClearPostgres(t *testing.T) {
+// A qBittorrent connection must always hold a credential: the stored secret
+// is the password (credentials) or the API key (api_key). The secret
+// lifecycle therefore accepts replace and keep, and refuses remove.
+func TestConnectionSecretLifecyclePostgres(t *testing.T) {
 	db := openConnectionTestDB(t)
 	ctx := context.Background()
 	cleanupConnectionTestRows(t, ctx, db)
@@ -223,19 +226,15 @@ func TestConnectionSecretClearPostgres(t *testing.T) {
 
 	service := NewService(db, newConnectionTestSecretStore(t, db))
 	httpService := newGeneratedHTTPService(NewHTTPService(service))
-	put := func(expected int64, secret generated.ConnectionSecret) generated.Connection {
+	put := func(expected int64, secret generated.ConnectionSecret) (generated.Connection, error) {
 		t.Helper()
 		var input generated.ConnectionInput
 		if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-			Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", Username: "u", Secret: secret,
+			Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", Username: strPtr("u"), Secret: secret,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		connection, err := httpService.PutConnection(ctx, "connection-test-qb", expected, input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return connection
+		return httpService.PutConnection(ctx, "connection-test-qb", expected, input)
 	}
 	secretOf := func(mode string, value string) generated.ConnectionSecret {
 		t.Helper()
@@ -263,29 +262,36 @@ func TestConnectionSecretClearPostgres(t *testing.T) {
 		return qb.CredentialConfigured
 	}
 
-	created := put(0, secretOf("replace", "first-password"))
+	created, err := put(0, secretOf("replace", "first-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !credentialConfigured(created) {
 		t.Fatal("replace must store the credential")
 	}
-	kept := put(createdVersion(t, created), secretOf("keep", ""))
+	kept, err := put(createdVersion(t, created), secretOf("keep", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !credentialConfigured(kept) {
 		t.Fatal("keep must retain the credential")
 	}
-	cleared := put(createdVersion(t, kept), secretOf("remove", ""))
-	if credentialConfigured(cleared) {
-		t.Fatal("remove must clear the credential")
+	// Clearing the credential is refused: qBittorrent cannot authenticate in
+	// either mode without a secret, and the stored secret must survive the
+	// refused write.
+	if _, err := put(createdVersion(t, kept), secretOf("remove", "")); err == nil {
+		t.Fatal("qBittorrent accepted removal of its required credential")
 	}
 	loaded, err := service.GetConnection(ctx, "connection-test-qb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.SecretRef != "" {
-		t.Fatalf("expected cleared secret_ref, got %q", loaded.SecretRef)
+	if loaded.SecretRef == "" {
+		t.Fatal("the refused credential removal must not clear the saved secret")
 	}
-	// keep after clear stays clear.
-	stillCleared := put(createdVersion(t, cleared), secretOf("keep", ""))
-	if credentialConfigured(stillCleared) {
-		t.Fatal("keep must not resurrect a cleared credential")
+	stillKept, err := put(createdVersion(t, kept), secretOf("keep", ""))
+	if err != nil || !credentialConfigured(stillKept) {
+		t.Fatalf("keep after a refused remove must retain the credential: err=%v", err)
 	}
 }
 
@@ -750,7 +756,7 @@ func TestHTTPServiceQBittorrentRuntimeConfigPropagatesConnectionIDPostgres(t *te
 	service := NewService(db, newConnectionTestSecretStore(t, db))
 	var input generated.ConnectionInput
 	if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: "admin",
+		Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: strPtr("admin"),
 		Secret: replaceConnectionSecret(t, "probe-password"),
 	}); err != nil {
 		t.Fatal(err)
@@ -782,5 +788,126 @@ func TestHTTPServiceQBittorrentRuntimeConfigPropagatesConnectionIDPostgres(t *te
 	if ownerConfig.ConnectionID != config.ConnectionID || ownerConfig.ConnectionVersion != config.ConnectionVersion {
 		t.Fatalf("owner and adapter projections must agree on the connection reference and version: owner=%+v adapter=%+v",
 			ownerConfig, config)
+	}
+}
+
+// auth_mode round-trips through the typed config: credentials keeps the
+// username, api_key stores an empty username with the secret holding the API
+// key, and the runtime projection carries the mode to the downloader client.
+func TestQBittorrentAuthModeRoundTripPostgres(t *testing.T) {
+	db := openConnectionTestDB(t)
+	ctx := context.Background()
+	cleanupConnectionTestRows(t, ctx, db)
+	t.Cleanup(func() { cleanupConnectionTestRows(t, ctx, db) })
+
+	service := NewService(db, newConnectionTestSecretStore(t, db))
+	httpService := newGeneratedHTTPService(NewHTTPService(service))
+	putQB := func(id string, input generated.QBittorrentConnectionInput, expected int64) (generated.QBittorrentConnection, error) {
+		t.Helper()
+		var wire generated.ConnectionInput
+		if err := wire.FromQBittorrentConnectionInput(input); err != nil {
+			t.Fatal(err)
+		}
+		stored, err := httpService.PutConnection(ctx, id, expected, wire)
+		if err != nil {
+			return generated.QBittorrentConnection{}, err
+		}
+		qb, err := stored.AsQBittorrentConnection()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return qb, nil
+	}
+	replace := func(value string) generated.ConnectionSecret {
+		t.Helper()
+		var secret generated.ConnectionSecret
+		if err := secret.FromConnectionSecretReplace(generated.ConnectionSecretReplace{Mode: "replace", Value: value}); err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+	keep := func() generated.ConnectionSecret {
+		t.Helper()
+		var secret generated.ConnectionSecret
+		if err := secret.FromConnectionSecretKeep(generated.ConnectionSecretKeep{Mode: "keep"}); err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+
+	// credentials stays the default: omitting auth_mode keeps it, the username
+	// is required, and the view echoes the mode.
+	view, err := putQB("connection-test-qb-authmode", generated.QBittorrentConnectionInput{
+		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", Username: strPtr("admin"),
+		DownloadRoot: "/downloads", Secret: replace("first-password"),
+	}, 0)
+	if err != nil {
+		t.Fatalf("credentials connection must save: %v", err)
+	}
+	if view.AuthMode == nil || *view.AuthMode != generated.QBittorrentAuthModeCredentials || view.Username != "admin" {
+		t.Fatalf("credentials view must echo auth_mode and username: %+v", view)
+	}
+
+	// A credentials connection without a username is refused.
+	if _, err := putQB("connection-test-qb-authmode", generated.QBittorrentConnectionInput{
+		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080",
+		DownloadRoot: "/downloads", Secret: replace("first-password"),
+	}, 1); err == nil {
+		t.Fatal("credentials without a username must be refused")
+	}
+
+	// Switching to api_key drops the username; the key stays in the secret.
+	apiKeyMode := generated.QBittorrentAuthModeApiKey
+	apiView, err := putQB("connection-test-qb-authmode", generated.QBittorrentConnectionInput{
+		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", AuthMode: &apiKeyMode,
+		DownloadRoot: "/downloads", Secret: replace("qb-api-key"),
+	}, 1)
+	if err != nil {
+		t.Fatalf("api_key connection must save: %v", err)
+	}
+	if apiView.AuthMode == nil || *apiView.AuthMode != generated.QBittorrentAuthModeApiKey || apiView.Username != "" {
+		t.Fatalf("api_key view must echo auth_mode with an empty username: %+v", apiView)
+	}
+	loaded, err := service.GetConnection(ctx, "connection-test-qb-authmode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.QBittorrentConfig == nil || loaded.QBittorrentConfig.AuthMode != configurationdomain.QBittorrentAuthAPIKey {
+		t.Fatalf("the persisted typed config must hold auth_mode=api_key: %+v", loaded.QBittorrentConfig)
+	}
+	runtimeConfig, err := service.GetQBittorrentRuntimeConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeConfig.AuthMode != configurationdomain.QBittorrentAuthAPIKey || runtimeConfig.Password != "qb-api-key" {
+		t.Fatalf("the runtime projection must carry auth_mode and the API key secret: %+v", runtimeConfig)
+	}
+
+	// api_key rejects a leftover username instead of silently ignoring it.
+	if _, err := putQB("connection-test-qb-authmode", generated.QBittorrentConnectionInput{
+		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", AuthMode: &apiKeyMode, Username: strPtr("admin"),
+		DownloadRoot: "/downloads", Secret: replace("qb-api-key"),
+	}, 2); err == nil {
+		t.Fatal("api_key with a username must be refused")
+	}
+
+	// keep retains the stored secret across an auth_mode switch, so the same
+	// row can flip modes without re-entering the key.
+	keptView, err := putQB("connection-test-qb-authmode", generated.QBittorrentConnectionInput{
+		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", AuthMode: &apiKeyMode,
+		DownloadRoot: "/downloads", Secret: keep(),
+	}, 2)
+	if err != nil || keptView.AuthMode == nil || *keptView.AuthMode != generated.QBittorrentAuthModeApiKey {
+		t.Fatalf("keep across an auth_mode switch must retain the credential: view=%+v err=%v", keptView, err)
+	}
+
+	// Creating a fresh connection with secret keep holds no stored secret and
+	// is refused in either mode.
+	cleanupConnectionTestRows(t, ctx, db)
+	if _, err := putQB("connection-test-qb-fresh", generated.QBittorrentConnectionInput{
+		Kind: "qbittorrent", Name: "QB Fresh", Enabled: true, BaseUrl: "http://qb.local:8080", Username: strPtr("admin"),
+		DownloadRoot: "/downloads", Secret: keep(),
+	}, 0); err == nil {
+		t.Fatal("creating a qBittorrent connection without a secret must be refused")
 	}
 }

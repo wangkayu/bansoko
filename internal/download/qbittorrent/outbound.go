@@ -10,9 +10,10 @@ import (
 )
 
 // ErrAuthFailed means qBittorrent answered but refused the credentials: a wrong
-// password (login body "Fails."), a banned client address (login 403), or an
-// API call answered 403 after a login that said "Ok.". It is retryable: waiting
-// work resumes once the owner fixes the password in qBittorrent or settings.
+// password (login body "Fails."), a banned client address (login 403), a
+// rejected API key, or an API call answered 401/403 after a login that said
+// "Ok.". It is retryable: waiting work resumes once the owner fixes the
+// password or API key in qBittorrent or settings.
 var ErrAuthFailed = errors.New("qBittorrent refused the credentials")
 
 const loginPathSuffix = "/api/v2/auth/login"
@@ -28,16 +29,17 @@ func doOutbound(client *http.Client, request *http.Request) (*http.Response, err
 	return response, nil
 }
 
-// doRequest is doOutbound for qB API calls: a 403 after a successful login is
-// the credentials being refused, so it surfaces as ErrAuthFailed.
+// doRequest is doOutbound for qB API calls: a 401 or 403 after a successful
+// login — or from a stateless API key request — is the credentials being
+// refused, so it surfaces as ErrAuthFailed.
 func doRequest(client *http.Client, request *http.Request) (*http.Response, error) {
 	response, err := doOutbound(client, request)
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode == http.StatusForbidden && !strings.HasSuffix(request.URL.Path, loginPathSuffix) {
+	if (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) && !strings.HasSuffix(request.URL.Path, loginPathSuffix) {
 		response.Body.Close()
-		return nil, fmt.Errorf("qB request refused with HTTP 403: %w", ErrAuthFailed)
+		return nil, fmt.Errorf("qB request refused with HTTP %d: %w", response.StatusCode, ErrAuthFailed)
 	}
 	return response, nil
 }

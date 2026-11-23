@@ -1045,3 +1045,113 @@ func TestConfiguredClientMarksRuntimeConfigUnavailable(t *testing.T) {
 		t.Fatalf("nil runtime config source must be classified as unavailable: %v", err)
 	}
 }
+
+func TestClientAPIKeyModeSendsBearerAndSkipsLogin(t *testing.T) {
+	var versionCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			t.Error("api_key mode must never open a session")
+			http.Error(w, "unexpected login", http.StatusBadRequest)
+		case "/api/v2/app/version":
+			versionCalls++
+			if got := r.Header.Get("Authorization"); got != "Bearer qb-api-key" {
+				t.Errorf("api key must ride as a bearer token, got %q", got)
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			_, _ = w.Write([]byte("v5.2.0"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := Client{Endpoint: server.URL, AuthMode: AuthAPIKey, Password: "qb-api-key"}
+	version, err := client.Health(context.Background())
+	if err != nil || version != "v5.2.0" {
+		t.Fatalf("health = %q, err = %v", version, err)
+	}
+	if versionCalls != 1 {
+		t.Fatalf("expected one version request, got %d", versionCalls)
+	}
+}
+
+func TestClientAPIKeyModeMapsRefusalToAuthFailed(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		client := Client{Endpoint: server.URL, AuthMode: AuthAPIKey, Password: "qb-api-key"}
+		if _, err := client.Health(context.Background()); !errors.Is(err, ErrAuthFailed) {
+			t.Fatalf("HTTP %d must surface as ErrAuthFailed: %v", status, err)
+		}
+		server.Close()
+	}
+}
+
+func TestClientCredentialsLoginAcceptsNoContent(t *testing.T) {
+	// qBittorrent 5.2+ answers a successful login with 204 No Content instead
+	// of 200 with the body "Ok.".
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			if err := r.ParseForm(); err != nil || r.Form.Get("username") != "admin" || r.Form.Get("password") != "secret" {
+				http.Error(w, "bad credentials", http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v2/app/version":
+			_, _ = w.Write([]byte("v5.2.0"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := Client{Endpoint: server.URL, Username: "admin", Password: "secret"}
+	version, err := client.Health(context.Background())
+	if err != nil || version != "v5.2.0" {
+		t.Fatalf("health = %q, err = %v", version, err)
+	}
+}
+
+func TestClientCredentialsLoginRefused(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		client := Client{Endpoint: server.URL, Username: "admin", Password: "wrong"}
+		if _, err := client.Health(context.Background()); !errors.Is(err, ErrAuthFailed) {
+			t.Fatalf("login HTTP %d must surface as ErrAuthFailed: %v", status, err)
+		}
+		server.Close()
+	}
+}
+
+func TestConfiguredClientPropagatesAuthMode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			t.Error("api_key mode must never open a session")
+			http.Error(w, "unexpected login", http.StatusBadRequest)
+		case "/api/v2/app/webapiVersion":
+			if got := r.Header.Get("Authorization"); got != "Bearer qb-api-key" {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			_, _ = w.Write([]byte("2.14.1"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := ConfiguredClient{Source: &testRuntimeConfigSource{config: RuntimeConfig{
+		Endpoint: server.URL, AuthMode: AuthAPIKey, Password: "qb-api-key",
+	}}}
+	version, err := provider.WebAPIVersion(context.Background())
+	if err != nil || version != "2.14.1" {
+		t.Fatalf("api_key runtime config must authenticate with the bearer token: version=%q err=%v", version, err)
+	}
+}

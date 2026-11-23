@@ -9888,10 +9888,18 @@ components:
           keep: '#/components/schemas/ConnectionSecretKeep'
           replace: '#/components/schemas/ConnectionSecretReplace'
           remove: '#/components/schemas/ConnectionSecretRemove'
+    QBittorrentAuthMode:
+      type: string
+      enum: [credentials, api_key]
+      description: >-
+        How the connection authenticates to qBittorrent. credentials uses the
+        username and the stored password with the session login; api_key sends
+        the stored secret as an `Authorization: Bearer` token and never logs in
+        (qBittorrent 5.2+ / WebAPI 2.14.1+).
     QBittorrentConnectionInput:
       type: object
       additionalProperties: false
-      required: [kind, name, enabled, base_url, username, secret, download_root]
+      required: [kind, name, enabled, base_url, secret, download_root]
       properties:
         kind:
           type: string
@@ -9905,6 +9913,8 @@ components:
         base_url:
           type: string
           format: uri
+        auth_mode:
+          $ref: '#/components/schemas/QBittorrentAuthMode'
         username:
           type: string
           maxLength: 256
@@ -10135,6 +10145,8 @@ components:
         base_url:
           type: string
           format: uri
+        auth_mode:
+          $ref: '#/components/schemas/QBittorrentAuthMode'
         username:
           type: string
         credential_configured:

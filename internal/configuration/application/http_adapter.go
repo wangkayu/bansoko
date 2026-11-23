@@ -89,6 +89,7 @@ func (s *HTTPService) GetQBittorrentRuntimeConfig(ctx context.Context) (qbittorr
 		ConnectionID:      item.ConnectionID,
 		ConnectionVersion: item.ConnectionVersion,
 		Endpoint:          item.Endpoint,
+		AuthMode:          qbittorrent.AuthMode(item.AuthMode),
 		Username:          item.Username,
 		Password:          item.Password,
 		Category:          item.Category,

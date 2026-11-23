@@ -93,3 +93,34 @@ func TestQBittorrentConfigNormalizesDownloaderRootMapping(t *testing.T) {
 		t.Fatal("downloader_root with parent traversal must be rejected")
 	}
 }
+
+func TestQBittorrentConfigAuthMode(t *testing.T) {
+	// An unset auth_mode normalizes to credentials, the pre-auth_mode behavior.
+	config, err := (QBittorrentConnectionConfig{Username: "admin", SaveRoot: "/downloads"}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthMode != QBittorrentAuthCredentials {
+		t.Fatalf("empty auth_mode should default to credentials, got %q", config.AuthMode)
+	}
+
+	// api_key authenticates with the stored secret alone, so a username is
+	// refused instead of being silently ignored.
+	apiKey, err := (QBittorrentConnectionConfig{AuthMode: QBittorrentAuthAPIKey, SaveRoot: "/downloads"}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiKey.AuthMode != QBittorrentAuthAPIKey || apiKey.Username != "" {
+		t.Fatalf("api_key config was not normalized: %+v", apiKey)
+	}
+	if _, err := (QBittorrentConnectionConfig{AuthMode: QBittorrentAuthAPIKey, Username: "admin", SaveRoot: "/downloads"}).Normalize(); err == nil {
+		t.Fatal("api_key with a username must be rejected")
+	}
+
+	if _, err := (QBittorrentConnectionConfig{AuthMode: QBittorrentAuthCredentials, SaveRoot: "/downloads"}).Normalize(); err == nil {
+		t.Fatal("credentials without a username must be rejected")
+	}
+	if _, err := (QBittorrentConnectionConfig{AuthMode: "token", Username: "admin", SaveRoot: "/downloads"}).Normalize(); err == nil {
+		t.Fatal("an unknown auth_mode must be rejected")
+	}
+}

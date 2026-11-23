@@ -15,7 +15,7 @@ func putQBConnectionForTest(t *testing.T, ctx context.Context, svc generatedHTTP
 	t.Helper()
 	var input generated.ConnectionInput
 	if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		Kind: "qbittorrent", Name: name, Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: "admin",
+		Kind: "qbittorrent", Name: name, Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: strPtr("admin"),
 		DownloadRoot: "/downloads", Secret: replaceConnectionSecret(t, "probe-password"),
 	}); err != nil {
 		t.Fatal(err)

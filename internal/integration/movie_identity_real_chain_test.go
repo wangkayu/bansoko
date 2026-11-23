@@ -180,7 +180,7 @@ func TestMovieBindingRealChainPostgres(t *testing.T) {
 	if err := connectionInput.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
 		BaseUrl: endpoint, DownloadRoot: downloadRoot, DownloaderRoot: &hostDownloadRoot,
 		Enabled: true, Kind: generated.QBittorrentConnectionInputKindQbittorrent,
-		Name: connectionID, Secret: secret, Username: username,
+		Name: connectionID, Secret: secret, Username: &username,
 	}); err != nil {
 		t.Fatal(err)
 	}

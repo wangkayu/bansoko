@@ -172,7 +172,7 @@ func seedDownloadTaskWithEntry(t *testing.T, db *sql.DB, taskID, state string, c
 	}
 	defer tx.Rollback()
 	for _, query := range []string{
-		`INSERT INTO connections(id, kind, name, endpoint, secret_ref, state, config) VALUES ('qb-main', 'qbittorrent', 'QB Main', 'http://qb.example:8080', 'test-secret', 'configured', '{"username":"admin","category":"","save_root":"/downloads","downloader_root":"","user_tags":[]}'::jsonb)`,
+		`INSERT INTO connections(id, kind, name, endpoint, secret_ref, state, config) VALUES ('qb-main', 'qbittorrent', 'QB Main', 'http://qb.example:8080', 'test-secret', 'configured', '{"auth_mode":"credentials","username":"admin","category":"","save_root":"/downloads","downloader_root":"","user_tags":[]}'::jsonb)`,
 		`INSERT INTO managed_anime(id, title) VALUES ('anime-qb-test', 'QB Test')`,
 		`INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state) VALUES ('sub-qb-test', 'anime-qb-test', 'custom', 'QB Test', 'active')`,
 		`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title) VALUES ('source-qb-test', 'sub-qb-test', 'custom_rss', 'https://example.test/rss', 'https://example.test/rss', 'Test', 'QB Test')`,

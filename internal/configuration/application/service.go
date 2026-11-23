@@ -113,8 +113,9 @@ type Service struct {
 }
 
 // QBittorrentRuntimeConfig is the provider-facing projection of the single
-// typed qBittorrent connection selected by configuration. The password is
-// resolved only for an external side effect; it is never part of a read model.
+// typed qBittorrent connection selected by configuration. The secret (password
+// or API key, per AuthMode) is resolved only for an external side effect; it
+// is never part of a read model.
 type QBittorrentRuntimeConfig struct {
 	// ConnectionID is the internal owner reference of the selected connection.
 	// It is never part of a public DTO or of provider credentials; the provider
@@ -125,12 +126,15 @@ type QBittorrentRuntimeConfig struct {
 	// the old one, so the version travels with the reference.
 	ConnectionVersion int64
 	Endpoint          string
-	Username          string
-	Password          string
-	Category          string
-	UserTags          []string
-	SaveRoot          string
-	ApplicationRoot   string
+	// AuthMode selects credentials (Username + password Secret with a session
+	// login) or api_key (Secret sent as a bearer token). Empty means credentials.
+	AuthMode        domain.QBittorrentAuthMode
+	Username        string
+	Password        string
+	Category        string
+	UserTags        []string
+	SaveRoot        string
+	ApplicationRoot string
 }
 
 type networkRouteRecord struct {
@@ -250,11 +254,15 @@ func connectionHealthFailure(connection domain.Connection, code, message string)
 
 func (t ProviderConnectionTester) testQBittorrent(ctx context.Context, connection domain.Connection) domain.HealthSnapshot {
 	snapshot := domain.HealthSnapshot{ConnectionID: connection.ID, Kind: connection.Kind, State: domain.ConnectionDegraded, Code: "unavailable", Message: "qBittorrent connection test failed", CheckedAt: time.Now().UTC()}
-	password := ""
+	secret := ""
 	if t.ResolveSecret != nil && connection.SecretRef != "" {
-		password, _ = t.ResolveSecret.Resolve(connection.SecretRef)
+		secret, _ = t.ResolveSecret.Resolve(connection.SecretRef)
 	}
-	if connection.QBittorrentConfig == nil || strings.TrimSpace(connection.QBittorrentConfig.Username) == "" || password == "" {
+	authMode := domain.QBittorrentAuthCredentials
+	if connection.QBittorrentConfig != nil && connection.QBittorrentConfig.AuthMode != "" {
+		authMode = connection.QBittorrentConfig.AuthMode
+	}
+	if connection.QBittorrentConfig == nil || secret == "" || (authMode == domain.QBittorrentAuthCredentials && strings.TrimSpace(connection.QBittorrentConfig.Username) == "") {
 		snapshot.Code = "missing_credentials"
 		snapshot.Message = "qBittorrent username or secret is not configured"
 		return snapshot
@@ -270,8 +278,56 @@ func (t ProviderConnectionTester) testQBittorrent(ctx context.Context, connectio
 		// the runtime client does: directly, bypassing the env egress proxy.
 		client = &http.Client{Timeout: 10 * time.Second, Transport: qbittorrent.DirectTransport()}
 	}
-	form := url.Values{"username": {connection.QBittorrentConfig.Username}, "password": {password}}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(connection.Endpoint, "/")+"/api/v2/auth/login", strings.NewReader(form.Encode()))
+	endpoint := strings.TrimRight(connection.Endpoint, "/")
+	if authMode == domain.QBittorrentAuthAPIKey {
+		return t.testQBittorrentAPIKey(ctx, client, endpoint, secret, snapshot)
+	}
+	return t.testQBittorrentLogin(ctx, client, endpoint, connection.QBittorrentConfig.Username, secret, snapshot)
+}
+
+// testQBittorrentAPIKey probes the stateless API key authentication: the
+// stored secret rides as a bearer token and any authenticated endpoint
+// confirms it. 2xx with a non-empty body proves the key is accepted; 401/403
+// names an authentication failure.
+func (t ProviderConnectionTester) testQBittorrentAPIKey(ctx context.Context, client *http.Client, endpoint, apiKey string, snapshot domain.HealthSnapshot) domain.HealthSnapshot {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/v2/app/version", nil)
+	if err != nil {
+		snapshot.Code = "invalid_endpoint"
+		snapshot.Message = "qBittorrent endpoint is invalid"
+		return snapshot
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	response, err := client.Do(request)
+	if err != nil {
+		snapshot.Code = "network_error"
+		snapshot.Message = "qBittorrent provider is unreachable"
+		return snapshot
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(response.Body, 64))
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		snapshot.Code = fmt.Sprintf("http_%d", response.StatusCode)
+		snapshot.Message = "qBittorrent authentication failed"
+		return snapshot
+	}
+	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.TrimSpace(string(body)) != "" {
+		snapshot.State = domain.ConnectionConfigured
+		snapshot.Code = "ok"
+		snapshot.Message = "qBittorrent authentication succeeded"
+		return snapshot
+	}
+	snapshot.Code = fmt.Sprintf("http_%d", response.StatusCode)
+	snapshot.Message = "qBittorrent authentication failed"
+	return snapshot
+}
+
+// testQBittorrentLogin probes the username/password session login.
+// qBittorrent 5.2+ answers 204 No Content on success where older versions
+// answer 200 with the body "Ok."; both are accepted. 401/403, or a "Fails."
+// body, names an authentication failure.
+func (t ProviderConnectionTester) testQBittorrentLogin(ctx context.Context, client *http.Client, endpoint, username, password string, snapshot domain.HealthSnapshot) domain.HealthSnapshot {
+	form := url.Values{"username": {username}, "password": {password}}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/v2/auth/login", strings.NewReader(form.Encode()))
 	if err != nil {
 		snapshot.Code = "invalid_endpoint"
 		snapshot.Message = "qBittorrent endpoint is invalid"
@@ -286,11 +342,13 @@ func (t ProviderConnectionTester) testQBittorrent(ctx context.Context, connectio
 	}
 	defer response.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 64))
-	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.TrimSpace(string(body)) == "Ok." {
-		snapshot.State = domain.ConnectionConfigured
-		snapshot.Code = "ok"
-		snapshot.Message = "qBittorrent authentication succeeded"
-		return snapshot
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		if response.StatusCode == http.StatusNoContent || strings.TrimSpace(string(body)) == "Ok." {
+			snapshot.State = domain.ConnectionConfigured
+			snapshot.Code = "ok"
+			snapshot.Message = "qBittorrent authentication succeeded"
+			return snapshot
+		}
 	}
 	snapshot.Code = fmt.Sprintf("http_%d", response.StatusCode)
 	snapshot.Message = "qBittorrent authentication failed"
@@ -805,6 +863,11 @@ FROM connections WHERE id = $1 FOR UPDATE`, id).Scan(&existingKind, &existingSec
 		if effectiveQBConfig == nil {
 			return domain.Connection{}, errors.New("qBittorrent connection config is required when creating a qBittorrent connection")
 		}
+		// qBittorrent authenticates either way — password (credentials) or API
+		// key (api_key) — so the connection must always hold a secret.
+		if secretRef == "" {
+			return domain.Connection{}, &apperrors.BadRequest{Code: "CONNECTION_SECRET_REQUIRED", Message: "A qBittorrent password or API key is required."}
+		}
 	}
 	var effectiveHTTPFeedConfig *domain.HTTPFeedConnectionConfig
 	if input.Kind == domain.ConnectionHTTPFeed {
@@ -1310,6 +1373,7 @@ ORDER BY c.name, c.id`)
 		ConnectionID:      connection.ID,
 		ConnectionVersion: connection.Version,
 		Endpoint:          connection.Endpoint,
+		AuthMode:          connection.QBittorrentConfig.AuthMode,
 		Username:          connection.QBittorrentConfig.Username,
 		Password:          password,
 		Category:          connection.QBittorrentConfig.Category,

@@ -31,8 +31,9 @@ import { t } from "../../lib/i18n";
 //   into global_config_sections; already-submitted downloads run on a frozen snapshot, so edits
 //   affect only later tasks.
 //   The qB connection fields follow the QBittorrentConnectionInput contract exactly
-//   (name/enabled/base_url/username/secret/route_id/download_root/downloader_root); no extra fields
-//   are invented.
+//   (name/enabled/base_url/auth_mode/username/secret/route_id/download_root/downloader_root); no extra fields
+//   are invented. auth_mode picks username+password (credentials) or a Bearer API key (api_key,
+//   qBittorrent 5.2+); switching the method on a saved connection forces re-entering the credential.
 
 const OPERATION_LABELS = (): Record<string, string> => ({
   copy: t("file.operation.copy"),
@@ -216,16 +217,22 @@ function FileEffectForm({
 
 type ConnectionSecretInput = { mode: "keep" } | { mode: "replace"; value: string } | { mode: "remove" };
 
+type QBAuthMode = "credentials" | "api_key";
+
 type QBDraft = {
   id?: string;
   version: number;
   name: string;
   enabled: boolean;
   base_url: string;
+  auth_mode: QBAuthMode;
+  // The mode the stored connection was saved with; leaving it forces re-entering the credential.
+  saved_auth_mode: QBAuthMode;
   username: string;
+  // The password (credentials) or the API key (api_key) while being entered.
   password: string;
   secret_mode: SecretMode;
-  // Whether the stored downloader already holds a password; without one the dialog works as on create.
+  // Whether the stored downloader already holds a credential; without one the dialog works as on create.
   credential_configured: boolean;
   download_root: string;
   downloader_root: string;
@@ -241,6 +248,8 @@ function qbDraftFrom(item?: Connection): QBDraft {
       name: "",
       enabled: true,
       base_url: "",
+      auth_mode: "credentials",
+      saved_auth_mode: "credentials",
       username: "",
       password: "",
       secret_mode: "replace",
@@ -252,12 +261,15 @@ function qbDraftFrom(item?: Connection): QBDraft {
       user_tags: [],
     };
   }
+  const authMode: QBAuthMode = item.auth_mode === "api_key" ? "api_key" : "credentials";
   return {
     id: item.id,
     version: item.version,
     name: item.name,
     enabled: item.enabled,
     base_url: item.base_url,
+    auth_mode: authMode,
+    saved_auth_mode: authMode,
     username: item.username,
     password: "",
     // Configured credentials are kept by default; an unconfigured one goes straight into the replace state, avoiding keep on empty credentials.
@@ -269,6 +281,20 @@ function qbDraftFrom(item?: Connection): QBDraft {
     category: item.category ?? "",
     user_tags: item.user_tags ?? [],
   };
+}
+
+// Switching the auth method away from the saved one invalidates the stored
+// credential's meaning (a password is not an API key), so re-entry is forced;
+// switching back may keep a still-configured credential.
+function qbDraftWithAuthMode(draft: QBDraft, authMode: QBAuthMode): QBDraft {
+  if (authMode === draft.auth_mode) return draft;
+  const next: QBDraft = { ...draft, auth_mode: authMode };
+  if (authMode !== draft.saved_auth_mode) {
+    next.secret_mode = "replace";
+  } else if (draft.credential_configured) {
+    next.secret_mode = "keep";
+  }
+  return next;
 }
 
 // Field limits shared with the OpenAPI contract and the backend normalization.
@@ -299,12 +325,14 @@ function qbAddressValid(value: string): boolean {
 
 type QBErrors = { address?: string; username?: string; downloadDir?: string; localDir?: string; blocked: boolean };
 
-// A downloader cannot run without a username and a password, so those two are required whenever the
-//   password is being entered (create, or replacing the stored one); keep needs no input.
+// A downloader cannot run without its credential, so the password (credentials) or the API key
+//   (api_key) is required whenever it is being entered (create, an auth-method switch, or replacing
+//   the stored one); keep needs no input. The username is only used by the credentials method.
 function qbErrors(draft: QBDraft): QBErrors {
   const passwordEntered = !draft.credential_configured || draft.secret_mode === "replace";
+  const needsUsername = draft.auth_mode === "credentials";
   const address = draft.base_url.trim() !== "" && !qbAddressValid(draft.base_url) ? t("settings.download.addressInvalid") : undefined;
-  const username = draft.username.trim() === "" && (draft.base_url.trim() !== "" || draft.password !== "") ? t("settings.download.usernameRequired") : undefined;
+  const username = needsUsername && draft.username.trim() === "" && (draft.base_url.trim() !== "" || draft.password !== "") ? t("settings.download.usernameRequired") : undefined;
   const downloadDir = draft.download_root.trim() === ""
     ? (draft.base_url.trim() !== "" || draft.username.trim() !== "" || draft.password !== "" ? t("settings.download.downloadDirRequired") : undefined)
     : hasParentSegment(draft.download_root) ? t("settings.download.pathInvalid") : undefined;
@@ -312,7 +340,7 @@ function qbErrors(draft: QBDraft): QBErrors {
   const blocked =
     draft.name.trim() === "" ||
     !qbAddressValid(draft.base_url) ||
-    draft.username.trim() === "" ||
+    (needsUsername && draft.username.trim() === "") ||
     (passwordEntered && draft.password === "") ||
     draft.download_root.trim() === "" ||
     downloadDir !== undefined ||
@@ -352,7 +380,9 @@ function QBittorrentCard() {
         name: draft.name.trim(),
         enabled: draft.enabled,
         base_url: draft.base_url.trim(),
-        username: draft.username.trim(),
+        auth_mode: draft.auth_mode,
+        // The API-key method authenticates without a username; the server expects it empty.
+        username: draft.auth_mode === "credentials" ? draft.username.trim() : undefined,
         secret: buildSecret(draft.password),
         route_id: draft.route_id === "" ? undefined : draft.route_id,
         download_root: draft.download_root.trim(),
@@ -494,23 +524,49 @@ function QBittorrentCard() {
             >
               <Input aria-label={t("settings.download.address")} value={draft.base_url} placeholder="http://qbittorrent.local:8080" onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} />
             </Field>
-            {draft.credential_configured && (
+            <Field
+              className="tw:col-span-2 tw:phone:col-span-1"
+              label={t("settings.download.authMode")}
+              hint={draft.auth_mode === "api_key" ? t("settings.download.authModeApiKeyHint") : t("settings.download.authModeCredentialsHint")}
+            >
+              <Select
+                label={t("settings.download.authMode")}
+                value={draft.auth_mode}
+                options={[
+                  { value: "credentials", label: t("settings.download.authModeCredentials") },
+                  { value: "api_key", label: t("settings.download.authModeApiKey") },
+                ]}
+                onChange={(mode) => setDraft(qbDraftWithAuthMode(draft, mode as QBAuthMode))}
+              />
+            </Field>
+            {draft.credential_configured && draft.auth_mode === draft.saved_auth_mode && (
               <SecretField
                 className="tw:col-span-2 tw:phone:col-span-1"
                 editing
                 allowRemove={false}
                 mode={draft.secret_mode}
                 onModeChange={(mode) => setDraft({ ...draft, secret_mode: mode })}
-                subject={t("settings.download.password")}
-                replaceHint={t("settings.download.replaceHint")}
+                subject={draft.auth_mode === "api_key" ? t("settings.download.apiKey") : t("settings.download.password")}
+                replaceHint={draft.auth_mode === "api_key" ? t("settings.download.apiKeyReplaceHint") : t("settings.download.replaceHint")}
               />
             )}
-            <Field label={t("settings.download.username")} hint={errors.username && <span className="settings-connections-error">{errors.username}</span>}>
-              <Input aria-label={t("settings.download.username")} maxLength={QB_USERNAME_MAX} value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
-            </Field>
+            {draft.auth_mode === "credentials" && (
+              <Field label={t("settings.download.username")} hint={errors.username && <span className="settings-connections-error">{errors.username}</span>}>
+                <Input aria-label={t("settings.download.username")} maxLength={QB_USERNAME_MAX} value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
+              </Field>
+            )}
             {(!draft.credential_configured || draft.secret_mode === "replace") && (
-              <Field label={t("settings.download.password")}>
-                <Input type="password" aria-label={t("settings.download.password")} maxLength={QB_SECRET_MAX} value={draft.password} onChange={(e) => setDraft({ ...draft, password: e.target.value })} />
+              <Field
+                label={draft.auth_mode === "api_key" ? t("settings.download.apiKey") : t("settings.download.password")}
+                hint={draft.credential_configured && draft.auth_mode !== draft.saved_auth_mode ? t("settings.download.apiKeySwitchHint") : undefined}
+              >
+                <Input
+                  type="password"
+                  aria-label={draft.auth_mode === "api_key" ? t("settings.download.apiKey") : t("settings.download.password")}
+                  maxLength={QB_SECRET_MAX}
+                  value={draft.password}
+                  onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+                />
               </Field>
             )}
             <Field className="tw:col-span-2 tw:phone:col-span-1" label={t("settings.download.proxyLabel")}>

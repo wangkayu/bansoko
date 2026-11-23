@@ -21,8 +21,24 @@ import (
 	"bansoko/internal/observability/outbound"
 )
 
+// AuthMode selects how the client authenticates to qBittorrent.
+type AuthMode string
+
+const (
+	// AuthCredentials opens a session with the username and password (the
+	// default, and the only mode qBittorrent offered before 5.2).
+	AuthCredentials AuthMode = "credentials"
+	// AuthAPIKey sends the stored secret as a stateless
+	// `Authorization: Bearer` token on every request (qBittorrent 5.2+ /
+	// WebAPI 2.14.1+); no session login happens.
+	AuthAPIKey AuthMode = "api_key"
+)
+
 type Client struct {
-	Endpoint        string
+	Endpoint string
+	// AuthMode selects credentials or api_key authentication. Empty means
+	// credentials. In api_key mode Password holds the API key.
+	AuthMode        AuthMode
 	Username        string
 	Password        string
 	Category        string
@@ -159,11 +175,14 @@ type RuntimeConfig struct {
 	// it names a new provider namespace instead of silently reusing the old one.
 	ConnectionVersion int64
 	Endpoint          string
-	Username          string
-	Password          string
-	Category          string
-	UserTags          []string
-	SaveRoot          string
+	// AuthMode selects credentials or api_key authentication (empty means
+	// credentials); it mirrors the typed connection's auth_mode.
+	AuthMode AuthMode
+	Username string
+	Password string
+	Category string
+	UserTags []string
+	SaveRoot string
 	// ApplicationRoot is the optional local filesystem root mapped from
 	// SaveRoot for mixed deployments. Empty means the same-path convention.
 	ApplicationRoot string
@@ -241,7 +260,7 @@ func (c ConfiguredClient) client(ctx context.Context) (Client, error) {
 	if err != nil {
 		return Client{}, fmt.Errorf("%w: %w", ErrRuntimeConfigUnavailable, err)
 	}
-	client := Client{Endpoint: config.Endpoint, Username: config.Username, Password: config.Password,
+	client := Client{Endpoint: config.Endpoint, AuthMode: config.AuthMode, Username: config.Username, Password: config.Password,
 		Category: config.Category, UserTags: append([]string(nil), config.UserTags...), SaveRoot: config.SaveRoot,
 		HTTP: c.HTTP, Timeout: c.Timeout}
 	if snapshot, snapshotErr := DerivePathSnapshot(config); snapshotErr == nil {
@@ -1404,6 +1423,12 @@ func (c Client) appVersion(ctx context.Context, client *http.Client) (string, er
 }
 
 func (c Client) login(ctx context.Context, client *http.Client) error {
+	if c.authMode() == AuthAPIKey {
+		// API key authentication is stateless: the client transport already
+		// attaches the bearer token to every request, so there is no session
+		// to open and /api/v2/auth/login is never called.
+		return nil
+	}
 	form := url.Values{"username": {c.Username}, "password": {c.Password}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.Endpoint, "/")+"/api/v2/auth/login", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -1415,13 +1440,14 @@ func (c Client) login(ctx context.Context, client *http.Client) error {
 		return fmt.Errorf("login to qB: %w", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("qB login refused with HTTP 403: %w", ErrAuthFailed)
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("qB login refused with HTTP %d: %w", response.StatusCode, ErrAuthFailed)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("qB login failed with HTTP %d", response.StatusCode)
 	}
-	// qB answers 200 with "Fails." for a wrong username or password.
+	// qB < 5.2 answers 200 with "Ok."; 5.2+ answers 204 No Content. qB
+	// answers 200 with "Fails." for a wrong username or password.
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 256))
 	if strings.TrimSpace(string(body)) == "Fails." {
 		return fmt.Errorf("qB login rejected the credentials: %w", ErrAuthFailed)
@@ -1783,10 +1809,46 @@ func (c Client) client() *http.Client {
 		client.Timeout = c.timeout()
 		client.Transport = directTransport
 	}
+	if c.authMode() == AuthAPIKey {
+		// The single request-execution point: the bearer token is attached by
+		// this transport wrapper, never assembled per method, and never part
+		// of an error message or log line.
+		client.Transport = &bearerTransport{base: client.Transport, token: c.Password}
+	}
 	if client.Jar == nil {
 		client.Jar, _ = cookiejar.New(nil)
 	}
 	return &client
+}
+
+// authMode resolves the effective authentication mode; an unset mode keeps
+// the historical username/password session login.
+func (c Client) authMode() AuthMode {
+	if c.AuthMode == AuthAPIKey {
+		return AuthAPIKey
+	}
+	return AuthCredentials
+}
+
+// bearerTransport is the one place an API key is attached to a request. The
+// key only ever lives in the Authorization header; wrapping clones the
+// request so the caller's headers are never mutated.
+type bearerTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t *bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	if t.token == "" {
+		return base.RoundTrip(request)
+	}
+	cloned := request.Clone(request.Context())
+	cloned.Header.Set("Authorization", "Bearer "+t.token)
+	return base.RoundTrip(cloned)
 }
 
 func (c Client) timeout() time.Duration {

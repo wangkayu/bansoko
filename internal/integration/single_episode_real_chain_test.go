@@ -124,7 +124,7 @@ func TestSingleEpisodeRealPostgresQBRSSFileOperation(t *testing.T) {
 		Kind:           generated.QBittorrentConnectionInputKindQbittorrent,
 		Name:           connectionID,
 		Secret:         secret,
-		Username:       username,
+		Username:       &username,
 	}); err != nil {
 		t.Fatal(err)
 	}
