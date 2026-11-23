@@ -76,6 +76,14 @@ export function useSaveParts(order: readonly string[]) {
           const submit = savers.current.get(key);
           if (!submit) continue;
           const result = await submit();
+          // Clear the submitted part's busy flag in the same batch as setFailed/setSaving(false)
+          // instead of waiting for the child's post-commit useEffect, so the footer button never
+          // lags in "Saving…" after the alert has already rendered.
+          setParts((prev) => {
+            const current = prev[key];
+            if (!current || !current.busy) return prev;
+            return { ...prev, [key]: { ...current, busy: false } };
+          });
           if (!result.ok) {
             setFailed(parts[key]?.label);
             return { ok: false, messages };

@@ -950,7 +950,7 @@ describe("AnimeTabs owner 编辑保活", () => {
     // The parser card shows the conflict-refresh block in place; the rules tab still has unsaved changes.
     expect(screen.getByRole("button", { name: t("common.refreshLatest") })).toBeInTheDocument();
     expect(hasUnsavedDot(tabNamed(t("tabs.names.rules")))).toBe(true);
-    expect(footerSave()).toBeEnabled();
+    await waitFor(() => expect(footerSave()).toBeEnabled());
   });
 });
 
@@ -1838,7 +1838,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const { toast } = await import("sonner");
     expect(toast.success).not.toHaveBeenCalled();
     expect(reevaluateCalls(fetchMock)).toHaveLength(0);
-    expect(footerSave()).toBeEnabled();
+    await waitFor(() => expect(footerSave()).toBeEnabled());
     expect(hasUnsavedDot(tabNamed(t("tabs.names.metadata")))).toBe(true);
   });
 
