@@ -306,8 +306,6 @@ export const enFormsCopy = {
     effectHint: "Import method and what to do when a file exists",
     episodePatternsPlaceholder: "Leave empty to use built-in rules",
     episodePatternsUnused: "reltitle doesn't use episode patterns; saved patterns are kept",
-    episodePatternsUnusedCount: "({n} saved patterns kept)",
-    switchToRegexView: "View regex ({n})",
     tagPlaceholder: "Type and press Enter to add",
     patternEditor: {
       countOrdered: "{n} · ordered",

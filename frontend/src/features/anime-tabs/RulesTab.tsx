@@ -102,7 +102,6 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
     () => modifiedRuleSections(sections, host.businessPreset, draftKind, { includeAniBT: showAniBTRow }),
     [sections, host.businessPreset, draftKind, showAniBTRow],
   );
-  const patternCount = sections.parser?.mode === "replace" ? sections.parser.value.episode_patterns.length : 0;
   return (
     <div className="metadata-stack">
       {host.rulesHeaderAction && (
@@ -115,7 +114,7 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
         sections={sections}
         onChange={(next) => onDraftChange({ ...draft, rules: { sections: next } })}
         // The parser and the episode recognition rules are one block: picking reltitle hides the recognition rules.
-        parserChoice={<DraftParserChoice draft={draft} onDraftChange={onDraftChange} patternCount={patternCount} />}
+        parserChoice={<DraftParserChoice draft={draft} onDraftChange={onDraftChange} />}
         parserKind={draftKind}
         modified={modified}
         afterReleaseFilter={(
@@ -372,7 +371,6 @@ function OwnerRulesTab({
   }
 
   if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.rules.reading")} />;
-  const patternCount = edit.parser?.mode === "replace" ? edit.parser.value.episode_patterns.length : 0;
   return (
     <div className="metadata-stack">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
@@ -405,7 +403,6 @@ function OwnerRulesTab({
             animeID={animeID}
             active={active}
             initialPolicy={workspace.parser_policy}
-            patternCount={patternCount}
             onKindChange={setParserKind}
             onDirtyChange={setParserDirty}
             onSaved={onChanged}

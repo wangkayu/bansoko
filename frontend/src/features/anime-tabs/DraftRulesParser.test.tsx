@@ -119,8 +119,9 @@ describe("订阅前规则 tab：解析器与集数识别规则同一块", () => 
     expect(latest?.business?.parser.kind).toBe("reltitle");
     expect(latest?.business?.parser.source_owner).toBe("candidate_draft");
     await waitFor(() => expect(screen.queryByText(t("settings.rules.episodePatterns"))).toBeNull());
-    expect(screen.getByText(new RegExp(t("policy.parser.kindReltitleDescription")))).toBeVisible();
-    expect(screen.getByRole("button", { name: t("forms.rules.switchToRegexView", { n: 1 }) })).toBeVisible();
+    expect(screen.getByText(t("policy.parser.kindReltitleDescription"))).toBeVisible();
+    expect(screen.queryByText(/已保留/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /切到正则/ })).toBeNull();
     // The recognition rules themselves are never cleared: switching back to regex finds them intact.
     expect(latest?.rules.sections.parser).toEqual({ mode: "replace", value: { episode_patterns: [PATTERN] } });
 

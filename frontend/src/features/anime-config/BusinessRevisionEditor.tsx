@@ -39,7 +39,11 @@ export function BusinessRevisionEditor({ animeID, onApplied, onDirtyChange }: { 
         setEdit((current) => current ? { ...current, draft: loadBusinessPreset(current.draft, preset) } : current);
       })}>{t("config.useDefaults")}</Button>
       {(dirty || candidate) && <p>{dirty ? t("config.revision.dirty") : t("config.revision.saved")}</p>}
-      {edit.draft.business && <BusinessSnapshotFields value={edit.draft.business} managedAnimeID={animeID} onChange={(business) => setEdit({ ...edit, draft: { ...edit.draft, business } })} />}
+      {edit.draft.business && (
+        <div className="metadata-stack">
+          <BusinessSnapshotFields value={edit.draft.business} managedAnimeID={animeID} onChange={(business) => setEdit({ ...edit, draft: { ...edit.draft, business } })} />
+        </div>
+      )}
       <RulesSectionsFields sections={edit.draft.rules.sections} onChange={(sections) => setEdit({ ...edit, draft: { ...edit.draft, rules: { sections } } })} />
       <Button disabled={busy || !dirty} onClick={() => void run(async () => {
         const draft = await freezeBusinessDraft(edit.draft);

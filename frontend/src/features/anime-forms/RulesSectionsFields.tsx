@@ -215,23 +215,30 @@ export function RulesSectionsFields({
 
       {shown("file_effect") && (
         <SectionCard meta={meta("file_effect")} modified={modified?.has("file_effect")}>
-          <div className="rules-responsive">
-            <Field label={t("file.operationTitle")}>
-              <Select<FileEffectRules["operation"]>
-                label={t("file.operationTitle")}
-                value={(fileEffect.value as FileEffectRules).operation}
-                options={fileOperationOptions()}
-                onChange={(operation) => fileEffect.setValue({ ...(fileEffect.value as FileEffectRules), operation })}
-              />
-            </Field>
-            <Field label={t("file.collisionTitle")} hint={(fileEffect.value as FileEffectRules).collision_policy === "overwrite" ? t("file.collisionOverwriteNote") : undefined}>
-              <Select<FileEffectRules["collision_policy"]>
-                label={t("file.collisionTitle")}
-                value={(fileEffect.value as FileEffectRules).collision_policy}
-                options={collisionPolicyOptions()}
-                onChange={(collision_policy) => fileEffect.setValue({ ...(fileEffect.value as FileEffectRules), collision_policy })}
-              />
-            </Field>
+          <div className="tw:grid tw:min-w-0 tw:gap-2">
+            <div className="rules-responsive">
+              <Field label={t("file.operationTitle")}>
+                <Select<FileEffectRules["operation"]>
+                  label={t("file.operationTitle")}
+                  value={(fileEffect.value as FileEffectRules).operation}
+                  options={fileOperationOptions()}
+                  onChange={(operation) => fileEffect.setValue({ ...(fileEffect.value as FileEffectRules), operation })}
+                />
+              </Field>
+              <Field label={t("file.collisionTitle")}>
+                <Select<FileEffectRules["collision_policy"]>
+                  label={t("file.collisionTitle")}
+                  value={(fileEffect.value as FileEffectRules).collision_policy}
+                  options={collisionPolicyOptions()}
+                  onChange={(collision_policy) => fileEffect.setValue({ ...(fileEffect.value as FileEffectRules), collision_policy })}
+                />
+              </Field>
+            </div>
+            {(fileEffect.value as FileEffectRules).collision_policy === "overwrite" && (
+              <p className="tw:m-0 tw:text-xs tw:text-muted-foreground/80">
+                {t("file.collisionOverwriteNote")}
+              </p>
+            )}
           </div>
         </SectionCard>
       )}

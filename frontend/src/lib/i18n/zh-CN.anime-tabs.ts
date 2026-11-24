@@ -303,8 +303,6 @@ export const formsCopy = {
     effectHint: "整理方式与同名文件处理",
     episodePatternsPlaceholder: "留空使用内置规则",
     episodePatternsUnused: "reltitle 不使用集数识别规则，已填写的规则会保留",
-    episodePatternsUnusedCount: "（已保留 {n} 条正则）",
-    switchToRegexView: "切到正则查看 ({n})",
     tagPlaceholder: "输入后按回车添加",
     patternEditor: {
       countOrdered: "{n} 条 · 按序匹配",

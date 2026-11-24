@@ -11,9 +11,9 @@ import {
 } from "../../lib/api/client";
 import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
 import { ConflictBlock, StatePill } from "../../ui";
-import { Alert, Button } from "../../ui/base";
+import { Alert } from "../../ui/base";
 import { t } from "../../lib/i18n";
-import { parserKindOptions, parserKindUsesPatterns } from "../../lib/parserKind";
+import { parserKindOptions } from "../../lib/parserKind";
 import { ParserKindChoice } from "../anime-forms/ParserKindChoice";
 
 const skelBar = "tw:block tw:rounded-full tw:bg-muted tw:motion-safe:animate-pulse";
@@ -31,8 +31,6 @@ export function ParserPolicySection(props: {
   readOnly?: boolean;
   /** Policy snapshot already loaded by the workspace read model (eliminates the waterfall). */
   initialPolicy?: ParserPolicyView | null;
-  /** Number of saved/draft episode regex patterns; shown inline when `reltitle` is active. */
-  patternCount?: number;
   /** The displayed parser (the unsaved choice winning, otherwise the saved value). */
   onKindChange?: (kind: string | undefined) => void;
   /** Whether an unsaved choice exists. */
@@ -47,7 +45,6 @@ export function ParserPolicySection(props: {
     active = true,
     readOnly = false,
     initialPolicy,
-    patternCount = 0,
     onKindChange,
     onDirtyChange,
     onSaved,
@@ -145,9 +142,6 @@ export function ParserPolicySection(props: {
   const catalogReady = catalog.data !== undefined || catalog.isError;
   const loading = (data === undefined && policy.isLoading) || (data !== undefined && !catalogReady);
   const options = parserKindOptions(catalog.data, data?.parser_kind);
-  const usesPatterns = parserKindUsesPatterns(shownKind);
-  const hasKeptPatterns = !usesPatterns && patternCount > 0;
-  const hasRegexOption = options.some((option) => option.value === "regex");
 
   return (
     <section className="tw:grid tw:min-w-0 tw:gap-2">
@@ -171,16 +165,6 @@ export function ParserPolicySection(props: {
             options={options}
             onChange={setDraft}
             readOnly={readOnly || saving}
-            noteSuffix={
-              hasKeptPatterns ? t("forms.rules.episodePatternsUnusedCount", { n: patternCount }) : undefined
-            }
-            action={
-              hasKeptPatterns && !readOnly && !saving && hasRegexOption ? (
-                <Button variant="ghost" size="sm" type="button" onClick={() => setDraft("regex")}>
-                  {t("forms.rules.switchToRegexView", { n: patternCount })}
-                </Button>
-              ) : undefined
-            }
           />
           {conflict !== undefined ? (
             <ConflictBlock

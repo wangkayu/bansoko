@@ -1150,15 +1150,18 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     );
     await flushQuery();
 
-    const section = screen.getByRole("region", { name: t("config.replacementAria") });
+    const replacementSection = screen.getByRole("region", { name: t("config.replacementAria") });
+    const unclassifiedSection = screen.getByRole("region", { name: t("file.unclassifiedTitle") });
     // "Use defaults everywhere" is no longer a stray button inside the subscription-settings area: it sits at the top of the rules tab.
-    expect(within(section).queryByRole("button", { name: t("config.useDefaults") })).not.toBeInTheDocument();
+    expect(within(replacementSection).queryByRole("button", { name: t("config.useDefaults") })).not.toBeInTheDocument();
     // A new draft with use-defaults-everywhere: the top button is present but disabled when nothing is customizable left to reset.
     expect(screen.getByRole("button", { name: t("config.useDefaults") })).toBeDisabled();
-    expect(within(section).getByRole("combobox", { name: t("file.unclassifiedTitle") })).toBeInTheDocument();
-    expect(within(section).getByText(t("config.snapshot.legend"))).toBeInTheDocument();
-    expect(within(section).getByRole("combobox", { name: t("replacement.admissionTitle") })).toBeInTheDocument();
-    expect(within(section).getByRole("group", { name: t("qualityCompare.title") })).toBeInTheDocument();
+    // Unknown-episode handling lives in its own card, separate from multi-version settings.
+    expect(within(unclassifiedSection).getByRole("combobox", { name: t("file.unclassifiedTitle") })).toBeInTheDocument();
+    expect(within(replacementSection).queryByRole("combobox", { name: t("file.unclassifiedTitle") })).not.toBeInTheDocument();
+    expect(within(replacementSection).getByText(t("config.snapshot.legend"))).toBeInTheDocument();
+    expect(within(replacementSection).getByRole("combobox", { name: t("replacement.admissionTitle") })).toBeInTheDocument();
+    expect(within(replacementSection).getByRole("group", { name: t("qualityCompare.title") })).toBeInTheDocument();
   });
 
   it("草稿规则段卡「已修改」：新草稿不标记，未保存的编辑标记该段，「全部使用默认」后消失", async () => {

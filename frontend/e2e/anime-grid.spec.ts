@@ -705,6 +705,18 @@ async function mockShellReads(page: Page) {
       ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ episodes: [], next_cursor: null }) })
       : fulfillMethodNotAllowed(route, "GET"),
   );
+  await page.route("**/api/v1/parser-catalog", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            { id: "regex", display_name: "Regex rules", implementation_version: "regex-v1", output_contract_version: "episode-evidence-v1", capabilities: ["release_title", "file_name", "decimal"], config_version: "regex-config-v1" },
+            { id: "reltitle", display_name: "reltitle", implementation_version: "reltitle@fixture", output_contract_version: "episode-evidence-v1", capabilities: ["release_title", "file_name", "decimal"], config_version: "lexicon:fixture" },
+          ]),
+        })
+      : fulfillMethodNotAllowed(route, "GET"),
+  );
   await page.route("**/api/v1/observability/records**", (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ records: [], next_cursor: null }) })
@@ -2049,6 +2061,8 @@ test.describe("AnimeGrid", () => {
     const dialog = await openConfigFromCard(page, card);
     await dialog.getByRole("tab", { name: "规则", exact: true }).click();
     const parser = dialog.locator("section").filter({ hasText: "解析" }).first();
+    await expect(parser.getByRole("radio", { name: "reltitle", exact: true })).toBeVisible();
+    await expect(parser.getByRole("radio", { name: "正则", exact: true })).toBeVisible();
     await parser.getByRole("button", { name: "试测规则", exact: true }).click();
 
     const tester = page.getByRole("dialog", { name: "试测集数识别规则", exact: true });
@@ -3051,6 +3065,43 @@ test.describe("AnimeGrid", () => {
     await page.mouse.move(x, y + 200, { steps: 12 });
     await page.mouse.up();
     await expect(sheet).toHaveCount(0);
+  });
+
+  test("aligns import fields under overwrite, omits parser kept-count UI, and separates unclassified from multi-version", async ({ page, isMobile }) => {
+    await enterApp(page);
+    const card = await openProvider(page, "Mikan");
+    const dialog = await openConfigFromCard(page, card);
+    await dialog.getByRole("tab", { name: "规则", exact: true }).click();
+
+    // 1. Parser choice: add a regex pattern, switch to reltitle, and ensure no kept-count or switch-to-regex button appears.
+    const parserSection = dialog.locator("section").filter({ hasText: "从 RSS 标题中解析集数" }).first();
+    await parserSection.getByLabel("集数识别规则", { exact: true }).fill("EP(\\d+)");
+    await parserSection.getByLabel("集数识别规则", { exact: true }).press("Enter");
+    await parserSection.getByRole("radio", { name: "reltitle", exact: true }).click();
+    await expect(parserSection.getByText(/已保留/)).toHaveCount(0);
+    await expect(parserSection.getByRole("button", { name: /切到正则/ })).toHaveCount(0);
+
+    // 2. Import section: selecting overwrite keeps operation & collision selects vertically aligned on desktop and renders the warning below.
+    const fileEffect = dialog.locator("section").filter({ hasText: "整理方式与同名文件处理" }).first();
+    const operationTrigger = fileEffect.getByRole("combobox", { name: "整理方式", exact: true });
+    const collisionTrigger = fileEffect.getByRole("combobox", { name: "同名文件处理", exact: true });
+    await collisionTrigger.click();
+    await page.getByRole("option", { name: "覆盖", exact: true }).click();
+    await expect(fileEffect.getByText("覆盖会永久删除原有文件，已入库的文件也会被覆盖；被覆盖的剧集会从原番剧中移除。")).toBeVisible();
+    if (!isMobile) {
+      const opBox = await operationTrigger.boundingBox();
+      const collisionBox = await collisionTrigger.boundingBox();
+      if (!opBox || !collisionBox) throw new Error("import select triggers not laid out");
+      expect(Math.abs(opBox.y - collisionBox.y)).toBeLessThanOrEqual(1);
+    }
+
+    // 3. Unknown-episode handling and multi-version live in two separate cards.
+    const unclassified = dialog.getByRole("region", { name: "未识别集数的文件", exact: true });
+    const replacement = dialog.getByRole("region", { name: "同集多版本（本订阅）", exact: true });
+    await expect(unclassified.getByRole("combobox", { name: "未识别集数的文件", exact: true })).toBeVisible();
+    await expect(replacement.getByRole("combobox", { name: "未识别集数的文件", exact: true })).toHaveCount(0);
+    await expect(replacement.getByRole("combobox", { name: "保留方式", exact: true })).toBeVisible();
+    await dialog.screenshot({ path: test.info().outputPath(`rules-policy-layout-${test.info().project.name}.png`), animations: "disabled" });
   });
 
   test("does not overflow at mobile width", async ({ page, isMobile }) => {

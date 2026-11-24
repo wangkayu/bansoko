@@ -39,7 +39,6 @@ const UNLAYERED_FAMILIES = [
   ".auth",
   ".break",
   ".browse",
-  ".business",
   ".candidate",
   ".card",
   ".catalog",

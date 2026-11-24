@@ -2,10 +2,9 @@ import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listParserCatalog, toUserMessage, type AnimeDraft, type BusinessSnapshot } from "../../lib/api/client";
 import { configKeys } from "../../lib/queryKeys";
-import { parserKindOptions, parserKindUsesPatterns } from "../../lib/parserKind";
+import { parserKindOptions } from "../../lib/parserKind";
 import { t } from "../../lib/i18n";
 import { StatePill } from "../../ui";
-import { Button } from "../../ui/base";
 import { ParserKindChoice } from "../anime-forms/ParserKindChoice";
 import { draftParserKind, isDraftChosenParser, withDraftParserKind } from "../anime-config/businessDraft";
 
@@ -21,11 +20,9 @@ const skelBar = "tw:block tw:rounded-full tw:bg-muted tw:motion-safe:animate-pul
 export function DraftParserChoice({
   draft,
   onDraftChange,
-  patternCount = 0,
 }: {
   draft: AnimeDraft;
   onDraftChange: (next: AnimeDraft) => void;
-  patternCount?: number;
 }) {
   const catalog = useQuery({ queryKey: configKeys.parserCatalog, queryFn: listParserCatalog, staleTime: Infinity });
   const envelope = draft.business?.parser;
@@ -36,9 +33,6 @@ export function DraftParserChoice({
 
   const catalogReady = catalog.data !== undefined || catalog.isError;
   const options = parserKindOptions(catalog.data, kind);
-  const usesPatterns = parserKindUsesPatterns(kind);
-  const hasKeptPatterns = !usesPatterns && patternCount > 0;
-  const hasRegexOption = options.some((option) => option.value === "regex");
 
   function switchKind(next: string) {
     if (next === kind || !loaded.current) return;
@@ -63,16 +57,6 @@ export function DraftParserChoice({
           value={kind}
           options={options}
           onChange={switchKind}
-          noteSuffix={
-            hasKeptPatterns ? t("forms.rules.episodePatternsUnusedCount", { n: patternCount }) : undefined
-          }
-          action={
-            hasKeptPatterns && hasRegexOption ? (
-              <Button variant="ghost" size="sm" type="button" onClick={() => switchKind("regex")}>
-                {t("forms.rules.switchToRegexView", { n: patternCount })}
-              </Button>
-            ) : undefined
-          }
         />
       )}
     </div>

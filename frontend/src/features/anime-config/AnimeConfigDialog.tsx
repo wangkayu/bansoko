@@ -680,6 +680,14 @@ function DraftBody({
 
   // The current default settings: decides whether "use defaults everywhere" is available. A read failure does not block editing.
   const businessPreset = useQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset });
+  useEffect(() => {
+    // Warm the static parser catalog when opening a draft dialog so switching to Rules never jumps.
+    void queryClient.prefetchQuery({
+      queryKey: configKeys.parserCatalog,
+      queryFn: listParserCatalog,
+      staleTime: Infinity,
+    });
+  }, [queryClient]);
   const candidateQuery = useMemo(() => {
     const origin = entry.source as "anibt" | "mikan" | "custom";
     return {
@@ -1061,9 +1069,7 @@ function DraftBody({
     rulesExtra: (
       <>
         {draft.business && (
-          <section aria-label={t("config.replacementAria")}>
-            <BusinessSnapshotFields value={draft.business} onChange={(business) => setDraft({ ...draft, business })} />
-          </section>
+          <BusinessSnapshotFields value={draft.business} onChange={(business) => setDraft({ ...draft, business })} />
         )}
         <NewReleasesOnlyField
           checked={draft.new_releases_only === true}

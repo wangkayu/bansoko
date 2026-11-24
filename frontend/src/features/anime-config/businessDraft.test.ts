@@ -4,7 +4,7 @@ import type { AnimeDraft, BusinessPresetView } from "../../lib/api/client";
 import { freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, modifiedRuleSections, presetRuleSections, rulesDifferFromPreset } from "./businessDraft";
 import { useState } from "react";
 import { createElement } from "react";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { renderWithQuery } from "../../testing/renderWithQuery";
 import { compareItemName } from "../replacement/compareCopy";
 import userEvent from "@testing-library/user-event";
@@ -62,6 +62,10 @@ describe("atomic business load", () => {
   let edited=loadBusinessPreset(draft,preset);
   function Editor(){const [value,setValue]=useState(edited.business!);return createElement(BusinessSnapshotFields,{value,onChange:next=>{edited={...edited,business:next};setValue(next);}});}
   renderWithQuery(createElement(Editor));
+  const unclassifiedSection=screen.getByRole("region",{name:t("file.unclassifiedTitle")});
+  const replacementSection=screen.getByRole("region",{name:t("config.replacementAria")});
+  expect(within(unclassifiedSection).getByRole("combobox",{name:t("file.unclassifiedTitle")})).toBeTruthy();
+  expect(within(replacementSection).queryByRole("combobox",{name:t("file.unclassifiedTitle")})).toBeNull();
   const user=userEvent.setup();
   const pick=async(name:string,option:string)=>{await user.click(screen.getByRole("combobox",{name}));await user.click(await screen.findByRole("option",{name:option}));};
   const resolution=compareItemName("rt.resolution");

@@ -382,9 +382,7 @@ function ParserForm({
       </Reveal>
       <Reveal open={!usesPatterns}>
         <p className="text-caption text-muted tw:m-0">
-          {patterns.length > 0
-            ? `${t("forms.rules.episodePatternsUnused")} ${t("forms.rules.episodePatternsUnusedCount", { n: patterns.length })}`
-            : t("forms.rules.episodePatternsUnused")}
+          {t("forms.rules.episodePatternsUnused")}
         </p>
       </Reveal>
       <RegexTesterDialog
@@ -433,14 +431,11 @@ function ParserSummary({
   const kindLabel = kind === undefined ? undefined : (options.find((option) => option.value === kind)?.label ?? kind);
   const items: { label: string; value: React.ReactNode }[] = [];
   if (kindLabel !== undefined) items.push({ label: t("settings.rules.defaultParser.kindLabel"), value: kindLabel });
-  const patternCount = toList(value.episode_patterns).length;
   items.push({
     label: t("settings.rules.episodePatterns"),
     value: parserKindUsesPatterns(kind)
       ? <RegexListSummary value={value.episode_patterns} emptyLabel={t("settings.rules.empty")} />
-      : patternCount > 0
-        ? `${t("forms.rules.episodePatternsUnused")} ${t("forms.rules.episodePatternsUnusedCount", { n: patternCount })}`
-        : t("forms.rules.episodePatternsUnused"),
+      : t("forms.rules.episodePatternsUnused"),
   });
   return (
     <>

@@ -165,7 +165,7 @@ export function Field({
   className?: string;
 }) {
   return (
-    <label className={cn("tw:grid tw:min-w-0 tw:gap-1", className)}>
+    <label className={cn("tw:grid tw:min-w-0 tw:content-start tw:gap-1", className)}>
       <span className="tw:text-xs tw:text-muted-foreground">{label}</span>
       {children}
       {hint ? <span className="tw:text-xs tw:text-muted-foreground/80">{hint}</span> : null}
