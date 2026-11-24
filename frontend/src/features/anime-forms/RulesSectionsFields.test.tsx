@@ -90,7 +90,7 @@ describe("RulesSectionsFields", () => {
 
     expect(screen.queryByRole("radio", { name: t("config.useDefaultsConfirm") })).not.toBeInTheDocument();
     const parser = sectionByTitle(t("tabs.sectionName.parser"));
-    expect(parser.getByText("[Ss](\\d{2})")).toBeInTheDocument();
+    expect(parser.getByDisplayValue("[Ss](\\d{2})")).toBeInTheDocument();
     expect(parser.getByLabelText(t("settings.rules.episodePatterns"))).toBeInTheDocument();
 
     const releaseFilter = sectionByTitle(t("field.release_filter"));

@@ -101,7 +101,7 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 	}
 	switch string(value.InputSource) {
 	case "current_input":
-		if value.Draft == nil || value.ManagedAnimeId != nil || value.RulesPreview != nil || value.MetadataPreview != nil {
+		if value.Draft == nil || value.ManagedAnimeId != nil || value.RulesPreview != nil || value.MetadataPreview != nil || value.ParserKindPreview != nil {
 			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "current_input requires draft and forbids other mode fields."}
 		}
 		// candidate_id + revision on current_input name the saved custom preset
@@ -120,7 +120,7 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 			result.Revision = int64(*value.Revision)
 		}
 	case "candidate_revision":
-		if value.CandidateId == nil || value.Revision == nil || value.Draft != nil || value.ManagedAnimeId != nil || value.RulesPreview != nil || value.MetadataPreview != nil {
+		if value.CandidateId == nil || value.Revision == nil || value.Draft != nil || value.ManagedAnimeId != nil || value.RulesPreview != nil || value.MetadataPreview != nil || value.ParserKindPreview != nil {
 			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "candidate_revision requires candidate_id and revision."}
 		}
 		result.CandidateID = string(*value.CandidateId)
@@ -131,8 +131,8 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 		}
 		result.ManagedAnimeID = string(*value.ManagedAnimeId)
 		if string(value.InputSource) == "owner_draft" {
-			if value.RulesPreview == nil && value.MetadataPreview == nil {
-				return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner_draft requires rules_preview, metadata_preview, or both."}
+			if value.RulesPreview == nil && value.MetadataPreview == nil && value.ParserKindPreview == nil {
+				return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner_draft requires at least one of rules_preview, metadata_preview, or parser_kind_preview."}
 			}
 			if value.RulesPreview != nil {
 				preview, err := mapRulesPreviewInput(*value.RulesPreview)
@@ -145,8 +145,12 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 				preview := mapMetadataPreviewInput(*value.MetadataPreview)
 				result.MetadataPreview = &preview
 			}
-		} else if value.RulesPreview != nil || value.MetadataPreview != nil {
-			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner forbids rules_preview and metadata_preview."}
+			if value.ParserKindPreview != nil {
+				kind := string(*value.ParserKindPreview)
+				result.ParserKindPreview = &kind
+			}
+		} else if value.RulesPreview != nil || value.MetadataPreview != nil || value.ParserKindPreview != nil {
+			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner forbids rules_preview, metadata_preview, and parser_kind_preview."}
 		}
 	default:
 		return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "input_source is invalid."}

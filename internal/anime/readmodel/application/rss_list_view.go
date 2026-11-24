@@ -22,6 +22,8 @@ import (
 	"bansoko/internal/filekinds"
 	"bansoko/internal/namingvars"
 	varspersistence "bansoko/internal/namingvars/adapter/persistence"
+	"bansoko/internal/parser"
+	"bansoko/internal/parserpolicy"
 	"bansoko/internal/postprocessing/naming"
 	providerdomain "bansoko/internal/provider/domain"
 	rssapplication "bansoko/internal/rss/application"
@@ -57,8 +59,11 @@ type ReadRSSListViewInput struct {
 	// MetadataPreview, for owner_draft only, is the complete unsaved metadata
 	// value the read overlays on the persisted metadata. It is never written.
 	MetadataPreview *MetadataPreviewInput
-	ManagedAnimeID  string
-	LimitPerGroup   int
+	// ParserKindPreview, for owner_draft only, is the unsaved instance parser
+	// kind overlaid on the persisted parser policy for this read only.
+	ParserKindPreview *string
+	ManagedAnimeID    string
+	LimitPerGroup     int
 	// PreviewEpisodeOffset is the read's own episode offset: a preview-only
 	// shift applied to a group that has no offset of its own, so a non-zero
 	// offset previews exactly what a one-shot carrying that offset renders. A
@@ -463,11 +468,16 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 		if strings.TrimSpace(input.ManagedAnimeID) == "" {
 			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner modes require managed_anime_id."}
 		}
-		if input.InputSource == "owner_draft" && input.RulesPreview == nil && input.MetadataPreview == nil {
-			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner_draft requires rules_preview, metadata_preview, or both."}
+		if input.InputSource == "owner_draft" && input.RulesPreview == nil && input.MetadataPreview == nil && input.ParserKindPreview == nil {
+			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "owner_draft requires at least one of rules_preview, metadata_preview, or parser_kind_preview."}
 		}
-		if input.InputSource != "owner_draft" && (input.RulesPreview != nil || input.MetadataPreview != nil) {
-			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "rules_preview and metadata_preview apply to owner_draft only."}
+		if input.InputSource != "owner_draft" && (input.RulesPreview != nil || input.MetadataPreview != nil || input.ParserKindPreview != nil) {
+			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "rules_preview, metadata_preview, and parser_kind_preview apply to owner_draft only."}
+		}
+		if input.ParserKindPreview != nil {
+			if err := parserpolicy.Validate(parserpolicy.Policy{Kind: parser.ParserKind(*input.ParserKindPreview)}); err != nil {
+				return RSSListView{}, err
+			}
 		}
 		if input.MetadataPreview != nil {
 			if err := validateMetadataPreview(*input.MetadataPreview); err != nil {
@@ -737,29 +747,30 @@ func (s *Service) readRSSListViewForOwner(ctx context.Context, input ReadRSSList
 		return RSSListView{}, err
 	}
 	if pendingBenchApplies(workspace) {
-		return s.composePendingOwnerBench(ctx, input.InputSource, workspace, effective, rulesOverrides, input.MetadataPreview, input.Feed, limit)
+		return s.composePendingOwnerBench(ctx, input.InputSource, workspace, effective, rulesOverrides, input.MetadataPreview, input.ParserKindPreview, input.Feed, limit)
 	}
-	return s.composeOwnerRSSListView(ctx, input.InputSource, workspace, effective, rulesOverrides, input.MetadataPreview, limit)
+	return s.composeOwnerRSSListView(ctx, input.InputSource, workspace, effective, rulesOverrides, input.MetadataPreview, input.ParserKindPreview, limit)
 }
 
 // ownerDraftDigest is the identity of an owner_draft read's unsaved inputs:
-// the patched rules and, when given, the unsaved metadata value.
-func ownerDraftDigest(rulesOverrides map[string]animedomain.OverrideValue, metadataPreview *MetadataPreviewInput) (string, error) {
+// the patched rules and, when given, the unsaved metadata and parser kind.
+func ownerDraftDigest(rulesOverrides map[string]animedomain.OverrideValue, metadataPreview *MetadataPreviewInput, parserKindPreview *string) (string, error) {
 	digest, err := canonicalJSONHash(struct {
-		Rules    map[string]animedomain.OverrideValue `json:"rules"`
-		Metadata *MetadataPreviewInput                `json:"metadata"`
-	}{rulesOverrides, metadataPreview})
+		Rules      map[string]animedomain.OverrideValue `json:"rules"`
+		Metadata   *MetadataPreviewInput                `json:"metadata"`
+		ParserKind *string                              `json:"parser_kind,omitempty"`
+	}{rulesOverrides, metadataPreview, parserKindPreview})
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimPrefix(digest, "sha256:"), nil
 }
 
-func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, workspace AnimeWorkspace, effective animedomain.EffectiveConfig, rulesOverrides map[string]animedomain.OverrideValue, metadataPreview *MetadataPreviewInput, limit int) (RSSListView, error) {
+func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, workspace AnimeWorkspace, effective animedomain.EffectiveConfig, rulesOverrides map[string]animedomain.OverrideValue, metadataPreview *MetadataPreviewInput, parserKindPreview *string, limit int) (RSSListView, error) {
 	rulesVersion := workspace.Rules.Version
 	identity := fmt.Sprintf("owner:%s@%d", workspace.ManagedAnime.ID, rulesVersion)
 	if mode == "owner_draft" {
-		digest, err := ownerDraftDigest(rulesOverrides, metadataPreview)
+		digest, err := ownerDraftDigest(rulesOverrides, metadataPreview, parserKindPreview)
 		if err != nil {
 			return RSSListView{}, err
 		}
@@ -894,6 +905,12 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 			}
 			if metadataPreview != nil {
 				selection = overlayParserSelection(selection, *metadataPreview)
+			}
+			if mode == "owner_draft" {
+				selection.EpisodePatterns = append([]string{}, effective.Rules.Parser.EpisodePatterns...)
+				if parserKindPreview != nil {
+					selection.Kind = *parserKindPreview
+				}
 			}
 			parserSelections[src.ID] = selection
 		}

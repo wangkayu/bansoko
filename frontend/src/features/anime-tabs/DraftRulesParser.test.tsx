@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
@@ -118,14 +118,15 @@ describe("订阅前规则 tab：解析器与集数识别规则同一块", () => 
     await user.click(reltitle);
     expect(latest?.business?.parser.kind).toBe("reltitle");
     expect(latest?.business?.parser.source_owner).toBe("candidate_draft");
-    expect(screen.queryByText(t("settings.rules.episodePatterns"))).toBeNull();
-    expect(screen.getByText(t("forms.rules.episodePatternsUnused"))).toBeVisible();
+    await waitFor(() => expect(screen.queryByText(t("settings.rules.episodePatterns"))).toBeNull());
+    expect(screen.getByText(new RegExp(t("policy.parser.kindReltitleDescription")))).toBeVisible();
+    expect(screen.getByRole("button", { name: t("forms.rules.switchToRegexView", { n: 1 }) })).toBeVisible();
     // The recognition rules themselves are never cleared: switching back to regex finds them intact.
     expect(latest?.rules.sections.parser).toEqual({ mode: "replace", value: { episode_patterns: [PATTERN] } });
 
     await user.click(screen.getByRole("radio", { name: new RegExp(t("policy.parser.kindRegex")) }));
     expect(latest?.business?.parser).toEqual(loadedParser);
-    expect(screen.getByText(t("settings.rules.episodePatterns"))).toBeVisible();
+    expect(await screen.findByText(t("settings.rules.episodePatterns"))).toBeVisible();
   });
 
   it("规则 tab 末尾不再有单独的解析器下拉", async () => {

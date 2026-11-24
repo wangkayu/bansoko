@@ -74,12 +74,15 @@ func pendingBenchApplies(workspace AnimeWorkspace) bool {
 // the unsaved rules patch already applied in owner_draft mode); the group
 // selection is replaced by the owner's runtime selection, which is exactly the
 // set of groups the first refresh after start reads.
-func (s *Service) composePendingOwnerBench(ctx context.Context, mode string, workspace AnimeWorkspace, effective animedomain.EffectiveConfig, rulesOverrides map[string]animedomain.OverrideValue, metadataPreview *MetadataPreviewInput, feed []PreviewFeedSnapshotRef, limit int) (RSSListView, error) {
+func (s *Service) composePendingOwnerBench(ctx context.Context, mode string, workspace AnimeWorkspace, effective animedomain.EffectiveConfig, rulesOverrides map[string]animedomain.OverrideValue, metadataPreview *MetadataPreviewInput, parserKindPreview *string, feed []PreviewFeedSnapshotRef, limit int) (RSSListView, error) {
 	business, err := s.ownerBusinessSnapshot(ctx, workspace.ManagedAnime.ID)
 	if err != nil {
 		return RSSListView{}, err
 	}
 	draft := pendingBenchDraft(workspace, business)
+	if parserKindPreview != nil && draft.Business != nil {
+		draft.Business.Parser.Kind = *parserKindPreview
+	}
 	// The custom projection derives its snapshot scope from the source locator
 	// and the instance's own scope identity (never the versioned bench
 	// identity, so a rules edit keeps the fetched snapshot readable).
@@ -96,9 +99,12 @@ func (s *Service) composePendingOwnerBench(ctx context.Context, mode string, wor
 	if err != nil {
 		return RSSListView{}, err
 	}
+	if parserKindPreview != nil {
+		selection.Kind = *parserKindPreview
+	}
 	identity := fmt.Sprintf("owner_bench:%s@%d.%d.%d", workspace.ManagedAnime.ID, workspace.Subscription.Version, workspace.Subgroups.Version, workspace.Rules.Version)
 	if mode == "owner_draft" {
-		digest, err := ownerDraftDigest(rulesOverrides, metadataPreview)
+		digest, err := ownerDraftDigest(rulesOverrides, metadataPreview, parserKindPreview)
 		if err != nil {
 			return RSSListView{}, err
 		}

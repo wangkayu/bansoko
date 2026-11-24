@@ -1034,11 +1034,11 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
 
     // Hard-coded defaults: episode_patterns=[] and naming template "" — the assertions below
     // hold only when the values come from the server's business preset.
-    expect(screen.getByText("全局正则")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("全局正则")).toBeInTheDocument();
     expect(screen.getByDisplayValue("全局排除词")).toBeInTheDocument();
     expect(screen.getByDisplayValue("/全局目录")).toBeInTheDocument();
     expect(screen.getByDisplayValue("{title} 全局")).toBeInTheDocument();
-    expect(screen.queryByText("当前正则")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("当前正则")).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue("当前排除词")).not.toBeInTheDocument();
   });
 

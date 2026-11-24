@@ -814,27 +814,26 @@ describe("AnimeTabs owner 编辑保活", () => {
     }));
   }
 
-  it("集数解析器卡在「解析」段内、集数识别规则之上；选 reltitle 即隐藏规则，选回正则恢复", async () => {
+  it("集数解析器在「解析」段内、集数识别规则之上；选 reltitle 即隐藏规则，选回正则恢复", async () => {
     stubParserFetch("regex");
     renderTabs({ animeID: "anime-1", workspace: boundWorkspace(), onChanged: () => {}, initialTab: "rules" });
 
     const parserSection = screen.getByText(t("tabs.sectionName.parser")).closest("section");
     expect(parserSection).not.toBeNull();
     const parser = within(parserSection as HTMLElement);
-    // The card sits inside the "parse episode numbers from RSS titles" section, so users pick the parser right there.
+    // The Segmented picker sits directly inside the "Parsing" section without a duplicate inner heading.
     expect(await parser.findByRole("radiogroup", { name: t("policy.parser.kindLabel") })).toBeInTheDocument();
-    expect(parser.getByText(t("policy.parser.title"))).toBeInTheDocument();
     expect(parser.getByText(t("settings.rules.episodePatterns"))).toBeInTheDocument();
 
     await userEvent.click(parser.getByRole("radio", { name: t("policy.parser.kindReltitle") }));
-    expect(parser.queryByText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument();
-    expect(parser.getByText(t("forms.rules.episodePatternsUnused"))).toBeInTheDocument();
+    await waitFor(() => expect(parser.queryByText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument());
+    expect(parser.getByText(new RegExp(t("policy.parser.kindReltitleDescription")))).toBeInTheDocument();
 
     await userEvent.click(parser.getByRole("radio", { name: t("policy.parser.kindRegex") }));
-    expect(parser.getByText(t("settings.rules.episodePatterns"))).toBeInTheDocument();
+    expect(await parser.findByText(t("settings.rules.episodePatterns"))).toBeInTheDocument();
   });
 
-  it("已保存为 reltitle 时直接隐藏集数识别规则，加载期间不先闪出正则列表", async () => {
+  it("已保存为 reltitle 时直接隐藏集数识别规则，加载期间用等高骨架不先闪出正则列表", async () => {
     let resolvePolicy!: (resp: Response) => void;
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -858,18 +857,63 @@ describe("AnimeTabs owner 编辑保活", () => {
 
     const parserSection = screen.getByText(t("tabs.sectionName.parser")).closest("section");
     const parser = within(parserSection as HTMLElement);
-    // While parser policy is still loading, neither the regex list nor the unused note flashes.
-    expect(parser.getByText(t("act.reading"))).toBeInTheDocument();
+    // While parser policy is still loading, an accessible skeleton holds space and the regex list never flashes.
+    expect(parser.getByRole("status", { name: t("act.reading") })).toBeInTheDocument();
     expect(parser.queryByText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument();
-    expect(parser.queryByText(t("forms.rules.episodePatternsUnused"))).not.toBeInTheDocument();
 
     resolvePolicy(new Response(
       JSON.stringify({ managed_anime_id: "anime-1", parser_kind: "reltitle", source_default_version: 1, version: 1 }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     ));
-    expect(await parser.findByText(t("forms.rules.episodePatternsUnused"))).toBeInTheDocument();
-    expect(parser.getByRole("radio", { name: t("policy.parser.kindReltitle") })).toHaveAttribute("aria-checked", "true");
+    expect(await parser.findByRole("radio", { name: t("policy.parser.kindReltitle") })).toHaveAttribute("aria-checked", "true");
+    expect(parser.getByText(new RegExp(t("policy.parser.kindReltitleDescription")))).toBeInTheDocument();
     expect(parser.queryByText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument();
+  });
+
+  it("P2：workspace 自带 parser_policy 时不发额外解析器请求，且未保存切解析器可直通 RSS owner_draft 预览", async () => {
+    const rssRequests: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.includes("/parser-catalog")) {
+        return ok([
+          { id: "regex", implementation_version: "regex-v1", output_contract_version: "episode-evidence-v1", display_name: "Regex rules", capabilities: ["release_title"], config_version: "regex-config-v1" },
+          { id: "reltitle", implementation_version: "reltitle@x", output_contract_version: "episode-evidence-v1", display_name: "reltitle episode parser", capabilities: ["release_title"], config_version: "reltitle-config-v1" },
+        ]);
+      }
+      if (url.includes("/anime/rss-list-view")) {
+        rssRequests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        return ok(ownerRssListView());
+      }
+      return new Response(JSON.stringify({ code: "IGNORED", message: "ignored" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const workspace = boundWorkspace();
+    workspace.parser_policy = {
+      managed_anime_id: "anime-1",
+      parser_kind: "reltitle",
+      source_default_version: 1,
+      version: 3,
+    };
+    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rules" });
+
+    expect(await screen.findByRole("radio", { name: t("policy.parser.kindReltitle") })).toHaveAttribute("aria-checked", "true");
+    // No separate GET /file-maintenance/parser-policy/anime/ request needed when workspace carries parser_policy.
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/file-maintenance/parser-policy/anime/"))).toBe(false);
+
+    // Switch to regex without saving, then visit RSS tab -> sends owner_draft with parser_kind_preview.
+    await userEvent.click(screen.getByRole("radio", { name: t("policy.parser.kindRegex") }));
+    fireEvent.click(tabNamed(t("tabs.names.rss")));
+    await waitFor(() =>
+      expect(rssRequests).toContainEqual(
+        expect.objectContaining({
+          input_source: "owner_draft",
+          managed_anime_id: "anime-1",
+          parser_kind_preview: "regex",
+        }),
+      ),
+    );
   });
 
   it("集数解析器卡的未保存选择上报到弹窗，关闭前会询问", async () => {

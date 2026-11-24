@@ -276,7 +276,7 @@ describe("SettingsRules 解析规则卡：解析器与集数识别规则", () =>
   const parserSectionPuts = (fetchMock: ReturnType<typeof stubFetch>) =>
     fetchMock.mock.calls.filter(([input, init]) => String(input).includes("/config/global-sections/parser") && init?.method === "PUT");
 
-  it("只有一张解析规则卡：摘要先写解析器再写识别规则；编辑弹窗里正则 / reltitle 二选一，各带一行说明", async () => {
+  it("只有一张解析规则卡：摘要先写解析器再写识别规则；编辑弹窗里 reltitle 首选在前，带当前项说明", async () => {
     stubFetch([parserSection, fileRulesSection]);
     renderRules();
 
@@ -288,10 +288,11 @@ describe("SettingsRules 解析规则卡：解析器与集数识别规则", () =>
     expect(screen.getAllByRole("button", { name: t("settings.rules.edit") })).toHaveLength(4);
 
     const dialog = await openEditor();
+    const radios = within(dialog).getAllByRole("radio");
+    expect(radios[0]).toHaveTextContent(t("policy.parser.kindReltitle"));
+    expect(radios[1]).toHaveTextContent(t("policy.parser.kindRegex"));
     expect(within(dialog).getByRole("radio", { name: t("policy.parser.kindRegex") })).toHaveAttribute("aria-checked", "true");
-    expect(within(dialog).getByRole("radio", { name: t("policy.parser.kindReltitle") })).toHaveAccessibleDescription(
-      t("policy.parser.kindReltitleDescription"),
-    );
+    expect(within(dialog).getByText(t("policy.parser.kindRegexDescription"))).toBeInTheDocument();
     expect(within(dialog).getByLabelText(t("settings.rules.episodePatterns"))).toBeInTheDocument();
   });
 
@@ -301,8 +302,8 @@ describe("SettingsRules 解析规则卡：解析器与集数识别规则", () =>
 
     const dialog = await openEditor();
     await userEvent.click(within(dialog).getByRole("radio", { name: t("policy.parser.kindReltitle") }));
-    expect(within(dialog).queryByLabelText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument();
-    expect(within(dialog).getByText(t("forms.rules.episodePatternsUnused"))).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).queryByLabelText(t("settings.rules.episodePatterns"))).not.toBeInTheDocument());
+    expect(within(dialog).getByText(new RegExp(t("forms.rules.episodePatternsUnused")))).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("settings.rules.save") }));
 
     const { toast } = await import("sonner");

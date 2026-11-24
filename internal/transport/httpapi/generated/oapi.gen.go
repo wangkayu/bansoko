@@ -2020,6 +2020,12 @@ const (
 	RSSListViewInputInputSourceOwnerDraft        RSSListViewInputInputSource = "owner_draft"
 )
 
+// Defines values for RSSListViewInputParserKindPreview.
+const (
+	RSSListViewInputParserKindPreviewRegex    RSSListViewInputParserKindPreview = "regex"
+	RSSListViewInputParserKindPreviewReltitle RSSListViewInputParserKindPreview = "reltitle"
+)
+
 // Defines values for RSSRefreshAcceptedAccepted.
 const (
 	RSSRefreshAcceptedAcceptedTrue RSSRefreshAcceptedAccepted = true
@@ -3865,6 +3871,9 @@ type AnimeWorkspace struct {
 	Metadata     AnimeMetadata `json:"metadata"`
 	MetadataHold MetadataHold  `json:"metadata_hold"`
 
+	// ParserPolicy The instance's frozen parser policy snapshot when present.
+	ParserPolicy *ParserPolicyView `json:"parser_policy"`
+
 	// PlacementHandoffs Durable post-completion placement handoffs for this subscription's
 	// completed file operations. Independent stage state; it never
 	// rewrites the file operation's own completed state.
@@ -3893,9 +3902,12 @@ type AnimeWorkspaceConfiguration struct {
 	} `json:"episode_progress"`
 
 	// ManagedAnime Formal anime owner. The id is the sole formal owner identity. Provider refs, custom RSS locators/URLs, labels, titles, and other external attributes are not owner identity and may collide across owners.
-	ManagedAnime      ManagedAnime                 `json:"managed_anime"`
-	Metadata          AnimeMetadata                `json:"metadata"`
-	MetadataHold      MetadataHold                 `json:"metadata_hold"`
+	ManagedAnime ManagedAnime  `json:"managed_anime"`
+	Metadata     AnimeMetadata `json:"metadata"`
+	MetadataHold MetadataHold  `json:"metadata_hold"`
+
+	// ParserPolicy The instance's frozen parser policy snapshot when present.
+	ParserPolicy      *ParserPolicyView            `json:"parser_policy"`
 	ReleaseSummary    AnimeWorkspaceReleaseSummary `json:"release_summary"`
 	RssSourceRuntimes []RSSSourceRuntime           `json:"rss_source_runtimes"`
 	RssSources        []RSSSource                  `json:"rss_sources"`
@@ -8505,7 +8517,7 @@ type RSSListView struct {
 // RSSListViewMode defines model for RSSListView.Mode.
 type RSSListViewMode string
 
-// RSSListViewInput One RSS list read request. input_source selects current_input, candidate_revision, owner, or owner_draft. Provider feed snapshot identities are optional and advisory: the server determines selected groups, reports selected groups without a supplied snapshot as snapshot_required, and returns supplied identities for unselected groups in unused_feed_identities. Owner modes require managed_anime_id; owner_draft also requires rules_preview (shaped exactly like RulesSections), metadata_preview, or both. This is a pure read and never writes.
+// RSSListViewInput One RSS list read request. input_source selects current_input, candidate_revision, owner, or owner_draft. Provider feed snapshot identities are optional and advisory: the server determines selected groups, reports selected groups without a supplied snapshot as snapshot_required, and returns supplied identities for unselected groups in unused_feed_identities. Owner modes require managed_anime_id; owner_draft also requires at least one of rules_preview (shaped exactly like RulesSections), metadata_preview, or parser_kind_preview. This is a pure read and never writes.
 type RSSListViewInput struct {
 	// CandidateId Required for candidate_revision. Optional for current_input of a custom draft, together with revision: the saved preset revision whose source snapshot (POST /catalog/custom/feed-snapshots:fetch) the draft's bench reads. The snapshot scope still binds the draft's own locator and group, so an unsaved source edit reads no snapshot. Rejected for any other current_input draft and for one_shot; forbidden in the owner modes.
 	CandidateId *ID `json:"candidate_id"`
@@ -8541,15 +8553,21 @@ type RSSListViewInput struct {
 	// OneShot current_input only (else 400 INPUT_SOURCE_INVALID). A one-shot browse: every configured and observed group lists its supplied snapshot and seeds regardless of group selection (download action never group_not_selected), previews with episode_offset, and every item lists manifest_files. A custom draft binds the custom snapshot its single feed identity names; an origin=one_shot draft binds the named search snapshot (missing/stale/expired: 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched). A pure read.
 	OneShot *bool `json:"one_shot,omitempty"`
 
+	// ParserKindPreview owner_draft only; the unsaved instance parser kind, overlaid on the persisted parser policy for this read only and never written. Validated against registered parsers; an invalid value fails the read with 422 POLICY_INVALID.
+	ParserKindPreview *RSSListViewInputParserKindPreview `json:"parser_kind_preview"`
+
 	// Revision Required for candidate_revision; with candidate_id, the saved preset revision that scopes a custom current_input draft's source snapshot. Forbidden in the owner modes.
 	Revision *Version `json:"revision"`
 
-	// RulesPreview owner_draft only; the unsaved Rules sections patch. owner_draft requires rules_preview, metadata_preview, or both.
+	// RulesPreview owner_draft only; the unsaved Rules sections patch. owner_draft requires at least one of rules_preview, metadata_preview, or parser_kind_preview.
 	RulesPreview *RulesSections `json:"rules_preview"`
 }
 
 // RSSListViewInputInputSource defines model for RSSListViewInput.InputSource.
 type RSSListViewInputInputSource string
+
+// RSSListViewInputParserKindPreview owner_draft only; the unsaved instance parser kind, overlaid on the persisted parser policy for this read only and never written. Validated against registered parsers; an invalid value fails the read with 422 POLICY_INVALID.
+type RSSListViewInputParserKindPreview string
 
 // RSSListViewVersions The exact version set the whole view was produced by. A consumer can tell which derivation produced any file decision from this one block.
 type RSSListViewVersions struct {

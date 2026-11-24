@@ -7,6 +7,7 @@ import {
   toUserMessage,
   type AnimeDraft,
   type AnimeMetadataPreview,
+  type ParserPolicyView,
   type PreviewFeedSnapshotRef,
   type ProviderRSSPreviewResult,
   type RSSListGroup,
@@ -85,6 +86,8 @@ export type OwnerBenchInput = {
   rulesPreview?: RulesSections;
   /** The metadata tab's complete unsaved metadata (a read-only owner_draft overlay, never written). */
   metadataPreview?: AnimeMetadataPreview;
+  /** An unsaved parser kind change (a read-only owner_draft overlay, never written). */
+  parserKindPreview?: ParserPolicyView["parser_kind"];
   identity: string;
 };
 
@@ -196,10 +199,14 @@ export function useRssListWorkspace({
       const inputDraft = ownerBench ? undefined : structuredClone(draftOverride ?? draft);
       const inputKey = inputKeyOf(ownerBench ? ownerBench.identity : inputDraft);
       const ownerRequest = (feed: PreviewFeedSnapshotRef[]): RSSListViewInput => ({
-        input_source: ownerBench?.rulesPreview || ownerBench?.metadataPreview ? "owner_draft" : "owner",
+        input_source:
+          ownerBench?.rulesPreview || ownerBench?.metadataPreview || ownerBench?.parserKindPreview
+            ? "owner_draft"
+            : "owner",
         managed_anime_id: ownerBench!.managedAnimeID,
         ...(ownerBench?.rulesPreview ? { rules_preview: ownerBench.rulesPreview } : {}),
         ...(ownerBench?.metadataPreview ? { metadata_preview: ownerBench.metadataPreview } : {}),
+        ...(ownerBench?.parserKindPreview ? { parser_kind_preview: ownerBench.parserKindPreview } : {}),
         feed,
         limit_per_group: OWNER_ITEMS_PER_GROUP,
         episode_span: null,

@@ -51,8 +51,37 @@ func TestOwnerReadModesRefuseMisplacedPreviews(t *testing.T) {
 	if _, err := (&Service{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: "anime-1", MetadataPreview: &preview}); err == nil {
 		t.Fatal("owner mode accepted metadata_preview")
 	}
+	kind := "reltitle"
+	if _, err := (&Service{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: "anime-1", ParserKindPreview: &kind}); err == nil {
+		t.Fatal("owner mode accepted parser_kind_preview")
+	}
 	if _, err := (&Service{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{InputSource: "owner_draft", ManagedAnimeID: "anime-1"}); err == nil {
 		t.Fatal("owner_draft accepted no preview at all")
+	}
+}
+
+func TestOwnerDraftParserKindPreviewValidatesAndChangesDigest(t *testing.T) {
+	invalid := "not-a-parser"
+	_, err := (&Service{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{
+		InputSource:       "owner_draft",
+		ManagedAnimeID:    "anime-1",
+		ParserKindPreview: &invalid,
+	})
+	var business *apperrors.Business
+	if !errors.As(err, &business) || business.Status != 422 || business.Code != "POLICY_INVALID" {
+		t.Fatalf("invalid parser_kind_preview err = %v, want 422 POLICY_INVALID", err)
+	}
+	regexKind, reltitleKind := "regex", "reltitle"
+	d1, err := ownerDraftDigest(nil, nil, &regexKind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2, err := ownerDraftDigest(nil, nil, &reltitleKind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d1 == d2 {
+		t.Fatalf("ownerDraftDigest did not change across parser_kind_preview: %s", d1)
 	}
 }
 

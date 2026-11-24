@@ -26,8 +26,9 @@ export function parserKindUsesPatterns(kind: string | undefined): boolean {
 export type ParserKindOption = { value: string; label: string; description?: string };
 
 // Keeps only the parsers with the given capability (release titles by default),
-// in catalog order; a current value absent from the catalog still shows as an
-// option so a saved value never displays as an empty selection.
+// placing `reltitle` first as the primary recommended parser while preserving
+// catalog order for everything else; a current value absent from the catalog
+// still shows as an option so a saved value never displays as an empty selection.
 export function parserKindOptions(
   catalog: ReadonlyArray<{ id: string; display_name: string; capabilities: string[] }> | undefined,
   current: string | undefined,
@@ -42,6 +43,11 @@ export function parserKindOptions(
   }
   if (current !== undefined && current !== "" && !seen.has(current)) {
     options.push({ value: current, label: parserKindLabel(current), description: parserKindDescription(current) });
+  }
+  const reltitleIndex = options.findIndex((option) => option.value === "reltitle");
+  if (reltitleIndex > 0) {
+    const [reltitle] = options.splice(reltitleIndex, 1);
+    options.unshift(reltitle);
   }
   return options;
 }

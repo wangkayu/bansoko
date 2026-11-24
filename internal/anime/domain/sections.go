@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
@@ -439,12 +440,15 @@ func ValidateSectionValueWithVars(section string, raw json.RawMessage, vars map[
 		if err := decodeStrictJSON(raw, &value); err != nil {
 			return fmt.Errorf("parser value must be typed parser rules")
 		}
-		if value.EpisodePatterns == nil || len(value.EpisodePatterns) > 64 {
-			return fmt.Errorf("episode_patterns must be present and bounded")
+		if value.EpisodePatterns == nil || len(value.EpisodePatterns) > 16 {
+			return fmt.Errorf("episode_patterns must be present and limited to 16 entries")
 		}
 		for _, pattern := range value.EpisodePatterns {
 			if len(pattern) > 512 {
 				return fmt.Errorf("episode pattern exceeds the 512 byte bound")
+			}
+			if _, err := regexp.Compile(pattern); err != nil {
+				return fmt.Errorf("compile episode pattern: %w", err)
 			}
 		}
 	case SectionReleaseRules:

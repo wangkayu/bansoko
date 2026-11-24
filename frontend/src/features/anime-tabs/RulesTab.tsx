@@ -8,6 +8,7 @@ import {
   isVersionConflict,
   patchAnimeRules,
   toUserMessage,
+  type ParserPolicyView,
   type RulesSections,
 } from "../../lib/api/client";
 import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
@@ -23,7 +24,7 @@ import { FileEffectPolicySection } from "./FileEffectPolicySection";
 import { ReplacementPolicySection } from "./ReplacementPolicySection";
 import { ParserPolicySection } from "./ParserPolicySection";
 import { DraftParserChoice } from "./DraftParserChoice";
-import { draftParserKind, modifiedRuleSections, presetRuleSections, rulesDifferFromPreset } from "../anime-config/businessDraft";
+import { draftParserKind, modifiedRuleSections, presetRuleSections } from "../anime-config/businessDraft";
 import { confirmBusinessReplace } from "../anime-config/confirmBusinessReplace";
 import { toast } from "../../ui/toast";
 import { t, tryT } from "../../lib/i18n";
@@ -43,6 +44,7 @@ export function RulesTab({
   onContentChange,
   onSaved,
   onPreviewChange,
+  onParserPreviewChange,
   active = true,
 }: {
   host: AnimeTabHost;
@@ -53,6 +55,8 @@ export function RulesTab({
   onSaved?: () => void;
   /** Owner mode: reports unsaved rules sections so switching to the RSS tab automatically previews them (undefined when clean). */
   onPreviewChange?: (sections: RulesSections | undefined) => void;
+  /** Owner mode: reports an unsaved parser kind change so the RSS tab previews it without saving first. */
+  onParserPreviewChange?: (kind: ParserPolicyView["parser_kind"] | undefined) => void;
   active?: boolean;
 }) {
   if (host.mode === "draft") {
@@ -69,6 +73,7 @@ export function RulesTab({
         onContentChange={onContentChange}
         onSaved={onSaved}
         onPreviewChange={onPreviewChange}
+        onParserPreviewChange={onParserPreviewChange}
       />
       <FileEffectPolicySection animeID={host.animeID} onChanged={host.onChanged} active={active} />
       <ReplacementPolicySection animeID={host.animeID} onChanged={host.onChanged} active={active} />
@@ -92,7 +97,12 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
     staleTime: Infinity,
   });
   const showAniBTRow = draft.origin === "anibt" || draft.subgroups.entries.some((entry) => entry.provider === "anibt");
-  const modified = modifiedRuleSections(sections, host.businessPreset, draftParserKind(draft), { includeAniBT: showAniBTRow });
+  const draftKind = draftParserKind(draft);
+  const modified = useMemo(
+    () => modifiedRuleSections(sections, host.businessPreset, draftKind, { includeAniBT: showAniBTRow }),
+    [sections, host.businessPreset, draftKind, showAniBTRow],
+  );
+  const patternCount = sections.parser?.mode === "replace" ? sections.parser.value.episode_patterns.length : 0;
   return (
     <div className="metadata-stack">
       {host.rulesHeaderAction && (
@@ -105,8 +115,8 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
         sections={sections}
         onChange={(next) => onDraftChange({ ...draft, rules: { sections: next } })}
         // The parser and the episode recognition rules are one block: picking reltitle hides the recognition rules.
-        parserChoice={<DraftParserChoice draft={draft} onDraftChange={onDraftChange} />}
-        parserKind={draftParserKind(draft)}
+        parserChoice={<DraftParserChoice draft={draft} onDraftChange={onDraftChange} patternCount={patternCount} />}
+        parserKind={draftKind}
         modified={modified}
         afterReleaseFilter={(
           <TagFilterCard
@@ -192,7 +202,14 @@ function ReadOnlyRulesPanel({ host, active }: { host: OwnerTabHost; active: bool
                 {summary && <span className="tw:min-w-0 tw:text-xs tw:text-muted-foreground tw:wrap-anywhere">{summary}</span>}
               </div>
               {/* The parser card follows the "parsing" row directly, matching the editable page's placement. */}
-              {section === "parser" && <ParserPolicySection animeID={host.animeID} readOnly active={active} />}
+              {section === "parser" && (
+                <ParserPolicySection
+                  animeID={host.animeID}
+                  initialPolicy={host.workspace.parser_policy}
+                  readOnly
+                  active={active}
+                />
+              )}
             </Fragment>
           );
         })}
@@ -209,12 +226,14 @@ function OwnerRulesTab({
   onContentChange,
   onSaved,
   onPreviewChange,
+  onParserPreviewChange,
 }: {
   host: OwnerTabHost;
   active?: boolean;
   onContentChange?: () => void;
   onSaved?: () => void;
   onPreviewChange?: (sections: RulesSections | undefined) => void;
+  onParserPreviewChange?: (kind: ParserPolicyView["parser_kind"] | undefined) => void;
 }) {
   const { animeID, workspace, onChanged } = host;
   const saved = useMemo(() => sectionsFromRules(workspace.rules), [workspace.rules]);
@@ -239,17 +258,26 @@ function OwnerRulesTab({
   }, [previewKey, onPreviewChange]);
   useEffect(() => () => onPreviewChange?.(undefined), [onPreviewChange]);
 
+  // Report unsaved parser kind changes into the RSS tab's owner_draft preview as well.
+  const previewParserKind =
+    parserDirty && (parserKind === "regex" || parserKind === "reltitle") ? parserKind : undefined;
+  useEffect(() => {
+    onParserPreviewChange?.(previewParserKind);
+  }, [previewParserKind, onParserPreviewChange]);
+  useEffect(() => () => onParserPreviewChange?.(undefined), [onParserPreviewChange]);
+
   // The tag filter card: the title-parsing row acts on all seeds and always shows; the AniBT row
   // shows only when the anime has an AniBT source.
   const showAniBTRow = workspace.rules.has_anibt_source;
   // "Use defaults everywhere": fills the rules sections, tag filter and parser with a copy of the current default settings, saved by the user.
   const queryClient = useQueryClient();
-  // Shares the same query key as ParserPolicySection so the cached parser_kind is available on
-  // the first render (no post-effect frame lag) and the regex list never flashes while loading.
+  // Seed from workspace.parser_policy when present (P2): zero waterfall and zero first-frame jump.
+  const workspaceParserPolicy = workspace.parser_policy ?? undefined;
   const parserPolicy = useQuery({
     queryKey: fileMaintenanceKeys.parserPolicy(animeID),
     queryFn: () => getInstanceParserPolicy(animeID),
-    enabled: active,
+    initialData: workspaceParserPolicy,
+    enabled: active && workspaceParserPolicy === undefined,
   });
   const businessPreset = useQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset, enabled: active });
   const [resetting, setResetting] = useState(false);
@@ -267,6 +295,20 @@ function OwnerRulesTab({
     const lists = tagSource.map(item => "title_tags" in item ? item.title_tags : item.source_facts.title_tags?.tags);
     return { tags: lists.flatMap((tags) => tags ?? []), counts: countTags(lists) };
   }, [tagSource]);
+  const sampleTitles = useMemo(
+    () => ("releases" in workspace ? workspace.releases.map((release) => release.raw_facts.title) : undefined),
+    [workspace],
+  );
+
+  const effectiveParserKind = parserKind ?? parserPolicy.data?.parser_kind ?? workspaceParserPolicy?.parser_kind;
+  const parserKindLoading = effectiveParserKind === undefined && parserPolicy.isPending;
+
+  // Single memoized pass computes both per-card "modified" badges and "Use defaults everywhere" state.
+  const modified = useMemo(
+    () => (edit ? modifiedRuleSections(edit, businessPreset.data, effectiveParserKind, { includeAniBT: showAniBTRow }) : new Set<keyof RulesSections>()),
+    [edit, businessPreset.data, effectiveParserKind, showAniBTRow],
+  );
+  const matchesDefaults = businessPreset.data !== undefined && modified.size === 0;
 
   async function save() {
     if (!edit) return { ok: true as const };
@@ -324,12 +366,7 @@ function OwnerRulesTab({
   }
 
   if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.rules.reading")} />;
-  const effectiveParserKind = parserKind ?? parserPolicy.data?.parser_kind;
-  const parserKindLoading = effectiveParserKind === undefined && parserPolicy.isPending;
-  const matchesDefaults = businessPreset.data !== undefined
-    && !rulesDifferFromPreset(edit, businessPreset.data, { includeAniBT: showAniBTRow })
-    && (effectiveParserKind === undefined || effectiveParserKind === businessPreset.data.snapshot.parser.kind);
-  const modified = modifiedRuleSections(edit, businessPreset.data, effectiveParserKind, { includeAniBT: showAniBTRow });
+  const patternCount = edit.parser?.mode === "replace" ? edit.parser.value.episode_patterns.length : 0;
   return (
     <div className="metadata-stack">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
@@ -361,13 +398,17 @@ function OwnerRulesTab({
           <ParserPolicySection
             animeID={animeID}
             active={active}
+            initialPolicy={workspace.parser_policy}
+            patternCount={patternCount}
             onKindChange={setParserKind}
             onDirtyChange={setParserDirty}
+            onSaved={onChanged}
             reset={parserReset}
           />
         )}
         parserKind={effectiveParserKind}
         parserKindLoading={parserKindLoading}
+        sampleTitles={sampleTitles}
         modified={modified}
         afterReleaseFilter={(
           <TagFilterCard

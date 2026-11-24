@@ -2043,6 +2043,31 @@ test.describe("AnimeGrid", () => {
     await expect(dialog.getByRole("alert")).toContainText("操作失败，请重试");
   });
 
+  test("keeps the episode pattern tester within desktop and mobile viewports", async ({ page }, testInfo) => {
+    await enterApp(page);
+    const card = await openProvider(page, "Mikan");
+    const dialog = await openConfigFromCard(page, card);
+    await dialog.getByRole("tab", { name: "规则", exact: true }).click();
+    const parser = dialog.locator("section").filter({ hasText: "解析" }).first();
+    await parser.getByRole("button", { name: "试测规则", exact: true }).click();
+
+    const tester = page.getByRole("dialog", { name: "试测集数识别规则", exact: true });
+    await expect(tester).toBeVisible();
+    await expect(tester.getByText("命中 5 / 5 条", { exact: true })).toBeVisible();
+    await expect(tester.locator("mark").first()).toBeVisible();
+
+    const viewport = page.viewportSize();
+    const box = await tester.boundingBox();
+    expect(viewport && box).toBeTruthy();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
+    expect(await tester.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await tester.screenshot({ path: testInfo.outputPath("episode-pattern-tester.png"), animations: "disabled" });
+  });
+
   test("guards every close path when the provider draft is dirty", async ({ page }) => {
     await enterApp(page);
     const card = await openProvider(page, "Mikan");
@@ -2221,7 +2246,7 @@ test.describe("AnimeGrid", () => {
     await expect(
       dialog.getByText("内容已被修改，请刷新后重新编辑", { exact: true }).first(),
     ).toBeVisible();
-    await expect(parser.getByText("冲突后仍保留的规则", { exact: true })).toBeVisible();
+    await expect(parser.getByLabel("集数正则第 1 条", { exact: true })).toHaveValue("冲突后仍保留的规则");
 
     const body = patchBody as {
       expected_version: number;

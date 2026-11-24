@@ -1,4 +1,4 @@
-import { Alert, Button, HelpTip, Input } from "../../ui/base";
+import { Alert, Button, HelpTip, Input, Reveal } from "../../ui/base";
 import { Fragment, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
@@ -14,7 +14,7 @@ import {
   type GlobalSectionName,
   type GlobalSectionView,
 } from "../../lib/api/client";
-import { DescriptionList, ConflictBlock, StatePill, TagInput } from "../../ui";
+import { DescriptionList, ConflictBlock, StatePill } from "../../ui";
 import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
 import { NamingTemplatesCard } from "./NamingTemplatesCard";
 import { UnclassifiedRuleCard } from "./UnclassifiedRuleCard";
@@ -26,14 +26,17 @@ import { TagRowBlock } from "../anime-forms/TagFilterCard";
 import { DEFAULT_TAG_FILTER_RULES, tagRowSummary } from "../../lib/anibtTags";
 import { titleTagLabel } from "../../lib/titleTags";
 import { getTitleTagVocabulary, type TagFilterRow, type TagFilterRules } from "../../lib/api/client";
-import { Select, type SelectOption, StateBlock } from "../../ui/base";
+import { Select, StateBlock } from "../../ui/base";
 import { SwitchRow } from "../../ui/SaveFooter";
 import { SettingsEditDialog } from "./SettingsEditDialog";
 import { t } from "../../lib/i18n";
 import { joinSentences } from "../../lib/i18n/format";
 import { parserKindOptions, parserKindUsesPatterns, type ParserKindOption } from "../../lib/parserKind";
+import { validateGoRegex } from "../../lib/goRegex";
 import { valuesEqual } from "../../lib/draft";
 import { ParserKindChoice } from "../anime-forms/ParserKindChoice";
+import { EpisodePatternList } from "../anime-forms/EpisodePatternList";
+import { RegexTesterDialog } from "../anime-forms/RegexTesterDialog";
 
 // Default rules: the global default sections (parser / release_rules / tag_filters / file_rules /
 //   subscription_defaults). "After download completes" is a global value only, edited in the
@@ -187,7 +190,12 @@ export function SettingsRules() {
                       <span className="settings-shared-muted text-badge">
                         {sectionSourceLabel(view)}
                       </span>
-                      <Button variant="ghost" size="sm" onClick={() => { setEditing(view); setError(undefined); setConflict(undefined); }}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={meta.name === "parser" && (parserDefault.isLoading || parserCatalog.isLoading)}
+                        onClick={() => { setEditing(view); setError(undefined); setConflict(undefined); }}
+                      >
                         <Pencil size={14} />
                         {t("settings.rules.edit")}
                       </Button>
@@ -199,7 +207,7 @@ export function SettingsRules() {
                         value={view.value}
                         kind={parserDefault.data?.parser_kind}
                         options={parserOptions}
-                        loading={parserDefault.isLoading}
+                        loading={parserDefault.isLoading || parserCatalog.isLoading}
                         error={parserDefault.error ?? parserCatalog.error}
                       />
                     ) : (
@@ -287,7 +295,15 @@ function SectionEditDialog({
         error && <Alert tone="error" title={error} />
       )}
       <div onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
-        {view.section_name === "parser" && <ParserForm value={view.value} busy={busy} onSave={onSave} parser={parser} onDirty={() => setDirty(true)} />}
+        {view.section_name === "parser" && (
+          <ParserForm
+            value={view.value}
+            busy={busy}
+            onSave={onSave}
+            parser={parser}
+            onDirty={() => setDirty(true)}
+          />
+        )}
         {view.section_name === "release_rules" && <ReleaseRulesForm value={view.value} busy={busy} onSave={onSave} />}
         {view.section_name === "file_rules" && <FileRulesForm value={view.value} busy={busy} onSave={onSave} />}
         {view.section_name === "tag_filters" && <TagFiltersForm value={view.value} busy={busy} onSave={onSave} onDirty={() => setDirty(true)} />}
@@ -299,6 +315,8 @@ function SectionEditDialog({
 }
 
 // --- Parser ---
+
+const skelBar = "tw:block tw:rounded-full tw:bg-muted tw:motion-safe:animate-pulse";
 
 function ParserForm({
   value,
@@ -313,7 +331,17 @@ function ParserForm({
 }) {
   const [patterns, setPatterns] = useState(toList(value.episode_patterns));
   const [kind, setKind] = useState(parser.kind);
-  // Only the regex parser uses the episode recognition rules; with reltitle the rules are kept but hidden and take no part in parsing.
+  const [kindTouched, setKindTouched] = useState(false);
+  const [testerOpen, setTesterOpen] = useState(false);
+
+  // Sync late-arriving default parser kind if the user has not explicitly picked one yet.
+  useEffect(() => {
+    if (!kindTouched && kind === undefined && parser.kind !== undefined) {
+      setKind(parser.kind);
+    }
+  }, [kind, kindTouched, parser.kind]);
+
+  // Only the regex parser uses the episode recognition rules; with reltitle the rules are kept but hidden.
   const usesPatterns = parserKindUsesPatterns(kind);
 
   function submit(e: React.FormEvent) {
@@ -324,27 +352,51 @@ function ParserForm({
   return (
     <form id="section-edit-form" onSubmit={submit} className="settings-shared-grid">
       {kind !== undefined && (
-        <>
+        <div className="tw:grid tw:min-w-0 tw:gap-1.5">
           <ParserKindChoice
             label={t("settings.rules.defaultParser.kindLabel")}
+            showLabel
             value={kind}
             options={parser.options}
             onChange={(next) => {
+              setKindTouched(true);
               setKind(next);
               onDirty();
             }}
             readOnly={busy}
           />
-          <p className="text-caption text-muted">{t("settings.rules.defaultParser.help")}</p>
-        </>
+          <p className="text-caption text-muted tw:m-0">{t("settings.rules.defaultParser.help")}</p>
+        </div>
       )}
-      {usesPatterns ? (
-        <Field label={t("settings.rules.episodePatterns")} help={{ label: t("settings.rules.episodePatternsHelpLabel"), body: t("settings.rules.episodePatternsHelp") }}>
-          <TagInput ariaLabel={t("settings.rules.episodePatterns")} value={patterns} onChange={setPatterns} validateItem={validateRegex} />
-        </Field>
-      ) : (
-        <p className="text-caption text-muted">{t("forms.rules.episodePatternsUnused")}</p>
-      )}
+      <Reveal open={usesPatterns}>
+        <EpisodePatternList
+          value={patterns}
+          onChange={(next) => {
+            setPatterns(next);
+            onDirty();
+          }}
+          readOnly={busy}
+          showHelp
+          onOpenTester={() => setTesterOpen(true)}
+        />
+      </Reveal>
+      <Reveal open={!usesPatterns}>
+        <p className="text-caption text-muted tw:m-0">
+          {patterns.length > 0
+            ? `${t("forms.rules.episodePatternsUnused")} ${t("forms.rules.episodePatternsUnusedCount", { n: patterns.length })}`
+            : t("forms.rules.episodePatternsUnused")}
+        </p>
+      </Reveal>
+      <RegexTesterDialog
+        open={testerOpen}
+        onClose={() => setTesterOpen(false)}
+        patterns={patterns}
+        onApply={(next) => {
+          setPatterns(next);
+          onDirty();
+        }}
+        readOnly={busy}
+      />
     </form>
   );
 }
@@ -363,35 +415,40 @@ function ParserSummary({
   loading: boolean;
   error: unknown;
 }) {
+  if (loading && kind === undefined) {
+    return (
+      <div role="status" aria-label={t("settings.rules.loading")} className="tw:grid tw:gap-2 tw:py-0.5">
+        <div className="tw:flex tw:items-center tw:gap-4">
+          <span className={`${skelBar} tw:h-3.5 tw:w-16`} />
+          <span className={`${skelBar} tw:h-3.5 tw:w-20`} />
+        </div>
+        <div className="tw:flex tw:items-center tw:gap-4">
+          <span className={`${skelBar} tw:h-3.5 tw:w-16`} />
+          <span className={`${skelBar} tw:h-3.5 tw:w-48`} />
+        </div>
+        <span className={`${skelBar} tw:h-3 tw:w-64`} />
+      </div>
+    );
+  }
   const kindLabel = kind === undefined ? undefined : (options.find((option) => option.value === kind)?.label ?? kind);
   const items: { label: string; value: React.ReactNode }[] = [];
   if (kindLabel !== undefined) items.push({ label: t("settings.rules.defaultParser.kindLabel"), value: kindLabel });
-  if (!(loading && kind === undefined)) {
-    items.push({
-      label: t("settings.rules.episodePatterns"),
-      value: parserKindUsesPatterns(kind)
-        ? <RegexListSummary value={value.episode_patterns} emptyLabel={t("settings.rules.empty")} />
+  const patternCount = toList(value.episode_patterns).length;
+  items.push({
+    label: t("settings.rules.episodePatterns"),
+    value: parserKindUsesPatterns(kind)
+      ? <RegexListSummary value={value.episode_patterns} emptyLabel={t("settings.rules.empty")} />
+      : patternCount > 0
+        ? `${t("forms.rules.episodePatternsUnused")} ${t("forms.rules.episodePatternsUnusedCount", { n: patternCount })}`
         : t("forms.rules.episodePatternsUnused"),
-    });
-  }
+  });
   return (
     <>
-      {loading && <StatePill busy>{t("settings.rules.loading")}</StatePill>}
       {error != null && <StatePill tone="offline">{toUserMessage(error, t("settings.rules.defaultParser.loadFailed"))}</StatePill>}
       {items.length > 0 && <DescriptionList items={items} />}
       {kind !== undefined && <p className="text-caption text-muted">{t("settings.rules.defaultParser.help")}</p>}
     </>
   );
-}
-
-// Each episode regex is validated as it is typed (the regex validation hook).
-function validateRegex(tag: string): string | null {
-  try {
-    new RegExp(tag);
-    return null;
-  } catch {
-    return t("settings.rules.invalidRegex");
-  }
 }
 
 // --- Release filter rules ---
@@ -401,14 +458,24 @@ function RegexRulesForm({ value, onSave, kind }: FormProps & { kind: "title" | "
   const [exclude, setExclude] = useState(String(value.not_in ?? ""));
   const mustLabel = t(kind === "file" ? "settings.rules.fileMust" : "settings.rules.titleMust");
   const notLabel = t(kind === "file" ? "settings.rules.fileNot" : "settings.rules.titleNot");
+  const mustDiag = must.trim() ? validateGoRegex(must) : null;
+  const notDiag = exclude.trim() ? validateGoRegex(exclude) : null;
   const help = {
     label: t("settings.rules.regexHelpLabel"),
     body: kind === "file" ? joinSentences(t("settings.rules.regexHelp"), t("settings.rules.fileRegexHelp")) : t("settings.rules.regexHelp"),
   };
-  return <form id="section-edit-form" onSubmit={(e) => { e.preventDefault(); onSave({ must_contain: must, not_in: exclude }); }} className="settings-shared-grid">
-    <Field label={mustLabel} help={help}><Input aria-label={mustLabel} value={must} onChange={(e) => setMust(e.target.value)} /></Field>
-    <Field label={notLabel}><Input aria-label={notLabel} value={exclude} onChange={(e) => setExclude(e.target.value)} /></Field>
-  </form>;
+  return (
+    <form id="section-edit-form" onSubmit={(e) => { e.preventDefault(); onSave({ must_contain: must, not_in: exclude }); }} className="settings-shared-grid">
+      <Field label={mustLabel} help={help}>
+        <Input aria-label={mustLabel} value={must} className="tw:font-mono tw:text-xs" aria-invalid={mustDiag?.severity === "error" ? true : undefined} onChange={(e) => setMust(e.target.value)} />
+        {mustDiag && <p role={mustDiag.severity === "error" ? "alert" : "status"} className={mustDiag.severity === "error" ? "tw:m-0 tw:text-xs tw:text-destructive" : "tw:m-0 tw:text-xs tw:text-warning"}>{mustDiag.message}</p>}
+      </Field>
+      <Field label={notLabel}>
+        <Input aria-label={notLabel} value={exclude} className="tw:font-mono tw:text-xs" aria-invalid={notDiag?.severity === "error" ? true : undefined} onChange={(e) => setExclude(e.target.value)} />
+        {notDiag && <p role={notDiag.severity === "error" ? "alert" : "status"} className={notDiag.severity === "error" ? "tw:m-0 tw:text-xs tw:text-destructive" : "tw:m-0 tw:text-xs tw:text-warning"}>{notDiag.message}</p>}
+      </Field>
+    </form>
+  );
 }
 const ReleaseRulesForm = (props: FormProps) => <RegexRulesForm {...props} kind="title" />;
 const FileRulesForm = (props: FormProps) => <RegexRulesForm {...props} kind="file" />;

@@ -77,6 +77,57 @@ func boolPtrForTest(value bool) *bool {
 	return &value
 }
 
+func TestValidateSectionValueParserUsesRuntimeRules(t *testing.T) {
+	validPatterns := []string{
+		"(?i)E(?P<episode>\\d+)",
+		"\\Q[01]\\E",
+		"",
+		"\\- (\\d+)",
+		"\\p{Han}(\\d+)",
+		"\\p{Letter}(\\d+)",
+		"\\pL(\\d+)",
+		"[[:digit:]]+x(\\d)",
+		"\\A(\\d+)\\z",
+		"(?U).*(\\d+)",
+		"\\123(\\d+)",
+		"\\12(\\d+)",
+		"\\01(\\d+)",
+		"\\001(\\d+)",
+		"\\0(\\d+)",
+		"\\a(\\d+)",
+		"\\x{31}(\\d+)",
+	}
+	for _, pattern := range validPatterns {
+		raw, err := json.Marshal(ParserRules{EpisodePatterns: []string{pattern}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateSectionValue(SectionParser, raw); err != nil {
+			t.Fatalf("valid Go RE2 pattern %q rejected: %v", pattern, err)
+		}
+	}
+	for _, pattern := range []string{"\\R", "(?=x)"} {
+		raw, err := json.Marshal(ParserRules{EpisodePatterns: []string{pattern}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateSectionValue(SectionParser, raw); err == nil {
+			t.Fatalf("invalid Go RE2 pattern accepted: %q", pattern)
+		}
+	}
+	patterns := make([]string, 17)
+	for i := range patterns {
+		patterns[i] = "(0)"
+	}
+	raw, err := json.Marshal(ParserRules{EpisodePatterns: patterns})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSectionValue(SectionParser, raw); err == nil {
+		t.Fatal("17 episode patterns exceeded the runtime limit but were accepted")
+	}
+}
+
 func TestValidateSectionValueRejectsUnsupportedNamingLanguage(t *testing.T) {
 	rules := generated.NamingRules{
 		Language: generated.NamingRulesLanguage(""),

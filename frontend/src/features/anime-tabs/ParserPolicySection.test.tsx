@@ -84,27 +84,29 @@ const regexName = () => t("policy.parser.kindRegex");
 const reltitleName = () => t("policy.parser.kindReltitle");
 
 describe("ParserPolicySection", () => {
-  it("二选一：正则与 reltitle 各带一行说明，已保存值选中，未改动时保存禁用", async () => {
+  it("Segmented 二选一：reltitle 首选在前，已保存值选中并展示对应说明，未改动时保存禁用", async () => {
     renderSection();
     const group = await screen.findByRole("radiogroup", { name: t("policy.parser.kindLabel") });
     expect(group).toBeInTheDocument();
     const radios = screen.getAllByRole("radio");
     expect(radios).toHaveLength(2);
+    expect(radios[0]).toHaveTextContent(reltitleName());
+    expect(radios[1]).toHaveTextContent(regexName());
     expect(screen.getByRole("radio", { name: regexName() })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: reltitleName() })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByRole("radio", { name: reltitleName() })).toHaveAccessibleDescription(t("policy.parser.kindReltitleDescription"));
-    expect(screen.getByRole("radio", { name: regexName() })).toHaveAccessibleDescription(t("policy.parser.kindRegexDescription"));
+    expect(screen.getByText(t("policy.parser.kindRegexDescription"))).toBeInTheDocument();
     expect(screen.queryByText("File only")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("act.save") })).toBeDisabled();
   });
 
-  it("点选项文字即可选择；选回原值后保存再次禁用", async () => {
+  it("点选项即可选择并切换说明；选回原值后保存再次禁用", async () => {
     renderSection();
     await screen.findByRole("radiogroup", { name: t("policy.parser.kindLabel") });
-    await userEvent.click(screen.getByText(t("policy.parser.kindReltitleDescription")));
+    await userEvent.click(screen.getByRole("radio", { name: reltitleName() }));
     expect(screen.getByRole("radio", { name: reltitleName() })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(t("policy.parser.kindReltitleDescription"))).toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("act.save") })).toBeEnabled();
-    await userEvent.click(screen.getByText(regexName()));
+    await userEvent.click(screen.getByRole("radio", { name: regexName() }));
     expect(screen.getByRole("button", { name: t("act.save") })).toBeDisabled();
   });
 

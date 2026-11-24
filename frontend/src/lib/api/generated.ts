@@ -3275,7 +3275,7 @@ export interface components {
             pinned_score?: number | null;
             final_score?: number | null;
         };
-        /** @description One RSS list read request. input_source selects current_input, candidate_revision, owner, or owner_draft. Provider feed snapshot identities are optional and advisory: the server determines selected groups, reports selected groups without a supplied snapshot as snapshot_required, and returns supplied identities for unselected groups in unused_feed_identities. Owner modes require managed_anime_id; owner_draft also requires rules_preview (shaped exactly like RulesSections), metadata_preview, or both. This is a pure read and never writes. */
+        /** @description One RSS list read request. input_source selects current_input, candidate_revision, owner, or owner_draft. Provider feed snapshot identities are optional and advisory: the server determines selected groups, reports selected groups without a supplied snapshot as snapshot_required, and returns supplied identities for unselected groups in unused_feed_identities. Owner modes require managed_anime_id; owner_draft also requires at least one of rules_preview (shaped exactly like RulesSections), metadata_preview, or parser_kind_preview. This is a pure read and never writes. */
         RSSListViewInput: {
             /** @enum {string} */
             input_source: "current_input" | "candidate_revision" | "owner" | "owner_draft";
@@ -3287,10 +3287,15 @@ export interface components {
             revision?: components["schemas"]["Version"] | null;
             /** @description Required for owner and owner_draft modes. */
             managed_anime_id?: components["schemas"]["ID"] | null;
-            /** @description owner_draft only; the unsaved Rules sections patch. owner_draft requires rules_preview, metadata_preview, or both. */
+            /** @description owner_draft only; the unsaved Rules sections patch. owner_draft requires at least one of rules_preview, metadata_preview, or parser_kind_preview. */
             rules_preview?: components["schemas"]["RulesSections"] | null;
             /** @description owner_draft only; the complete unsaved metadata value, overlaid on the persisted metadata for this read only and never written. Validated exactly like the metadata PATCH; an invalid value fails the read with 422 field errors under metadata_preview. */
             metadata_preview?: components["schemas"]["AnimeMetadataPreview"] | null;
+            /**
+             * @description owner_draft only; the unsaved instance parser kind, overlaid on the persisted parser policy for this read only and never written. Validated against registered parsers; an invalid value fails the read with 422 POLICY_INVALID.
+             * @enum {string|null}
+             */
+            parser_kind_preview?: "regex" | "reltitle" | null;
             /** @description Optional advisory snapshot identities for current_input, candidate_revision, and pending-subscription owner modes. Matched to effective-selected groups; absent selected identities require snapshot acquisition; unmatched ones return as unused_feed_identities. */
             feed?: components["schemas"]["PreviewFeedSnapshotRef"][];
             /** @description current_input only. The persisted provider group observation (the snapshot_version group discovery returned) whose groups are listed next to the draft's configured ones; observed groups nobody configured take the provider default policy, ranked with the configured ones under max_rss. A pure read: the observation must belong to the draft's provider and entry, and one no longer retained is reported on the view instead of failing the request. */
@@ -6009,6 +6014,8 @@ export interface components {
             metadata_hold: components["schemas"]["MetadataHold"];
             subgroups: components["schemas"]["SubgroupsOwnerResult"];
             rules: components["schemas"]["AnimeRules"];
+            /** @description The instance's frozen parser policy snapshot when present. */
+            parser_policy?: components["schemas"]["ParserPolicyView"] | null;
             rss_sources: components["schemas"]["RSSSource"][];
             rss_source_runtimes: components["schemas"]["RSSSourceRuntime"][];
             /**
@@ -6053,6 +6060,8 @@ export interface components {
             config_waiting_files: number;
             subgroups: components["schemas"]["SubgroupsOwnerResult"];
             rules: components["schemas"]["AnimeRules"];
+            /** @description The instance's frozen parser policy snapshot when present. */
+            parser_policy?: components["schemas"]["ParserPolicyView"] | null;
             rss_sources: components["schemas"]["RSSSource"][];
             rss_source_runtimes: components["schemas"]["RSSSourceRuntime"][];
             releases: components["schemas"]["Release"][];

@@ -14,6 +14,7 @@ import {
   getAnimeWorkspace,
   getAnimeWorkspaceConfiguration,
   isVersionConflict,
+  listParserCatalog,
   patchAnimeSubscription,
   getBusinessPreset,
   loadBusinessPresetIntoDraft,
@@ -412,8 +413,16 @@ function SubscribedBody({
   // Execution records are a separate routed dialog: opening it replaces this anime's parameter and the back key returns here.
   const openRecord = useRecordLink();
   useEffect(() => {
-    if (open && managedAnimeRef !== "") setPollingDeadline(Date.now() + 30_000);
-  }, [open, managedAnimeRef]);
+    if (open && managedAnimeRef !== "") {
+      setPollingDeadline(Date.now() + 30_000);
+      // Warm the static parser catalog as soon as the dialog opens so switching to Rules never jumps.
+      void queryClient.prefetchQuery({
+        queryKey: configKeys.parserCatalog,
+        queryFn: listParserCatalog,
+        staleTime: Infinity,
+      });
+    }
+  }, [open, managedAnimeRef, queryClient]);
 
   const [activeTab, setActiveTab] = useState(initialTab ?? "metadata");
   const selectedTab = useRef(activeTab);

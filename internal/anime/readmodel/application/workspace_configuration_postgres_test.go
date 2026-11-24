@@ -124,7 +124,7 @@ func assertWorkspaceConfigurationParity(t *testing.T, service *Service, animeID 
 	}
 	want := AnimeWorkspaceConfiguration{
 		ManagedAnime: full.ManagedAnime, Subscription: full.Subscription, Metadata: full.Metadata, MetadataHold: full.MetadataHold,
-		Subgroups: full.Subgroups, Rules: full.Rules, RSSSources: full.RSSSources, RSSSourceRuntimes: full.RSSSourceRuntimes,
+		Subgroups: full.Subgroups, Rules: full.Rules, ParserPolicy: full.ParserPolicy, RSSSources: full.RSSSources, RSSSourceRuntimes: full.RSSSourceRuntimes,
 		EpisodeProgress: full.EpisodeProgress, ConfigWaitingFiles: full.ConfigWaitingFiles, ReleaseSummary: referenceWorkspaceSummary(full),
 	}
 	if !reflect.DeepEqual(configuration, want) {

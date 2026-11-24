@@ -44,21 +44,26 @@ func (s *Service) readWorkspaceOwners(ctx context.Context, managedAnimeID string
 	var subscription Subscription
 	var metadata AnimeMetadata
 	var startBaselineAt sql.NullTime
+	var parserKind sql.NullString
+	var parserSourceDefaultVersion, parserVersion sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
 SELECT a.id, a.title, a.title_override, a.provider_title, a.version,
        sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.entry_season, sub.created_at, sub.state, sub.version,
        a.lifecycle_state, a.fence_epoch, a.retired_at,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.total_episodes, m.year, m.season, m.version, sub.new_releases_only, sub.start_baseline_at,
-       sub.ignore_multi_video_releases, a.initial_title_pending
+       sub.ignore_multi_video_releases, a.initial_title_pending,
+       bc.parser_kind, bc.parser_source_default_version, bc.parser_version
 FROM managed_anime a
 JOIN subscriptions sub ON sub.managed_anime_id = a.id
 JOIN anime_metadata m ON m.managed_anime_id = a.id
+LEFT JOIN anime_business_configs bc ON bc.managed_anime_id = a.id AND bc.parser_version IS NOT NULL
 WHERE a.id = $1`, managedAnimeID).Scan(
 		&managedAnime.ID, &managedAnime.Title, &titleOverride, &providerTitle, &managedAnime.Version,
 		&subscription.ID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &state, &subscription.Version,
 		&subscription.LifecycleState, &subscription.LifecycleEpoch, &retiredAt,
-		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind, &totalEpisodes, &year, &ownerSeason, &metadata.Version, &subscription.NewReleasesOnly, &startBaselineAt, &subscription.IgnoreMultiVideoReleases, &metadata.InitialTitlePending)
+		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind, &totalEpisodes, &year, &ownerSeason, &metadata.Version, &subscription.NewReleasesOnly, &startBaselineAt, &subscription.IgnoreMultiVideoReleases, &metadata.InitialTitlePending,
+		&parserKind, &parserSourceDefaultVersion, &parserVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AnimeWorkspace{}, &apperrors.NotFound{Resource: "managed_anime", ID: managedAnimeID}
 	}
@@ -116,10 +121,19 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	if err != nil {
 		return AnimeWorkspace{}, err
 	}
+	var parserPolicy *WorkspaceParserPolicy
+	if parserVersion.Valid && parserKind.Valid && parserSourceDefaultVersion.Valid {
+		parserPolicy = &WorkspaceParserPolicy{
+			ManagedAnimeID:       managedAnimeID,
+			ParserKind:           parserKind.String,
+			SourceDefaultVersion: parserSourceDefaultVersion.Int64,
+			Version:              parserVersion.Int64,
+		}
+	}
 	return AnimeWorkspace{
 		ManagedAnime: managedAnime, Metadata: metadata,
 		MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB, allowMissingLinkage), Subscription: subscription,
-		Subgroups: subgroups, Rules: rules, RSSSources: sources, RSSSourceRuntimes: runtimes,
+		Subgroups: subgroups, Rules: rules, ParserPolicy: parserPolicy, RSSSources: sources, RSSSourceRuntimes: runtimes,
 	}, nil
 }
 

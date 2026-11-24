@@ -22,6 +22,7 @@ type AnimeWorkspace struct {
 	ManagedAnime       ManagedAnime
 	Metadata           AnimeMetadata
 	MetadataHold       MetadataHold
+	ParserPolicy       *WorkspaceParserPolicy
 	Releases           []Release
 	RSSSourceRuntimes  []RSSSourceRuntime
 	RSSSources         []RSSSource
@@ -29,6 +30,15 @@ type AnimeWorkspace struct {
 	Subgroups          SubgroupsOwnerResult
 	Subscription       Subscription
 	TargetObservations *[]TargetObservation
+}
+
+// WorkspaceParserPolicy is the workspace projection of the instance's frozen
+// parser policy row in anime_business_configs.
+type WorkspaceParserPolicy struct {
+	ManagedAnimeID       string
+	ParserKind           string
+	SourceDefaultVersion int64
+	Version              int64
 }
 
 // AnimeWorkspaceConfiguration has configuration owners but no execution-history arrays.
@@ -39,6 +49,7 @@ type AnimeWorkspaceConfiguration struct {
 	MetadataHold       MetadataHold
 	Subgroups          SubgroupsOwnerResult
 	Rules              RulesOwner
+	ParserPolicy       *WorkspaceParserPolicy
 	RSSSources         []RSSSource
 	RSSSourceRuntimes  []RSSSourceRuntime
 	EpisodeProgress    *EpisodeProgress

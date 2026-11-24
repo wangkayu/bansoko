@@ -33,6 +33,7 @@ func MapAnimeWorkspace(value readmodelapplication.AnimeWorkspace) (generated.Ani
 		ManagedAnime:       mapWorkspaceManagedAnime(value.ManagedAnime),
 		Metadata:           mapWorkspaceMetadata(value.Metadata),
 		MetadataHold:       mapWorkspaceMetadataHold(value.MetadataHold),
+		ParserPolicy:       mapWorkspaceParserPolicy(value.ParserPolicy),
 		Releases:           mapWorkspaceReleases(value.Releases),
 		RssSourceRuntimes:  mapWorkspaceRuntimes(value.RSSSourceRuntimes),
 		RssSources:         mapWorkspaceSources(value.RSSSources),
@@ -62,13 +63,26 @@ func MapAnimeWorkspaceConfiguration(value readmodelapplication.AnimeWorkspaceCon
 		Subscription: mapSubscription(value.Subscription),
 		Metadata:     mapWorkspaceMetadata(value.Metadata), MetadataHold: mapWorkspaceMetadataHold(value.MetadataHold),
 		Subgroups: mapWorkspaceSubgroups(value.Subgroups), Rules: rules,
-		RssSources: mapWorkspaceSources(value.RSSSources), RssSourceRuntimes: mapWorkspaceRuntimes(value.RSSSourceRuntimes),
+		ParserPolicy: mapWorkspaceParserPolicy(value.ParserPolicy),
+		RssSources:   mapWorkspaceSources(value.RSSSources), RssSourceRuntimes: mapWorkspaceRuntimes(value.RSSSourceRuntimes),
 		EpisodeProgress: mapWorkspaceEpisodeProgress(value.EpisodeProgress), ConfigWaitingFiles: value.ConfigWaitingFiles,
 		ReleaseSummary: generated.AnimeWorkspaceReleaseSummary{
 			Count: value.ReleaseSummary.Count, LatestPublishedAt: cloneWorkspaceString(value.ReleaseSummary.LatestPublishedAt),
 			OwnerChainStable: value.ReleaseSummary.OwnerChainStable, TagObservations: observations,
 		},
 	}, nil
+}
+
+func mapWorkspaceParserPolicy(value *readmodelapplication.WorkspaceParserPolicy) *generated.ParserPolicyView {
+	if value == nil {
+		return nil
+	}
+	return &generated.ParserPolicyView{
+		ManagedAnimeId:       generated.ID(value.ManagedAnimeID),
+		ParserKind:           generated.ParserPolicyViewParserKind(value.ParserKind),
+		SourceDefaultVersion: int(value.SourceDefaultVersion),
+		Version:              generated.Version(value.Version),
+	}
 }
 
 func mapWorkspaceManagedAnime(value animeapplication.ManagedAnime) generated.ManagedAnime {

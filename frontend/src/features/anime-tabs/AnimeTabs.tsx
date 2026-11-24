@@ -3,7 +3,7 @@ import { toast } from "../../ui/toast";
 import { SavePartsProvider, useSaveParts } from "../../lib/saveParts";
 import { draftTabChangeCounts, valuesEqual } from "../../lib/draft";
 import { SaveButton, SaveStatus, UnsavedDot } from "../../ui/SaveFooter";
-import type { AnimeMetadataPreview, RSSListView, RulesSections, TitleSuggestion } from "../../lib/api/client";
+import type { AnimeMetadataPreview, ParserPolicyView, RSSListView, RulesSections, TitleSuggestion } from "../../lib/api/client";
 import type { AnimeTabHost } from "./host";
 import { MetadataTab, type MetadataMatchRequest } from "./MetadataTab";
 import { SubgroupsTab } from "./SubgroupsTab";
@@ -74,9 +74,10 @@ export function AnimeTabs({
   useEffect(() => {
     if (matchRequest) setTab("metadata");
   }, [matchRequest]);
-  // Owner mode's unsaved rules feed directly into the RSS tab's automatic owner_draft preview
+  // Owner mode's unsaved rules and parser kind feed directly into the RSS tab's automatic owner_draft preview
   // (RssTab only queries when active, so no debounce timer is needed and switching tabs never races).
   const [rulesPreview, setRulesPreview] = useState<RulesSections>();
+  const [parserKindPreview, setParserKindPreview] = useState<ParserPolicyView["parser_kind"]>();
 
   const saveParts = useSaveParts(SAVE_ORDER);
 
@@ -189,6 +190,7 @@ export function AnimeTabs({
               readOnly={readOnly}
               active={tab === "rules"}
               onPreviewChange={host.mode === "owner" && host.capability.can("rules.preview") ? setRulesPreview : undefined}
+              onParserPreviewChange={host.mode === "owner" && host.capability.can("rules.preview") ? setParserKindPreview : undefined}
             />
           </TabsPanel>
           <TabsPanel value="rss" keepMounted data-state={tab === "rss" ? "active" : "inactive"}>
@@ -196,6 +198,7 @@ export function AnimeTabs({
               host={host}
               rulesPreviewSections={host.mode === "owner" ? rulesPreview : undefined}
               metadataPreview={host.mode === "owner" ? metadataPreview : undefined}
+              parserKindPreview={host.mode === "owner" ? parserKindPreview : undefined}
               active={tab === "rss"}
               onViewRead={host.mode === "draft" ? handleViewRead : undefined}
             />

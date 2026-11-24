@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -12,12 +12,15 @@ import type {
   ReleaseFilterRules,
   RulesSections,
 } from "../../lib/api/client";
-import { Chip, Field, Input, TagInput } from "../../ui";
-import { HelpTip, Select, type SelectOption } from "../../ui/base";
+import { Chip, Field, Input } from "../../ui";
+import { HelpTip, Reveal, Select, type SelectOption } from "../../ui/base";
 import { NamingTemplateFields } from "../naming/NamingTemplateFields";
 import { t } from "../../lib/i18n";
 import { joinSentences } from "../../lib/i18n/format";
 import { parserKindUsesPatterns } from "../../lib/parserKind";
+import { validateGoRegex } from "../../lib/goRegex";
+import { EpisodePatternList } from "./EpisodePatternList";
+import { RegexTesterDialog } from "./RegexTesterDialog";
 
 // The editors of the rules sections. Every section is a complete value owned by this draft or
 // this anime itself (one-time input: the default settings are copied at draft creation and the
@@ -83,15 +86,6 @@ const defaultSectionValues: {
   file_effect: { operation: "hardlink", collision_policy: "versioned" },
 };
 
-function validRegex(tag: string): string | null {
-  try {
-    new RegExp(tag);
-    return null;
-  } catch {
-    return t("settings.rules.invalidRegex");
-  }
-}
-
 export function RulesSectionsFields({
   sections,
   onChange,
@@ -99,6 +93,7 @@ export function RulesSectionsFields({
   parserChoice,
   parserKind,
   parserKindLoading = false,
+  sampleTitles,
   hints,
   afterReleaseFilter,
   afterFileEffect,
@@ -123,6 +118,8 @@ export function RulesSectionsFields({
   parserKind?: string;
   /** True while the instance's parser kind is still loading, suppressing the regex list until the parser is known. */
   parserKindLoading?: boolean;
+  /** Collected RSS titles from the current anime for the standalone regex tester dialog. */
+  sampleTitles?: readonly string[];
   /**
    * Per-section one-line hints replacing the defaults, for a caller whose
    * input is not the anime's own: file-manager recognition parses file names
@@ -136,6 +133,8 @@ export function RulesSectionsFields({
   /** Sections differing from the current default settings: the section card's title shows "modified". Unmarked when absent. */
   modified?: ReadonlySet<keyof RulesSections>;
 }) {
+  const [testerOpen, setTesterOpen] = useState(false);
+
   function sectionProps<K extends SectionKey>(section: K) {
     // A draft that has not loaded the default settings lacks this section: it displays as empty and the first input becomes the complete value.
     const current = sections[section];
@@ -155,6 +154,7 @@ export function RulesSectionsFields({
   const fileEffect = sectionProps("file_effect");
   const shown = (section: SectionKey) => only === undefined || only.includes(section);
   const usesPatterns = parserKindUsesPatterns(parserKind);
+  const episodePatterns = (parser.value as ParserRules).episode_patterns;
   const meta = (section: SectionKey): SectionMeta => {
     const base = sectionTitles()[section];
     const hint = hints?.[section];
@@ -167,20 +167,31 @@ export function RulesSectionsFields({
         <SectionCard meta={meta("parser")} modified={modified?.has("parser")}>
           <div className="tw:grid tw:min-w-0 tw:gap-3">
             {parserChoice}
-            {!parserKindLoading && (usesPatterns ? (
-              <div className="rules-responsive-wide">
-                <TagRow
-                  label={t("settings.rules.episodePatterns")}
-                  value={(parser.value as ParserRules).episode_patterns}
-                  validate={validRegex}
-                  placeholder={t("forms.rules.episodePatternsPlaceholder")}
-                  onChange={(episode_patterns) => parser.setValue({ ...(parser.value as ParserRules), episode_patterns })}
-                />
-              </div>
-            ) : (
-              <p className="naming-muted text-caption">{t("forms.rules.episodePatternsUnused")}</p>
-            ))}
+            {!parserKindLoading && (
+              <>
+                <Reveal open={usesPatterns}>
+                  <div className="tw:grid tw:min-w-0 tw:gap-2 tw:pt-0.5">
+                    <EpisodePatternList
+                      value={episodePatterns}
+                      onChange={(episode_patterns) => parser.setValue({ ...(parser.value as ParserRules), episode_patterns })}
+                      onOpenTester={() => setTesterOpen(true)}
+                    />
+                    {parserChoice && <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("policy.parser.hint")}</p>}
+                  </div>
+                </Reveal>
+                {!usesPatterns && !parserChoice && (
+                  <p className="naming-muted text-caption tw:m-0">{t("forms.rules.episodePatternsUnused")}</p>
+                )}
+              </>
+            )}
           </div>
+          <RegexTesterDialog
+            open={testerOpen}
+            onClose={() => setTesterOpen(false)}
+            patterns={episodePatterns}
+            onApply={(episode_patterns) => parser.setValue({ ...(parser.value as ParserRules), episode_patterns })}
+            sampleTitles={sampleTitles}
+          />
         </SectionCard>
       )}
 
@@ -278,62 +289,62 @@ export function SectionCard({
   );
 }
 
-function RegexFields({ value, onChange, mustLabel, notLabel }: { value: ReleaseFilterRules; onChange: (next: ReleaseFilterRules) => void; mustLabel: string; notLabel: string }) {
-  const mustError = value.must_contain.trim() ? validRegex(value.must_contain) : null;
-  const notError = value.not_in.trim() ? validRegex(value.not_in) : null;
+const RegexFields = memo(function RegexFields({
+  value,
+  onChange,
+  mustLabel,
+  notLabel,
+}: {
+  value: ReleaseFilterRules;
+  onChange: (next: ReleaseFilterRules) => void;
+  mustLabel: string;
+  notLabel: string;
+}) {
+  const mustDiag = value.must_contain.trim() ? validateGoRegex(value.must_contain) : null;
+  const notDiag = value.not_in.trim() ? validateGoRegex(value.not_in) : null;
   return (
     <div className="rules-responsive">
       <Field label={mustLabel}>
         <Input
           value={value.must_contain}
-          aria-invalid={mustError !== null ? true : undefined}
+          aria-invalid={mustDiag?.severity === "error" ? true : undefined}
+          className="tw:font-mono tw:text-xs"
           onChange={(e) => onChange({ ...value, must_contain: e.target.value })}
         />
-        {mustError && <p role="alert" className="tw:m-0 tw:text-xs tw:text-destructive">{mustError}</p>}
+        {mustDiag && (
+          <p
+            role={mustDiag.severity === "error" ? "alert" : "status"}
+            className={cn("tw:m-0 tw:text-xs", mustDiag.severity === "error" ? "tw:text-destructive" : "tw:text-warning")}
+          >
+            {mustDiag.message}
+          </p>
+        )}
       </Field>
       <Field label={notLabel}>
         <Input
           value={value.not_in}
-          aria-invalid={notError !== null ? true : undefined}
+          aria-invalid={notDiag?.severity === "error" ? true : undefined}
+          className="tw:font-mono tw:text-xs"
           onChange={(e) => onChange({ ...value, not_in: e.target.value })}
         />
-        {notError && <p role="alert" className="tw:m-0 tw:text-xs tw:text-destructive">{notError}</p>}
+        {notDiag && (
+          <p
+            role={notDiag.severity === "error" ? "alert" : "status"}
+            className={cn("tw:m-0 tw:text-xs", notDiag.severity === "error" ? "tw:text-destructive" : "tw:text-warning")}
+          >
+            {notDiag.message}
+          </p>
+        )}
       </Field>
     </div>
   );
-}
-
-function TagRow({
-  label,
-  value,
-  onChange,
-  validate,
-  placeholder,
-}: {
-  label: string;
-  value: string[];
-  onChange?: (next: string[]) => void;
-  validate?: (tag: string) => string | null;
-  placeholder?: string;
-}) {
-  return (
-    <Field label={label}>
-      <TagInput
-        ariaLabel={label}
-        value={value}
-        onChange={onChange}
-        validateItem={validate}
-        placeholder={placeholder ?? t("forms.rules.tagPlaceholder")}
-      />
-    </Field>
-  );
-}
+});
 
 // Per-anime naming: "choose template" copies a global library template's content into this anime's field; there is no sample selection.
-function AnimeNamingFields({ value, onChange }: { value: NamingRules; onChange: (next: NamingRules) => void }) {
+const AnimeNamingFields = memo(function AnimeNamingFields({ value, onChange }: { value: NamingRules; onChange: (next: NamingRules) => void }) {
   const library = useQuery({
     queryKey: configKeys.namingTemplates,
     queryFn: getNamingTemplateLibrary,
   });
   return <NamingTemplateFields value={value} onChange={onChange} templates={library.data?.templates} />;
-}
+});

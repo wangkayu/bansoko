@@ -15,6 +15,7 @@ import {
   toUserMessage,
   type AnimeMetadataPreview,
   type AnimeWorkspace,
+  type ParserPolicyView,
   type Release,
   type PreviewFeedSnapshotRef,
   type RSSListGroup,
@@ -62,6 +63,7 @@ export function RssTab({
   host,
   rulesPreviewSections,
   metadataPreview,
+  parserKindPreview,
   onExitRulesPreview,
   onViewRead,
   active,
@@ -71,6 +73,8 @@ export function RssTab({
   rulesPreviewSections?: RulesSections;
   /** Owner mode: the metadata tab's complete unsaved metadata; when present the display likewise uses the owner_draft read model. */
   metadataPreview?: AnimeMetadataPreview;
+  /** Owner mode: an unsaved parser kind choice; when present the display overlays it in owner_draft mode. */
+  parserKindPreview?: ParserPolicyView["parser_kind"];
   onExitRulesPreview?: () => void;
   /** Reported after each successful read of the server read model (the subgroups tab's subscription-facts source). */
   onViewRead?: (view: RSSListView) => void;
@@ -95,6 +99,7 @@ export function RssTab({
         providerEntryRef={bench.providerEntryRef}
         rulesPreviewSections={rulesPreviewSections}
         metadataPreview={metadataPreview}
+        parserKindPreview={parserKindPreview}
         onExitRulesPreview={onExitRulesPreview}
         onViewRead={onViewRead}
         active={active}
@@ -108,6 +113,7 @@ export function RssTab({
       active={active}
       rulesPreviewSections={rulesPreviewSections}
       metadataPreview={metadataPreview}
+      parserKindPreview={parserKindPreview}
       onExitRulesPreview={onExitRulesPreview}
       onViewRead={onViewRead}
     />
@@ -209,6 +215,7 @@ function PendingRssBench({
   providerEntryRef,
   rulesPreviewSections,
   metadataPreview,
+  parserKindPreview,
   onExitRulesPreview,
   onViewRead,
   active,
@@ -218,13 +225,14 @@ function PendingRssBench({
   providerEntryRef?: string;
   rulesPreviewSections?: RulesSections;
   metadataPreview?: AnimeMetadataPreview;
+  parserKindPreview?: ParserPolicyView["parser_kind"];
   onExitRulesPreview?: () => void;
   onViewRead?: (view: RSSListView) => void;
   active?: boolean;
 }) {
   const { animeID, workspace } = host;
   // The server composes the bench read model from the instance's current configuration; unsaved
-  // rule and metadata changes in the dialog are submitted with the read — the same semantics as
+  // rule, parser and metadata changes in the dialog are submitted with the read — the same semantics as
   // the draft bench previewing an unsaved draft. Configuration identity = saved versions + unsaved
   // changes.
   const identity = JSON.stringify([
@@ -232,12 +240,14 @@ function PendingRssBench({
     workspace.subgroups.version,
     workspace.rules.version,
     workspace.metadata?.version ?? null,
+    workspace.parser_policy?.version ?? null,
     rulesPreviewSections ?? null,
     metadataPreview ?? null,
+    parserKindPreview ?? null,
   ]);
   const ownerBench = useMemo(
-    () => ({ managedAnimeID: animeID, rulesPreview: rulesPreviewSections, metadataPreview, identity }),
-    [animeID, identity, rulesPreviewSections, metadataPreview],
+    () => ({ managedAnimeID: animeID, rulesPreview: rulesPreviewSections, metadataPreview, parserKindPreview, identity }),
+    [animeID, identity, rulesPreviewSections, metadataPreview, parserKindPreview],
   );
   const [feedSnapshots, setFeedSnapshots] = useState<PreviewFeedSnapshotRef[]>([]);
   // A custom source: the same fetch descriptor as the draft bench, with the subscription's own saved source as the fetch subject.
@@ -262,7 +272,7 @@ function PendingRssBench({
         <FeedSiteNote key={index} url={locator} />
       ))}
       {/* The not-started note is one line at the dialog's top; only the unsaved-changes preview notice stays here. */}
-      {(rulesPreviewSections || metadataPreview) && (
+      {(rulesPreviewSections || metadataPreview || parserKindPreview) && (
         <div className="rss-notice">
           <p role="status" className="rss-notice-text text-caption">
             {metadataPreview ? t("rss.pendingBenchPreviewEdits") : t("rss.pendingBenchPreview")}
@@ -297,6 +307,7 @@ function OwnerRssTab({
   host,
   rulesPreviewSections,
   metadataPreview,
+  parserKindPreview,
   onExitRulesPreview,
   onViewRead,
   active = true,
@@ -305,12 +316,13 @@ function OwnerRssTab({
   active?: boolean;
   rulesPreviewSections?: RulesSections;
   metadataPreview?: AnimeMetadataPreview;
+  parserKindPreview?: ParserPolicyView["parser_kind"];
   onExitRulesPreview?: () => void;
   onViewRead?: (view: RSSListView) => void;
 }) {
   const { animeID, workspace, capability, onChanged } = host;
   const queryClient = useQueryClient();
-  const rulesPreviewMode = rulesPreviewSections !== undefined;
+  const rulesPreviewMode = rulesPreviewSections !== undefined || parserKindPreview !== undefined;
   const previewMode = rulesPreviewMode || metadataPreview !== undefined;
   const [busyKey, setBusyKey] = useState<string>();
   const [refreshBusy, setRefreshBusy] = useState(false);
@@ -344,7 +356,7 @@ function OwnerRssTab({
       animeID,
       workspace.subscription.version,
       workspace.rules.version,
-      previewMode ? JSON.stringify([rulesPreviewSections ?? null, metadataPreview ?? null]) : "",
+      previewMode ? JSON.stringify([rulesPreviewSections ?? null, metadataPreview ?? null, parserKindPreview ?? null]) : "",
     ),
     retry: false,
     enabled: active,
@@ -357,6 +369,7 @@ function OwnerRssTab({
               managed_anime_id: animeID,
               ...(rulesPreviewSections ? { rules_preview: rulesPreviewSections } : {}),
               ...(metadataPreview ? { metadata_preview: metadataPreview } : {}),
+              ...(parserKindPreview ? { parser_kind_preview: parserKindPreview } : {}),
               limit_per_group: OWNER_ITEMS_PER_GROUP,
               episode_span: null,
             }

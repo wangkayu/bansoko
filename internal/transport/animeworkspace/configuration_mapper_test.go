@@ -20,13 +20,20 @@ func TestMapAnimeWorkspaceConfigurationParityAndIsolation(t *testing.T) {
 	full.Metadata.Version = 10
 	full.Subgroups.Version = 11
 	full.Rules.Version = 12
+	full.ParserPolicy = &readmodelapplication.WorkspaceParserPolicy{
+		ManagedAnimeID:       full.ManagedAnime.ID,
+		ParserKind:           "reltitle",
+		SourceDefaultVersion: 2,
+		Version:              4,
+	}
 	full.ConfigWaitingFiles = 13
 	full.EpisodeProgress = &readmodelapplication.EpisodeProgress{Episodes: []int{1, 2}, Done: false}
 	latest := "2026-11-10T09:00:00+08:00"
 	input := readmodelapplication.AnimeWorkspaceConfiguration{
 		ManagedAnime: full.ManagedAnime, Subscription: full.Subscription,
 		Metadata: full.Metadata, MetadataHold: full.MetadataHold, Subgroups: full.Subgroups, Rules: full.Rules,
-		RSSSources: full.RSSSources, RSSSourceRuntimes: full.RSSSourceRuntimes,
+		ParserPolicy: full.ParserPolicy,
+		RSSSources:   full.RSSSources, RSSSourceRuntimes: full.RSSSourceRuntimes,
 		EpisodeProgress: full.EpisodeProgress, ConfigWaitingFiles: full.ConfigWaitingFiles,
 		ReleaseSummary: readmodelapplication.AnimeWorkspaceReleaseSummary{
 			Count: 501, LatestPublishedAt: &latest, OwnerChainStable: true,
@@ -54,7 +61,7 @@ func TestMapAnimeWorkspaceConfigurationParityAndIsolation(t *testing.T) {
 		return result
 	}
 	fullObject, configObject := asObject(mappedFull), asObject(mapped)
-	for _, key := range []string{"managed_anime", "subscription", "metadata", "metadata_hold", "subgroups", "rules", "rss_sources", "rss_source_runtimes", "episode_progress", "config_waiting_files"} {
+	for _, key := range []string{"managed_anime", "subscription", "metadata", "metadata_hold", "subgroups", "rules", "parser_policy", "rss_sources", "rss_source_runtimes", "episode_progress", "config_waiting_files"} {
 		if string(fullObject[key]) != string(configObject[key]) {
 			t.Errorf("configuration %s differs from full: %s / %s", key, configObject[key], fullObject[key])
 		}
@@ -64,7 +71,7 @@ func TestMapAnimeWorkspaceConfigurationParityAndIsolation(t *testing.T) {
 			t.Errorf("history field %s must be absent, not an empty array", key)
 		}
 	}
-	if len(configObject) != 11 || mapped.ReleaseSummary.Count != 501 || !mapped.ReleaseSummary.OwnerChainStable {
+	if len(configObject) != 12 || mapped.ReleaseSummary.Count != 501 || !mapped.ReleaseSummary.OwnerChainStable {
 		t.Fatalf("unexpected configuration contract: %+v", mapped)
 	}
 	if mapped.ReleaseSummary.TagObservations[0].TitleTags == nil {

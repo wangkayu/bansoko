@@ -11,43 +11,54 @@ import {
 } from "../../lib/api/client";
 import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
 import { ConflictBlock, StatePill } from "../../ui";
-import { Alert } from "../../ui/base";
+import { Alert, Button } from "../../ui/base";
 import { t } from "../../lib/i18n";
-import { parserKindOptions } from "../../lib/parserKind";
+import { parserKindOptions, parserKindUsesPatterns } from "../../lib/parserKind";
 import { ParserKindChoice } from "../anime-forms/ParserKindChoice";
 
-// The episode parser card: the sole UI of the instance-level parser policy (exposed by prior
-// ruling). The options come from /parser-catalog (parsers with the release_title capability:
-// regex / reltitle), displayed as an either/or; read-only disables the whole group. The choice is
-// the rules tab's draft, committed by the dialog footer's single save (expected-version CAS; on
-// 409 ConflictBlock asks for a refresh). The displayed value (the unsaved choice winning) is
-// reported to the rules tab through onKindChange, deciding whether the episode recognition rules
-// show. The rules tab's "use defaults everywhere" fills the default parser with the unsaved
-// choice through reset, submitted with the same save.
-// No outer frame: the card sits inside the "parsing" section right below "parse episode numbers
-// from RSS titles", without another border.
-const card = "tw:grid tw:min-w-0 tw:gap-2";
-const cardBody = "tw:grid tw:min-w-0 tw:gap-3";
-const header = "tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2";
-const note = "tw:m-0 tw:text-xs tw:text-muted-foreground";
+const skelBar = "tw:block tw:rounded-full tw:bg-muted tw:motion-safe:animate-pulse";
 
+/**
+ * Instance-level episode parser policy selector inside the Parsing section card.
+ * - Uses `initialPolicy` from the workspace read model when present (0ms first frame, no waterfall).
+ * - Waits for both policy and catalog before rendering the Segmented options so there is never a
+ *   1-option -> 2-option jump; shows an equal-height single-row skeleton during cold loads.
+ * - Registers as the `"parser"` save part of the dialog footer's single Save button.
+ */
 export function ParserPolicySection(props: {
   animeID: string;
   active?: boolean;
   readOnly?: boolean;
+  /** Policy snapshot already loaded by the workspace read model (eliminates the waterfall). */
+  initialPolicy?: ParserPolicyView | null;
+  /** Number of saved/draft episode regex patterns; shown inline when `reltitle` is active. */
+  patternCount?: number;
   /** The displayed parser (the unsaved choice winning, otherwise the saved value). */
   onKindChange?: (kind: string | undefined) => void;
   /** Whether an unsaved choice exists. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Notifies the outer shell after a successful parser policy save. */
+  onSaved?: () => void;
   /** "Use defaults everywhere": every seq change fills kind with the unsaved choice. */
   reset?: { kind: string; seq: number };
 }) {
-  const { animeID, active = true, readOnly = false, onKindChange, onDirtyChange, reset } = props;
+  const {
+    animeID,
+    active = true,
+    readOnly = false,
+    initialPolicy,
+    patternCount = 0,
+    onKindChange,
+    onDirtyChange,
+    onSaved,
+    reset,
+  } = props;
   const queryClient = useQueryClient();
   const policy = useQuery({
     queryKey: fileMaintenanceKeys.parserPolicy(animeID),
     queryFn: () => getInstanceParserPolicy(animeID),
-    enabled: active,
+    initialData: initialPolicy ?? undefined,
+    enabled: active && initialPolicy == null,
   });
   const catalog = useQuery({
     queryKey: configKeys.parserCatalog,
@@ -59,7 +70,14 @@ export function ParserPolicySection(props: {
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
 
-  const dirty = !readOnly && policy.data !== undefined && draft !== undefined && draft !== policy.data.parser_kind;
+  useEffect(() => {
+    setDraft(undefined);
+    setError(undefined);
+    setConflict(undefined);
+  }, [animeID]);
+
+  const data = policy.data ?? initialPolicy ?? undefined;
+  const dirty = !readOnly && data !== undefined && draft !== undefined && draft !== data.parser_kind;
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
@@ -68,8 +86,8 @@ export function ParserPolicySection(props: {
   useEffect(() => {
     if (resetSeq !== undefined && resetKind !== undefined && !readOnly) setDraft(resetKind);
   }, [resetSeq, resetKind, readOnly]);
+
   async function handleSave() {
-    const data = policy.data;
     if (!data || draft === undefined) return { ok: true as const };
     setSaving(true);
     setError(undefined);
@@ -81,7 +99,7 @@ export function ParserPolicySection(props: {
       });
       queryClient.setQueryData(fileMaintenanceKeys.parserPolicy(animeID), stored);
       setDraft(stored.parser_kind);
-      void queryClient.invalidateQueries({ queryKey: fileMaintenanceKeys.parserPolicy(animeID) });
+      onSaved?.();
       return { ok: true as const };
     } catch (cause) {
       if (isVersionConflict(cause)) {
@@ -96,7 +114,6 @@ export function ParserPolicySection(props: {
 
   useSavePart("parser", { count: dirty ? 1 : 0, label: t("policy.parser.title"), busy: saving, save: handleSave });
 
-  // A 409 refresh: loads the server's latest value and drops the stale local choice; the user picks again.
   async function refreshAfterConflict() {
     setConflict(undefined);
     setError(undefined);
@@ -107,31 +124,51 @@ export function ParserPolicySection(props: {
     setDraft(fresh.parser_kind);
   }
 
-  const data = policy.data;
-  const options = parserKindOptions(catalog.data, data?.parser_kind);
   const shownKind = draft ?? data?.parser_kind;
   useEffect(() => {
     onKindChange?.(shownKind);
   }, [shownKind, onKindChange]);
 
+  const catalogReady = catalog.data !== undefined || catalog.isError;
+  const loading = (data === undefined && policy.isLoading) || (data !== undefined && !catalogReady);
+  const options = parserKindOptions(catalog.data, data?.parser_kind);
+  const usesPatterns = parserKindUsesPatterns(shownKind);
+  const hasKeptPatterns = !usesPatterns && patternCount > 0;
+  const hasRegexOption = options.some((option) => option.value === "regex");
+
   return (
-    <section className={card}>
-      <div className={header}>
-        <h3 className="tw:m-0 tw:text-sm tw:font-medium tw:text-foreground">{t("policy.parser.title")}</h3>
-      </div>
-      {policy.isLoading && <StatePill busy>{t("act.reading")}</StatePill>}
-      {policy.error && <StatePill tone="offline">{toUserMessage(policy.error, t("policy.parser.loadFailed"))}</StatePill>}
+    <section className="tw:grid tw:min-w-0 tw:gap-2">
+      {loading && (
+        <div
+          role="status"
+          aria-label={t("act.reading")}
+          className="tw:flex tw:min-h-[32px] tw:flex-wrap tw:items-center tw:gap-3"
+        >
+          <span className={`${skelBar} tw:h-8 tw:w-32 tw:rounded-lg`} />
+          <span className={`${skelBar} tw:h-3.5 tw:w-52`} />
+        </div>
+      )}
+      {policy.error && !data && <StatePill tone="offline">{toUserMessage(policy.error, t("policy.parser.loadFailed"))}</StatePill>}
       {catalog.error && <StatePill tone="offline">{toUserMessage(catalog.error, t("policy.parser.catalogFailed"))}</StatePill>}
-      {data && (
-        <div className={cardBody}>
+      {data && catalogReady && (
+        <div className="tw:grid tw:min-w-0 tw:gap-2">
           <ParserKindChoice
             label={t("policy.parser.kindLabel")}
-            value={draft ?? data.parser_kind}
+            value={shownKind ?? data.parser_kind}
             options={options}
             onChange={setDraft}
             readOnly={readOnly || saving}
+            noteSuffix={
+              hasKeptPatterns ? t("forms.rules.episodePatternsUnusedCount", { n: patternCount }) : undefined
+            }
+            action={
+              hasKeptPatterns && !readOnly && !saving && hasRegexOption ? (
+                <Button variant="ghost" size="sm" type="button" onClick={() => setDraft("regex")}>
+                  {t("forms.rules.switchToRegexView", { n: patternCount })}
+                </Button>
+              ) : undefined
+            }
           />
-          <p className={note}>{t("policy.parser.hint")}</p>
           {conflict !== undefined ? (
             <ConflictBlock
               currentVersion={conflict}

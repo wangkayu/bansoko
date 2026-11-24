@@ -40,6 +40,7 @@ export function workspaceConfiguration(workspace: AnimeWorkspace): AnimeWorkspac
     metadata_hold: workspace.metadata_hold,
     subgroups: workspace.subgroups,
     rules: workspace.rules,
+    parser_policy: workspace.parser_policy ?? null,
     rss_sources: workspace.rss_sources,
     rss_source_runtimes: workspace.rss_source_runtimes,
     episode_progress: workspace.episode_progress,

@@ -27,7 +27,7 @@ func (s *Service) GetAnimeWorkspaceConfigurationApplication(ctx context.Context,
 	return AnimeWorkspaceConfiguration{
 		ManagedAnime: owners.ManagedAnime, Subscription: owners.Subscription,
 		Metadata: owners.Metadata, MetadataHold: owners.MetadataHold,
-		Subgroups: owners.Subgroups, Rules: owners.Rules,
+		Subgroups: owners.Subgroups, Rules: owners.Rules, ParserPolicy: owners.ParserPolicy,
 		RSSSources: owners.RSSSources, RSSSourceRuntimes: owners.RSSSourceRuntimes,
 		EpisodeProgress: owners.EpisodeProgress, ConfigWaitingFiles: owners.ConfigWaitingFiles,
 		ReleaseSummary: summary,

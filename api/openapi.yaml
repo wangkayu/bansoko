@@ -8588,9 +8588,9 @@ components:
         groups, reports selected groups without a supplied snapshot as
         snapshot_required, and returns supplied identities for unselected
         groups in unused_feed_identities. Owner modes require managed_anime_id;
-        owner_draft also requires rules_preview (shaped exactly like
-        RulesSections), metadata_preview, or both. This is a pure read and
-        never writes.
+        owner_draft also requires at least one of rules_preview (shaped exactly
+        like RulesSections), metadata_preview, or parser_kind_preview. This is a
+        pure read and never writes.
       properties:
         input_source:
           type: string
@@ -8631,7 +8631,8 @@ components:
           nullable: true
           description: >-
             owner_draft only; the unsaved Rules sections patch. owner_draft
-            requires rules_preview, metadata_preview, or both.
+            requires at least one of rules_preview, metadata_preview, or
+            parser_kind_preview.
         metadata_preview:
           allOf:
             - $ref: '#/components/schemas/AnimeMetadataPreview'
@@ -8641,6 +8642,15 @@ components:
             the persisted metadata for this read only and never written.
             Validated exactly like the metadata PATCH; an invalid value fails
             the read with 422 field errors under metadata_preview.
+        parser_kind_preview:
+          type: string
+          enum: [regex, reltitle]
+          nullable: true
+          description: >-
+            owner_draft only; the unsaved instance parser kind, overlaid on the
+            persisted parser policy for this read only and never written.
+            Validated against registered parsers; an invalid value fails the
+            read with 422 POLICY_INVALID.
         feed:
           type: array
           maxItems: 32
@@ -15227,6 +15237,11 @@ components:
           $ref: '#/components/schemas/SubgroupsOwnerResult'
         rules:
           $ref: '#/components/schemas/AnimeRules'
+        parser_policy:
+          allOf:
+            - $ref: '#/components/schemas/ParserPolicyView'
+          nullable: true
+          description: The instance's frozen parser policy snapshot when present.
         rss_sources:
           type: array
           items:
@@ -15345,6 +15360,11 @@ components:
           $ref: '#/components/schemas/SubgroupsOwnerResult'
         rules:
           $ref: '#/components/schemas/AnimeRules'
+        parser_policy:
+          allOf:
+            - $ref: '#/components/schemas/ParserPolicyView'
+          nullable: true
+          description: The instance's frozen parser policy snapshot when present.
         rss_sources:
           type: array
           items:
