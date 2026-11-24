@@ -1,5 +1,5 @@
 import type { TitleTagVocabulary } from "./api/client";
-import { anibtTagReasonLabel, splitTag, tagKey } from "./anibtTags";
+import { anibtTagReasonLabel, formatReasonTagList, parseTagReasonDetail, splitTag, tagKey } from "./anibtTags";
 import { t, tryT } from "./i18n";
 import { joinList, labelValue } from "./i18n/format";
 
@@ -69,11 +69,16 @@ export function titleTagReasonLabel(code: string | null | undefined, detail: str
   if (normalized !== "title_tag_missing" && normalized !== "title_tag_whitelist_unmet" && normalized !== "title_tag_blacklisted") {
     return undefined;
   }
-  const match = detail ? /^(missing|blacklisted):\s*(.+)$/.exec(detail.trim()) : null;
-  if (match && normalized !== "title_tag_missing") {
-    const tags = joinList(match[2]!.split(/,\s*/).filter(Boolean).map(titleTagLabel));
-    return t(match[1] === "missing" ? "titleTags.reasonMissing" : "titleTags.reasonBlacklisted", { tags });
+  const parsed = parseTagReasonDetail(detail);
+  const parts: string[] = [];
+  if (parsed.missing.length > 0) {
+    const tags = formatReasonTagList(parsed.missing, titleDimensionLabel, titleTagValueLabel);
+    parts.push(t(normalized === "title_tag_missing" ? "titleTags.reasonNoTags" : "titleTags.reasonMissing", { tags }));
   }
+  if (parsed.blacklisted.length > 0) {
+    parts.push(t("titleTags.reasonBlacklisted", { tags: joinList(parsed.blacklisted.map(titleTagLabel)) }));
+  }
+  if (parts.length > 0) return parts.join(t("anibtTags.summarySeparator"));
   return t(`reason.${normalized}`);
 }
 

@@ -182,22 +182,72 @@ export function tagRowSummary(row: TagFilterRow, label: (tag: string) => string 
   return parts.join(t("anibtTags.summarySeparator"));
 }
 
+/** Groups "dimension:value" tags by dimension for readable OR/AND filter reason messages. */
+export function formatReasonTagList(
+  tags: readonly string[],
+  dimLabel: (dimension: string) => string,
+  valLabel: (dimension: string, value: string) => string,
+): string {
+  const groups: { dimension: string; values: string[] }[] = [];
+  const byDim = new Map<string, string[]>();
+  for (const tag of tags) {
+    const parsed = splitTag(tag);
+    if (!parsed) {
+      groups.push({ dimension: "", values: [tag] });
+      continue;
+    }
+    let list = byDim.get(parsed.dimension);
+    if (!list) {
+      list = [];
+      byDim.set(parsed.dimension, list);
+      groups.push({ dimension: parsed.dimension, values: list });
+    }
+    list.push(valLabel(parsed.dimension, parsed.value));
+  }
+  return groups
+    .map((g) => (g.dimension ? labelValue(dimLabel(g.dimension), g.values.join("/")) : g.values[0]!))
+    .join(t("anibtTags.summarySeparator"));
+}
+
+/**
+ * Parses a tag-filter detail string into missing and/or blacklisted tag lists.
+ * Handles single clauses ("missing: a, b" / "blacklisted: c") and combined
+ * clauses ("missing: a, b; blacklisted: c").
+ */
+export function parseTagReasonDetail(detail: string | null | undefined): { missing: string[]; blacklisted: string[] } {
+  const result: { missing: string[]; blacklisted: string[] } = { missing: [], blacklisted: [] };
+  if (!detail) return result;
+  for (const part of detail.split(";")) {
+    const match = /^(missing|blacklisted):\s*(.+)$/.exec(part.trim());
+    if (!match) continue;
+    const tags = match[2]!.split(/,\s*/).filter(Boolean);
+    if (match[1] === "missing") result.missing.push(...tags);
+    else result.blacklisted.push(...tags);
+  }
+  return result;
+}
+
 /**
  * The display text of an AniBT tag filter reason. The server's reason_detail looks like
- * "missing: language:CHS, resolution:1080p" or "blacklisted: codec:HEVC"; when it parses,
- * the concrete tags are written out, otherwise the registered copy of the reason code is
- * used. Returns undefined for a non-AniBT-tag reason.
+ * "missing: language:CHS, resolution:1080p", "blacklisted: codec:HEVC", or both separated by "; ".
+ * When it parses, the concrete tags are written out, otherwise the registered copy of the reason
+ * code is used. Returns undefined for a non-AniBT-tag reason.
  */
 export function anibtTagReasonLabel(code: string | null | undefined, detail: string | null | undefined): string | undefined {
   const normalized = code?.trim().toLowerCase();
   if (normalized !== "anibt_tag_missing" && normalized !== "anibt_tag_whitelist_unmet" && normalized !== "anibt_tag_blacklisted") {
     return undefined;
   }
-  const match = detail ? /^(missing|blacklisted):\s*(.+)$/.exec(detail.trim()) : null;
-  if (match && normalized !== "anibt_tag_missing") {
-    const tags = joinList(match[2]!.split(/,\s*/).filter(Boolean).map(tagLabel));
-    return t(match[1] === "missing" ? "anibtTags.reasonMissing" : "anibtTags.reasonBlacklisted", { tags });
+  const parsed = parseTagReasonDetail(detail);
+  const parts: string[] = [];
+  if (parsed.missing.length > 0) {
+    const tags = formatReasonTagList(parsed.missing, dimensionLabel, tagValueLabel);
+    parts.push(t(normalized === "anibt_tag_missing" ? "anibtTags.reasonNoTags" : "anibtTags.reasonMissing", { tags }));
   }
+  if (parsed.blacklisted.length > 0) {
+    parts.push(t("anibtTags.reasonBlacklisted", { tags: joinList(parsed.blacklisted.map(tagLabel)) }));
+  }
+  if (parts.length > 0) return parts.join(t("anibtTags.summarySeparator"));
   return t(`reason.${normalized}`);
 }
 

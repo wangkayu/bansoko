@@ -11,8 +11,8 @@ import {
   type RulesSections,
 } from "../../lib/api/client";
 import { configKeys, fileMaintenanceKeys } from "../../lib/queryKeys";
-import { observedExtraTags } from "../../lib/anibtTags";
-import { countTags } from "../../lib/titleTags";
+import { observedExtraTags, tagRowSummary } from "../../lib/anibtTags";
+import { countTags, titleTagLabel } from "../../lib/titleTags";
 import { TagFilterCard } from "../anime-forms/TagFilterCard";
 import { changeCount, sectionsFromRules, valuesEqual } from "../../lib/draft";
 import { RulesSectionsFields } from "../anime-forms/RulesSectionsFields";
@@ -92,7 +92,7 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
     staleTime: Infinity,
   });
   const showAniBTRow = draft.origin === "anibt" || draft.subgroups.entries.some((entry) => entry.provider === "anibt");
-  const modified = modifiedRuleSections(sections, host.businessPreset, draftParserKind(draft));
+  const modified = modifiedRuleSections(sections, host.businessPreset, draftParserKind(draft), { includeAniBT: showAniBTRow });
   return (
     <div className="metadata-stack">
       {host.rulesHeaderAction && (
@@ -127,7 +127,11 @@ function DraftRulesTab({ host }: { host: DraftTabHost }) {
 // The read-only rules panel: a retired instance's rules sections are no longer editable (the
 // backend would 409 anyway), but each section renders a concise summary of its historical values
 // so users can inspect what rules an ended anime used.
-function formatReadOnlySection(section: string, effective: OwnerTabHost["workspace"]["rules"]["effective"]): string | undefined {
+function formatReadOnlySection(
+  section: string,
+  rules: OwnerTabHost["workspace"]["rules"],
+): string | undefined {
+  const effective = rules.effective;
   if (section === "release_filter" || section === "release_rules") {
     const { must_contain, not_in } = effective.release_filter;
     const parts = [
@@ -135,6 +139,16 @@ function formatReadOnlySection(section: string, effective: OwnerTabHost["workspa
       not_in ? `${t("settings.rules.titleNot")}: ${not_in}` : "",
     ].filter(Boolean);
     return parts.length > 0 ? parts.join(" · ") : t("tabs.rules.readOnlyEmpty");
+  }
+  if (section === "tag_filters") {
+    const tagRules = rules.effective_tag_filters;
+    if (!tagRules) return t("tabs.rules.readOnlyEmpty");
+    const hasAniBT = rules.has_anibt_source || tagRules.anibt.require.length > 0 || tagRules.anibt.exclude.length > 0;
+    const parts = [
+      hasAniBT ? `${t("anibtTags.title")}: ${tagRowSummary(tagRules.anibt)}` : "",
+      `${t("titleTags.title")}: ${tagRowSummary(tagRules.title, titleTagLabel)}`,
+    ].filter(Boolean);
+    return parts.join(" · ");
   }
   if (section === "file_filter" || section === "file_rules") {
     const { must_contain, not_in } = effective.file_filter;
@@ -170,7 +184,7 @@ function ReadOnlyRulesPanel({ host, active }: { host: OwnerTabHost; active: bool
       />
       <div role="group" className="sources-list" aria-label={t("anime.rules.endedAria")}>
         {Object.keys(host.workspace.rules.sections).map((section) => {
-          const summary = formatReadOnlySection(section, host.workspace.rules.effective);
+          const summary = formatReadOnlySection(section, host.workspace.rules);
           return (
             <Fragment key={section}>
               <div className="sources-row tw:flex-wrap tw:gap-y-1">
@@ -313,9 +327,9 @@ function OwnerRulesTab({
   const effectiveParserKind = parserKind ?? parserPolicy.data?.parser_kind;
   const parserKindLoading = effectiveParserKind === undefined && parserPolicy.isPending;
   const matchesDefaults = businessPreset.data !== undefined
-    && !rulesDifferFromPreset(edit, businessPreset.data)
+    && !rulesDifferFromPreset(edit, businessPreset.data, { includeAniBT: showAniBTRow })
     && (effectiveParserKind === undefined || effectiveParserKind === businessPreset.data.snapshot.parser.kind);
-  const modified = modifiedRuleSections(edit, businessPreset.data, effectiveParserKind);
+  const modified = modifiedRuleSections(edit, businessPreset.data, effectiveParserKind, { includeAniBT: showAniBTRow });
   return (
     <div className="metadata-stack">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">

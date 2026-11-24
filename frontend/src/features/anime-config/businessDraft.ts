@@ -55,9 +55,33 @@ export function loadBusinessPreset(draft: AnimeDraft, preset: BusinessPresetView
   return next;
 }
 
+function tagFiltersSectionEqual(
+  left: RulesSections["tag_filters"],
+  right: RulesSections["tag_filters"],
+  includeAniBT: boolean,
+): boolean {
+  if (includeAniBT) return valuesEqual(left, right);
+  if (!left || !right) return valuesEqual(left, right);
+  return left.mode === right.mode && valuesEqual(left.value.title, right.value.title);
+}
+
 /** Whether the rules sections and tag filter differ from the copy of the default settings (used by the post-subscription rules page's "use defaults everywhere"). */
-export function rulesDifferFromPreset(sections: RulesSections, preset: BusinessPresetView): boolean {
-  return !valuesEqual(sections, presetRuleSections(preset));
+export function rulesDifferFromPreset(
+  sections: RulesSections,
+  preset: BusinessPresetView,
+  options?: { includeAniBT?: boolean },
+): boolean {
+  const defaults = presetRuleSections(preset);
+  const includeAniBT = options?.includeAniBT ?? true;
+  if (includeAniBT) return !valuesEqual(sections, defaults);
+  for (const key of Object.keys(defaults) as RuleCardKey[]) {
+    if (key === "tag_filters") {
+      if (!tagFiltersSectionEqual(sections.tag_filters, defaults.tag_filters, false)) return true;
+      continue;
+    }
+    if (!valuesEqual(sections[key], defaults[key])) return true;
+  }
+  return false;
 }
 
 /** The rules page's section cards (five sections + tag filter). */
@@ -68,17 +92,25 @@ export type RuleCardKey = keyof RulesSections;
  * 比较，与 hasCustomSettings / rulesDifferFromPreset 一致）。传入编辑中的值，未保存
  * 的修改也算。解析段同时比较显示中的解析器；未知时只比较集数识别规则。还没读到
  * 默认设置（读取中或失败）时不标记任何段；还没有值的段也不标记。
+ * 无 AniBT 源时（includeAniBT=false），隐藏的 anibt 行不参与 tag_filters 比较。
  */
 export function modifiedRuleSections(
   sections: RulesSections,
   preset: BusinessPresetView | undefined,
   parserKind?: string,
+  options?: { includeAniBT?: boolean },
 ): ReadonlySet<RuleCardKey> {
   const modified = new Set<RuleCardKey>();
   if (!preset) return modified;
   const defaults = presetRuleSections(preset);
+  const includeAniBT = options?.includeAniBT ?? true;
   for (const key of Object.keys(defaults) as RuleCardKey[]) {
-    if (sections[key] !== undefined && !valuesEqual(sections[key], defaults[key])) modified.add(key);
+    if (sections[key] === undefined) continue;
+    if (key === "tag_filters") {
+      if (!tagFiltersSectionEqual(sections.tag_filters, defaults.tag_filters, includeAniBT)) modified.add(key);
+      continue;
+    }
+    if (!valuesEqual(sections[key], defaults[key])) modified.add(key);
   }
   if (parserKind !== undefined && parserKind !== preset.snapshot.parser.kind) modified.add("parser");
   return modified;
@@ -93,7 +125,8 @@ export function hasCustomSettings(draft: AnimeDraft, preset?: BusinessPresetView
   const business = draft.business;
   if (business && isDraftChosenParser(business.parser)) return true;
   if (!preset) return false;
-  if (rulesDifferFromPreset(draft.rules.sections, preset)) return true;
+  const includeAniBT = draft.origin === "anibt" || draft.subgroups.entries.some((entry) => entry.provider === "anibt");
+  if (rulesDifferFromPreset(draft.rules.sections, preset, { includeAniBT })) return true;
   if (!business) return false;
   if ((draft.ignore_multi_video_releases === true) !== preset.subscription_defaults.ignore_multi_video_releases) return true;
   return business.parser.kind !== preset.snapshot.parser.kind

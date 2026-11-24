@@ -159,4 +159,15 @@ describe("modifiedRuleSections", () => {
     delete sections.tag_filters;
     expect(modifiedRuleSections(sections, preset).size).toBe(0);
   });
+
+  it("无 AniBT 源时忽略隐藏的 anibt 行差异，不误标 tag_filters 为已修改", () => {
+    const sections = presetRuleSections(preset);
+    sections.tag_filters = { mode: "replace", value: { anibt: { require: [], exclude: [] }, title: { require: [], exclude: [] } } };
+    expect(modifiedRuleSections(sections, preset, "regex", { includeAniBT: true }).has("tag_filters")).toBe(true);
+    expect(modifiedRuleSections(sections, preset, "regex", { includeAniBT: false }).has("tag_filters")).toBe(false);
+    expect(rulesDifferFromPreset(sections, preset, { includeAniBT: false })).toBe(false);
+    sections.tag_filters = { mode: "replace", value: { anibt: { require: [], exclude: [] }, title: { require: ["resolution:1080p"], exclude: [] } } };
+    expect(modifiedRuleSections(sections, preset, "regex", { includeAniBT: false }).has("tag_filters")).toBe(true);
+    expect(rulesDifferFromPreset(sections, preset, { includeAniBT: false })).toBe(true);
+  });
 });

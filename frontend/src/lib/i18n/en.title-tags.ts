@@ -18,11 +18,9 @@ export const enTitleTagsCopy = {
   title: "Title Tags",
   hint: "Tags read from the torrent title, applied to all torrents",
   groupAria: "Title {dimension} tags",
-  addDimension: "Tag type",
-  addValue: "Tag value",
-  add: "Add",
   unavailable: "Couldn't load title tags",
   rowAria: "Tags read from the torrent title",
+  reasonNoTags: "No title tags (requires: {tags})",
   reasonMissing: "Title tags: missing {tags}",
   reasonBlacklisted: "Title tags: includes {tags}",
   dimension: {

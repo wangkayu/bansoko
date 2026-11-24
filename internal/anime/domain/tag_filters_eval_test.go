@@ -42,7 +42,7 @@ func TestAniBTTagFilterTruthTable(t *testing.T) {
 		{"blacklist untagged passes", untagged, black("language:CHT"), "", ""},
 		{"require and exclude both satisfied", full, both([]string{"language:CHS"}, []string{"format:MP4"}), "", ""},
 		{"require met, exclude hit", full, both([]string{"language:CHS"}, []string{"language:CHT"}), ReasonAniBTTagBlacklisted, "blacklisted: language:CHT"},
-		{"require unmet beats exclude", full, both([]string{"format:MKV"}, []string{"language:CHT"}), ReasonAniBTTagWhitelistUnmet, "missing: format:MKV"},
+		{"require unmet beats exclude", full, both([]string{"format:MKV"}, []string{"language:CHT"}), ReasonAniBTTagWhitelistUnmet, "missing: format:MKV; blacklisted: language:CHT"},
 		{"require and exclude on untagged", untagged, both([]string{"language:CHS"}, []string{"language:CHT"}), ReasonAniBTTagMissing, "missing: language:CHS"},
 		{"mikan unaffected by whitelist", mikan, white("language:CHS"), "", ""},
 		{"custom unaffected by blacklist", custom, black("language:CHS"), "", ""},

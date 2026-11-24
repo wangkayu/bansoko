@@ -1,7 +1,7 @@
 import { ownerIndexes, type OwnerIndexes } from "./ownerIndexes";
 import type { ReactNode } from "react";
 import { File, FileText, FileVideo, ListTree, Pencil, RotateCcw } from "lucide-react";
-import type { AcquisitionTarget, AnimeWorkspace, Release, ReleaseFile, RSSListFile, RSSListGroup, RSSListItem, RSSListView, RSSSource, TargetObservation } from "../../lib/api/client";
+import type { AcquisitionTarget, AnimeWorkspace, Release, ReleaseFile, RSSListFile, RSSListGroup, RSSListItem, RSSListView, RSSSource, TagFilterRules, TargetObservation } from "../../lib/api/client";
 import { artifactStateLabel, artifactStateTone, downloadTaskPill, downloadTaskStateLabel, downloadTaskStateTone, fileOperationKindLabel, fileOperationStateLabel, fileOperationStateTone, formatBytes, formatDateTime, formatTimeAgo, evaluationReasonCode, isReasonImpliedByVerdict, releaseFileExcludedLabel, releaseVerdictLabelWithHold, releaseVerdictTone } from "../../lib/labels";
 import type { StatePillTone } from "../../ui";
 import { StatePill, Button } from "../../ui";
@@ -42,6 +42,8 @@ export type OwnerViewHandlers = {
   onOpenStructure?: (release: Release) => void;
   /** Opens this seed's latest acquisition execution record (the processing view). */
   onOpenRecord?: (acquisitionID: string) => void;
+  /** Unsaved tag filter rules when rendering owner_draft preview. */
+  previewTagFilters?: TagFilterRules;
 };
 
 const previewReason = () => t("rss.previewDisabled");
@@ -432,7 +434,9 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
     title: item.seed.title,
     // Native source tags are the only release-attribute badges. Episode evidence
     // no longer carries a second quality/language projection for this fallback.
-    leadingMeta: item.seed.anibt_tags?.length || item.seed.title_tags?.length ? <TagBadges anibt={item.seed.anibt_tags} title={item.seed.title_tags} rules={workspace.rules?.effective_tag_filters} /> : undefined,
+    leadingMeta: item.seed.anibt_tags?.length || item.seed.title_tags?.length
+      ? <TagBadges anibt={item.seed.anibt_tags} title={item.seed.title_tags} rules={preview ? (handlers.previewTagFilters ?? workspace.rules?.effective_tag_filters) : workspace.rules?.effective_tag_filters} />
+      : undefined,
     publishedAt: item.seed.published_at ?? undefined,
     sizeBytes: item.seed.size_bytes,
     episodeLabel: releaseEpisodeLabel(evaluation.parsed_facts),

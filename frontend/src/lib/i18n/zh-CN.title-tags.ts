@@ -16,11 +16,9 @@ export const titleTagsCopy = {
   title: "标题解析",
   hint: "从种子标题中识别的标签，作用于所有种子",
   groupAria: "标题解析{dimension}标签",
-  addDimension: "标签类型",
-  addValue: "标签值",
-  add: "添加",
   unavailable: "无法读取标题解析标签",
   rowAria: "种子标题解析出的标签",
+  reasonNoTags: "无标题解析标签（要求：{tags}）",
   reasonMissing: "标题解析：缺少 {tags}",
   reasonBlacklisted: "标题解析：包含 {tags}",
   dimension: {

@@ -17,10 +17,14 @@ describe("titleTags", () => {
 
   it("names the title row in filter reasons", () => {
     expect(titleTagReasonLabel("title_tag_whitelist_unmet", "missing: resolution:1080p, sub_lang:SC"))
-      .toBe(t("titleTags.reasonMissing", { tags: `1080p、${"SC"}` }));
+      .toBe(t("titleTags.reasonMissing", { tags: `${t("titleTags.dimension.resolution")}：1080p；${t("titleTags.dimension.sub_lang")}：SC` }));
     expect(titleTagReasonLabel("title_tag_blacklisted", "blacklisted: sub_lang:TC"))
       .toBe(t("titleTags.reasonBlacklisted", { tags: "TC" }));
-    expect(titleTagReasonLabel("title_tag_missing", "missing: resolution:1080p")).toBe(t("reason.title_tag_missing"));
+    expect(titleTagReasonLabel("title_tag_whitelist_unmet", "missing: resolution:1080p; blacklisted: sub_lang:TC"))
+      .toBe(`${t("titleTags.reasonMissing", { tags: `${t("titleTags.dimension.resolution")}：1080p` })}${t("anibtTags.summarySeparator")}${t("titleTags.reasonBlacklisted", { tags: "TC" })}`);
+    expect(titleTagReasonLabel("title_tag_missing", "missing: resolution:1080p"))
+      .toBe(t("titleTags.reasonNoTags", { tags: `${t("titleTags.dimension.resolution")}：1080p` }));
+    expect(titleTagReasonLabel("title_tag_missing", null)).toBe(t("reason.title_tag_missing"));
     expect(titleTagReasonLabel("anibt_tag_missing", "missing: language:CHS")).toBeUndefined();
     expect(tagFilterReasonLabel("anibt_tag_blacklisted", "blacklisted: codec:HEVC")).toBe(t("anibtTags.reasonBlacklisted", { tags: "HEVC" }));
     expect(tagFilterReasonLabel("title_tag_blacklisted", "blacklisted: container:MKV")).toBe(t("titleTags.reasonBlacklisted", { tags: "MKV" }));

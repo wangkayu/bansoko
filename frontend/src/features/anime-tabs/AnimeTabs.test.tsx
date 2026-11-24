@@ -1118,7 +1118,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: t("rss.showFiltered") }));
     expect(screen.getByText("[G] 测试番 - 03")).toBeInTheDocument();
-    const reason = t("anibtTags.reasonMissing", { tags: "CHS" });
+    const reason = t("anibtTags.reasonMissing", { tags: `${t("anibtTags.dimension.language")}：CHS` });
     expect(screen.getByText(t("verdict.filteredWithReason", { reason }))).toBeInTheDocument();
     // All tags are shown, none collapsed.
     const tags = screen.getByLabelText(t("tagFilters.seedRowAria"));
@@ -2246,18 +2246,20 @@ describe("AnimeTabs 标签过滤卡片", () => {
     expect(await within(titleRow).findAllByTestId("tag-row-entry")).toHaveLength(1);
     // The candidates are the vocabulary's fixed values, whether or not this anime has seen them
     // (the selected TC is shown as an entry above, not as a candidate).
-    fireEvent.click(within(titleRow).getByRole("button", { name: t("anibtTags.showCandidates") }));
+    fireEvent.click(within(titleRow).getByRole("button", { name: t("anibtTags.openEditor") }));
     for (const fixed of ["2160p", "1080p", "720p", "SC", "JPSC"]) {
       expect(within(titleRow).getByRole("button", { name: fixed })).toBeInTheDocument();
     }
     const sc = await within(titleRow).findByRole("button", { name: "SC" });
     expect(sc).toHaveAttribute("title", expect.stringContaining(t("tagFilters.count", { n: 2 })));
-    // Candidates default to require; switching to exclude adds there; added tags can change role.
+    // Candidates default to require; switching to exclude adds there; removed tags return to candidates.
     fireEvent.click(sc);
     expect(within(titleRow).queryByRole("button", { name: "SC" })).not.toBeInTheDocument();
     fireEvent.click(within(titleRow).getByRole("radio", { name: t("anibtTags.role.exclude") }));
     fireEvent.click(within(titleRow).getByRole("button", { name: "1080p" }));
-    fireEvent.click(within(titleRow).getByRole("button", { name: t("anibtTags.switchTo.require", { tag: titleTagFullLabel("sub_lang:TC") }) }));
+    fireEvent.click(within(titleRow).getByRole("button", { name: t("anibtTags.removeAria", { tag: titleTagFullLabel("sub_lang:TC") }) }));
+    fireEvent.click(within(titleRow).getByRole("radio", { name: t("anibtTags.role.require") }));
+    fireEvent.click(within(titleRow).getByRole("button", { name: "TC" }));
     clickSave();
 
     await waitFor(() => expect(patchBody(fetchMock).sections.tag_filters).toEqual({
@@ -2278,7 +2280,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
     expect(chs).toHaveAttribute("data-role", "require");
     expect(within(card).queryByRole("radio", { name: t("config.useDefaultsConfirm") })).not.toBeInTheDocument();
 
-    fireEvent.click(within(card).getAllByRole("button", { name: t("anibtTags.showCandidates") })[0]!);
+    fireEvent.click(within(card).getAllByRole("button", { name: t("anibtTags.openEditor") })[0]!);
     fireEvent.click(within(card).getByRole("button", { name: "1080p" }));
     await waitFor(() => expect(within(card).getAllByTestId("tag-row-entry")).toHaveLength(3));
     clickSave();
@@ -2433,7 +2435,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
 
     expect(screen.queryByText(t("downloadCompletion.title"), { exact: true })).toBeNull();
     const card = tagCard();
-    fireEvent.click(within(card).getAllByRole("button", { name: t("anibtTags.showCandidates") })[0]!);
+    fireEvent.click(within(card).getAllByRole("button", { name: t("anibtTags.openEditor") })[0]!);
     fireEvent.click(within(card).getByRole("button", { name: "1080p" }));
     clickSave();
 

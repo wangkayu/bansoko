@@ -1016,7 +1016,7 @@ test.describe("settings fixture coverage", () => {
     await expect(editDialog).toBeVisible();
     const titleRow = editDialog.locator('section[aria-label="标题解析"]');
     await expect(titleRow).toBeVisible();
-    await titleRow.getByRole("button", { name: "展开候选", exact: true }).click();
+    await titleRow.getByRole("button", { name: "添加标签", exact: true }).click();
     for (const candidate of ["2160p", "720p", "WEBRip", "JPSC"]) {
       await expect(titleRow.getByRole("button", { name: candidate })).toBeVisible();
     }
@@ -1028,6 +1028,49 @@ test.describe("settings fixture coverage", () => {
     expect(await titleRow.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     await titleRow.scrollIntoViewIfNeeded();
     await editDialog.screenshot({ path: testInfo.outputPath("rules-tag-filter-candidates.png") });
+  });
+
+  test("标签过滤弹窗：默认收起无自由输入框，多类型按胶囊分组展示且桌面/手机不溢出", async ({ page }, testInfo) => {
+    test.skip(!fixtureOnly, "使用隔离设置数据");
+    await openSettings(page, "/#/settings/rules");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 10000 });
+    const tagCard = dialog
+      .locator("li.settings-shared-card")
+      .filter({ has: page.getByRole("heading", { name: "标签过滤", exact: true }) });
+    await expect(tagCard).toBeVisible();
+    await tagCard.getByRole("button", { name: "编辑" }).click();
+
+    const editDialog = page.getByRole("dialog", { name: "编辑 · 标签过滤" });
+    await expect(editDialog).toBeVisible();
+    const anibtRow = editDialog.locator('section[aria-label="AniBT 标签"]');
+    const titleRow = editDialog.locator('section[aria-label="标题解析"]');
+    // 默认收起：无任何输入框、单选按钮或下拉框外露。
+    await expect(anibtRow.getByRole("textbox")).toHaveCount(0);
+    await expect(anibtRow.getByRole("radio")).toHaveCount(0);
+    await expect(titleRow.getByRole("textbox")).toHaveCount(0);
+
+    // 展开 AniBT 行，点选多个维度验证方案 A 同排类型胶囊分组与移除。
+    await anibtRow.getByRole("button", { name: "添加标签", exact: true }).click();
+    await expect(anibtRow.getByRole("textbox")).toHaveCount(0);
+    await anibtRow.getByRole("button", { name: "CHS", exact: true }).click();
+    await anibtRow.getByRole("button", { name: "CHT", exact: true }).click();
+    await anibtRow.getByRole("button", { name: "1080p", exact: true }).click();
+    await anibtRow.getByRole("button", { name: "2160p", exact: true }).click();
+    await anibtRow.getByRole("radio", { name: "排除" }).click();
+    await anibtRow.getByRole("button", { name: "CR", exact: true }).click();
+    await anibtRow.getByRole("button", { name: "收起添加", exact: true }).click();
+
+    const requireList = anibtRow.getByRole("list", { name: "必须" });
+    await expect(requireList.locator("> li")).toHaveCount(2);
+    await expect(anibtRow.getByTestId("tag-row-entry")).toHaveCount(5);
+
+    const [dialogBox, anibtBox] = await Promise.all([editDialog.boundingBox(), anibtRow.boundingBox()]);
+    if (!dialogBox || !anibtBox) throw new Error("tag filter dialog has no box");
+    expect(anibtBox.x).toBeGreaterThanOrEqual(dialogBox.x);
+    expect(anibtBox.x + anibtBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+    expect(await anibtRow.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    await editDialog.screenshot({ path: testInfo.outputPath("rules-tag-filter-grouped.png") });
   });
 
   test("默认规则末尾两张卡独立编辑且弹窗不溢出", async ({ page }, testInfo) => {

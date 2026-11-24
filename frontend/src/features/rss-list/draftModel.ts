@@ -1,4 +1,4 @@
-import type { AnimeDraft, MetadataHold, RSSListGroup, RSSListItem, RSSListView } from "../../lib/api/client";
+import type { AnimeDraft, MetadataHold, RSSListGroup, RSSListItem, RSSListView, TagFilterRules } from "../../lib/api/client";
 import { manifestSummary, releaseEpisodeLabel, rssFeedState, type RssExpandModel, type RssGroupModel, type RssItemModel, type RssWorkspaceModel } from "./model";
 import { createElement } from "react";
 import { Pencil } from "lucide-react";
@@ -54,6 +54,8 @@ type DraftItemOptions = {
   open?: boolean;
   /** The read model's metadata hold: a waiting seed writes which link it awaits from this. */
   hold?: MetadataHold;
+  /** Effective draft tag filter rules for highlighting matched tags. */
+  tagFilterRules?: TagFilterRules;
 };
 
 function draftExpandModel(source: { onStart: () => void; state?: DraftExpandState }): RssExpandModel {
@@ -69,7 +71,7 @@ function draftExpandModel(source: { onStart: () => void; state?: DraftExpandStat
 }
 
 function draftItem(item: RSSListItem, options: DraftItemOptions = {}): RssItemModel {
-  const { expand, open, hold } = options;
+  const { expand, open, hold, tagFilterRules } = options;
   const manifest = item.torrent.manifest;
   // A seed the server judged unexpanded carries only RSS facts and no file list. It is not a
 //   failure and waits for the user to expand — unless the server already filtered it by those RSS
@@ -94,7 +96,7 @@ function draftItem(item: RSSListItem, options: DraftItemOptions = {}): RssItemMo
   return {
     key: `${item.snapshot_id}:${item.stable_seed_key}`,
     title: item.seed.title,
-    leadingMeta: item.seed.anibt_tags?.length || item.seed.title_tags?.length ? createElement(TagBadges, { anibt: item.seed.anibt_tags, title: item.seed.title_tags }) : undefined,
+    leadingMeta: item.seed.anibt_tags?.length || item.seed.title_tags?.length ? createElement(TagBadges, { anibt: item.seed.anibt_tags, title: item.seed.title_tags, rules: tagFilterRules }) : undefined,
     publishedAt: item.seed.published_at ?? undefined,
     sizeBytes: item.seed.size_bytes,
     episodeLabel: releaseEpisodeLabel(item.evaluation.parsed_facts),
@@ -146,6 +148,8 @@ export function draftWorkspaceModel(
     expandStates?: Map<string, DraftExpandState>;
     /** The row required open after an action (opens following a successful expand). */
     openedSeedKey?: string;
+    /** Effective draft tag filter rules for highlighting matched tags. */
+    tagFilterRules?: TagFilterRules;
   },
 ): RssWorkspaceModel {
   const names = disambiguateGroupNames(view.groups.map(groupNameInput));
@@ -207,6 +211,7 @@ export function draftWorkspaceModel(
                 : undefined,
             open: handlers.openedSeedKey === key,
             hold: view.metadata_hold,
+            tagFilterRules: handlers.tagFilterRules,
           });
         }),
         emptyText: selected ? t("rss.emptyGroup") : t("rss.emptyNotSelected"),

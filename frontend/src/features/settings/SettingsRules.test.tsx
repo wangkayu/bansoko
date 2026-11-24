@@ -187,19 +187,15 @@ describe("SettingsRules 批次 4", () => {
     expect(screen.getByText(t("anibtTags.none"))).toBeInTheDocument();
     fireEvent.click(await editButtonFor(t("tagFilters.title")));
     const anibtRow = screen.getByRole("region", { name: t("anibtTags.title") });
-    fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.showCandidates") }));
+    fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.openEditor") }));
     fireEvent.click(within(anibtRow).getByRole("button", { name: "CHS" }));
-    // An added tag leaves the candidates; typing a duplicate by hand shows a hint.
+    // An added tag leaves the candidates; removing returns it to the candidates.
     expect(within(anibtRow).queryByRole("button", { name: "CHS" })).not.toBeInTheDocument();
-    fireEvent.change(within(anibtRow).getByLabelText(t("anibtTags.addValue")), { target: { value: "DV" } });
-    fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.add") }));
-    fireEvent.change(within(anibtRow).getByLabelText(t("anibtTags.addValue")), { target: { value: "dv" } });
-    fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.add") }));
-    expect(within(anibtRow).getByRole("alert")).toHaveTextContent(t("anibtTags.duplicate"));
-    // Each added tag can be switched to exclude or removed; a removed tag returns to the candidates.
-    fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.switchTo.exclude", { tag: tagFullLabel("tag:DV") }) }));
+    fireEvent.click(within(anibtRow).getByRole("radio", { name: t("anibtTags.role.exclude") }));
+    fireEvent.click(within(anibtRow).getByRole("button", { name: "HEVC" }));
     fireEvent.click(within(anibtRow).getByRole("button", { name: t("anibtTags.removeAria", { tag: tagFullLabel("language:CHS") }) }));
     expect(within(anibtRow).getByRole("button", { name: "CHS" })).toBeInTheDocument();
+    fireEvent.click(within(anibtRow).getByRole("radio", { name: t("anibtTags.role.require") }));
     fireEvent.click(within(anibtRow).getByRole("button", { name: "CHT" }));
     expect(within(anibtRow).getAllByTestId("tag-row-entry").map((entry) => entry.dataset.role)).toEqual(["require", "exclude"]);
     fireEvent.click(screen.getByRole("button", { name: t("settings.rules.save") }));
@@ -209,7 +205,7 @@ describe("SettingsRules 批次 4", () => {
     expect(JSON.parse(String(init?.body))).toEqual({
       schema_version: "tag-filters-v2",
       value: {
-        anibt: { require: ["language:CHT"], exclude: ["tag:DV"] },
+        anibt: { require: ["language:CHT"], exclude: ["codec:HEVC"] },
         title: { require: [], exclude: ["sub_lang:TC"] },
       },
     });

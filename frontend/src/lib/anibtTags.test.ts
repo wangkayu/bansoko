@@ -11,15 +11,19 @@ describe("AniBT 标签原因", () => {
     }
   });
 
-  it("能解析服务端明细时写出具体标签的显示名", () => {
+  it("能解析服务端明细时写出具体标签的显示名，并同时展示缺失与命中排除", () => {
     expect(anibtTagReasonLabel("anibt_tag_whitelist_unmet", "missing: language:CHS, resolution:1080p"))
-      .toBe(t("anibtTags.reasonMissing", { tags: `${"CHS"}、1080p` }));
+      .toBe(t("anibtTags.reasonMissing", { tags: `${t("anibtTags.dimension.language")}：CHS；${t("anibtTags.dimension.resolution")}：1080p` }));
     expect(anibtTagReasonLabel("anibt_tag_blacklisted", "blacklisted: subtitle:EMBEDDED"))
       .toBe(t("anibtTags.reasonBlacklisted", { tags: "EMBEDDED" }));
+    expect(anibtTagReasonLabel("anibt_tag_whitelist_unmet", "missing: format:MKV; blacklisted: language:CHT"))
+      .toBe(`${t("anibtTags.reasonMissing", { tags: `${t("anibtTags.dimension.format")}：MKV` })}${t("anibtTags.summarySeparator")}${t("anibtTags.reasonBlacklisted", { tags: "CHT" })}`);
   });
 
-  it("没有标签或明细无法解析时退回登记文案，其他原因码不处理", () => {
-    expect(anibtTagReasonLabel("anibt_tag_missing", "missing: language:CHS")).toBe(t("reason.anibt_tag_missing"));
+  it("没有标签时展示要求标签；明细无法解析时退回登记文案，其他原因码不处理", () => {
+    expect(anibtTagReasonLabel("anibt_tag_missing", "missing: language:CHS"))
+      .toBe(t("anibtTags.reasonNoTags", { tags: `${t("anibtTags.dimension.language")}：CHS` }));
+    expect(anibtTagReasonLabel("anibt_tag_missing", null)).toBe(t("reason.anibt_tag_missing"));
     expect(anibtTagReasonLabel("anibt_tag_blacklisted", null)).toBe(t("reason.anibt_tag_blacklisted"));
     expect(anibtTagReasonLabel("filtered_by_rules", "release_not_in_matched")).toBeUndefined();
   });

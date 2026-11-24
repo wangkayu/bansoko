@@ -549,13 +549,14 @@ function OwnerRssTab({
               : undefined,
             onOpenStructure: (release) => setStructureRelease(release),
             onOpenRecord: openRecord ? (acquisitionID) => openRecord({ acquisitionID }) : undefined,
+            previewTagFilters: rulesPreviewSections?.tag_filters?.value,
           })
         : undefined,
     // handleRetry/openOffsetDrawer are fresh function references every render: they are referenced
     // only by node events and take no part in the model identity, so they are deliberately left out
     // of the dependencies to keep the whole tree from rebuilding each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view, workspace, busyKey, groupScores, capability, openRecord],
+    [view, workspace, busyKey, groupScores, capability, openRecord, rulesPreviewSections],
   );
 
   const toolbar = (

@@ -330,6 +330,7 @@ export function RssWorkspace({
             stale,
             expandStates,
             openedSeedKey,
+            tagFilterRules: draft?.rules?.sections?.tag_filters?.value,
             onExpand: (item) => {
               const group = workspace.view?.groups.find((candidate) =>
                 candidate.items.some((row) => row.snapshot_id === item.snapshot_id && row.stable_seed_key === item.stable_seed_key),

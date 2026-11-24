@@ -383,17 +383,22 @@ func tagRowReason(tags []string, row TagFilterRow, missingCode, unmetCode, black
 	for _, tag := range tags {
 		present[acquisitiondomain.NormalizeTagKey(tag)] = struct{}{}
 	}
-	if missing := unmetRequireTags(present, row.Require); len(missing) > 0 {
-		if len(present) == 0 {
-			return missingCode, "missing: " + joinBoundedTags(missing)
-		}
-		return unmetCode, "missing: " + joinBoundedTags(missing)
-	}
+	missing := unmetRequireTags(present, row.Require)
 	var hit []string
 	for _, tag := range row.Exclude {
 		if _, ok := present[acquisitiondomain.NormalizeTagKey(tag)]; ok {
 			hit = append(hit, tag)
 		}
+	}
+	if len(missing) > 0 {
+		detail := "missing: " + joinBoundedTags(missing)
+		if len(hit) > 0 {
+			detail += "; blacklisted: " + joinBoundedTags(hit)
+		}
+		if len(present) == 0 {
+			return missingCode, detail
+		}
+		return unmetCode, detail
 	}
 	if len(hit) > 0 {
 		return blacklistedCode, "blacklisted: " + joinBoundedTags(hit)
