@@ -12037,7 +12037,10 @@ export interface operations {
     };
     readImagePoster: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional rendition size. `thumb` serves a cached ~320px-wide JPEG thumbnail derived from the original; omitting it or passing `full` serves the original bytes. */
+                size?: "thumb" | "full";
+            };
             header?: never;
             path: {
                 bgm_id: string;
@@ -12064,13 +12067,17 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
     readImageCover: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional rendition size. `thumb` serves a cached ~320px-wide JPEG thumbnail derived from the original; omitting it or passing `full` serves the original bytes. */
+                size?: "thumb" | "full";
+            };
             header?: never;
             path: {
                 image_key: string;
@@ -12097,6 +12104,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             /** @description The provider image host did not return a usable image and no cached copy exists. */

@@ -203,7 +203,9 @@ test.describe("browse synopsis reader", () => {
     await zoomButton.click();
     const zoom = page.getByRole("dialog", { name: t("grid.card.synopsis.posterTitle", { title: "星屑邮递员" }) });
     const large = zoom.getByRole("img", { name: "星屑邮递员" });
-    await expect(large).toHaveAttribute("src", src!);
+    // Thumbnail loads `?size=thumb`; zooming loads the full-size image into a distinct blob URL.
+    await expect(large).toHaveAttribute("src", /^blob:/);
+    await expect(large).not.toHaveAttribute("src", src!);
     await expect(large).toHaveCSS("object-fit", "contain");
     const image = (await large.boundingBox())!;
     expect(Math.min(image.width, image.height)).toBeGreaterThan(thumbnailBox.height * 2);

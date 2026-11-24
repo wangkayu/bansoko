@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	accessapplication "bansoko/internal/accesscontrol/application"
@@ -408,6 +409,9 @@ type Server struct {
 	backupDownloads backupDownloadStore
 	// loginLimiter is process-local brute-force protection for /auth/login.
 	loginLimiter *loginLimiter
+	// imageThumbs caches derived card thumbnails keyed by original image hash.
+	imageThumbsOnce sync.Once
+	imageThumbs     *imageThumbnailCache
 }
 
 func NewServer(deps Dependencies) (*Server, error) {

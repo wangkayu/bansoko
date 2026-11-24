@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
+import { useAuthedImageState } from "../../lib/useAuthedImage";
 import { usePosterSource } from "../catalog/card";
 import { Dialog } from "../../ui/base";
 import { t } from "../../lib/i18n";
@@ -7,12 +8,13 @@ import { t } from "../../lib/i18n";
 /** The anime config title area's left poster: the same candidate chain as the cards (provider
  *  cover first, BGM poster as fallback). An entry with no image source at all takes no space;
  *  while loading or after total failure it is a quiet, non-clickable placeholder; with an image
- *  it is a button that opens the full image in a nested dialog (Esc / overlay / close button
+ *  it is a button that opens the full-size image in a nested dialog (Esc / overlay / close button
  *  close only the image). */
 export function HeaderPoster({ entry }: { entry: CatalogEntryView }) {
   const slotRef = useRef<HTMLSpanElement>(null);
-  const { src, hasCandidate, onImageError } = usePosterSource(entry, slotRef);
+  const { src, originalUrl, hasCandidate, onImageError } = usePosterSource(entry, slotRef);
   const [open, setOpen] = useState(false);
+  const { src: fullSrc } = useAuthedImageState(open ? originalUrl : undefined);
   if (!hasCandidate) return null;
   return (
     <span ref={slotRef} className="anime-config-head-poster">
@@ -35,7 +37,7 @@ export function HeaderPoster({ entry }: { entry: CatalogEntryView }) {
             }
           >
             <div className="anime-config-poster-view">
-              <img src={src} alt={entry.title} className="anime-config-poster-view-image" />
+              <img src={fullSrc ?? src} alt={entry.title} className="anime-config-poster-view-image" />
             </div>
           </Dialog>
         </>

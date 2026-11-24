@@ -32,13 +32,46 @@ type ImageCoverService interface {
 	FetchCover(ctx context.Context, key string) (io.ReadCloser, string, error)
 }
 
+func (s *Server) thumbnailCache() *imageThumbnailCache {
+	s.imageThumbsOnce.Do(func() {
+		if s.imageThumbs == nil {
+			s.imageThumbs = newImageThumbnailCache(thumbMaxCacheBytes)
+		}
+	})
+	return s.imageThumbs
+}
+
+func parseImageRenditionSize(raw *string) (thumb bool, ok bool) {
+	if raw == nil {
+		return false, true
+	}
+	switch strings.TrimSpace(*raw) {
+	case "", "full":
+		return false, true
+	case "thumb":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // ReadImagePoster serves the proxied poster for one Bangumi subject id. The
 // browser never talks to the image host directly: bytes flow through the
 // configured BGM connection's network route, and the ETag lets the browser
 // revalidate instead of re-downloading. The URL is addressed by subject id, so
 // it cannot be immutable: a replaced poster keeps the same path and must be
 // revalidated at least once a day.
-func (s *Server) ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId string) {
+func (s *Server) ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId string, params generated.ReadImagePosterParams) {
+	var rawSize *string
+	if params.Size != nil {
+		value := string(*params.Size)
+		rawSize = &value
+	}
+	thumb, ok := parseImageRenditionSize(rawSize)
+	if !ok {
+		writeError(w, r, badRequest("INVALID_IMAGE_SIZE", "size must be thumb or full."))
+		return
+	}
 	posters := s.deps.ImagePosters
 	body, contentType, err := posters.FetchPoster(r.Context(), bgmId)
 	if err != nil {
@@ -54,7 +87,7 @@ func (s *Server) ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId s
 		writeError(w, r, err)
 		return
 	}
-	if err := serveProxiedImage(w, r, body, contentType, "private, max-age=86400"); err != nil {
+	if err := s.serveProxiedImage(w, r, body, contentType, "private, max-age=86400", thumb); err != nil {
 		writeError(w, r, err)
 	}
 }
@@ -62,10 +95,20 @@ func (s *Server) ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId s
 // ReadImageCover serves a provider cover or candidate poster registered under
 // an opaque key. The request carries no URL: the upstream address comes from
 // the server's registry, so this route cannot be steered to another host.
-func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey string) {
+func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey string, params generated.ReadImageCoverParams) {
 	// The generated wrapper does not enforce the path pattern.
 	if !imageCoverKeyPattern.MatchString(imageKey) {
 		writeError(w, r, notFound("COVER_NOT_FOUND", "The image is not available."))
+		return
+	}
+	var rawSize *string
+	if params.Size != nil {
+		value := string(*params.Size)
+		rawSize = &value
+	}
+	thumb, ok := parseImageRenditionSize(rawSize)
+	if !ok {
+		writeError(w, r, badRequest("INVALID_IMAGE_SIZE", "size must be thumb or full."))
 		return
 	}
 	body, contentType, err := s.deps.ImageCovers.FetchCover(r.Context(), imageKey)
@@ -103,7 +146,7 @@ func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey
 	// The key is content-addressed by source URL, so the bytes behind a key do
 	// not change within the TTL and the path may be called immutable. private:
 	// the route is authenticated.
-	if err := serveProxiedImage(w, r, body, contentType, "private, max-age=86400, immutable"); err != nil {
+	if err := s.serveProxiedImage(w, r, body, contentType, "private, max-age=86400, immutable", thumb); err != nil {
 		writeCoverUpstreamError(w, r)
 	}
 }
@@ -141,7 +184,7 @@ var errProxiedImageUnreadable = errors.New("proxied image body is empty or excee
 // exist before the response starts; that is also what turns a reload, or a
 // browser that evicted the entry, into one conditional request instead of the
 // whole image. A matching If-None-Match answers 304 and no body.
-func serveProxiedImage(w http.ResponseWriter, r *http.Request, body io.ReadCloser, contentType, cacheControl string) error {
+func (s *Server) serveProxiedImage(w http.ResponseWriter, r *http.Request, body io.ReadCloser, contentType, cacheControl string, thumb bool) error {
 	defer body.Close()
 	payload, err := io.ReadAll(io.LimitReader(body, maxProxiedImageBytes+1))
 	if err != nil {
@@ -149,6 +192,9 @@ func serveProxiedImage(w http.ResponseWriter, r *http.Request, body io.ReadClose
 	}
 	if len(payload) == 0 || len(payload) > maxProxiedImageBytes {
 		return errProxiedImageUnreadable
+	}
+	if thumb {
+		payload, contentType = s.thumbnailCache().deriveOrOriginal(payload, contentType)
 	}
 	sum := sha256.Sum256(payload)
 	etag := `"` + hex.EncodeToString(sum[:]) + `"`

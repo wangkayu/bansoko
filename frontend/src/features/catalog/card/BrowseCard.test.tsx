@@ -282,7 +282,7 @@ describe("BrowseCard 自家 API 海报", () => {
       expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:poster-1");
     });
     const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(calledUrl).toBe("/api/v1/images/poster/583729");
+    expect(calledUrl).toBe("/api/v1/images/poster/583729?size=thumb");
     expect(new Headers(calledInit.headers).get("Authorization")).toBe("Bearer t-1");
   });
 

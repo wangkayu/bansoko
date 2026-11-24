@@ -9,6 +9,7 @@ import { t } from "../../lib/i18n";
 import { HeaderPoster } from "./HeaderPoster";
 
 const POSTER = "/api/v1/images/poster/583729";
+const POSTER_THUMB = `${POSTER}?size=thumb`;
 
 function entry(overrides: Partial<CatalogEntryView> = {}): CatalogEntryView {
   return { providerEntryRef: "mikan:4012", source: "mikan", title: "测试番剧", metadataMatch: { matched: false }, ...overrides };
@@ -26,16 +27,19 @@ function renderInParent(value: CatalogEntryView, onParentClose = vi.fn()) {
 
 describe("HeaderPoster", () => {
   beforeEach(() => {
-    URL.createObjectURL = vi.fn(() => "blob:poster");
+    URL.createObjectURL = vi.fn((blob: Blob) => `blob:${(blob as Blob & { tag?: string }).tag ?? "poster"}`);
     URL.revokeObjectURL = vi.fn();
     setSessionTokenProvider(() => "t-1");
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (url: string) =>
-        url === POSTER
-          ? ({ ok: true, status: 200, blob: async () => new Blob(["img"], { type: "image/jpeg" }) } as unknown as Response)
-          : new Response(null, { status: 404 }),
-      ),
+      vi.fn(async (url: string) => {
+        if (url === POSTER_THUMB || url === POSTER) {
+          const blob = new Blob(["img"], { type: "image/jpeg" }) as Blob & { tag?: string };
+          blob.tag = url === POSTER_THUMB ? "poster-thumb" : "poster-full";
+          return { ok: true, status: 200, blob: async () => blob } as unknown as Response;
+        }
+        return new Response(null, { status: 404 });
+      }),
     );
   });
 
@@ -45,15 +49,15 @@ describe("HeaderPoster", () => {
     setSessionTokenProvider(() => "");
   });
 
-  it("有海报时渲染缩略图按钮，点击打开大图，Esc 只关闭大图并把焦点还给缩略图", async () => {
+  it("有海报时渲染缩略图按钮，点击打开大图加载原图，Esc 只关闭大图并把焦点还给缩略图", async () => {
     const user = userEvent.setup();
     const onParentClose = renderInParent(entry({ posterUrl: POSTER }));
     const thumb = await screen.findByRole("button", { name: t("config.viewPoster") });
-    expect(thumb.querySelector("img")?.getAttribute("src")).toBe("blob:poster");
+    expect(thumb.querySelector("img")?.getAttribute("src")).toBe("blob:poster-thumb");
 
     await user.click(thumb);
     const large = await screen.findByRole("img", { name: "测试番剧" });
-    expect(large.getAttribute("src")).toBe("blob:poster");
+    await waitFor(() => expect(large.getAttribute("src")).toBe("blob:poster-full"));
     // The nested layer (1100), stacked above the anime config dialog (1000).
     expect((large.closest("[role='dialog']") as HTMLElement).style.zIndex).toBe("1100");
 

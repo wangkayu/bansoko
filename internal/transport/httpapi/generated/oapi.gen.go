@@ -2857,6 +2857,18 @@ const (
 	SuppressCatalogEntryParamsProviderMikan SuppressCatalogEntryParamsProvider = "mikan"
 )
 
+// Defines values for ReadImageCoverParamsSize.
+const (
+	ReadImageCoverParamsSizeFull  ReadImageCoverParamsSize = "full"
+	ReadImageCoverParamsSizeThumb ReadImageCoverParamsSize = "thumb"
+)
+
+// Defines values for ReadImagePosterParamsSize.
+const (
+	ReadImagePosterParamsSizeFull  ReadImagePosterParamsSize = "full"
+	ReadImagePosterParamsSizeThumb ReadImagePosterParamsSize = "thumb"
+)
+
 // Defines values for SearchMetadataParamsProvider.
 const (
 	SearchMetadataParamsProviderBgm  SearchMetadataParamsProvider = "bgm"
@@ -10821,6 +10833,24 @@ type ListFileManagerRootPickerEntriesParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ReadImageCoverParams defines parameters for ReadImageCover.
+type ReadImageCoverParams struct {
+	// Size Optional rendition size. `thumb` serves a cached ~320px-wide JPEG thumbnail derived from the original; omitting it or passing `full` serves the original bytes.
+	Size *ReadImageCoverParamsSize `form:"size,omitempty" json:"size,omitempty"`
+}
+
+// ReadImageCoverParamsSize defines parameters for ReadImageCover.
+type ReadImageCoverParamsSize string
+
+// ReadImagePosterParams defines parameters for ReadImagePoster.
+type ReadImagePosterParams struct {
+	// Size Optional rendition size. `thumb` serves a cached ~320px-wide JPEG thumbnail derived from the original; omitting it or passing `full` serves the original bytes.
+	Size *ReadImagePosterParamsSize `form:"size,omitempty" json:"size,omitempty"`
+}
+
+// ReadImagePosterParamsSize defines parameters for ReadImagePoster.
+type ReadImagePosterParamsSize string
+
 // SearchMetadataParams defines parameters for SearchMetadata.
 type SearchMetadataParams struct {
 	Provider SearchMetadataParamsProvider `form:"provider" json:"provider"`
@@ -13582,10 +13612,10 @@ type ServerInterface interface {
 	RemoveFileManagerRoot(w http.ResponseWriter, r *http.Request, rootId ID)
 
 	// (GET /images/cover/{image_key})
-	ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey string)
+	ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey string, params ReadImageCoverParams)
 
 	// (GET /images/poster/{bgm_id})
-	ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId string)
+	ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId string, params ReadImagePosterParams)
 	// Process and HTTP runtime liveness.
 	// (GET /livez)
 	GetLivez(w http.ResponseWriter, r *http.Request)
@@ -18898,8 +18928,19 @@ func (siw *ServerInterfaceWrapper) ReadImageCover(w http.ResponseWriter, r *http
 
 	r = r.WithContext(ctx)
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReadImageCoverParams
+
+	// ------------- Optional query parameter "size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "size", r.URL.Query(), &params.Size)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "size", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReadImageCover(w, r, imageKey)
+		siw.Handler.ReadImageCover(w, r, imageKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18929,8 +18970,19 @@ func (siw *ServerInterfaceWrapper) ReadImagePoster(w http.ResponseWriter, r *htt
 
 	r = r.WithContext(ctx)
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReadImagePosterParams
+
+	// ------------- Optional query parameter "size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "size", r.URL.Query(), &params.Size)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "size", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReadImagePoster(w, r, bgmId)
+		siw.Handler.ReadImagePoster(w, r, bgmId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

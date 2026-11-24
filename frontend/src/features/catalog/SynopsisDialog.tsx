@@ -6,7 +6,8 @@ import { catalogKeys } from "../../lib/queryKeys";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { broadcastDayLabel } from "../../lib/i18n/broadcastDay";
 import { t } from "../../lib/i18n";
-import { Poster } from "./card/Poster";
+import { Poster, type PosterZoomTarget } from "./card/Poster";
+import { useAuthedImageState } from "../../lib/useAuthedImage";
 import { seasonLabel } from "./season";
 import { splitSynopsis } from "./synopsisText";
 import { ExternalValue } from "./card/ExternalValue";
@@ -77,7 +78,8 @@ export function SynopsisDialog({
     refetchOnWindowFocus: false,
   });
   const [tab, setTab] = useState<"summary" | "original">("summary");
-  const [zoomedPoster, setZoomedPoster] = useState<string>();
+  const [zoomedPoster, setZoomedPoster] = useState<PosterZoomTarget>();
+  const { src: fullZoomedSrc } = useAuthedImageState(zoomedPoster?.originalUrl);
   const data = query.data;
   const split = splitSynopsis(data?.synopsis);
   const chips: string[] = [];
@@ -216,7 +218,7 @@ export function SynopsisDialog({
           title={t("grid.card.synopsis.posterTitle", { title: entry.title })}
           onRequestClose={() => setZoomedPoster(undefined)}>
           <div className="tw:flex tw:min-h-0 tw:flex-1 tw:items-center tw:justify-center tw:p-4">
-            <img src={zoomedPoster} alt={entry.title}
+            <img src={fullZoomedSrc ?? zoomedPoster.src} alt={entry.title}
               className="tw:h-[min(65dvh,48rem)] tw:w-full tw:object-contain" />
           </div>
         </Dialog>

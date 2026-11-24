@@ -4021,6 +4021,13 @@ paths:
           schema:
             type: string
             pattern: '^[1-9][0-9]*$'
+        - name: size
+          in: query
+          required: false
+          description: Optional rendition size. `thumb` serves a cached ~320px-wide JPEG thumbnail derived from the original; omitting it or passing `full` serves the original bytes.
+          schema:
+            type: string
+            enum: [thumb, full]
       responses:
         '200':
           description: The proxied poster image bytes for the Bangumi subject.
@@ -4033,6 +4040,8 @@ paths:
           description: |
             The client's copy is current: its If-None-Match matched the image's
             ETag, so no body follows.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -4059,6 +4068,13 @@ paths:
           schema:
             type: string
             pattern: '^[0-9a-f]{64}$'
+        - name: size
+          in: query
+          required: false
+          description: Optional rendition size. `thumb` serves a cached ~320px-wide JPEG thumbnail derived from the original; omitting it or passing `full` serves the original bytes.
+          schema:
+            type: string
+            enum: [thumb, full]
       responses:
         '200':
           description: The proxied cover image bytes (JPEG, PNG, GIF, WebP or AVIF, at most 2 MiB).
@@ -4071,6 +4087,8 @@ paths:
           description: |
             The client's copy is current: its If-None-Match matched the image's
             ETag, so no body follows.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':

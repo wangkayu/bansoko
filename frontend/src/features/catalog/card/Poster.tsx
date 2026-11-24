@@ -15,6 +15,13 @@ import { usePosterSource } from "./usePosterSource";
  *  Images are requested only when a card is close to the scroll viewport (in-viewport ones take
  *  priority). The caller owns the container shape (poster-wall aspect-[2/3] / the wide card's left
  *  slot); this component fills the container. */
+export type PosterZoomTarget = {
+  /** Loaded thumbnail object URL used as an instant placeholder while the full image loads. */
+  src: string;
+  /** Full-size same-origin proxy path (without `?size=thumb`). */
+  originalUrl?: string;
+};
+
 export function Poster({
   entry,
   scrim = false,
@@ -22,10 +29,10 @@ export function Poster({
 }: {
   entry: CatalogEntryView;
   scrim?: boolean;
-  onZoom?: (src: string) => void;
+  onZoom?: (target: PosterZoomTarget) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { src: posterSrc, onImageError } = usePosterSource(entry, containerRef);
+  const { src: posterSrc, originalUrl, onImageError } = usePosterSource(entry, containerRef);
   const [loadedSrc, setLoadedSrc] = useState<string>();
   const initial = entry.title.trim().charAt(0);
   return (
@@ -60,7 +67,7 @@ export function Poster({
         <button type="button" aria-label={t("grid.card.synopsis.zoomPoster")}
           title={t("grid.card.synopsis.zoomPoster")} aria-haspopup="dialog"
           className="tw:absolute tw:inset-0 tw:flex tw:cursor-zoom-in tw:items-end tw:justify-end tw:p-0.5 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
-          onClick={() => onZoom(posterSrc)}>
+          onClick={() => onZoom({ src: posterSrc, originalUrl })}>
           <span className="tw:grid tw:size-4 tw:place-items-center tw:rounded-sm tw:bg-popover tw:text-popover-foreground">
             <ZoomIn aria-hidden className="tw:size-3" />
           </span>
