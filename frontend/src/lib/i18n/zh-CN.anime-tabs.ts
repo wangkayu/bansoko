@@ -323,7 +323,7 @@ export const formsCopy = {
       tooLong: "超出 {max} 字节上限（当前 {current} 字节）",
       re2Lookaround: "后端 RE2 引擎不支持前瞻 / 后顾断言 (?= / ?<=)",
       re2Backref: "后端 RE2 引擎不支持反向引用 (\\1–\\9)",
-      whitespaceTrimmed: "首尾空格保存时会被忽略，如需匹配空白请改用 \\s",
+      whitespaceTrimmed: "匹配时会忽略首尾空格，如需匹配空白请改用 \\s",
       missingCapture: "缺少捕获组 (...)，无法提取集数数字",
       re2PreviewLimited: "该规则含预览暂不支持的 Go 正则语法；保存后由服务端校验",
       emptyRowFallback: "空行会在此位置按序执行 5 条内置规则；如不需要请点右侧 × 删除",

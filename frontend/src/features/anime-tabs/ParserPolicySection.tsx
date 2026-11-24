@@ -76,7 +76,20 @@ export function ParserPolicySection(props: {
     setConflict(undefined);
   }, [animeID]);
 
-  const data = policy.data ?? initialPolicy ?? undefined;
+  const data =
+    policy.data && initialPolicy
+      ? initialPolicy.version > policy.data.version
+        ? initialPolicy
+        : policy.data
+      : (policy.data ?? initialPolicy ?? undefined);
+
+  // Keep the shared TanStack Query cache aligned when a fresh workspace read
+  // brings a newer policy version than an older cached entry.
+  useEffect(() => {
+    if (initialPolicy && (!policy.data || initialPolicy.version > policy.data.version)) {
+      queryClient.setQueryData(fileMaintenanceKeys.parserPolicy(animeID), initialPolicy);
+    }
+  }, [animeID, initialPolicy, policy.data, queryClient]);
   const dirty = !readOnly && data !== undefined && draft !== undefined && draft !== data.parser_kind;
   useEffect(() => {
     onDirtyChange?.(dirty);

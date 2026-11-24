@@ -96,6 +96,9 @@ func TestValidateSectionValueParserUsesRuntimeRules(t *testing.T) {
 		"\\0(\\d+)",
 		"\\a(\\d+)",
 		"\\x{31}(\\d+)",
+		"[]a](\\d+)",
+		"[^]a](\\d+)",
+		"\\\\pL(\\d+)",
 	}
 	for _, pattern := range validPatterns {
 		raw, err := json.Marshal(ParserRules{EpisodePatterns: []string{pattern}})
@@ -106,7 +109,10 @@ func TestValidateSectionValueParserUsesRuntimeRules(t *testing.T) {
 			t.Fatalf("valid Go RE2 pattern %q rejected: %v", pattern, err)
 		}
 	}
-	for _, pattern := range []string{"\\R", "(?=x)"} {
+	for _, pattern := range []string{
+		"\\R", "(?=x)", "\\18(\\d+)", "\\89(\\d+)", "\\90(\\d+)",
+		"\\x{ZZ}(\\d+)", "\\x{110000}(\\d+)", "(?-)(\\d+)", "(?--i)(\\d+)",
+	} {
 		raw, err := json.Marshal(ParserRules{EpisodePatterns: []string{pattern}})
 		if err != nil {
 			t.Fatal(err)

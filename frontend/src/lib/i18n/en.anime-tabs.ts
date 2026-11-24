@@ -326,7 +326,7 @@ export const enFormsCopy = {
       tooLong: "Exceeds {max}-byte limit ({current} bytes)",
       re2Lookaround: "Backend RE2 engine does not support lookarounds (?= / ?<=)",
       re2Backref: "Backend RE2 engine does not support backreferences (\\1–\\9)",
-      whitespaceTrimmed: "Leading/trailing spaces are trimmed on save; use \\s to match whitespace",
+      whitespaceTrimmed: "Leading/trailing spaces are ignored when matching; use \\s to match whitespace",
       missingCapture: "Missing capture group (...) to extract the episode number",
       re2PreviewLimited: "This pattern uses Go regex syntax not supported in preview; the server validates it on save",
       emptyRowFallback: "An empty row runs the 5 built-in rules at this priority; remove it with × if unintended",

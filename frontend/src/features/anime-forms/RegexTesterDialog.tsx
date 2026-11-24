@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks, Pencil, Wand2 } from "lucide-react";
 import { Button, Chip, Dialog, Segmented, StatePill, Textarea } from "../../ui/base";
 import { t } from "../../lib/i18n";
@@ -48,13 +48,17 @@ export function RegexTesterDialog({
   const [editingTitles, setEditingTitles] = useState(false);
   const [filter, setFilter] = useState<ResultFilter>("all");
 
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open) {
+    // Only reset draft & titles on the closed -> open transition so background
+    // workspace refreshes/polling while the dialog is open never wipe user edits.
+    if (open && !wasOpen.current) {
       setDraft(patterns);
       setTitlesText(initialTitles.join("\n"));
       setEditingTitles(false);
       setFilter("all");
     }
+    wasOpen.current = open;
   }, [open, patterns, initialTitles]);
 
   const titles = useMemo(
@@ -67,8 +71,8 @@ export function RegexTesterDialog({
   );
 
   const evaluations = useMemo(
-    () => titles.map((title) => ({ title, result: testEpisodePatterns(title, draft) })),
-    [titles, draft],
+    () => (open ? titles.map((title) => ({ title, result: testEpisodePatterns(title, draft) })) : []),
+    [open, titles, draft],
   );
 
   const hitCounts = useMemo(() => {

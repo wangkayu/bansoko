@@ -300,7 +300,13 @@ function OwnerRulesTab({
     [workspace],
   );
 
-  const effectiveParserKind = parserKind ?? parserPolicy.data?.parser_kind ?? workspaceParserPolicy?.parser_kind;
+  const latestParserPolicy =
+    parserPolicy.data && workspaceParserPolicy
+      ? workspaceParserPolicy.version > parserPolicy.data.version
+        ? workspaceParserPolicy
+        : parserPolicy.data
+      : (parserPolicy.data ?? workspaceParserPolicy);
+  const effectiveParserKind = parserKind ?? latestParserPolicy?.parser_kind;
   const parserKindLoading = effectiveParserKind === undefined && parserPolicy.isPending;
 
   // Single memoized pass computes both per-card "modified" badges and "Use defaults everywhere" state.

@@ -18,7 +18,7 @@ import { NamingTemplateFields } from "../naming/NamingTemplateFields";
 import { t } from "../../lib/i18n";
 import { joinSentences } from "../../lib/i18n/format";
 import { parserKindUsesPatterns } from "../../lib/parserKind";
-import { validateGoRegex } from "../../lib/goRegex";
+import { MAX_FILTER_PATTERN_BYTES, validateGoRegex } from "../../lib/goRegex";
 import { EpisodePatternList } from "./EpisodePatternList";
 import { RegexTesterDialog } from "./RegexTesterDialog";
 
@@ -300,8 +300,12 @@ const RegexFields = memo(function RegexFields({
   mustLabel: string;
   notLabel: string;
 }) {
-  const mustDiag = value.must_contain.trim() ? validateGoRegex(value.must_contain) : null;
-  const notDiag = value.not_in.trim() ? validateGoRegex(value.not_in) : null;
+  const mustDiag = value.must_contain
+    ? validateGoRegex(value.must_contain, { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })
+    : null;
+  const notDiag = value.not_in
+    ? validateGoRegex(value.not_in, { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })
+    : null;
   return (
     <div className="rules-responsive">
       <Field label={mustLabel}>

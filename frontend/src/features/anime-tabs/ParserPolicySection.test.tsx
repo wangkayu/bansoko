@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { ParserPolicySection } from "./ParserPolicySection";
 import { t } from "../../lib/i18n";
+import { fileMaintenanceKeys } from "../../lib/queryKeys";
 import { SavePartsProvider, useSaveParts } from "../../lib/saveParts";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
@@ -174,5 +175,37 @@ describe("ParserPolicySection unsaved edits", () => {
     await userEvent.click(screen.getByRole("button", { name: t("act.save") }));
     await waitFor(() => expect(unsavedCount()).toBe("0"));
     expect(screen.getByRole("radio", { name: reltitleName() })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("prefers a newer initialPolicy over a stale cached parser policy version", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Pre-populate cache with an older version (simulating dialog reopened within gcTime after an external update).
+    client.setQueryData(fileMaintenanceKeys.parserPolicy("anime-1"), {
+      managed_anime_id: "anime-1",
+      parser_kind: "regex",
+      source_default_version: 1,
+      version: 1,
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <SaveHarness>
+          <ParserPolicySection
+            animeID="anime-1"
+            initialPolicy={{
+              managed_anime_id: "anime-1",
+              parser_kind: "reltitle",
+              source_default_version: 1,
+              version: 3,
+            }}
+          />
+        </SaveHarness>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByRole("radiogroup", { name: t("policy.parser.kindLabel") });
+    expect(screen.getByRole("radio", { name: reltitleName() })).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(screen.getByRole("radio", { name: regexName() }));
+    await userEvent.click(screen.getByRole("button", { name: t("act.save") }));
+    await waitFor(() => expect(putBodies).toEqual([{ expected_version: 3, parser_kind: "regex" }]));
   });
 });

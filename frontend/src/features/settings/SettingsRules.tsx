@@ -32,7 +32,7 @@ import { SettingsEditDialog } from "./SettingsEditDialog";
 import { t } from "../../lib/i18n";
 import { joinSentences } from "../../lib/i18n/format";
 import { parserKindOptions, parserKindUsesPatterns, type ParserKindOption } from "../../lib/parserKind";
-import { validateGoRegex } from "../../lib/goRegex";
+import { MAX_FILTER_PATTERN_BYTES, validateGoRegex } from "../../lib/goRegex";
 import { valuesEqual } from "../../lib/draft";
 import { ParserKindChoice } from "../anime-forms/ParserKindChoice";
 import { EpisodePatternList } from "../anime-forms/EpisodePatternList";
@@ -458,8 +458,12 @@ function RegexRulesForm({ value, onSave, kind }: FormProps & { kind: "title" | "
   const [exclude, setExclude] = useState(String(value.not_in ?? ""));
   const mustLabel = t(kind === "file" ? "settings.rules.fileMust" : "settings.rules.titleMust");
   const notLabel = t(kind === "file" ? "settings.rules.fileNot" : "settings.rules.titleNot");
-  const mustDiag = must.trim() ? validateGoRegex(must) : null;
-  const notDiag = exclude.trim() ? validateGoRegex(exclude) : null;
+  const mustDiag = must
+    ? validateGoRegex(must, { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })
+    : null;
+  const notDiag = exclude
+    ? validateGoRegex(exclude, { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })
+    : null;
   const help = {
     label: t("settings.rules.regexHelpLabel"),
     body: kind === "file" ? joinSentences(t("settings.rules.regexHelp"), t("settings.rules.fileRegexHelp")) : t("settings.rules.regexHelp"),

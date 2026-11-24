@@ -4,6 +4,7 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_EPISODE_PATTERNS,
+  MAX_FILTER_PATTERN_BYTES,
   hasBlockingEpisodePatternError,
   testEpisodePatterns,
   validateGoRegex,
@@ -104,11 +105,51 @@ describe("goRegex", () => {
     if (hit.matched) expect(hit.episode).toBe("5");
   });
 
-  it("Go 合法但无法本地预览的语法只给警告，不阻断", () => {
+  it("Go 合法但无法本地预览的语法只给警告，不阻断；但非法八进制或语法损坏仍报 error", () => {
     for (const pattern of ["\\A(\\d+)\\z", "[[:digit:]]+x(\\d)", "(?U).*(\\d+)", "(?i:EP(\\d+))", "\\12(\\d+)", "\\123(\\d+)", "\\0(\\d+)", "\\a(\\d+)", "\\x{31}(\\d+)"]) {
       expect(validateGoRegex(pattern, { requireCapture: true })?.severity, pattern).toBe("warning");
     }
-    expect(validateGoRegex("\\R")?.severity).toBe("error");
+    for (const bad of [
+      "\\R",
+      "\\18(\\d+)",
+      "\\89(\\d+)",
+      "\\90(\\d+)",
+      "\\A[unclosed",
+      "(?i:unclosed",
+      "(?U)(unclosed",
+      "\\A\\R",
+      "\\x{ZZ}(\\d+)",
+      "\\x{110000}(\\d+)",
+      "(?-)(\\d+)",
+      "(?--i)(\\d+)",
+    ]) {
+      expect(validateGoRegex(bad)?.severity, bad).toBe("error");
+    }
+  });
+
+  it("支持 Go 字符类首字符 ] 和转义反斜杠 \\\\pL，并按过滤正则配置放宽字节上限且不误报首尾空格", () => {
+    expect(validateGoRegex("[]a](\\d+)", { requireCapture: true })).toBeNull();
+    expect(validateGoRegex("[^]a](\\d+)", { requireCapture: true })).toBeNull();
+    expect(validateGoRegex("\\\\pL (\\d+)", { requireCapture: true })).toBeNull();
+    const hit = testEpisodePatterns("x\\pL 09", ["\\\\pL (\\d+)"]);
+    expect(hit.matched).toBe(true);
+    if (hit.matched) expect(hit.episode).toBe("9");
+
+    const filter600 = "a".repeat(600);
+    expect(validateGoRegex(filter600, { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })).toBeNull();
+    expect(validateGoRegex("  1080p  ", { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })).toBeNull();
+    expect(validateGoRegex("a".repeat(MAX_FILTER_PATTERN_BYTES + 1), { maxBytes: MAX_FILTER_PATTERN_BYTES, warnTrimmedWhitespace: false })?.severity).toBe("error");
+  });
+
+  it("testEpisodePatterns 在重复数字场景（如 S01E01）精确定位捕获组高亮区间", () => {
+    const hit = testEpisodePatterns("Show S01E01 [1080p]", []);
+    expect(hit.matched).toBe(true);
+    if (hit.matched) {
+      expect(hit.episode).toBe("1");
+      expect("Show S01E01 [1080p]".slice(hit.captureStart, hit.captureEnd)).toBe("1");
+      expect(hit.captureStart).toBe(10);
+      expect(hit.captureEnd).toBe(11);
+    }
   });
 
   it("\\\\Q 是转义的反斜杠加字母 Q，不进入字面量模式", () => {
@@ -223,5 +264,41 @@ describe("EpisodePatternList & RegexTesterDialog", () => {
 
     await userEvent.click(within(dialog).getByRole("button", { name: t("forms.rules.patternTester.apply") }));
     expect(onChange).toHaveBeenLastCalledWith(["第(\\d+)话", "S\\d+E0*(\\d+)"]);
+  });
+
+  it("试测弹窗打开期间外层 sampleTitles/patterns 引用更新时保留未应用的草稿与自定义测试标题", async () => {
+    const onApply = vi.fn();
+    const { rerender } = render(
+      <RegexTesterDialog
+        open
+        onClose={() => {}}
+        patterns={["第(\\d+)话"]}
+        onApply={onApply}
+        sampleTitles={["[Sub] Show 第12话 [1080p]"]}
+      />,
+    );
+    const dialog = await screen.findByRole("dialog", { name: t("forms.rules.patternTester.title") });
+
+    // Edit draft pattern and custom titles while dialog is open.
+    const addInput = within(dialog).getByLabelText(t("settings.rules.episodePatterns"));
+    fireEvent.change(addInput, { target: { value: "EP(\\d+)" } });
+    fireEvent.keyDown(addInput, { key: "Enter" });
+    await userEvent.click(within(dialog).getByRole("button", { name: t("forms.rules.patternTester.editTitles") }));
+    const textarea = within(dialog).getByLabelText(t("forms.rules.patternTester.titlesAria"));
+    fireEvent.change(textarea, { target: { value: "Custom Show EP09" } });
+
+    // Simulate background workspace poll delivering fresh array references while still open.
+    rerender(
+      <RegexTesterDialog
+        open
+        onClose={() => {}}
+        patterns={["第(\\d+)话"]}
+        onApply={onApply}
+        sampleTitles={["[Sub] Show 第12话 [1080p]", "[Sub] Show 第13话 [1080p]"]}
+      />,
+    );
+
+    expect(within(dialog).getByLabelText(t("forms.rules.patternTester.titlesAria"))).toHaveValue("Custom Show EP09");
+    expect(within(dialog).getByLabelText(t("forms.rules.patternEditor.rowAria", { n: 2 }))).toHaveValue("EP(\\d+)");
   });
 });
