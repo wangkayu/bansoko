@@ -35,8 +35,8 @@ const MaxSeedCategories = 32
 
 // SeedCategory is one tracker category of a Jackett search result: the
 // torznab `category` attribute id resolved to its name through the indexer
-// caps. It is display evidence on the seed's second line, never a filter, a
-// grouping key or an identity input.
+// caps. It is display evidence on the seed's second line and input to the
+// Jackett active category blacklist, never a grouping key or an identity input.
 type SeedCategory struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

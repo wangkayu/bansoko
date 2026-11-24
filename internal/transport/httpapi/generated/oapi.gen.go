@@ -9289,7 +9289,7 @@ type SaveAnimeConfigCandidateInput struct {
 	Draft AnimeDraft `json:"draft"`
 }
 
-// SeedCategory One tracker category of a Jackett search result: the torznab category id resolved to its name through the indexer caps. Display evidence only; never a filter or identity input.
+// SeedCategory One tracker category of a Jackett search result: the torznab category id resolved to its name through the indexer caps. Used as display evidence and by the Jackett active category blacklist; never a grouping key or identity input.
 type SeedCategory struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`

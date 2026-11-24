@@ -3407,7 +3407,7 @@ export interface components {
             /** @enum {string} */
             type: "public" | "private" | "semi-private";
         };
-        /** @description One tracker category of a Jackett search result: the torznab category id resolved to its name through the indexer caps. Display evidence only; never a filter or identity input. */
+        /** @description One tracker category of a Jackett search result: the torznab category id resolved to its name through the indexer caps. Used as display evidence and by the Jackett active category blacklist; never a grouping key or identity input. */
         SeedCategory: {
             id: string;
             name: string;

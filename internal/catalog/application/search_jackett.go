@@ -84,9 +84,15 @@ func (s HTTPJackettSearcher) SearchJackettSeeds(ctx context.Context, query strin
 	}
 	// Category names live in each indexer's caps, not in the search response.
 	// This enrichment never fails the search: an unreadable caps document
-	// leaves the rows without categories. Items shares its backing array with
-	// Parse.Items, so both views carry the resolved categories.
+	// leaves the rows without categories. After caps resolution, drop items
+	// whose standard Torznab ID or caps-resolved category name falls on the
+	// active non-video / raw-disc / external-structure blacklist. Filtering runs
+	// after RequireUsableItems so a search whose valid rows are all filtered
+	// returns a normal empty result rather than a feed-format error.
 	s.resolveSeedCategories(ctx, &clientCopy, result.Items)
+	filtered := filterJackettItemsByCategory(result.Items)
+	result.Items = filtered
+	result.Parse.Items = filtered
 	result.Query = query
 	return result, nil
 }
