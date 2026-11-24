@@ -3,10 +3,12 @@ package notification
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/templatefacts"
 )
 
@@ -18,7 +20,7 @@ var InputFactKeys = []string{
 }
 
 // EpisodeFactKeys are the facts projected from one frozen episode identity.
-var EpisodeFactKeys = []string{"ep.raw", "ep.number", "ep.display", "ep.offset"}
+var EpisodeFactKeys = []string{"ep.raw", "ep.number", "ep.end", "ep.display", "ep.offset"}
 
 // InputFacts projects InputFactKeys from an acquisition input snapshot. Only
 // known frozen values are used; anything else is null. release.src reads the
@@ -56,31 +58,92 @@ func InputFacts(snapshot []byte) map[string]any {
 	return facts
 }
 
-// EpisodeFacts projects EpisodeFactKeys from a frozen identity value
-// {state, value: IdentityV1}. Only a resolved identity with a known episode
-// fills them. The SQL twin is notification_episode_facts (migration 054).
+// PositionFacts projects the shared episode position onto notification keys.
+// Every key is present; absent values are null.
+func PositionFacts(position episodeidentity.Position) map[string]any {
+	facts := map[string]any{"ep.raw": nil, "ep.number": nil, "ep.end": nil, "ep.display": nil, "ep.offset": nil}
+	if position.Number == "" {
+		return facts
+	}
+	facts["ep.raw"] = TextValue(position.Raw)
+	facts["ep.number"] = position.Number
+	if position.End != "" && position.End != position.Number {
+		facts["ep.end"] = position.End
+	}
+	facts["ep.display"] = position.Display()
+	facts["ep.offset"] = position.Offset
+	return facts
+}
+
+// EpisodeFacts projects EpisodeFactKeys from a registered identity value
+// {state, value: identity}. Only a resolved identity with a known
+// episode fills them. The SQL twin is notification_episode_facts (migration 162).
 func EpisodeFacts(identity any) map[string]any {
-	facts := map[string]any{"ep.raw": nil, "ep.number": nil, "ep.display": nil, "ep.offset": nil}
 	fv, _ := identity.(map[string]any)
 	if fv["state"] != "known" {
-		return facts
+		return PositionFacts(episodeidentity.Position{})
 	}
 	value, _ := fv["value"].(map[string]any)
 	if value["state"] != "resolved" {
-		return facts
+		return PositionFacts(episodeidentity.Position{})
 	}
 	episode := knownFact(value["episode"])
 	if episode == nil {
-		return facts
+		return PositionFacts(episodeidentity.Position{})
 	}
-	facts["ep.raw"] = knownFact(value["raw_episode"])
-	facts["ep.number"] = episode
-	facts["ep.display"] = episode
+	position := episodeidentity.Position{Number: fmt.Sprint(episode)}
+	var offsetValue any
+	if raw := knownFact(value["raw_episode"]); raw != nil {
+		position.Raw = fmt.Sprint(raw)
+	}
+	if end := knownFact(value["episode_end"]); end != nil {
+		position.End = fmt.Sprint(end)
+	}
 	switch offset := value["offset"].(type) {
-	case json.Number, float64, int, int64:
-		facts["ep.offset"] = offset
+	case json.Number:
+		if parsed, err := offset.Int64(); err == nil {
+			position.Offset = int(parsed)
+			offsetValue = offset
+		}
+	case float64:
+		position.Offset = int(offset)
+		offsetValue = offset
+	case int:
+		position.Offset = offset
+		offsetValue = offset
+	case int64:
+		position.Offset = int(offset)
+		offsetValue = offset
 	}
+	facts := PositionFacts(position)
+	facts["ep.offset"] = offsetValue
 	return facts
+}
+
+// StoredEpisodeFacts reads the Go JSON shape persisted in
+// media_fact_files.effective_facts->identity and
+// media_fact_snapshots.release_identity. Its SQL twin is
+// notification_stored_episode_facts (migration 162).
+func StoredEpisodeFacts(raw []byte) map[string]any {
+	var identity episodeidentity.EpisodeIdentity
+	if len(raw) == 0 || json.Unmarshal(raw, &identity) != nil {
+		return PositionFacts(episodeidentity.Position{})
+	}
+	position, ok := identity.Position()
+	if !ok {
+		return PositionFacts(episodeidentity.Position{})
+	}
+	return PositionFacts(position)
+}
+
+// MediaFileEpisodeFacts reads the file's own identity. The release identity is
+// a compatibility fallback only when the legacy snapshot has no file row; a
+// present but unresolved file identity deliberately yields null episode facts.
+func MediaFileEpisodeFacts(fileIdentity, releaseIdentity []byte) map[string]any {
+	if len(fileIdentity) == 0 {
+		return StoredEpisodeFacts(releaseIdentity)
+	}
+	return StoredEpisodeFacts(fileIdentity)
 }
 
 // DecodeFacts decodes a JSON object keeping numbers exact.

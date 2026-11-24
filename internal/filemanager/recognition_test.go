@@ -477,7 +477,7 @@ func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T
 	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
 		return filemaintenance.RecognitionRendered{
 			Directory: input.Rules.TV.DirectoryTemplate,
-			Filename:  input.Episode + "-" + input.FileName,
+			Filename:  input.EpisodeDisplay + "-" + input.FileName,
 		}, nil
 	}}
 	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
@@ -493,7 +493,7 @@ func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T
 	request.Match = &RecognitionMatch{Season: intPointer(2), Offset: 10}
 	request.Overrides = []RecognitionEpisodeOverride{
 		{Path: "  " + first + "  ", Season: intPointer(0), Episode: 7},
-		{Path: third, Episode: 5},
+		{Path: third, Episode: 5, EpisodeEnd: 9},
 	}
 
 	preview, err := f.service.PreviewRecognition(context.Background(), request)
@@ -530,9 +530,10 @@ func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T
 		t.Fatalf("unoverridden render lost the main settings: %+v", renderer.inputs)
 	}
 	thirdRow := recognitionRow(t, preview, "Show - 03.mkv")
-	if thirdRow.Episode == nil || thirdRow.Episode.Number != "5" || thirdRow.Episode.Offset != 0 ||
+	if thirdRow.Episode == nil || thirdRow.Episode.Number != "5" || thirdRow.Episode.NumberEnd != "9" ||
+		thirdRow.Episode.Source != "manual" || thirdRow.Episode.Offset != 0 || thirdRow.TargetName != "5-9-Show - 03.mkv" ||
 		seasons["Show - 03.mkv"] == nil || *seasons["Show - 03.mkv"] != 2 {
-		t.Fatalf("an omitted override season must inherit the main season: row=%+v season=%v", thirdRow, seasons["Show - 03.mkv"])
+		t.Fatalf("manual range must keep its source, end and inherited season: row=%+v season=%v", thirdRow, seasons["Show - 03.mkv"])
 	}
 }
 

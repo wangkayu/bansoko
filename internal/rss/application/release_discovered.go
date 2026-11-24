@@ -181,25 +181,28 @@ func releaseDiscoveredFacts(snapshot releaseSnapshot, item acquisitiondomain.Fee
 		"release.title":        text(item.Title),
 		"release.published_at": nil, "release.episodes": nil,
 		"release.is_movie": evidence != nil && evidence.Identity.State == episodeidentity.StateResolved && evidence.Identity.Kind == episodeidentity.KindMovie,
-		"ep.number":        nil, "ep.raw": nil, "ep.display": nil,
+		"ep.number":        nil, "ep.end": nil, "ep.raw": nil, "ep.display": nil,
 		"torrent.file_count": nil, "torrent.size": nil, "torrent.tree": nil,
 	}
 	if !item.Published.IsZero() {
 		facts["release.published_at"] = item.Published.UTC().Format(time.RFC3339)
 	}
-	if evidence != nil && evidence.Identity.State == "resolved" && evidence.Identity.Episode != nil {
-		episode := string(*evidence.Identity.Episode)
-		facts["ep.number"], facts["ep.display"] = episode, episode
-		if evidence.Identity.RawEpisode != nil {
-			facts["ep.raw"] = string(*evidence.Identity.RawEpisode)
+	if evidence != nil {
+		if position, ok := evidence.Identity.Position(); ok {
+			for key, value := range notification.PositionFacts(position) {
+				if key != "ep.offset" {
+					facts[key] = value
+				}
+			}
 		}
 	}
 	if plan != nil {
 		if episodes, ok := plan.Episodes(); ok {
 			facts["release.episodes"] = batchplan.EpisodesLabel(episodes)
-			if len(episodes) > 1 {
-				// A batch has no single episode.
-				facts["ep.number"], facts["ep.raw"], facts["ep.display"] = nil, nil, nil
+			if len(episodes) > 1 && (evidence == nil || !episodeidentity.SameCoverageKeys(plan.CoverageKeys, evidence.Identity.Keys())) {
+				// A multi-file batch has no single episode; keep ep.* when the
+				// release itself resolved to one combined-episode unit matching the plan.
+				facts["ep.number"], facts["ep.end"], facts["ep.raw"], facts["ep.display"] = nil, nil, nil, nil
 			}
 		}
 	}

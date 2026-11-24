@@ -196,7 +196,11 @@ func captureSuccessfulFileResultTx(ctx context.Context, tx *sql.Tx, claim workit
 	if err := tx.QueryRowContext(ctx, `SELECT entry_kind FROM public.acquisitions WHERE id=$1`, p.root).Scan(&entryKind); err != nil {
 		return preparedFileResult{}, err
 	}
-	payload, err := successfulFileNotificationPayload(frozen.Input, selected, v, checkpoint, collision, entryKind, sourceFacts, render)
+	fileIdentity, releaseIdentity, err := frozenNotificationIdentitiesTx(ctx, tx, p.operation)
+	if err != nil {
+		return preparedFileResult{}, err
+	}
+	payload, err := successfulFileNotificationPayload(frozen.Input, selected, v, checkpoint, collision, entryKind, sourceFacts, render, fileIdentity, releaseIdentity)
 	if err != nil {
 		return preparedFileResult{}, err
 	}
@@ -221,6 +225,32 @@ func verifyPreparedFileResultTx(ctx context.Context, tx *sql.Tx, claim workitems
 		return fmt.Errorf("FILE_PREPARED_RESULT_CHANGED")
 	}
 	return nil
+}
+
+// frozenNotificationIdentitiesTx reads the same latest media-fact snapshot the
+// SQL notification projector reads. A missing per-file row returns nil file
+// identity, enabling the legacy release-identity fallback; a present unresolved
+// row returns its object and never falls back.
+func frozenNotificationIdentitiesTx(ctx context.Context, tx *sql.Tx, operationID string) (fileIdentity, releaseIdentity []byte, err error) {
+	err = tx.QueryRowContext(ctx, `
+SELECT CASE WHEN mf.file_ref IS NOT NULL
+            THEN COALESCE(mf.effective_facts->'identity', 'null'::jsonb)
+       END,
+       snap.release_identity
+FROM public.file_operations o
+LEFT JOIN public.artifacts art ON art.id=o.artifact_id
+LEFT JOIN public.download_tasks dt ON dt.id=art.download_task_id
+LEFT JOIN public.releases rel ON rel.id=dt.release_id
+LEFT JOIN LATERAL (
+    SELECT snap.id, snap.release_identity
+    FROM public.media_fact_snapshots snap
+    WHERE snap.release_id=rel.id
+    ORDER BY snap.created_at DESC, snap.id DESC
+    LIMIT 1
+) snap ON TRUE
+LEFT JOIN public.media_fact_files mf ON mf.snapshot_id=snap.id AND mf.file_ref=o.file_ref
+WHERE o.id=$1`, operationID).Scan(&fileIdentity, &releaseIdentity)
+	return fileIdentity, releaseIdentity, err
 }
 
 // frozenReleaseSourceFactsTx reads the source_facts of the release an

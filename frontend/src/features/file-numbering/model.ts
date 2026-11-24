@@ -92,19 +92,12 @@ export function validDraft(value: FileEpisodeDraft | undefined): boolean {
   return (value.season.trim() === "" || (Number.isInteger(season) && season >= 0)) && parseEpisodeInput(value.episode) !== undefined;
 }
 
-/** Applies only the checked batch to the state that was effective before the dialog opened. */
-export function mergeCheckedOverrides(
-  baseline: FileNumberingBaseline,
+/** Converts every visible override draft into the exact state confirmation applies. */
+export function overridesFromDrafts(
   drafts: FileNumberingDrafts,
-  checked: ReadonlySet<string>,
 ): Map<string, FileEpisodeOverride> | undefined {
-  const next = overrideMap([...baseline.values()]);
-  for (const path of checked) {
-    const draft = drafts.get(path);
-    if (draft === undefined) {
-      next.delete(path);
-      continue;
-    }
+  const next = new Map<string, FileEpisodeOverride>();
+  for (const [path, draft] of drafts) {
     if (!validDraft(draft)) return undefined;
     const parsed = parseEpisodeInput(draft.episode);
     if (!parsed) return undefined;

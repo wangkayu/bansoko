@@ -31,6 +31,8 @@ export type OneShotSeedGroup = {
   scope: RSSListGroup["scope"];
   /** The server's seed-list state for the group; when stale the group needs a refresh first. */
   feedState: RSSListGroup["feed"]["state"];
+  /** The server's currently applied offset and span, used only to explain a new conversion. */
+  offset: RSSListGroup["offset"];
   rows: OneShotSeedRow[];
 };
 
@@ -52,6 +54,7 @@ export function seedGroupsOf(view: RSSListView | undefined): OneShotSeedGroup[] 
       name: group.display_name,
       scope: group.scope,
       feedState: group.feed.state,
+      offset: group.offset,
       rows: group.items.map((item) => ({
         key: seedKeyOf(item),
         snapshotID: item.snapshot_id,

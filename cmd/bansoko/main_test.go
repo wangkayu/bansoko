@@ -636,12 +636,20 @@ func TestExternalCommandsUseContractEndpoints(t *testing.T) {
 	}
 
 	if err := runCommand("one-shot", "acquire", "--draft-json", validAnimeDraftJSON, "--seed-json", validSelectedSeedJSON,
+		"--episode-span", "2", "--overrides", `[{"path":"Part 01.mkv","season":0,"episode":1,"episode_end":2}]`,
 		"--idempotency-key", "acquire-key"); err != nil {
 		t.Fatalf("one-shot acquire: %v", err)
 	}
 	var acquireInput struct {
-		InputSource      string         `json:"input_source"`
-		Draft            map[string]any `json:"draft"`
+		InputSource string         `json:"input_source"`
+		Draft       map[string]any `json:"draft"`
+		EpisodeSpan *int           `json:"episode_span"`
+		Overrides   []struct {
+			Path       string `json:"path"`
+			Season     *int   `json:"season"`
+			Episode    int    `json:"episode"`
+			EpisodeEnd *int   `json:"episode_end"`
+		} `json:"overrides"`
 		OverrideFilter   *bool          `json:"override_filter"`
 		SelectedFileRefs []string       `json:"selected_file_refs"`
 		SelectedSeed     map[string]any `json:"selected_seed"`
@@ -649,6 +657,13 @@ func TestExternalCommandsUseContractEndpoints(t *testing.T) {
 	decodeBody(t, server, "POST /api/v1/one-shot-acquisitions", &acquireInput)
 	if acquireInput.InputSource != "current_input" || acquireInput.Draft["title"] != "Test Show" || acquireInput.OverrideFilter != nil || acquireInput.SelectedFileRefs != nil || acquireInput.SelectedSeed["provider_group_ref"] != "g1" {
 		t.Fatalf("one-shot acquire body = %+v", acquireInput)
+	}
+	if acquireInput.EpisodeSpan == nil || *acquireInput.EpisodeSpan != 2 || len(acquireInput.Overrides) != 1 {
+		t.Fatalf("one-shot acquire episode controls = %+v", acquireInput)
+	}
+	override := acquireInput.Overrides[0]
+	if override.Path != "Part 01.mkv" || override.Season == nil || *override.Season != 0 || override.Episode != 1 || override.EpisodeEnd == nil || *override.EpisodeEnd != 2 {
+		t.Fatalf("one-shot acquire override = %+v", override)
 	}
 	if got := server.headers["POST /api/v1/one-shot-acquisitions"].Get("Idempotency-Key"); got != "acquire-key" {
 		t.Fatalf("one-shot acquire Idempotency-Key = %q", got)
@@ -722,6 +737,16 @@ func TestOneShotAcquireInputModes(t *testing.T) {
 			name: "seed is required",
 			args: []string{"one-shot", "acquire", "--draft-json", validAnimeDraftJSON},
 			want: "--seed-json",
+		},
+		{
+			name: "episode span is bounded",
+			args: []string{"one-shot", "acquire", "--draft-json", validAnimeDraftJSON, validSeed, "--episode-span", "13"},
+			want: "--episode-span must be between 1 and 12",
+		},
+		{
+			name: "overrides must be an array",
+			args: []string{"one-shot", "acquire", "--draft-json", validAnimeDraftJSON, validSeed, "--overrides", `null`},
+			want: "--overrides must be a FileEpisodeOverride JSON array",
 		},
 	}
 	for _, tc := range cases {

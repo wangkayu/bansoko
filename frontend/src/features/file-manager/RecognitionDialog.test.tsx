@@ -171,7 +171,6 @@ describe("RecognitionDialog", () => {
     await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
     fireEvent.click(screen.getByRole("button", { name: t("fileNumbering.title") }));
     const editor = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
-    fireEvent.click(within(editor).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: "/media/anime/ep01.mkv" }) }));
     fireEvent.change(within(editor).getByRole("textbox", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` }), { target: { value: "8" } });
     fireEvent.click(within(editor).getByRole("button", { name: t("fileNumbering.confirm", { n: 1 }) }));
 

@@ -471,7 +471,7 @@ func registerMedia() {
 		if fvState(raw) != "known" || fvState(eff) != "known" {
 			return constraint(r, "episode")
 		}
-		if fvState(source) != "known" || (source.Object["value"].String != "file_parser" && source.Object["value"].String != "release_parser") {
+		if fvState(source) != "known" || (source.Object["value"].String != "file_parser" && source.Object["value"].String != "release_parser" && source.Object["value"].String != "manual") {
 			return constraint(r, "selected_source")
 		}
 		// The one key is tv:e<episode>, or the v1 shape tv:s<season>:e<episode>

@@ -845,7 +845,7 @@ describe("OneShotDialog 第二步：配置、渲染与提交", () => {
     await waitFor(() => expect(screen.getAllByText(t("oneshot.resultOk"))).toHaveLength(2));
   });
 
-  it("「恢复默认」只在本地复位命名与偏移，之后只有一次读模型重读", async () => {
+  it("「恢复默认」只在本地复位命名、偏移与合并集，之后只有一次读模型重读", async () => {
     stubFetch({});
     await renderAndEnter();
     await advanceToSettings([SEED_A]);
@@ -859,12 +859,16 @@ describe("OneShotDialog 第二步：配置、渲染与提交", () => {
 
     fireEvent.change(screen.getByRole("textbox", { name: t("naming.directory") }), { target: { value: "改过的目录" } });
     fireEvent.change(screen.getByRole("spinbutton", { name: t("oneshot.offset") }), { target: { value: "3" } });
+    fireEvent.click(button(t("rss.offsetSpanToggle")));
+    fireEvent.change(screen.getByRole("spinbutton", { name: t("rss.offsetSpan") }), { target: { value: "2" } });
     expect(screen.getByRole("textbox", { name: t("naming.directory") })).toHaveValue("改过的目录");
 
     const before = calls.length;
     fireEvent.click(button(t("oneshot.restoreDefaults")));
     expect(screen.getByRole("textbox", { name: t("naming.directory") })).toHaveValue(baselineName.tv.directory_template);
     expect(screen.getByRole("spinbutton", { name: t("oneshot.offset") })).toHaveValue(0);
+    expect(button(t("rss.offsetSpanToggle"))).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("spinbutton", { name: t("rss.offsetSpan") })).not.toBeInTheDocument();
     await waitFor(() => expect(calls.length).toBeGreaterThan(before));
     expect(calls.slice(before).every((call) => call.url.endsWith("/anime/rss-list-view"))).toBe(true);
   });
@@ -928,6 +932,42 @@ describe("OneShotDialog 第二步：配置、渲染与提交", () => {
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
     expect(downloads()[0]!.body).toMatchObject({ episode_offset: 2 });
+  });
+
+  it("合并集跨度默认折叠，实时预览换算并让预览与提交使用同一值", async () => {
+    stubFetch({
+      view: viewOf([seedGroup({ items: [seedItem("seed-a", SEED_A, {
+        evaluation: { state: "evaluated", verdict: "accepted_pending_download", parsed_facts: { episode: 1 } },
+      })] })]),
+    });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const toggle = button(t("rss.offsetSpanToggle"));
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("spinbutton", { name: t("rss.offsetSpan") })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const input = screen.getByRole("spinbutton", { name: t("rss.offsetSpan") });
+    expect(input).toHaveValue(1);
+    const readsBefore = reads().length;
+    fireEvent.change(input, { target: { value: "2" } });
+    expect(screen.getByText(t("rss.offsetConversion", { from: 1, to: "1-2" }))).toBeInTheDocument();
+    await waitFor(() => {
+      expect(reads().length).toBeGreaterThan(readsBefore);
+      expect(reads().at(-1)!.body).toMatchObject({ episode_span: 2, one_shot: true });
+    });
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    expect(downloads()[0]!.body).toMatchObject({ episode_span: 2 });
+  });
+
+  it("合并集跨度非法：给出说明且不能提交", async () => {
+    stubFetch({});
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    fireEvent.click(button(t("rss.offsetSpanToggle")));
+    fireEvent.change(screen.getByRole("spinbutton", { name: t("rss.offsetSpan") }), { target: { value: "13" } });
+    expect(screen.getAllByText(t("rss.offsetSpanInvalid"))).not.toHaveLength(0);
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
   });
 
   it("偏移非法：给出说明且不能提交", async () => {
@@ -1194,7 +1234,7 @@ describe("OneShotDialog 自定义预设", () => {
       ...createEmptyDraft(),
       origin: "custom",
       title: "自定义番剧",
-      rss_sources: [{ ...createEmptySourceDraft(), locator: "https://example.invalid/feed", group_name: "组A", episode_offset: 4 }],
+      rss_sources: [{ ...createEmptySourceDraft(), locator: "https://example.invalid/feed", group_name: "组A", episode_offset: 4, episode_span: 2 }],
     },
     version: 7,
     current_revision: 3,
@@ -1224,7 +1264,7 @@ describe("OneShotDialog 自定义预设", () => {
       input_source: "current_input",
       one_shot: true,
       episode_offset: 4,
-      episode_span: null,
+      episode_span: 2,
       draft: { title: "自定义番剧" },
       feed: [{ provider: "custom", snapshot_id: "custom-snap", snapshot_version: 2, content_hash: "custom-hash" }],
     });
@@ -1239,6 +1279,8 @@ describe("OneShotDialog 自定义预设", () => {
 
     expect(screen.getByText(t("oneshot.customConfigNote"))).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: t("oneshot.offset") })).toHaveValue(4);
+    expect(button(t("rss.offsetSpanToggle"))).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("spinbutton", { name: t("rss.offsetSpan") })).toHaveValue(2);
     const title = screen.getByRole("textbox", { name: t("field.title") });
     expect(title).not.toHaveAttribute("readonly");
     const readsBefore = reads().length;
@@ -1257,7 +1299,7 @@ describe("OneShotDialog 自定义预设", () => {
       content_hash: "custom-hash",
       input_source: "current_input",
       episode_offset: 4,
-      episode_span: 1,
+      episode_span: 2,
       draft: { title: "这次的名字" },
     });
     expect(body).not.toHaveProperty("candidate_id");
@@ -1838,15 +1880,17 @@ describe("OneShotDialog 手动选择文件", () => {
     stubPicker();
     await renderAndEnter();
     await advanceToSettings([SEED_A]);
+    fireEvent.click(button(t("rss.offsetSpanToggle")));
+    fireEvent.change(screen.getByRole("spinbutton", { name: t("rss.offsetSpan") }), { target: { value: "2" } });
     fireEvent.click(await screen.findByRole("button", { name: t("fileNumbering.title") }));
     const editor = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
-    fireEvent.click(within(editor).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: VIDEO }) }));
     fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.season")} ${VIDEO}` }), { target: { value: "" } });
     fireEvent.change(within(editor).getByRole("textbox", { name: `${t("fileNumbering.episode")} ${VIDEO}` }), { target: { value: "7" } });
     fireEvent.click(within(editor).getByRole("button", { name: t("fileNumbering.confirm", { n: 1 }) }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: t("fileNumbering.title") })).not.toBeInTheDocument());
     await waitFor(() => expect(reads().at(-1)!.body).toMatchObject({
+      episode_span: 2,
       file_selections: [{
         snapshot_id: "snap-1",
         stable_seed_key: "seed-a",
@@ -1856,7 +1900,7 @@ describe("OneShotDialog 手动选择文件", () => {
     }));
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
-    expect(downloads()[0]!.body).toMatchObject({ overrides: [{ path: VIDEO, episode: 7 }] });
+    expect(downloads()[0]!.body).toMatchObject({ episode_span: 2, overrides: [{ path: VIDEO, episode: 7 }] });
     expect(downloads()[0]!.body).not.toHaveProperty("file_selection");
   });
 

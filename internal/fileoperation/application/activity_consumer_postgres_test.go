@@ -240,6 +240,15 @@ FROM notification_admissions WHERE trigger_kind='file_operation_failed' AND sour
 		if frtKeys != 10 || frtTitle != "source" || frtGroup != "" || frtUncensored != "false" {
 			t.Fatalf("failure notification frt keys=%d title=%q group=%q uncensored=%q", frtKeys, frtTitle, frtGroup, frtUncensored)
 		}
+		var episodeKeys int
+		var episodeDisplay string
+		if err := x.db.QueryRow(`SELECT (SELECT count(*) FROM jsonb_object_keys(payload) k WHERE k IN ('ep.raw','ep.number','ep.end','ep.display','ep.offset')), COALESCE(payload->>'ep.display','')
+FROM notification_admissions WHERE trigger_kind='file_operation_failed' AND source_owner_type='file_operation' AND source_owner_id=$1`, x.opID).Scan(&episodeKeys, &episodeDisplay); err != nil {
+			t.Fatalf("failure notification episode facts: %v", err)
+		}
+		if episodeKeys != 5 || episodeDisplay != "1" {
+			t.Fatalf("failure notification episode keys=%d display=%q", episodeKeys, episodeDisplay)
+		}
 		asSubscriptionRoot(t, x)
 		if _, err := consumer.ConsumeOnce(ctx); err != nil {
 			t.Fatal(err)

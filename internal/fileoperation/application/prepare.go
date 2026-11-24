@@ -671,7 +671,6 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 		"resolved":             frozenResolvedValues(resolved.Results),
 		"binding_facts":        renderBindingFacts(resolved.Context),
 		"render_facts":         naming.ReplayFactValues(resolved.Context),
-		"episode_number":       naming.UnifiedFacts(resolved.Context).Ep.Number,
 		"file_title_tags":      fileTitleTagsBlock(prep.fileTitleTags(file)),
 		"release_source_facts": json.RawMessage(artifact.sourceFacts),
 	}
@@ -970,7 +969,6 @@ func (s *Service) prepareSubtitleFileTx(ctx context.Context, tx *sql.Tx, artifac
 		"resolved":             frozenResolvedValues(resolved.Results),
 		"binding_facts":        renderBindingFacts(resolved.Context),
 		"render_facts":         naming.ReplayFactValues(resolved.Context),
-		"episode_number":       naming.UnifiedFacts(resolved.Context).Ep.Number,
 		"file_title_tags":      fileTitleTagsBlock(prep.fileTitleTags(file)),
 		"release_source_facts": json.RawMessage(artifact.sourceFacts),
 		"suffix":               suffix,

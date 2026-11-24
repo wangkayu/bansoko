@@ -62,6 +62,8 @@ export type OneShotSeedSource = {
   setDraft: (next: AnimeDraft) => void;
   /** The episode offset at task start (custom takes the preset source's offset, provider is 0). */
   initialOffset: number;
+  /** The combined-episode span at task start (custom inherits its preset source, others use 1). */
+  initialSpan: number;
   /** Step one's subgroup list (custom has no such layer; empty). */
   groupEntries: OneShotGroupEntry[];
   /** Groups whose seeds have been read (the entered groups; for custom it is the single seed list). */
@@ -78,11 +80,11 @@ export type OneShotSeedSource = {
   /** Entering a group failed: the group and the reason. */
   openError?: { key: string; message: string };
   /** Enters a group: fetch its seed list and re-read if never fetched; an already-fetched one is directly usable. */
-  openGroup: (key: string, draft: AnimeDraft | undefined, offset: number) => Promise<void>;
+  openGroup: (key: string, draft: AnimeDraft | undefined, offset: number, span: number) => Promise<void>;
   refreshingGroup?: string;
   refreshError?: string;
   /** Refreshes a single group: re-fetches that group's seed list and returns whether the read back succeeded. */
-  refreshGroup: (group: OneShotSeedGroup, draft: AnimeDraft | undefined, offset: number) => Promise<boolean>;
+  refreshGroup: (group: OneShotSeedGroup, draft: AnimeDraft | undefined, offset: number, span: number) => Promise<boolean>;
   /**
    * 展开一个尚未展开的种子：只取这颗种子的字节，不重读视图。文件行属于读模型投影，
    * 由调用方随后带着它编辑中的草稿重读。失败返回有界原因文案，成功返回空对象。
@@ -90,8 +92,8 @@ export type OneShotSeedSource = {
   expand: (row: OneShotSeedRow) => Promise<{ error?: string }>;
   /** The title candidates of the last read: the bound works' cached names and the source title, in the server's order. */
   titleSuggestions?: TitleSuggestion[];
-  /** Re-reads the read model with this task's draft, episode offset and per-seed manual file selections (step two only). */
-  preview: (draft: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => Promise<void>;
+  /** Re-reads the read model with this task's draft, episode offset, span and per-seed manual file selections (step two only). */
+  preview: (draft: AnimeDraft | undefined, offset: number, span: number, fileSelections?: RSSListFileSelection[]) => Promise<void>;
   /** custom: no usable seed-list snapshot yet; the user must fetch explicitly. */
   fetchRequired: boolean;
   fetchBusy: boolean;
@@ -273,7 +275,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
 
   /** Reads once over the entered groups; of consecutive re-reads only the last one counts. */
   const read = useCallback(
-    async (current: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => {
+    async (current: AnimeDraft | undefined, offset: number, span: number, fileSelections?: RSSListFileSelection[]) => {
       if (!current || !observation || refsRef.current.size === 0) return;
       const seq = ++readSeq.current;
       setPending(true);
@@ -287,7 +289,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
-          episode_span: null,
+          episode_span: span === 1 ? null : span,
           ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
       try {
@@ -321,12 +323,12 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     [view],
   );
   const openGroup = useCallback(
-    async (key: string, current: AnimeDraft | undefined, offset: number) => {
+    async (key: string, current: AnimeDraft | undefined, offset: number, span: number) => {
       const group = discovered.find((candidate) => candidate.key === key);
       if (!group) return;
       if (refsRef.current.has(key)) {
         // Already fetched: re-read only when the last read did not succeed.
-        if (!groups.some((candidate) => candidate.key === key)) await read(current, offset);
+        if (!groups.some((candidate) => candidate.key === key)) await read(current, offset, span);
         return;
       }
       setOpeningGroup(key);
@@ -344,13 +346,13 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
       } finally {
         setOpeningGroup(undefined);
       }
-      await read(current, offset);
+      await read(current, offset, span);
     },
     [discovered, groups, provider, providerEntryRef, read],
   );
 
   const refreshGroup = useCallback(
-    async (group: OneShotSeedGroup, current: AnimeDraft | undefined, offset: number) => {
+    async (group: OneShotSeedGroup, current: AnimeDraft | undefined, offset: number, span: number) => {
       setRefreshingGroup(group.key);
       setRefreshError(undefined);
       try {
@@ -364,7 +366,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
       } finally {
         setRefreshingGroup(undefined);
       }
-      await read(current, offset);
+      await read(current, offset, span);
       return true;
     },
     [provider, read],
@@ -395,6 +397,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     draft: businessReady ? draft : undefined,
     setDraft,
     initialOffset: 0,
+    initialSpan: 1,
     groupEntries,
     groups,
     // After a failed read it no longer counts as "still reading": otherwise the busy state would cover the error state forever.
@@ -532,7 +535,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
 
   // One-shot browse: reads this task's draft, with the server binding seeds to the named snapshots; the read itself touches no network.
   const readView = useCallback(
-    async (current: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => {
+    async (current: AnimeDraft | undefined, offset: number, span: number, fileSelections?: RSSListFileSelection[]) => {
       if (!current || !feedRef) return;
       const seq = ++readSeq.current;
       setPending(true);
@@ -545,7 +548,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
-          episode_span: null,
+          episode_span: span === 1 ? null : span,
           ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
         if (seq === readSeq.current) setView(result);
@@ -559,13 +562,14 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
   );
 
   const initialOffset = candidate?.draft.rss_sources[0]?.episode_offset ?? 0;
-  // With a snapshot in hand, read once with the task-start draft and offset; after that the dialog re-reads explicitly.
+  const initialSpan = candidate?.draft.rss_sources[0]?.episode_span ?? 1;
+  // With a snapshot in hand, read once with the task-start draft, offset and span; after that the dialog re-reads explicitly.
   const draftRef = useRef(draft);
   draftRef.current = draft;
   useEffect(() => {
     if (!enabled || !feedRef) return;
-    void readView(draftRef.current, initialOffset);
-  }, [enabled, feedRef, initialOffset, readView]);
+    void readView(draftRef.current, initialOffset, initialSpan);
+  }, [enabled, feedRef, initialOffset, initialSpan, readView]);
 
   const expand = useCallback((row: OneShotSeedRow) => expandSeed(row, "custom"), []);
   const resetDraft = useCallback(() => {
@@ -578,6 +582,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
     draft,
     setDraft,
     initialOffset,
+    initialSpan,
     groupEntries: [],
     groups,
     loading:
@@ -680,7 +685,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   // snapshot's complete result set as one group. A typed 409 means the identity expired; it is
   // surfaced as "search again" (stale) and never silently re-issued.
   const readView = useCallback(
-    async (current: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => {
+    async (current: AnimeDraft | undefined, offset: number, span: number, fileSelections?: RSSListFileSelection[]) => {
       if (!current || !feedRef) return;
       const seq = ++readSeq.current;
       setPending(true);
@@ -697,7 +702,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
-          episode_span: null,
+          episode_span: span === 1 ? null : span,
           ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
         if (result === null || typeof result !== "object" || !Array.isArray(result.groups)) throw new Error(t("rss.listBadFormat"));
@@ -731,7 +736,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   useEffect(() => {
     if (!enabled || !draft || firstRead.current) return;
     firstRead.current = true;
-    void readView(draft, 0);
+    void readView(draft, 0, 1);
   }, [enabled, draft, readView]);
 
   const expand = useCallback((row: OneShotSeedRow) => expandSeed(row, provider, t("oneshot.searchStale")), [provider]);
@@ -745,6 +750,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
     draft,
     setDraft,
     initialOffset: 0,
+    initialSpan: 1,
     groupEntries: [],
     groups,
     loading: enabled && loadError === undefined && viewError === undefined && (draft === undefined || (view === undefined && pending)),

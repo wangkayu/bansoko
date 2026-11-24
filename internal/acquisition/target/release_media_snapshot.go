@@ -174,7 +174,7 @@ func ReleaseMediaInputDigest(in ReleaseMediaSnapshotInput) string {
 		in.TMDBWorkID,
 		fmt.Sprintf("%d", e.Season),
 		fmt.Sprintf("%t", e.SeasonBound),
-		fmt.Sprintf("%d", e.Selection.Offset),
+		fmt.Sprintf("%d", e.Offset),
 		overrideDigest,
 	}
 	if e.Span > 1 {

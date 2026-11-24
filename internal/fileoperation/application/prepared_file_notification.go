@@ -13,7 +13,7 @@ import (
 // proof. Current management rows are absent.
 // sourceFacts is the release's frozen source_facts (rt, anibt); render is the
 // operation's frozen render snapshot (episode titles).
-func successfulFileNotificationPayload(input json.RawMessage, file artifactFileContext, fact, checkpoint protocol.Value, collision, entryKind string, sourceFacts, render []byte) (json.RawMessage, error) {
+func successfulFileNotificationPayload(input json.RawMessage, file artifactFileContext, fact, checkpoint protocol.Value, collision, entryKind string, sourceFacts, render, fileIdentity, releaseIdentity []byte) (json.RawMessage, error) {
 	accepted, err := protocol.ParseStrict(input)
 	if err != nil {
 		return nil, err
@@ -39,9 +39,7 @@ func successfulFileNotificationPayload(input json.RawMessage, file artifactFileC
 	// SQL projector file_success_notification merges the same facts.
 	fields.frozen = notification.InputFacts(protocol.Canonical(accepted))
 	fields.frozen["task.origin"] = notification.TaskOrigin(entryKind)
-	decoded, _ := notification.DecodeFacts(protocol.Canonical(fact))
-	coverage, _ := decoded["identity_coverage"].(map[string]any)
-	for key, value := range notification.EpisodeFacts(coverage["identity"]) {
+	for key, value := range notification.MediaFileEpisodeFacts(fileIdentity, releaseIdentity) {
 		fields.frozen[key] = value
 	}
 	for key, value := range notification.ValueFacts(notification.InputVarsOutput(protocol.Canonical(accepted)), sourceFacts, notificationText) {

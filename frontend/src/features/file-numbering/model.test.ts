@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automaticDraft, draftMap, episodeInputLabel, mergeCheckedOverrides, overrideList, overrideMap, parseEpisodeInput, sanitizeOverrides, sequenceEpisodeInput } from "./model";
+import { automaticDraft, draftMap, episodeInputLabel, overrideList, overrideMap, overridesFromDrafts, parseEpisodeInput, sanitizeOverrides, sequenceEpisodeInput } from "./model";
 
 const baseline = overrideMap([
   { path: "S01/01.mkv", season: 1, episode: 11 },
@@ -7,42 +7,43 @@ const baseline = overrideMap([
 ]);
 
 describe("file numbering overrides", () => {
-  it("applies only checked rows and preserves unchecked baseline values", () => {
+  it("applies every current draft without a separate submission selection", () => {
     const drafts = draftMap(baseline);
     drafts.set("S01/01.mkv", { season: "11", episode: "21" });
     drafts.set("S02/01.mkv", { season: "22", episode: "22" });
-    const next = mergeCheckedOverrides(baseline, drafts, new Set(["S02/01.mkv"]));
+    const next = overridesFromDrafts(drafts);
     expect(next && overrideList(next)).toEqual([
-      { path: "S01/01.mkv", season: 1, episode: 11 },
+      { path: "S01/01.mkv", season: 11, episode: 21 },
       { path: "S02/01.mkv", season: 22, episode: 22 },
     ]);
   });
 
-  it("restores a checked row by deleting its override", () => {
+  it("restores any row by deleting its draft, including a baseline override", () => {
     const drafts = draftMap(baseline);
     drafts.delete("S01/01.mkv");
-    const next = mergeCheckedOverrides(baseline, drafts, new Set(["S01/01.mkv"]));
+    const next = overridesFromDrafts(drafts);
     expect(next && overrideList(next)).toEqual([{ path: "S02/01.mkv", season: 2, episode: 1 }]);
   });
 
   it("lets an override inherit the main season setting", () => {
     const drafts = draftMap(baseline);
     drafts.set("S01/01.mkv", { season: "", episode: "12" });
-    const next = mergeCheckedOverrides(baseline, drafts, new Set(["S01/01.mkv"]));
+    const next = overridesFromDrafts(drafts);
     expect(next?.get("S01/01.mkv")).toEqual({ path: "S01/01.mkv", episode: 12 });
   });
 
-  it("rejects an invalid checked row without validating unchecked drafts", () => {
+  it("rejects the whole draft map when any override is invalid", () => {
     const drafts = draftMap(baseline);
     drafts.set("S01/01.mkv", { season: "", episode: "bad" });
-    expect(mergeCheckedOverrides(baseline, drafts, new Set(["S02/01.mkv"]))).toBeDefined();
-    expect(mergeCheckedOverrides(baseline, drafts, new Set(["S01/01.mkv"]))).toBeUndefined();
+    expect(overridesFromDrafts(drafts)).toBeUndefined();
+    drafts.set("S01/01.mkv", { season: "-1", episode: "1" });
+    expect(overridesFromDrafts(drafts)).toBeUndefined();
   });
 
   it("allows duplicate season and episode values", () => {
     const drafts = draftMap(baseline);
     drafts.set("S02/01.mkv", { season: "1", episode: "11" });
-    const next = mergeCheckedOverrides(baseline, drafts, new Set(["S01/01.mkv", "S02/01.mkv"]));
+    const next = overridesFromDrafts(drafts);
     expect(next && overrideList(next)).toEqual([
       { path: "S01/01.mkv", season: 1, episode: 11 },
       { path: "S02/01.mkv", season: 1, episode: 11 },
@@ -89,15 +90,14 @@ describe("episode range input", () => {
     expect(sequenceEpisodeInput(5, 1, 12)).toBe("17-28");
   });
 
-  it("round-trips range overrides through drafts and checked merges", () => {
+  it("round-trips range overrides through drafts", () => {
     const ranged = overrideMap([{ path: "S01/01.mkv", episode: 1, episode_end: 2 }]);
     const drafts = draftMap(ranged);
     expect(drafts.get("S01/01.mkv")?.episode).toBe("1-2");
-    const next = mergeCheckedOverrides(ranged, drafts, new Set(["S01/01.mkv"]));
+    const next = overridesFromDrafts(drafts);
     expect(next && overrideList(next)).toEqual([{ path: "S01/01.mkv", episode: 1, episode_end: 2 }]);
-    // An equal start and end collapses back to the single-episode form.
     drafts.set("S01/01.mkv", { season: "", episode: "3-3" });
-    const collapsed = mergeCheckedOverrides(ranged, drafts, new Set(["S01/01.mkv"]));
+    const collapsed = overridesFromDrafts(drafts);
     expect(collapsed && overrideList(collapsed)).toEqual([{ path: "S01/01.mkv", episode: 3 }]);
   });
 

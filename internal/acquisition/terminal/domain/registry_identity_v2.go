@@ -48,9 +48,14 @@ func init() {
 		if fvState(raw) != "known" || fvState(eff) != "known" || fvState(end) != "known" {
 			return constraint(r, "episode")
 		}
-		// Only a file's own name holds several episodes; a release title
-		// names the batch and never resolves to a range.
-		if source := m["selected_source"]; fvState(source) != "known" || source.Object["value"].String != "file_parser" {
+		// Only a file's own name or an explicit manual override holds several
+		// episodes; a release title names the batch and never resolves to a range.
+		source := m["selected_source"]
+		if fvState(source) != "known" {
+			return constraint(r, "selected_source")
+		}
+		selectedSource := source.Object["value"].String
+		if selectedSource != "file_parser" && selectedSource != "manual" {
 			return constraint(r, "selected_source")
 		}
 		first, errFirst := strconv.Atoi(eff.Object["value"].String)
@@ -60,7 +65,7 @@ func init() {
 		}
 		coverage := m["coverage_keys"].Array
 		maximum := episodeidentity.MaxEpisodesPerFile
-		if shape == "single" {
+		if shape == "single" || selectedSource == "manual" {
 			maximum = episodeidentity.MaxManualEpisodesPerFile
 		}
 		if len(coverage) != last-first+1 || len(coverage) < 2 || len(coverage) > maximum {

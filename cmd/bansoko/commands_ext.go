@@ -134,6 +134,24 @@ func readDraftJSONValue(raw string) (generated.AnimeDraft, error) {
 	return parseAnimeDraftJSON(raw)
 }
 
+func readFileEpisodeOverridesJSON(raw string) ([]generated.FileEpisodeOverride, error) {
+	if strings.HasPrefix(raw, "@") {
+		contents, err := os.ReadFile(strings.TrimPrefix(raw, "@"))
+		if err != nil {
+			return nil, usageErrorf("read overrides JSON file: %w", err)
+		}
+		raw = string(contents)
+	}
+	var overrides []generated.FileEpisodeOverride
+	if err := json.Unmarshal([]byte(raw), &overrides); err != nil {
+		return nil, usageErrorf("--overrides must be a valid FileEpisodeOverride JSON array: %w", err)
+	}
+	if overrides == nil {
+		return nil, newUsageError("--overrides must be a FileEpisodeOverride JSON array")
+	}
+	return overrides, nil
+}
+
 func pathSegment(value string) string {
 	return url.PathEscape(value)
 }
@@ -464,6 +482,8 @@ func cmdOneShotAcquire(args []string) error {
 	draftJSON := fs.String("draft-json", "", "complete unsaved AnimeDraft JSON (or @file)")
 	seedJSON := fs.String("seed-json", "", "SelectedSeedInput JSON: a snapshot reference (snapshot_id, snapshot_version, snapshot_content_hash, stable_seed_key) or the locator form")
 	episodeOffset := fs.Int("episode-offset", 0, "the one-shot's episode offset, -1000..1000 (default 0)")
+	episodeSpan := fs.Int("episode-span", 1, "consecutive episodes covered by each single-number release file, 1..12 (default 1)")
+	overridesJSON := fs.String("overrides", "", "sparse FileEpisodeOverride JSON array (or @file)")
 	idempotencyKey := fs.String("idempotency-key", "", "idempotency key (default: auto-generated and printed)")
 	if err := fs.Parse(args); err != nil {
 		return parseError(err)
@@ -488,6 +508,17 @@ func cmdOneShotAcquire(args []string) error {
 	if err := json.Unmarshal([]byte(*seedJSON), &seed); err != nil {
 		return usageErrorf("--seed-json must be valid SelectedSeedInput JSON: %w", err)
 	}
+	if flagWasSet(fs, "episode-span") && (*episodeSpan < 1 || *episodeSpan > 12) {
+		return newUsageError("--episode-span must be between 1 and 12")
+	}
+	var overrides []generated.FileEpisodeOverride
+	if flagWasSet(fs, "overrides") {
+		var err error
+		overrides, err = readFileEpisodeOverridesJSON(*overridesJSON)
+		if err != nil {
+			return err
+		}
+	}
 	key, generatedKey, err := resolveCommandIdempotencyKey(*idempotencyKey)
 	if err != nil {
 		return err
@@ -501,6 +532,13 @@ func cmdOneShotAcquire(args []string) error {
 	if flagWasSet(fs, "episode-offset") {
 		offset := *episodeOffset
 		input.EpisodeOffset = &offset
+	}
+	if flagWasSet(fs, "episode-span") {
+		span := *episodeSpan
+		input.EpisodeSpan = &span
+	}
+	if flagWasSet(fs, "overrides") {
+		input.Overrides = &overrides
 	}
 	if candidateMode {
 		source := generated.AcquireSeedOnceInputInputSource("saved_revision")

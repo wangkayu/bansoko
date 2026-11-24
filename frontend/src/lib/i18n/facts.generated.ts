@@ -141,7 +141,7 @@ export const factsCopy = {
   ep: {
     display: {
       label: "显示集数",
-      description: "派生值：用于显示的集数；今天每个投影都把它设为 ep.number，尚无独立的显示文本生产者。",
+      description: "派生值：用于显示的最终集数定位（无论来自偏移、合并集还是手动覆盖）；多集文件显示为起止范围（如 7-8），单集为 ep.number。",
     },
     end: {
       label: "结束集数",
@@ -892,7 +892,7 @@ export const enFactsCopy = {
   ep: {
     display: {
       label: "Display episode",
-      description: "Derived: Episode text for display; every projection today sets it to ep.number, so it has no independent producer yet.",
+      description: "Derived: Final episode display (after offset, span, or manual override); a multi-episode file shows its range (such as 7-8) and a single episode shows ep.number.",
     },
     end: {
       label: "Last episode",

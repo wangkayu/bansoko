@@ -702,7 +702,7 @@ func recognitionEpisode(identity episodeidentity.EpisodeIdentity, match *Recogni
 			// baseline; Number alone is the final manual value.
 			raw = string(*identity.RawEpisode)
 		}
-		episode := &RecognitionEpisode{Raw: raw, Number: number, Source: "manual"}
+		episode := &RecognitionEpisode{Raw: raw, Number: number, Source: string(episodeidentity.EpisodeSourceManual)}
 		if override.EpisodeEnd > override.Episode {
 			episode.NumberEnd = strconv.Itoa(override.EpisodeEnd)
 		}
@@ -715,7 +715,7 @@ func recognitionEpisode(identity episodeidentity.EpisodeIdentity, match *Recogni
 		}
 		episode := &RecognitionEpisode{
 			Raw: strconv.Itoa(*match.Episode), Number: strconv.Itoa(number),
-			Offset: match.Offset, Source: "manual",
+			Offset: match.Offset, Source: string(episodeidentity.EpisodeSourceManual),
 		}
 		if match.EpisodeEnd != nil {
 			end := *match.EpisodeEnd + match.Offset
@@ -726,19 +726,17 @@ func recognitionEpisode(identity episodeidentity.EpisodeIdentity, match *Recogni
 		}
 		return episode
 	}
-	if identity.State != episodeidentity.StateResolved || identity.Episode == nil || identity.RawEpisode == nil {
+	position, ok := identity.Position()
+	if !ok || identity.RawEpisode == nil {
 		return nil
 	}
-	episode := &RecognitionEpisode{
-		Raw:    string(*identity.RawEpisode),
-		Number: string(*identity.Episode),
-		Offset: identity.Offset,
-		Source: string(episodeidentity.EpisodeSourceFileParser),
+	return &RecognitionEpisode{
+		Raw:       position.Raw,
+		Number:    position.Number,
+		NumberEnd: position.End,
+		Offset:    position.Offset,
+		Source:    position.Source,
 	}
-	if identity.EpisodeEnd != nil {
-		episode.NumberEnd = string(*identity.EpisodeEnd)
-	}
-	return episode
 }
 
 func recognitionMatchID(match *RecognitionMatch) string {
@@ -806,7 +804,7 @@ func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode
 		input.Episode = episode.Number
 		input.EpisodeEnd = episode.NumberEnd
 		input.EpisodeRaw = episode.Raw
-		input.EpisodeDisplay = episode.Number
+		input.EpisodeDisplay = (episodeidentity.Position{Number: episode.Number, End: episode.NumberEnd}).Display()
 		input.EpisodeOffset = episode.Offset
 		input.EpisodeSource = episode.Source
 	}

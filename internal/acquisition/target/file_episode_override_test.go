@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"bansoko/internal/episodeidentity"
 )
 
 func TestOneShotFileOverridesAreFinalAndFreezeSeason(t *testing.T) {
@@ -21,8 +23,9 @@ func TestOneShotFileOverridesAreFinalAndFreezeSeason(t *testing.T) {
 	}
 	overridden, _ := result.BatchPlan.File("Pack/Preview Show [E01].mkv")
 	automatic, _ := result.BatchPlan.File("Pack/Preview Show [E02].mkv")
-	if got := string(*overridden.Identity.Episode); got != "7" || overridden.Identity.Offset != 0 {
-		t.Fatalf("manual identity = %+v, want final episode 7 without offset", overridden.Identity)
+	if got := string(*overridden.Identity.Episode); got != "7" || overridden.Identity.Offset != 0 ||
+		overridden.Identity.SelectedSource == nil || *overridden.Identity.SelectedSource != episodeidentity.EpisodeSourceManual {
+		t.Fatalf("manual identity = %+v, want final manual episode 7 without offset", overridden.Identity)
 	}
 	if got := string(*automatic.Identity.Episode); got != "12" || automatic.Identity.Offset != 10 {
 		t.Fatalf("automatic identity episode = %s, offset = %d, want parser episode plus offset", got, automatic.Identity.Offset)
@@ -111,8 +114,9 @@ func TestFileOverrideEpisodeRangeCoversConsecutiveEpisodes(t *testing.T) {
 		t.Fatalf("range override admission = %+v", result.Admission)
 	}
 	entry, _ := result.BatchPlan.File("Pack/Preview Show [E01-E02].mkv")
-	if entry.Identity == nil || entry.Identity.EpisodeEnd == nil || string(*entry.Identity.EpisodeEnd) != "2" {
-		t.Fatalf("range identity = %+v, want episode end 2", entry.Identity)
+	if entry.Identity == nil || entry.Identity.EpisodeEnd == nil || string(*entry.Identity.EpisodeEnd) != "2" ||
+		entry.Identity.SelectedSource == nil || *entry.Identity.SelectedSource != episodeidentity.EpisodeSourceManual {
+		t.Fatalf("range identity = %+v, want manual episode end 2", entry.Identity)
 	}
 	if got := entry.Keys(); len(got) != 2 || got[0] != "tv:e1" || got[1] != "tv:e2" {
 		t.Fatalf("range coverage = %v, want tv:e1 and tv:e2", got)
@@ -127,6 +131,33 @@ func TestFileOverrideEpisodeRangeCoversConsecutiveEpisodes(t *testing.T) {
 	subtitle, _ := result.BatchPlan.File("Pack/Preview Show [E01-E02].zh.ass")
 	if subtitle.BoundVideo != entry.SourcePath {
 		t.Fatalf("subtitle binding = %+v, want it to follow the ranged video", subtitle)
+	}
+}
+
+func TestFileOverrideTwelveEpisodeRangeKeepsEveryCoverageKey(t *testing.T) {
+	scenario := batchScenario(t, "Preview Show [E01-E02].mkv")
+	request := scenario.oneShot()
+	request.Evidence = nil
+	request.Effective.Rules.Naming.Tv.VideoFilenameTemplate = "${ep.s00e00}.${file.ext}"
+	request.Overrides = []FileEpisodeOverride{{Path: "Pack/Preview Show [E01-E02].mkv", Episode: 3, EpisodeEnd: 14}}
+	result := PreflightOneShot(context.Background(), request, FilesystemProbe{})
+	if result.Admission.Admission != AdmissionDownload {
+		t.Fatalf("12-episode manual range admission = %+v", result.Admission)
+	}
+	entry, _ := result.BatchPlan.File("Pack/Preview Show [E01-E02].mkv")
+	if entry.Identity == nil || entry.Identity.SelectedSource == nil || *entry.Identity.SelectedSource != episodeidentity.EpisodeSourceManual {
+		t.Fatalf("12-episode identity = %+v, want manual", entry.Identity)
+	}
+	keys := entry.Keys()
+	if len(keys) != 12 || keys[0] != "tv:e3" || keys[11] != "tv:e14" {
+		t.Fatalf("12-episode coverage = %v", keys)
+	}
+	facts := ParserEvidence{Identity: *entry.Identity}.NamingFacts()
+	if facts == nil || facts.Source != "manual" || facts.Display != "3-14" {
+		t.Fatalf("manual naming facts = %+v", facts)
+	}
+	if len(result.Set.Targets) != 1 || !strings.Contains(result.Set.Targets[0].TargetPath, "S01E03-E14.mkv") {
+		t.Fatalf("12-episode targets = %+v", result.Set.Targets)
 	}
 }
 

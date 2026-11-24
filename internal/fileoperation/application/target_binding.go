@@ -59,14 +59,15 @@ func (s *Service) applyFrozenTargetTx(ctx context.Context, tx *sql.Tx, artifact 
 	if err != nil {
 		return nil, false, fmt.Errorf("marshal frozen config snapshot: %w", err)
 	}
-	plan.renderSnapshot, err = mergeFrozenSnapshot(map[string]any{
+	renderPrimary := map[string]any{
 		"renderer_version": rendererVersion,
 		"directory":        directory,
 		"filename":         filename,
 		"target":           plan.targetPath,
 		"binding_facts":    artifactBindingFacts(artifact),
 		"file_title_tags":  fileTitleTagsBlock(prep.fileTitleTags(file)),
-	}, record.renderSnapshot)
+	}
+	plan.renderSnapshot, err = mergeFrozenSnapshot(renderPrimary, record.renderSnapshot)
 	if err != nil {
 		return nil, false, fmt.Errorf("marshal frozen render snapshot: %w", err)
 	}

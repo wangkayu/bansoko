@@ -266,3 +266,64 @@ func TestNamingShorthandRendersThroughRules(t *testing.T) {
 		t.Fatalf("rendered %q %q", directory, filename)
 	}
 }
+
+// Multi-episode files (span > 1, explicit range, or manual range override)
+// render their full consecutive range across every episode shorthand and
+// ep.display, while keeping ep.number required and ep.end optional.
+func TestNamingEpisodeShorthandsRenderMultiEpisodeRange(t *testing.T) {
+	engine := NewEngine()
+	ctx := shorthandContext(1, true, "1")
+	ctx.Release.FrozenEpisode = &FrozenEpisodeNamingFacts{Raw: "1", Number: "1", NumberEnd: "3", Display: "1"}
+	ctx.Parsed.Episode.Raw, ctx.Parsed.Episode.Display = "1", "1"
+
+	for source, want := range map[string]string{
+		"/E${e}":          "/E1-3",
+		"/E${e00}":        "/E01-03",
+		"/E${e000}":       "/E001-003",
+		"/${sxe}":         "/1x01-03",
+		"/${s00e00}":      "/S01E01-E03",
+		"/E${ep.display}": "/E1-3",
+		"/E${ep.number}":  "/E1",
+	} {
+		compiled, err := engine.Compile(KindDirectory, source)
+		if err != nil {
+			t.Fatalf("%s compile: %v", source, err)
+		}
+		if got, err := engine.Render(compiled, ctx); err != nil || got != want {
+			t.Fatalf("%s rendered %q (%v), want %q", source, got, err, want)
+		}
+	}
+
+	// Season-less multi-episode rendering keeps sxe empty and s00e00 episode-only.
+	seasonless := shorthandContext(0, false, "1")
+	seasonless.Release.FrozenEpisode = &FrozenEpisodeNamingFacts{Raw: "1", Number: "1", NumberEnd: "3", Display: "1"}
+	for source, want := range map[string]string{
+		"/A${sxe}B":    "/AB",
+		"/A${s00e00}B": "/AE01-E03B",
+		"/E${e}":       "/E1-3",
+		"/E${e00}":     "/E01-03",
+		"/E${e000}":    "/E001-003",
+	} {
+		compiled, err := engine.Compile(KindDirectory, source)
+		if err != nil {
+			t.Fatalf("%s compile: %v", source, err)
+		}
+		if got, err := engine.Render(compiled, seasonless); err != nil || got != want {
+			t.Fatalf("seasonless %s rendered %q (%v), want %q", source, got, err, want)
+		}
+	}
+
+	// Required facts stay identical: ep.number required, ep.end optional.
+	for _, token := range []string{"e", "e00", "e000", "sxe", "s00e00"} {
+		compiled, err := engine.Compile(KindDirectory, "/${"+token+"}")
+		if err != nil {
+			t.Fatalf("%s compile: %v", token, err)
+		}
+		if !slices.Contains(compiled.RequiredFacts, "ep.number") {
+			t.Fatalf("%s RequiredFacts=%v, want ep.number", token, compiled.RequiredFacts)
+		}
+		if slices.Contains(compiled.RequiredFacts, "ep.end") {
+			t.Fatalf("%s RequiredFacts=%v, ep.end must stay optional", token, compiled.RequiredFacts)
+		}
+	}
+}

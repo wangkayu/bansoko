@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/templatefacts"
 )
@@ -71,6 +72,9 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 			if frozen.Source != "" {
 				ep.Source = frozen.Source
 			}
+		}
+		if ep.Number != "" {
+			ep.Display = (episodeidentity.Position{Number: ep.Number, End: ep.NumberEnd}).Display()
 		}
 	}
 	subtitle := ctx.Parsed.Subtitle

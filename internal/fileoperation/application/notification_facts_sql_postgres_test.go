@@ -45,6 +45,7 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 		`{"state":"absent","value":null}`,
 		`{"state":"known","value":{"state":"unresolved","raw_episode":{"state":"absent","value":null},"episode":{"state":"absent","value":null},"offset":0}}`,
 		`{"state":"known","value":{"state":"resolved","raw_episode":{"state":"known","value":"13"},"episode":{"state":"known","value":"1"},"offset":-12}}`,
+		`{"state":"known","value":{"state":"resolved","raw_episode":{"state":"known","value":"12"},"episode":{"state":"known","value":"23"},"episode_end":{"state":"known","value":"24"},"offset":0}}`,
 		`{"state":"known","value":{"state":"resolved","raw_episode":{"state":"absent","value":null},"episode":{"state":"known","value":"7.5"},"offset":0}}`,
 	}
 	for _, identity := range identities {
@@ -54,6 +55,30 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 		}
 		parsed, _ := notification.DecodeFacts([]byte(`{"identity":` + identity + `}`))
 		assertSameFacts(t, identity, got, notification.EpisodeFacts(parsed["identity"]))
+	}
+	mediaIdentities := []struct{ file, release string }{
+		{"", ""},
+		{"", `{"State":"resolved","RawEpisode":"13","Episode":"1","Offset":-12}`},
+		{`{"State":"resolved","RawEpisode":"7","Episode":"7","Offset":0,"SelectedSource":"manual"}`, `{"State":"resolved","RawEpisode":"13","Episode":"1","Offset":-12}`},
+		{`{"State":"resolved","RawEpisode":"12","Episode":"23","EpisodeEnd":"24","Offset":4,"SelectedSource":"file_parser"}`, `{"State":"resolved","RawEpisode":"1","Episode":"1","Offset":0}`},
+		{`{"State":"resolved","RawEpisode":"5","Episode":"5","EpisodeEnd":"12","Offset":0,"SelectedSource":"manual"}`, ""},
+		{`{"State":"unresolved","FailureCode":"episode_missing"}`, `{"State":"resolved","RawEpisode":"1","Episode":"1","Offset":0}`},
+		{`null`, `{"State":"resolved","RawEpisode":"1","Episode":"1","Offset":0}`},
+	}
+	for _, tc := range mediaIdentities {
+		var fileArg, releaseArg any
+		var fileRaw, releaseRaw []byte
+		if tc.file != "" {
+			fileArg, fileRaw = tc.file, []byte(tc.file)
+		}
+		if tc.release != "" {
+			releaseArg, releaseRaw = tc.release, []byte(tc.release)
+		}
+		var got []byte
+		if err := db.QueryRow(`SELECT public.notification_media_episode_facts($1::jsonb,$2::jsonb)`, fileArg, releaseArg).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		assertSameFacts(t, tc.file+" "+tc.release, got, notification.MediaFileEpisodeFacts(fileRaw, releaseRaw))
 	}
 	// vars, rt and anibt (283): the frozen Vars output and source facts,
 	// through the same text sanitizer on both sides.

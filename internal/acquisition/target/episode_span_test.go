@@ -41,6 +41,49 @@ func TestParserEvidenceFreezesSpanForReleaseAndFileIdentities(t *testing.T) {
 	}
 }
 
+func TestParserEvidenceOffsetIsConfigurationNotIdentityFallback(t *testing.T) {
+	evidence, err := ResolveParserEvidence(context.Background(), ParserSelectionInput{
+		Kind: "regex", MediaKind: "tv", Offset: 4,
+	}, "Show - 02")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Neither a stale selection nor the release-title identity may override the
+	// explicit configuration captured on ParserEvidence.
+	evidence.Selection.Offset = 99
+	evidence.Identity.Offset = 77
+	identity, facts, err := ResolveFileEpisode(context.Background(), evidence, "Show - 02.mkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Offset != 4 || identity.Episode == nil || *identity.Episode != "6" || facts == nil || facts.Offset != 4 || evidence.Provenance().Offset != 4 {
+		t.Fatalf("configured offset was not authoritative: identity=%+v facts=%+v provenance=%+v", identity, facts, evidence.Provenance())
+	}
+}
+
+func TestBatchReleaseKeepsOffsetAndSpanForPerFileResolution(t *testing.T) {
+	evidence, err := ResolveParserEvidence(context.Background(), ParserSelectionInput{
+		Kind: "reltitle", MediaKind: "tv", Offset: 4, Span: 2,
+	}, "[LoliHouse] 我与尼特女忍者的莫名同居生活 / NEET Kunoichi [01-12+EX 合集][WebRip 1080p HEVC-10bit AAC][简繁内封字幕][Fin]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A batch title carries ShapeRange and never resolves a single release-level
+	// identity, yet its configured offset and span must survive in provenance
+	// and apply to every file in the torrent.
+	if provenance := evidence.Provenance(); provenance.Offset != 4 || provenance.Span != 2 {
+		t.Fatalf("batch provenance = %+v, want offset 4 and span 2", provenance)
+	}
+	identity, facts, err := ResolveFileEpisode(context.Background(), evidence, "[LoliHouse] NEET Kunoichi - 12 [WebRip 1080p HEVC-10bit AAC].mkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts == nil || facts.Raw != "23" || facts.Number != "27" || facts.NumberEnd != "28" || facts.Offset != 4 ||
+		strings.Join(identity.Keys(), ",") != "tv:e27,tv:e28" {
+		t.Fatalf("batch file identity = %+v, facts = %+v, want offset 4 + span 2 => episodes 27-28", identity, facts)
+	}
+}
+
 func TestBuildBatchPlanCarriesSpanCoverageIntoCompetition(t *testing.T) {
 	evidence, err := ResolveParserEvidence(context.Background(), ParserSelectionInput{
 		Kind: "regex", MediaKind: "tv", Span: 2,

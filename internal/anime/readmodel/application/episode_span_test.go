@@ -63,8 +63,8 @@ func TestComposeRSSListViewAppliesDraftProviderSpan(t *testing.T) {
 	if group.Offset.Span != 2 || draftOffsetEpisode(t, group) != 3 {
 		t.Fatalf("combined group offset/episode = %+v/%v, want span 2 and episode 3", group.Offset, draftOffsetEpisode(t, group))
 	}
-	if len(group.Items[0].Files) != 1 || group.Items[0].Files[0].Episode != "3" {
-		t.Fatalf("combined file projection = %+v, want the first episode 3", group.Items[0].Files)
+	if len(group.Items[0].Files) != 1 || group.Items[0].Files[0].Episode != "3-4" {
+		t.Fatalf("combined file projection = %+v, want episode range 3-4", group.Items[0].Files)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 	providerdomain "bansoko/internal/provider/domain"
@@ -53,23 +54,8 @@ type placedRenderFacts struct {
 }
 
 type frozenEffectiveFileFacts struct {
-	Identity struct {
-		State           string            `json:"State"`
-		RawEpisode      *string           `json:"RawEpisode"`
-		Episode         *string           `json:"Episode"`
-		Offset          int               `json:"Offset"`
-		SelectedSource  *string           `json:"SelectedSource"`
-		CoverageKey     *string           `json:"CoverageKey"`
-		EpisodeEnd      *string           `json:"EpisodeEnd"`
-		Kind            string            `json:"Kind"`
-		Shape           string            `json:"Shape"`
-		ResolverVersion string            `json:"ResolverVersion"`
-		InputDigest     string            `json:"InputDigest"`
-		FailureCode     *string           `json:"FailureCode"`
-		Alternatives    []json.RawMessage `json:"Alternatives"`
-		Conflicts       []json.RawMessage `json:"Conflicts"`
-	} `json:"identity"`
-	Quality struct {
+	Identity episodeidentity.EpisodeIdentity `json:"identity"`
+	Quality  struct {
 		Group      string            `json:"group"`
 		Languages  []string          `json:"languages"`
 		Resolution string            `json:"resolution"`
@@ -95,14 +81,14 @@ func (f placedRenderFacts) frozenEpisode() (*naming.FrozenEpisodeNamingFacts, er
 		return nil, err
 	}
 	identity := effective.Identity
-	if identity.State != "resolved" || identity.RawEpisode == nil || identity.Episode == nil || identity.SelectedSource == nil || *identity.SelectedSource == "" {
+	position, ok := identity.Position()
+	if !ok || identity.RawEpisode == nil || identity.SelectedSource == nil || position.Source == "" {
 		return nil, renderFactsUnavailable("frozen episode identity is unresolved")
 	}
-	frozen := &naming.FrozenEpisodeNamingFacts{Raw: *identity.RawEpisode, Number: *identity.Episode, Offset: identity.Offset, Display: *identity.Episode, Source: string(*identity.SelectedSource)}
-	if identity.EpisodeEnd != nil {
-		frozen.NumberEnd = *identity.EpisodeEnd
-	}
-	return frozen, nil
+	return &naming.FrozenEpisodeNamingFacts{
+		Raw: position.Raw, Number: position.Number, NumberEnd: position.End,
+		Offset: position.Offset, Display: position.Display(), Source: position.Source,
+	}, nil
 }
 
 // coverageEpisode is the frozen episode a single-episode file renders with

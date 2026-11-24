@@ -30,6 +30,10 @@ func frozenIdentityFacts(t *testing.T, kind, raw string, keys ...string) []byte 
 
 func TestOffsetRekeyedKeyMovesOnlySingleEpisodeFiles(t *testing.T) {
 	unresolved, _ := json.Marshal(facts.EffectiveFileFacts{Identity: episodeidentity.EpisodeIdentity{State: episodeidentity.StateUnresolved}})
+	manualFacts, err := json.Marshal(facts.EffectiveFileFacts{Identity: episodeidentity.NewManualSingleIdentity("manual.mkv", 7)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name      string
 		candidate offsetRekeyCandidate
@@ -44,6 +48,7 @@ func TestOffsetRekeyedKeyMovesOnlySingleEpisodeFiles(t *testing.T) {
 		{"multi-episode identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", effectiveFacts: frozenIdentityFacts(t, episodeidentity.KindTVEpisode, "1", "tv:e1", "tv:e2")}, 1, "", false},
 		{"frozen movie", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", effectiveFacts: frozenIdentityFacts(t, episodeidentity.KindMovie, "1")}, 1, "", false},
 		{"owner movie for a kindless identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", ownerMediaKind: "movie", effectiveFacts: frozenIdentityFacts(t, "", "1")}, 1, "", false},
+		{"manual identity", offsetRekeyCandidate{keyCount: 1, fileRef: "manual.mkv", effectiveFacts: manualFacts}, 1, "", false},
 		{"unresolved identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", effectiveFacts: unresolved}, 1, "", false},
 		{"no media facts", offsetRekeyCandidate{keyCount: 1, effectiveFacts: []byte(`{}`)}, 1, "", false},
 	}

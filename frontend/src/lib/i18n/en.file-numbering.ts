@@ -3,8 +3,8 @@ import type { fileNumberingCopy } from "./zh-CN.file-numbering";
 
 export const enFileNumberingCopy = {
   title: "Set File Numbering",
-  hint: "Checked rows form the editing batch and the final apply scope; unchecked rows keep their previous state",
-  seasonHint: "Leave season empty to follow the main setting; manual episode numbers do not receive the episode offset",
+  hint: "Edit any row directly; checked rows only select batch actions, and confirmation applies every override",
+  seasonHint: "Leave season empty to follow the main setting; manual episodes receive neither the episode offset nor combined-episode mapping",
   filterPlaceholder: "Filter paths, for example S01",
   filterLabel: "Filter files by path",
   selectFiltered: "Select Filtered",
@@ -20,7 +20,7 @@ export const enFileNumberingCopy = {
   fillSequence: "Number Checked in Order",
   restoreChecked: "Restore Checked to Automatic",
   restoreAll: "Restore All to Automatic",
-  manual: "Overridden · no offset applied",
+  manual: "Overridden · no offset or combined-episode mapping",
   automatic: "Automatically recognized",
   inheritedSeason: "Season follows the main setting",
   subtitles: "{n} subtitles",
@@ -28,7 +28,7 @@ export const enFileNumberingCopy = {
   season: "Season",
   episode: "Episode",
   checkRow: "Batch edit {path}",
-  invalid: "Checked rows need a valid episode: an integer or a consecutive range like 1-2 (at most 12 episodes); leave season empty or enter an integer of 0 or more",
-  confirm: "Apply Checked Changes ({n})",
+  invalid: "Overridden rows need a valid episode: an integer or a consecutive range like 1-2 (at most 12 episodes); leave season empty or enter an integer of 0 or more",
+  confirm: "Apply All Overrides ({n})",
   empty: "No matching files",
 } as const satisfies CopyShape<typeof fileNumberingCopy>;

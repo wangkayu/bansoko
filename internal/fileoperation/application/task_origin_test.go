@@ -16,7 +16,7 @@ func TestSuccessfulFileNotificationTaskOrigin(t *testing.T) {
 		{"one_shot", "one_shot"}, {"", nil},
 	} {
 		input := json.RawMessage(`{"source":{"provenance":{"provider":"anibt"}},"delivery":{"operation":"copy"}}`)
-		raw, err := successfulFileNotificationPayload(input, artifactFileContext{relativePath: "Sample.mkv"}, protocol.Value{}, protocol.Value{}, "block", tc.entry, nil, nil)
+		raw, err := successfulFileNotificationPayload(input, artifactFileContext{relativePath: "Sample.mkv"}, protocol.Value{}, protocol.Value{}, "block", tc.entry, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

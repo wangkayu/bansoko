@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/namingvars"
 	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/postprocessing/naming"
@@ -281,6 +282,10 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 	if in.EpisodeEnd > in.Episode {
 		numberEnd = strconv.Itoa(in.EpisodeEnd)
 	}
+	position := episodeidentity.Position{
+		Raw: number, Number: number, End: numberEnd,
+		Source: string(episodeidentity.EpisodeSourceManual),
+	}
 	season := in.Season
 	base := path.Base(strings.ReplaceAll(fileName, "\\", "/"))
 	extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(base)), ".")
@@ -300,7 +305,10 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 		Source: naming.SourceNamingFacts{Kind: lineage.sourceKind, GroupName: strings.TrimSpace(lineage.groupName), Group: providerdomain.GroupRefOrZero(providerdomain.Kind(lineage.sourceProvider), lineage.sourceGroupRef)},
 		Release: naming.ReleaseNamingFacts{
 			ID: lineage.releaseID, Version: lineage.releaseVersion, OriginalTitle: strings.TrimSpace(lineage.releaseTitle),
-			FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: number, Number: number, NumberEnd: numberEnd, Display: number, Source: matchEpisodeSource},
+			FrozenEpisode: &naming.FrozenEpisodeNamingFacts{
+				Raw: position.Raw, Number: position.Number, NumberEnd: position.End,
+				Display: position.Display(), Source: position.Source,
+			},
 		},
 		File: naming.FileNamingFacts{
 			OriginalName: base, Basename: strings.TrimSuffix(base, filepath.Ext(base)), Extension: extension,
@@ -360,9 +368,6 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 	}
 	return MatchRender{Path: target, Lineage: lineage.found}, nil
 }
-
-// matchEpisodeSource is the ep.source of a chosen episode.
-const matchEpisodeSource = "manual"
 
 // classifyMatchRender maps a render failure to its typed diagnostic.
 func classifyMatchRender(err error) error {

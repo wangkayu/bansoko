@@ -9,7 +9,7 @@ import { t } from "../../lib/i18n";
  * matching the resolver; episode 0 (a special) stays single. No line when either input is not
  * a valid value or no seed of the group has an episode.
  */
-export function offsetConversionLine(group: RSSListGroup | undefined, input: string, spanInput = "1"): string | undefined {
+export function offsetConversionLine(group: Pick<RSSListGroup, "items" | "offset"> | undefined, input: string, spanInput = "1"): string | undefined {
   if (!group) return undefined;
   const trimmed = input.trim();
   const offset = trimmed === "" ? Number.NaN : Number(trimmed);
@@ -21,7 +21,13 @@ export function offsetConversionLine(group: RSSListGroup | undefined, input: str
     .map((item) => item.evaluation.parsed_facts?.episode)
     .find((episode): episode is number => typeof episode === "number" && Number.isFinite(episode));
   if (shifted === undefined) return undefined;
-  const raw = shifted - group.offset.value;
+  const currentSpan = group.offset.span > 1 ? group.offset.span : 1;
+  const unshifted = shifted - group.offset.value;
+  let raw = unshifted;
+  if (currentSpan > 1 && unshifted >= 1) {
+    if ((unshifted - 1) % currentSpan !== 0) return undefined;
+    raw = (unshifted - 1) / currentSpan + 1;
+  }
   if (span > 1 && raw >= 1) {
     return t("rss.offsetConversion", { from: raw, to: `${(raw - 1) * span + 1 + offset}-${raw * span + offset}` });
   }

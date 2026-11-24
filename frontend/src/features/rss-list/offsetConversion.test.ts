@@ -3,9 +3,9 @@ import type { RSSListGroup } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { offsetConversionLine } from "./offsetConversion";
 
-function group(offset: number, episodes: (number | undefined)[]): RSSListGroup {
+function group(offset: number, episodes: (number | undefined)[], span = 1): RSSListGroup {
   return {
-    offset: { value: offset, span: 1, editable: true },
+    offset: { value: offset, span, editable: true },
     items: episodes.map((episode) => ({ evaluation: { parsed_facts: episode === undefined ? {} : { episode } } })),
   } as unknown as RSSListGroup;
 }
@@ -32,6 +32,10 @@ describe("offsetConversionLine", () => {
     expect(offsetConversionLine(group(0, [2]), "0", "2")).toBe(t("rss.offsetConversion", { from: 2, to: "3-4" }));
     expect(offsetConversionLine(group(0, [3]), "1", "2")).toBe(t("rss.offsetConversion", { from: 3, to: "6-7" }));
     expect(offsetConversionLine(group(0, [2]), "0", "3")).toBe(t("rss.offsetConversion", { from: 2, to: "4-6" }));
+    // When a group already has span > 1, recover raw episode n from shifted = (n-1)*currentSpan + 1 + currentOffset.
+    expect(offsetConversionLine(group(0, [3], 2), "0", "2")).toBe(t("rss.offsetConversion", { from: 2, to: "3-4" }));
+    expect(offsetConversionLine(group(1, [4], 2), "0", "3")).toBe(t("rss.offsetConversion", { from: 2, to: "4-6" }));
+    expect(offsetConversionLine(group(0, [3], 2), "0", "1")).toBe(t("rss.offsetConversion", { from: 2, to: 2 }));
   });
 
   it("keeps episode 0 single and span 1 unchanged, and rejects invalid spans", () => {

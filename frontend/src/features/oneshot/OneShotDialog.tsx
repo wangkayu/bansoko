@@ -49,6 +49,7 @@ import { FilePickerDialog } from "./FilePicker";
 import { FileNumberingDialog } from "../file-numbering/FileNumberingDialog";
 import { sanitizeOverrides, type FileEpisodeOverride, type FileNumberingItem } from "../file-numbering/model";
 import { effectiveFileSelection, partialDownloadSelection, sanitizeFileSelection, selectedVideoCount } from "./fileSelection";
+import { offsetConversionLine } from "../rss-list/offsetConversion";
 
 // The one-shot download: a centered dialog opened by a card's "browse seeds". Two steps:
 //   1. Catalog: subgroups listed first, and entering a group fetches its seed list and renders all
@@ -73,6 +74,8 @@ const hasDownloadRecord = (outcome: SeedOutcome) => outcome.ok && !outcome.adopt
 
 const OFFSET_MIN = -1000;
 const OFFSET_MAX = 1000;
+const SPAN_MIN = 1;
+const SPAN_MAX = 12;
 //** "Naming renders on its own inside the advanced section (the jump anchor). */
 const NAMING_ONLY: readonly SectionKey[] = ["naming"];
 /** Re-read throttle for the narrow column's consecutive adjustments. */
@@ -378,6 +381,8 @@ export function OneShotDialog({
   const [expandingKeys, setExpandingKeys] = useState<ReadonlySet<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [offsetText, setOffsetText] = useState(String(source.initialOffset));
+  const [spanText, setSpanText] = useState(String(source.initialSpan));
+  const [spanOpen, setSpanOpen] = useState(source.initialSpan > 1);
   const [matchProvider, setMatchProvider] = useState<"bgm" | "tmdb">();
   const [submitting, setSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState<{ current: number; total: number } | null>(null);
@@ -398,13 +403,15 @@ export function OneShotDialog({
 //   the server rejects same-key different-body.
   const idempotency = useRef(new Map<string, { key: string; body: string }>());
 
-  // A custom preset's offset is known only after the preset is read: sync the input once on first arrival.
+  // A custom preset's offset and span are known only after the preset is read: sync the inputs once on first arrival.
   const offsetSeeded = useRef(false);
   useEffect(() => {
     if (offsetSeeded.current || source.draft === undefined) return;
     offsetSeeded.current = true;
     setOffsetText(String(source.initialOffset));
-  }, [source.draft, source.initialOffset]);
+    setSpanText(String(source.initialSpan));
+    setSpanOpen(source.initialSpan > 1);
+  }, [source.draft, source.initialOffset, source.initialSpan]);
 
   const allRows = useMemo(() => source.groups.flatMap((group) => group.rows), [source.groups]);
   // Selection survives filters and re-reads (a filter is only a view, and a re-read changes row
@@ -448,6 +455,16 @@ export function OneShotDialog({
   const offsetValue = trimmedOffset === "" ? Number.NaN : Number(trimmedOffset);
   const offsetValid = Number.isInteger(offsetValue) && offsetValue >= OFFSET_MIN && offsetValue <= OFFSET_MAX;
   const effectiveOffset = offsetValid ? offsetValue : 0;
+  const trimmedSpan = spanText.trim();
+  const spanValue = trimmedSpan === "" ? Number.NaN : Number(trimmedSpan);
+  const spanValid = Number.isInteger(spanValue) && spanValue >= SPAN_MIN && spanValue <= SPAN_MAX;
+  const effectiveSpan = spanValid ? spanValue : 1;
+  const conversionGroup = source.groups.find((group) => group.key === selectedRows[0]?.groupKey) ?? activeGroup ?? source.groups[0];
+  const conversion = offsetConversionLine(
+    conversionGroup ? { items: conversionGroup.rows.map((row) => row.item), offset: conversionGroup.offset } : undefined,
+    offsetText,
+    spanText,
+  );
 
   const draft = source.draft;
   // A match confirmation writes metadata and then the title in one event: the second write must build on the first, not on the render's stale draft.
@@ -476,7 +493,7 @@ export function OneShotDialog({
       scopedSeeds.current = scope;
       source.resetDraft();
       setOnlySelected(false);
-      // What first arrival seeded from the initial load re-seeds the same way: the offset input and the restore-defaults baselines.
+      // What first arrival seeded from the initial load re-seeds the same way: offset/span inputs and restore-defaults baselines.
       offsetSeeded.current = false;
       baseline.current = undefined;
       baselineParser.current = undefined;
@@ -505,8 +522,8 @@ export function OneShotDialog({
     source.setDraft(withDraftParserKind(draft, kind, baselineParser.current));
   }
   // The preview input is a read-only ref: the effect re-runs on its own triggers, and a re-read uses the latest inputs.
-  const previewInput = useRef({ draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices, overrides: fileOverrides });
-  previewInput.current = { draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices, overrides: fileOverrides };
+  const previewInput = useRef({ draft, offset: effectiveOffset, span: effectiveSpan, rows: selectedRows, choices: fileChoices, overrides: fileOverrides });
+  previewInput.current = { draft, offset: effectiveOffset, span: effectiveSpan, rows: selectedRows, choices: fileChoices, overrides: fileOverrides };
 
   /** Expands a seed (fetching bytes only), then re-reads the view under the current draft and offset on success. */
   async function expandRow(row: OneShotSeedRow): Promise<string | undefined> {
@@ -520,8 +537,8 @@ export function OneShotDialog({
         return next;
       });
       if (!outcome.error) {
-        const { draft: current, offset, rows, choices, overrides } = previewInput.current;
-        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices, overrides));
+        const { draft: current, offset, span, rows, choices, overrides } = previewInput.current;
+        await sourceRef.current.preview(current, offset, span, fileSelectionsFor(rows, choices, overrides));
       }
       return outcome.error;
     } finally {
@@ -539,13 +556,13 @@ export function OneShotDialog({
 //   model returns only pending for an unexpanded seed, impossible to preview.
   const previewSeq = useRef(0);
   useEffect(() => {
-    if (!open || step !== 2 || !offsetValid) return;
+    if (!open || step !== 2 || !offsetValid || !spanValid) return;
     // A search draft starts without a title: no preview is requested until the user supplies one.
     if (source.kind === "search" && !previewInput.current.draft?.title.trim()) return;
     const seq = ++previewSeq.current;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const { draft: current, offset, rows, choices, overrides } = previewInput.current;
+        const { draft: current, offset, span, rows, choices, overrides } = previewInput.current;
         const errors = new Map<string, string>();
         for (const row of rows) {
           if (!needsExpand(row)) continue;
@@ -554,19 +571,19 @@ export function OneShotDialog({
         }
         if (seq !== previewSeq.current) return;
         setExpandErrors(errors);
-        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices, overrides));
+        await sourceRef.current.preview(current, offset, span, fileSelectionsFor(rows, choices, overrides));
       })();
     }, PREVIEW_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [open, step, offsetValid, draft, offsetText, selected, previewTick, source.kind]);
+  }, [open, step, offsetValid, spanValid, draft, offsetText, spanText, selected, previewTick, source.kind]);
 
   function openGroup(key: string) {
     setDirection("forward");
     setActiveGroupKey(key);
     setFilter("");
     setSelected(new Set());
-    const { draft: current, offset } = previewInput.current;
-    void source.openGroup(key, current, offset);
+    const { draft: current, offset, span } = previewInput.current;
+    void source.openGroup(key, current, offset, span);
   }
 
   function backToGroups() {
@@ -601,16 +618,18 @@ export function OneShotDialog({
   }, [open, step, onlyGroupKey, source.loading, source.error, source.draft, activeGroupKey]);
 
   async function refreshGroup(group: OneShotSeedGroup) {
-    const { draft: current, offset } = previewInput.current;
-    const ok = await source.refreshGroup(group, current, offset);
+    const { draft: current, offset, span } = previewInput.current;
+    const ok = await source.refreshGroup(group, current, offset, span);
     // After a refresh the snapshot identity changed: that group's original selection no longer refers to the same seeds.
     if (ok) setSelected((current) => new Set([...current].filter((key) => !group.rows.some((row) => row.key === key))));
   }
 
-  /** Resets the naming / file-filter / parser sections and the episode offset to their task-start values. */
+  /** Resets the naming / file-filter / parser sections and episode offset/span to their task-start values. */
   function restoreDefaults() {
     setOnlySelected(false);
     setOffsetText(String(source.initialOffset));
+    setSpanText(String(source.initialSpan));
+    setSpanOpen(source.initialSpan > 1);
     if (fileChoices.size > 0 || fileOverrides.size > 0) {
       setFileChoices(new Map());
       setFileOverrides(new Map());
@@ -652,7 +671,9 @@ export function OneShotDialog({
       ? t("config.validation.titleRequired")
       : !offsetValid
       ? t("rss.offsetInvalid")
-      : pendingSubmit.some(needsExpand)
+      : !spanValid
+        ? t("rss.offsetSpanInvalid")
+        : pendingSubmit.some(needsExpand)
         ? t("oneshot.expanding")
         : pendingSubmit.some((row) => row.feed.snapshot_version == null || !row.feed.content_hash)
           ? t("oneshot.previewStale")
@@ -725,8 +746,7 @@ export function OneShotDialog({
       input_source: "current_input",
       draft: prepared,
       ...(effectiveOffset !== 0 ? { episode_offset: effectiveOffset } : {}),
-      // One-shot has no combined-episode span setting; per-file ranges are overrides instead.
-      episode_span: 1,
+      episode_span: effectiveSpan,
       ...(fileChoice ? { file_selection: fileChoice } : {}),
       ...(downloadSubset ? { download_selected_files: true } : {}),
       ...(overrides.length > 0 ? { overrides } : {}),
@@ -1237,7 +1257,7 @@ export function OneShotDialog({
               </div>
             )}
 
-            <div className="tw:grid tw:gap-1.5">
+            <div className="offset-modal-stack">
               <Field label={t("oneshot.offset")}>
                 <Input
                   aria-label={t("oneshot.offset")}
@@ -1250,7 +1270,28 @@ export function OneShotDialog({
                   onChange={(event) => setOffsetText(event.target.value)}
                 />
               </Field>
-              {!offsetValid && <p className="text-danger text-caption">{t("rss.offsetInvalid")}</p>}
+              <div>
+                <Button variant="ghost" size="sm" aria-expanded={spanOpen} onClick={() => setSpanOpen((current) => !current)}>
+                  {t("rss.offsetSpanToggle")}
+                </Button>
+              </div>
+              {spanOpen && (
+                <Field label={t("rss.offsetSpan")} hint={t("rss.offsetSpanHint")}>
+                  <Input
+                    aria-label={t("rss.offsetSpan")}
+                    inputMode="numeric"
+                    type="number"
+                    min={SPAN_MIN}
+                    max={SPAN_MAX}
+                    step="1"
+                    value={spanText}
+                    onChange={(event) => setSpanText(event.target.value)}
+                  />
+                </Field>
+              )}
+              {spanOpen && conversion && <p className="text-caption text-muted tw:m-0">{conversion}</p>}
+              {!offsetValid && <p className="text-danger text-caption tw:m-0">{t("rss.offsetInvalid")}</p>}
+              {spanOpen && !spanValid && <p className="text-danger text-caption tw:m-0">{t("rss.offsetSpanInvalid")}</p>}
             </div>
             <div className="tw:min-w-0 tw:border-t tw:border-border tw:pt-3">
               <Checkbox checked={onlySelected && canDownloadSubset} disabled={!canDownloadSubset || source.pending || submitting} onCheckedChange={setOnlySelected}>

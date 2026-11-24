@@ -6,6 +6,9 @@ type EpisodeEvidenceSource string
 const (
 	EpisodeSourceFileParser    EpisodeEvidenceSource = "file_parser"
 	EpisodeSourceReleaseParser EpisodeEvidenceSource = "release_parser"
+	// EpisodeSourceManual is an explicit final per-file episode or range. Manual
+	// identities never receive the source offset or combined-episode expansion.
+	EpisodeSourceManual EpisodeEvidenceSource = "manual"
 	// Deprecated: provider structured episode data is never admissible file
 	// identity evidence. Kept only so legacy stored/test envelopes decode.
 	EpisodeSourceAniBT EpisodeEvidenceSource = "anibt"

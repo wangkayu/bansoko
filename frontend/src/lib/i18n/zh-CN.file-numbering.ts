@@ -1,7 +1,7 @@
 export const fileNumberingCopy = {
   title: "设置文件编号",
-  hint: "勾选决定编辑批次和最终应用范围；未勾选行保持打开前的状态",
-  seasonHint: "季号留空时跟随主设置；手工集号不叠加集数偏移",
+  hint: "直接编辑任意行；勾选仅用于批量操作，确认会应用全部已覆盖行",
+  seasonHint: "季号留空时跟随主设置；手工集号不叠加集数偏移或合并集规则",
   filterPlaceholder: "按路径筛选，例如 S01",
   filterLabel: "按路径筛选文件",
   selectFiltered: "全选筛选结果",
@@ -17,7 +17,7 @@ export const fileNumberingCopy = {
   fillSequence: "勾选项顺序填入",
   restoreChecked: "勾选项恢复自动",
   restoreAll: "全部恢复自动",
-  manual: "已覆盖 · 不受偏移影响",
+  manual: "已覆盖 · 不受偏移或合并集影响",
   automatic: "自动识别",
   inheritedSeason: "季号跟随主设置",
   subtitles: "字幕 {n}",
@@ -25,7 +25,7 @@ export const fileNumberingCopy = {
   season: "季号",
   episode: "集数",
   checkRow: "批量编辑 {path}",
-  invalid: "勾选项需要有效集数：整数或 1-2 形式的连续范围（最多 12 集）；季号留空或填写大于等于 0 的整数",
-  confirm: "应用勾选修改（{n}）",
+  invalid: "已覆盖行需要有效集数：整数或 1-2 形式的连续范围（最多 12 集）；季号留空或填写大于等于 0 的整数",
+  confirm: "应用全部覆盖（{n}）",
   empty: "没有匹配的文件",
 } as const;

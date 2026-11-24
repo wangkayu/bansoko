@@ -13,6 +13,7 @@ import (
 	"bansoko/internal/apperrors"
 	"bansoko/internal/batchplan"
 	animecatalogdomain "bansoko/internal/catalog/domain"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
@@ -185,10 +186,7 @@ func previewFilesForItem(
 		if episode == nil {
 			continue
 		}
-		display := episode.Display
-		if display == "" {
-			display = episode.Number
-		}
+		display := (episodeidentity.Position{Number: episode.Number, End: episode.NumberEnd}).Display()
 		episodes[file.SourcePath] = display
 	}
 	results := make([]animedomain.PreviewFileResult, 0, len(projected))

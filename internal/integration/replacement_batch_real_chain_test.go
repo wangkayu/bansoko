@@ -201,7 +201,7 @@ ORDER BY d.created_at DESC, d.id DESC LIMIT 1`, animeID).Scan(&e1State); err != 
 // of the shipped default (E03-E04).
 func multiEpisodeNamingRules(root string) generated.NamingRules {
 	rules := flatNamingRules(root)
-	rules.Tv.VideoFilenameTemplate = "${sanitize(anime.title)} - E${pad(ep.display, 2)}${ep.end ? `-E${pad(ep.end, 2)}` : ''}@${anime.group}.${file.ext}"
+	rules.Tv.VideoFilenameTemplate = "${sanitize(anime.title)} - E${pad(ep.number, 2)}${ep.end ? `-E${pad(ep.end, 2)}` : ''}@${anime.group}.${file.ext}"
 	return rules
 }
 

@@ -227,3 +227,74 @@ SELECT effective_facts FROM media_fact_files WHERE snapshot_id = 'snapshot-tv'`)
 		t.Fatalf("per-file identity = %+v, want tv:e7 (current metadata season 9 is not read)", identity)
 	}
 }
+
+// Artifact inspection accepts an owner-entered twelve-episode range from the
+// frozen batch plan and persists every coverage key. The automatic filename
+// range limit does not downgrade or reject this first-class manual identity.
+func TestArtifactInspectPersistsTwelveEpisodeManualRangePostgres(t *testing.T) {
+	db := openArtifactTestDB(t)
+	root := t.TempDir()
+	videoPath := filepath.Join(root, "Show", "Show - 07 [1080p].mkv")
+	if err := os.MkdirAll(filepath.Dir(videoPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(videoPath, []byte("tv-bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	canonicalPath, err := filepath.EvalSymlinks(videoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const manifestPath = "Show/Show - 07 [1080p].mkv"
+	correlation := `{"external_id":"tag:manual-range-artifact","artifact_path":"` + canonicalPath + `","file_count":1,"files":[{"path":"` + manifestPath + `","size_bytes":8,"media_kind":"video","progress":1}]}`
+	seedArtifactOwner(t, db, "artifact-manual-range", "task-manual-range", "completed", "pending", correlation, `{}`)
+	seedMovieFactSnapshot(t, db, "snapshot-manual-range", "release-artifact-test", "tv", 1, "7", parser.NilConfigFingerprint(), "", manifestPath, "7")
+	seedCurrentMetadataBinding(t, db, "anime-artifact-test", "tv", 1)
+	manual := episodeidentity.NewManualRangeIdentity(manifestPath, 3, 14)
+	plan := mediafactsfixture.Plan(t, batchplan.RouteSkip, mediafactsfixture.PlanVideo{Path: manifestPath, Identity: manual})
+	planRaw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), `
+UPDATE media_fact_snapshots
+SET release_facts = jsonb_set(release_facts, '{batch_plan}', $1::jsonb)
+WHERE id = 'snapshot-manual-range'`, planRaw); err != nil {
+		t.Fatal(err)
+	}
+
+	claim, store := claimArtifactWorkItem(t, db, "artifact-manual-range", []byte(`{"download_task_id":"task-manual-range","provider_task_id":"tag:manual-range-artifact","local_root":"`+root+`"}`))
+	at := time.Date(2026, 9, 12, 9, 30, 0, 0, time.UTC)
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 8, ObservedAt: at, MediaKind: "video"}}
+	service, err := NewService(db, inspector, func() time.Time { return at })
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetSettleDelay(0)
+	service.SetMediaFactsStore(facts.NewStoreWithRepository(mediapersistence.NewRepository(db)))
+	outcome, err := service.Handle(context.Background(), claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Kind != worker.OutcomeCommitted || outcome.OwnerResult.State != "verified" {
+		t.Fatalf("manual range inspection outcome=%+v", outcome)
+	}
+	finishArtifactOutcome(t, db, store, claim, outcome)
+
+	var effectiveRaw []byte
+	if err := db.QueryRowContext(context.Background(), `
+SELECT effective_facts FROM media_fact_files WHERE snapshot_id = 'snapshot-manual-range'`).Scan(&effectiveRaw); err != nil {
+		t.Fatal(err)
+	}
+	var effective facts.EffectiveFileFacts
+	if err := json.Unmarshal(effectiveRaw, &effective); err != nil {
+		t.Fatal(err)
+	}
+	identity := effective.Identity
+	position, ok := identity.Position()
+	keys := identity.Keys()
+	if !ok || identity.SelectedSource == nil || *identity.SelectedSource != episodeidentity.EpisodeSourceManual || position.Display() != "3-14" ||
+		len(keys) != 12 || keys[0] != "tv:e3" || keys[11] != "tv:e14" {
+		t.Fatalf("manual range per-file identity = %+v, position = %+v, keys = %v", identity, position, keys)
+	}
+}

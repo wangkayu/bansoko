@@ -237,7 +237,8 @@ func offsetRekeyedKey(candidate offsetRekeyCandidate, newOffset int) (string, bo
 		return "", false
 	}
 	frozen := effective.Identity
-	if frozen.State != episodeidentity.StateResolved || frozen.RawEpisode == nil || frozen.SelectedSource == nil || frozen.MultiEpisode() {
+	if frozen.State != episodeidentity.StateResolved || frozen.RawEpisode == nil || frozen.SelectedSource == nil ||
+		*frozen.SelectedSource == episodeidentity.EpisodeSourceManual || frozen.MultiEpisode() {
 		return "", false
 	}
 	// The frozen identity kind is the media-kind authority; the owner kind is

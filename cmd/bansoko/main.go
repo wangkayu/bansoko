@@ -126,7 +126,7 @@ Usage:
   bansoko feed groups --provider P --entry-ref R     discover provider groups
   bansoko feed snapshot --provider P --entry-ref R --group-ref G
   bansoko feed refresh --provider P --entry-ref R --group-ref G
-  bansoko one-shot acquire --seed-json JSON [input flags]
+  bansoko one-shot acquire --seed-json JSON [--episode-span N] [--overrides JSON] [input flags]
   bansoko one-shot get --id ID                       show one-shot state
   bansoko one-shot attempts --id ID                  list execution attempts
   bansoko one-shot attempt --id ID --attempt-id ID   show one attempt

@@ -43,6 +43,10 @@ type ParserEvidence struct {
 	Selection parser.Selection
 	Parsed    parser.EpisodeParseResult
 	Identity  episodeidentity.EpisodeIdentity
+	// Offset is the configured source offset every automatically resolved file
+	// applies. Identity.Offset is only the release-title parse result and is never
+	// a fallback for this configuration, especially for an unresolved batch title.
+	Offset int
 	// Span is the frozen per-source combined-episode setting; zero is the
 	// legacy default 1. It is needed to resolve each file from its own name.
 	Span int
@@ -85,23 +89,18 @@ type CandidateEvidence struct {
 // invalid Release shape carries no episode to name with, and naming keeps its
 // existing evidence path for those inputs instead of inventing an episode.
 func (e ParserEvidence) NamingFacts() *naming.FrozenEpisodeNamingFacts {
-	if e.Identity.State != episodeidentity.StateResolved || e.Identity.Episode == nil {
+	position, ok := e.Identity.Position()
+	if !ok {
 		return nil
 	}
-	raw := ""
-	if e.Identity.RawEpisode != nil {
-		raw = string(*e.Identity.RawEpisode)
+	return &naming.FrozenEpisodeNamingFacts{
+		Raw:       position.Raw,
+		Number:    position.Number,
+		NumberEnd: position.End,
+		Offset:    position.Offset,
+		Display:   position.Display(),
+		Source:    position.Source,
 	}
-	facts := &naming.FrozenEpisodeNamingFacts{
-		Raw:     raw,
-		Number:  string(*e.Identity.Episode),
-		Offset:  e.Identity.Offset,
-		Display: string(*e.Identity.Episode),
-	}
-	if e.Identity.EpisodeEnd != nil {
-		facts.NumberEnd = string(*e.Identity.EpisodeEnd)
-	}
-	return facts
 }
 
 // Provenance is the parser descriptor/config evidence frozen into the existing
@@ -111,7 +110,7 @@ func (e ParserEvidence) Provenance() parser.Provenance {
 	provenance := e.Selection.Provenance()
 	provenance.InputDigest = e.Parsed.InputDigest
 	provenance.ResultDigest = e.Parsed.ResultDigest
-	provenance.Offset = e.Identity.Offset
+	provenance.Offset = e.effectiveOffset()
 	if e.Span > 1 {
 		provenance.Span = e.Span
 	}
@@ -138,6 +137,15 @@ func (e ParserEvidence) mediaKind() string {
 		return kind
 	}
 	return "tv"
+}
+
+// effectiveOffset is the explicitly frozen source configuration. A movie never
+// applies an episode offset; Identity.Offset is deliberately not consulted.
+func (e ParserEvidence) effectiveOffset() int {
+	if e.mediaKind() == "movie" {
+		return 0
+	}
+	return e.Offset
 }
 
 // ParserSelectionInput is the path-neutral selection input: the instance parser
@@ -190,6 +198,7 @@ func ResolveParserEvidence(ctx context.Context, selection ParserSelectionInput, 
 	}
 	evidence := ParserEvidence{
 		Selection: chosen, Parsed: parsed,
+		Offset:        chosen.Offset,
 		Span:          selection.Span,
 		MediaKind:     selection.MediaKind,
 		Season:        selection.Season,
@@ -224,7 +233,7 @@ func ResolveFileEpisode(ctx context.Context, release ParserEvidence, filename st
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
 		MediaKind:    release.mediaKind(),
 		FileEvidence: parser.Evidence(parsed, parser.InputFileName),
-		Offset:       release.Identity.Offset,
+		Offset:       release.effectiveOffset(),
 		Span:         release.Span,
 	})
 	return identity, ParserEvidence{Identity: identity}.NamingFacts(), nil

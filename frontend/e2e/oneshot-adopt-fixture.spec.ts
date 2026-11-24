@@ -536,7 +536,7 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await mockDiscovery(page);
     await mockSeedRead(page);
     const download = await mockSnapshotDownload(page);
-    const previews: { file_selections?: { overrides?: { path: string; season?: number; episode: number }[] }[] }[] = [];
+    const previews: { episode_span?: number; file_selections?: { overrides?: { path: string; season?: number; episode: number }[] }[] }[] = [];
     await page.route("**/api/v1/anime/rss-list-view", async (route) => {
       const body = route.request().postDataJSON();
       previews.push(body);
@@ -562,6 +562,14 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     const title = `[${GROUP}] ${TITLE} - 01 [1080p]`;
     await task.getByRole("checkbox", { name: title }).click();
     await task.getByRole("button", { name: "下一步（1）" }).click();
+
+    const spanToggle = task.getByRole("button", { name: "合并集发布", exact: true });
+    await expect(spanToggle).toHaveAttribute("aria-expanded", "false");
+    await spanToggle.click();
+    await task.getByRole("spinbutton", { name: "每集包含集数", exact: true }).fill("2");
+    await expect.poll(() => previews.at(-1)?.episode_span).toBe(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+    await task.screenshot({ path: test.info().outputPath(`one-shot-span-${test.info().project.name}.png`), animations: "disabled" });
 
     await task.getByRole("button", { name: "设置文件编号", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "设置文件编号" });
@@ -595,14 +603,18 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await editor.getByRole("button", { name: "取消筛选结果" }).click();
     await editor.getByRole("textbox", { name: "按路径筛选文件" }).clear();
     await expect(editor.getByRole("textbox", { name: `集数 ${TITLE} - 01.mkv` })).toHaveValue("7");
-    await editor.getByRole("button", { name: "应用勾选修改（1）" }).click();
+    await editor.getByRole("button", { name: "应用全部覆盖（2）" }).click();
 
-    const expected = [{ path: `${TITLE} - 01.mkv`, season: 0, episode: 7 }];
+    const expected = [
+      { path: `${TITLE} - 01.mkv`, season: 0, episode: 7 },
+      { path: `${TITLE} - 02.mkv`, season: 0, episode: 8 },
+    ];
     await expect.poll(() => previews.at(-1)?.file_selections?.[0]?.overrides).toEqual(expected);
     await expect(task.getByRole("region", { name: "预览" }).getByText(`${TITLE}/Specials/${TITLE} - S00E07`, { exact: true })).toBeVisible();
+    await expect(task.getByRole("region", { name: "预览" }).getByText(`${TITLE}/Specials/${TITLE} - S00E08`, { exact: true })).toBeVisible();
     await task.getByRole("button", { name: "开始下载（1）" }).click();
     await expect.poll(() => download.submittedRequest()).toBeTruthy();
-    expect(download.submittedRequest()).toMatchObject({ overrides: expected });
+    expect(download.submittedRequest()).toMatchObject({ episode_span: 2, overrides: expected });
     expect(download.submittedRequest()).not.toHaveProperty("file_selection");
   });
 
@@ -613,7 +625,7 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await mockDiscovery(page);
     await mockSeedRead(page);
     const download = await mockSnapshotDownload(page);
-    const previews: { file_selections?: { overrides?: { path: string; season?: number; episode: number; episode_end?: number }[] }[] }[] = [];
+    const previews: { episode_span?: number; file_selections?: { overrides?: { path: string; season?: number; episode: number; episode_end?: number }[] }[] }[] = [];
     await page.route("**/api/v1/anime/rss-list-view", async (route) => {
       const body = route.request().postDataJSON();
       previews.push(body);
@@ -644,6 +656,14 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await task.getByRole("checkbox", { name: title }).click();
     await task.getByRole("button", { name: "下一步（1）" }).click();
 
+    const spanToggle = task.getByRole("button", { name: "合并集发布", exact: true });
+    await expect(spanToggle).toHaveAttribute("aria-expanded", "false");
+    await spanToggle.click();
+    await task.getByRole("spinbutton", { name: "每集包含集数", exact: true }).fill("2");
+    await expect.poll(() => previews.at(-1)?.episode_span).toBe(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+    await task.screenshot({ path: test.info().outputPath(`one-shot-span-${test.info().project.name}.png`), animations: "disabled" });
+
     await task.getByRole("button", { name: "设置文件编号", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "设置文件编号" });
     await expect(editor).toBeVisible();
@@ -659,13 +679,13 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
 
     // An inverted range is refused inline and blocks the apply, without closing.
     await editor.getByRole("textbox", { name: `集数 ${TITLE} - 02.mkv` }).fill("2-1");
-    await editor.getByRole("button", { name: "应用勾选修改（2）" }).click();
+    await editor.getByRole("button", { name: "应用全部覆盖（2）" }).click();
     await expect(editor.getByRole("alert")).toBeVisible();
     await expect(editor).toBeVisible();
     await editor.screenshot({ path: test.info().outputPath(`file-numbering-range-invalid-${test.info().project.name}.png`), animations: "disabled" });
 
     await editor.getByRole("textbox", { name: `集数 ${TITLE} - 02.mkv` }).fill("3-4");
-    await editor.getByRole("button", { name: "应用勾选修改（2）" }).click();
+    await editor.getByRole("button", { name: "应用全部覆盖（2）" }).click();
     const expected = [
       { path: `${TITLE} - 01.mkv`, season: 0, episode: 1, episode_end: 2 },
       { path: `${TITLE} - 02.mkv`, season: 0, episode: 3, episode_end: 4 },
@@ -700,6 +720,6 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
 
     await task.getByRole("button", { name: "开始下载（1）" }).click();
     await expect.poll(() => download.submittedRequest()).toBeTruthy();
-    expect(download.submittedRequest()).toMatchObject({ overrides: expected });
+    expect(download.submittedRequest()).toMatchObject({ episode_span: 2, overrides: expected });
   });
 });

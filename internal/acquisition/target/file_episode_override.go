@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"bansoko/internal/episodeidentity"
@@ -95,15 +94,7 @@ func ManualFileEpisodeIdentity(path string, episode, episodeEnd int) episodeiden
 	if episodeEnd > episode {
 		return episodeidentity.NewManualRangeIdentity(path, episode, episodeEnd)
 	}
-	return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-		MediaKind: "tv",
-		FileRef:   path,
-		FileEvidence: episodeidentity.NewValueEvidence(
-			episodeidentity.EpisodeSourceFileParser,
-			"file_name",
-			strconv.Itoa(episode),
-		),
-	})
+	return episodeidentity.NewManualSingleIdentity(path, episode)
 }
 
 func fileEpisodeOverrideMap(overrides []FileEpisodeOverride) map[string]FileEpisodeOverride {

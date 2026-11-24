@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"testing"
 
 	"bansoko/internal/episodeidentity"
@@ -21,13 +22,16 @@ func TestResolvedIdentitiesValidate(t *testing.T) {
 		MediaKind: "tv", Span: 12,
 		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "2"),
 	})
+	manualSingle := episodeidentity.NewManualSingleIdentity("manual.mkv", 7)
+	manualTwelve := episodeidentity.NewManualRangeIdentity("manual.mkv", 3, 14)
 	movie := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "movie"})
 	for name, tc := range map[string]struct {
 		identity episodeidentity.EpisodeIdentity
 		schema   string
 	}{
 		"single": {single, "IdentityV1"}, "double": {double, "IdentityV2"}, "quad": {quad, "IdentityV2"},
-		"combined twelve": {combined, "IdentityV2"}, "movie": {movie, "IdentityV1"},
+		"combined twelve": {combined, "IdentityV2"}, "manual single": {manualSingle, "IdentityV1"},
+		"manual twelve": {manualTwelve, "IdentityV2"}, "movie": {movie, "IdentityV1"},
 	} {
 		if got := IdentitySchema(tc.identity); got != tc.schema {
 			t.Fatalf("%s: schema %s, want %s", name, got, tc.schema)
@@ -63,6 +67,33 @@ func withEpisodeEnd(v Value) Value {
 // IdentityV2 refuses a multi-episode identity whose keys are not the
 // consecutive members from episode to episode_end in one key shape, more than
 // MaxEpisodesPerFile members, or one taken from a release title.
+func TestLegacyFileParserManualRangeStillDecodesAndProjects(t *testing.T) {
+	raw := []byte(`{"State":"resolved","Kind":"tv_episode","Shape":"range","RawEpisode":"5","RawEpisodeEnd":"12","Offset":0,"Episode":"5","EpisodeEnd":"12","CoverageKey":"tv:e5","CoverageKeys":["tv:e5","tv:e6","tv:e7","tv:e8","tv:e9","tv:e10","tv:e11","tv:e12"],"SelectedSource":"file_parser","ResolverVersion":"episode-identity-v1","InputDigest":"legacy"}`)
+	var identity episodeidentity.EpisodeIdentity
+	if err := json.Unmarshal(raw, &identity); err != nil {
+		t.Fatal(err)
+	}
+	position, ok := identity.Position()
+	if !ok || position.Display() != "5-12" || position.Source != "file_parser" || len(identity.Keys()) != 8 {
+		t.Fatalf("legacy manual range replay = %+v, keys %v", position, identity.Keys())
+	}
+}
+
+func TestManualRangesFromFiveThroughTwelveValidate(t *testing.T) {
+	for count := 5; count <= episodeidentity.MaxManualEpisodesPerFile; count++ {
+		identity := episodeidentity.NewManualRangeIdentity("manual.mkv", 8, 8+count-1)
+		if identity.SelectedSource == nil || *identity.SelectedSource != episodeidentity.EpisodeSourceManual {
+			t.Fatalf("%d episodes: source = %v, want manual", count, identity.SelectedSource)
+		}
+		if got := len(identity.Keys()); got != count {
+			t.Fatalf("%d episodes: keys = %v", count, identity.Keys())
+		}
+		if err := ValidateResolvedIdentity(identity); err != nil {
+			t.Fatalf("%d episodes: %v", count, err)
+		}
+	}
+}
+
 func TestIdentityV2RefusesInconsistentRanges(t *testing.T) {
 	double := resolveFile(t, episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeRange, "07-08", ""))
 	cases := map[string]func(v Value){

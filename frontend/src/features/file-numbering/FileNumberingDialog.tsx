@@ -10,7 +10,7 @@ import {
   draftMap,
   episodeInputLabel,
   maxManualEpisodesPerFile,
-  mergeCheckedOverrides,
+  overridesFromDrafts,
   overrideList,
   sequenceEpisodeInput,
   validDraft,
@@ -19,9 +19,9 @@ import {
   type FileNumberingItem,
 } from "./model";
 
-// The shared D editor: filtering and checked rows are local interaction state only. Confirmation
-// merges just the checked rows into the baseline captured when this dialog opened; an unchecked
-// draft can be kept while another season is edited without being applied accidentally.
+// The shared D editor: checked rows select batch-action targets only. Every row is directly
+// editable, and confirmation applies the complete draft map so the badges, counts and submitted
+// overrides always describe the same WYSIWYG state.
 
 export function FileNumberingDialog({
   title,
@@ -50,7 +50,7 @@ export function FileNumberingDialog({
     return items.filter((item) => !needle || item.path.toLowerCase().includes(needle));
   }, [filter, items]);
   const checkedItems = useMemo(() => items.filter((item) => checked.has(item.path)), [checked, items]);
-  const invalidChecked = checkedItems.some((item) => drafts.has(item.path) && !validDraft(drafts.get(item.path)));
+  const invalidDrafts = [...drafts.values()].some((draft) => !validDraft(draft));
 
   function valueOf(item: FileNumberingItem): FileEpisodeDraft {
     return drafts.get(item.path) ?? automaticDraft(item);
@@ -127,16 +127,15 @@ export function FileNumberingDialog({
 
   function restoreAll() {
     setDrafts(new Map());
-    setChecked(new Set(items.map((item) => item.path)));
     setShowInvalid(false);
   }
 
   function confirm() {
-    if (invalidChecked) {
+    if (invalidDrafts) {
       setShowInvalid(true);
       return;
     }
-    const next = mergeCheckedOverrides(baseline, drafts, checked);
+    const next = overridesFromDrafts(drafts);
     if (!next) {
       setShowInvalid(true);
       return;
@@ -156,12 +155,12 @@ export function FileNumberingDialog({
       description={<span className="tw:block tw:truncate" title={title}>{title}</span>}
       footer={
         <>
-          {(showInvalid || invalidChecked) && (
+          {(showInvalid || invalidDrafts) && (
             <p role="alert" className="text-caption tw:m-0 tw:w-full tw:text-left tw:text-warning">{t("fileNumbering.invalid")}</p>
           )}
           <Button className="tw:mr-auto" disabled={drafts.size === 0} onClick={restoreAll}>{t("fileNumbering.restoreAll")}</Button>
           <Button onClick={onClose}>{t("act.cancel")}</Button>
-          <Button variant="primary" onClick={confirm}>{t("fileNumbering.confirm", { n: checked.size })}</Button>
+          <Button variant="primary" onClick={confirm}>{t("fileNumbering.confirm", { n: drafts.size })}</Button>
         </>
       }
     >
@@ -211,7 +210,7 @@ export function FileNumberingDialog({
               const isChecked = checked.has(item.path);
               const manual = drafts.has(item.path);
               const value = valueOf(item);
-              const invalid = isChecked && manual && !validDraft(value);
+              const invalid = manual && !validDraft(value);
               const manualLabel = manual ? episodeInputLabel(value.episode) : undefined;
               return (
                 <li key={item.path} data-numbering-row={item.path} className={cn("tw:rounded-control tw:border tw:px-2 tw:py-2", manual ? "tw:border-primary/35 tw:bg-accent/20" : "tw:border-transparent", !isChecked && "tw:bg-muted/15")}>
@@ -224,15 +223,15 @@ export function FileNumberingDialog({
                         {manualLabel && <span>· {manualLabel}</span>}
                         {item.subtitleCount > 0 && <span>· {t("fileNumbering.subtitles", { n: item.subtitleCount })}</span>}
                         {manual && value.season.trim() === "" && <span>· {t("fileNumbering.inheritedSeason")}</span>}
-                        {manual && isChecked && (
-                          <button type="button" className="tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-0.5 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:underline tw:decoration-dotted tw:underline-offset-2" onClick={() => setDrafts((current) => { const next = new Map(current); next.delete(item.path); return next; })}>
+                        {manual && (
+                          <button type="button" className="tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-0.5 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:underline tw:decoration-dotted tw:underline-offset-2" onClick={() => { setDrafts((current) => { const next = new Map(current); next.delete(item.path); return next; }); setShowInvalid(false); }}>
                             <RotateCcw aria-hidden="true" className="tw:size-3" />{t("fileNumbering.restoreRow")}
                           </button>
                         )}
                       </p>
                     </div>
-                    <Input controlSize="sm" aria-label={`${t("fileNumbering.season")} ${item.path}`} aria-invalid={invalid || undefined} disabled={!isChecked} type="number" min={0} step={1} placeholder={t("fileNumbering.seasonPlaceholder")} value={value.season} onChange={(event) => edit(item, "season", event.target.value)} />
-                    <Input controlSize="sm" aria-label={`${t("fileNumbering.episode")} ${item.path}`} aria-invalid={invalid || undefined} disabled={!isChecked} type="text" inputMode="numeric" value={value.episode} onChange={(event) => edit(item, "episode", event.target.value)} />
+                    <Input controlSize="sm" aria-label={`${t("fileNumbering.season")} ${item.path}`} aria-invalid={invalid || undefined} type="number" min={0} step={1} placeholder={t("fileNumbering.seasonPlaceholder")} value={value.season} onChange={(event) => edit(item, "season", event.target.value)} />
+                    <Input controlSize="sm" aria-label={`${t("fileNumbering.episode")} ${item.path}`} aria-invalid={invalid || undefined} type="text" inputMode="numeric" value={value.episode} onChange={(event) => edit(item, "episode", event.target.value)} />
                   </div>
                 </li>
               );

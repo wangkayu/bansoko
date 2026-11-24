@@ -954,7 +954,7 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 	facts := notification.InputFacts(row.inputSnapshot)
 	facts["task.origin"] = notification.TaskOrigin(row.entryKind)
 	facts["torrent.tree"] = torrentTreeText(row.torrentPayload)
-	identity, movie := releaseIdentityFact(row.releaseIdentity)
+	identity, movie, identityKeys := releaseIdentityFact(row.releaseIdentity)
 	facts["release.is_movie"] = movie
 	for key, value := range notification.EpisodeFacts(identity) {
 		facts[key] = value
@@ -966,7 +966,10 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 	if episodes, ok := plan.Episodes(); ok {
 		facts["release.episodes"] = batchplan.EpisodesLabel(episodes)
 	}
-	if len(coverage) > 1 {
+	// A multi-file batch has no single episode, so clear ep.*. Keep ep.* when
+	// the release itself resolved to one multi-episode unit (such as a combined
+	// episode_span file or an explicit E01-E02 release) whose keys match the plan.
+	if len(coverage) > 1 && !episodeidentity.SameCoverageKeys(coverage, identityKeys) {
 		for key := range notification.EpisodeFacts(nil) {
 			facts[key] = nil
 		}
@@ -996,17 +999,20 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 
 // releaseIdentityFact adapts a media fact snapshot's EpisodeIdentity (stored
 // with Go field names) to the frozen identity shape notification.EpisodeFacts
-// reads.
-func releaseIdentityFact(raw []byte) (any, bool) {
+// reads, and also returns the identity's canonical coverage keys.
+func releaseIdentityFact(raw []byte) (any, bool, []string) {
 	var identity struct {
-		State      string
-		Kind       string
-		RawEpisode *string
-		Episode    *string
-		Offset     int
+		State        string
+		Kind         string
+		RawEpisode   *string
+		Episode      *string
+		EpisodeEnd   *string
+		Offset       int
+		CoverageKey  *string
+		CoverageKeys []string
 	}
 	if len(raw) == 0 || json.Unmarshal(raw, &identity) != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	fv := func(value *string) any {
 		if value == nil {
@@ -1014,9 +1020,17 @@ func releaseIdentityFact(raw []byte) (any, bool) {
 		}
 		return map[string]any{"state": "known", "value": *value}
 	}
+	var keys []string
+	if identity.State == episodeidentity.StateResolved {
+		if len(identity.CoverageKeys) > 0 {
+			keys = episodeidentity.CanonicalCoverageKeys(identity.CoverageKeys)
+		} else if identity.CoverageKey != nil && *identity.CoverageKey != "" {
+			keys = []string{episodeidentity.CanonicalCoverageKey(*identity.CoverageKey)}
+		}
+	}
 	return map[string]any{"state": "known", "value": map[string]any{
-		"state": identity.State, "raw_episode": fv(identity.RawEpisode), "episode": fv(identity.Episode), "offset": json.Number(fmt.Sprint(identity.Offset)),
-	}}, identity.State == episodeidentity.StateResolved && identity.Kind == episodeidentity.KindMovie
+		"state": identity.State, "raw_episode": fv(identity.RawEpisode), "episode": fv(identity.Episode), "episode_end": fv(identity.EpisodeEnd), "offset": json.Number(fmt.Sprint(identity.Offset)),
+	}}, identity.State == episodeidentity.StateResolved && identity.Kind == episodeidentity.KindMovie, keys
 }
 
 func nullableFact(value string) any {

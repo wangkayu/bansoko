@@ -54,13 +54,16 @@ var Shorthands = []Shorthand{
 	// s00e00 composes exactly like the ep.s00e00 fact (SeasonEpisode): the
 	// season argument is guard-preprocessed because the helper takes a string,
 	// and ep.end is conditional so a multi-episode range stays optional.
-	// ep.number stays required.
+	// ep.number stays required. The other episode shorthands (sxe, e00, e000, e)
+	// follow the same contract: ep.number stays required outside any branch and
+	// ep.end appends "-<end>" only for multi-episode files, leaving single-
+	// episode renders byte-identical.
 	{Name: "s00e00", Expansion: `seasonEpisode(anime.kind, anime.season === null ? "" : anime.season, ep.number, ep.end === null ? "" : ep.end)`, Example: "S01E12"},
-	{Name: "sxe", Expansion: `anime.season === null ? "" : anime.season + "x" + pad(ep.number, 2)`, Example: "1x12"},
+	{Name: "sxe", Expansion: `anime.season === null ? "" : anime.season + "x" + pad(ep.number, 2) + (ep.end === null ? "" : "-" + pad(ep.end, 2))`, Example: "1x12"},
 	{Name: "s00", Expansion: `anime.season === null ? "" : pad(anime.season, 2)`, Example: "01"},
-	{Name: "e00", Expansion: `pad(ep.number, 2)`, Example: "12"},
-	{Name: "e000", Expansion: `pad(ep.number, 3)`, Example: "012"},
-	{Name: "e", Expansion: `ep.number`, Example: "12"},
+	{Name: "e00", Expansion: `pad(ep.number, 2) + (ep.end === null ? "" : "-" + pad(ep.end, 2))`, Example: "12"},
+	{Name: "e000", Expansion: `pad(ep.number, 3) + (ep.end === null ? "" : "-" + pad(ep.end, 3))`, Example: "012"},
+	{Name: "e", Expansion: `ep.number + (ep.end === null ? "" : "-" + ep.end)`, Example: "12"},
 	{Name: "s", Expansion: `anime.season === null ? "" : anime.season`, Example: "1"},
 	// y renders the frozen input year (anime.year, the owner-edited value) and
 	// disappears whole when the year is unset: a segment like "name ${y}"
