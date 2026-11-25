@@ -44,11 +44,8 @@ const categories = [
   // Hidden anime: saves immediately with no draft; no longer opened from the account menu/more/?tool=.
   { key: "hidden", labelKey: "settings.nav.hidden", icon: EyeOff },
   { key: "rules", labelKey: "settings.nav.rules", icon: Wand2 },
-  // "Naming variables" (vars) is hidden this version: neither editing nor using custom variables is
-//   surfaced in the UI; backend validation and rendering are unchanged and any saved ${vars.*}
-//   template still renders. To restore, add back this entry (the Braces icon), its group key, the
-//   render branch and the SettingsVars import together; it is an L2 dialog with immediate saving
-//   and no dirty callback (the component, copy and component tests remain in the repo).
+  // Custom naming Vars is scheduled for retirement in 0.3; the frontend editor
+  // has been removed and `/settings/vars` falls back to connections.
   { key: "replacement", labelKey: "settings.nav.replacement", icon: Layers },
   { key: "account", labelKey: "settings.nav.account", icon: UserRound },
   { key: "automation", labelKey: "settings.nav.automation", icon: Clock },
@@ -68,7 +65,6 @@ type CategoryKey = (typeof categories)[number]["key"];
 //   account/automation/notifications/version/backup/tokens belong to "system".
 const categoryGroups: { groupKey: CopyKey; keys: CategoryKey[] }[] = [
   { groupKey: "settings.nav.groupService", keys: ["connections", "download"] },
-  // On restore, naming variables goes back after "rules".
   { groupKey: "settings.nav.groupDefaults", keys: ["rules", "replacement", "policy"] },
   { groupKey: "settings.nav.groupSite", keys: ["anibt", "mikan", "hidden"] },
   { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "notifications", "updates", "titleParser", "backup", "ai"] },

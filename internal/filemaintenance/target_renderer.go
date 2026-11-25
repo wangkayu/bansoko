@@ -65,13 +65,23 @@ func (r *NamingTargetRenderer) compileTitleTemplates(rules naming.NamingRules, f
 	}
 	compiled, err := engine.CompileRulesWithVars(rules, facts.Vars)
 	if err != nil {
-		return nil, fmt.Errorf("compile naming rules: %w", err)
+		return nil, maintenanceCompileError(err)
 	}
 	variant := compiled.TV
 	if naming.MediaKind(facts.Derived.EffectiveMediaKind) == naming.MediaKindMovie {
 		variant = compiled.Movie
 	}
 	return []naming.CompiledTemplate{variant.Directory, variant.VideoFilename}, nil
+}
+
+// maintenanceCompileError keeps an absent frozen Vars output in the typed
+// facts-unavailable class instead of degrading it to a generic template error.
+func maintenanceCompileError(err error) error {
+	var named *naming.Error
+	if errors.As(err, &named) && named.Code == naming.ErrCodeNamingVarsUnknown {
+		return renderFactsUnavailable("frozen Vars output is unavailable")
+	}
+	return fmt.Errorf("compile naming rules: %w", err)
 }
 
 // resolveEpisodeTitlesInto fills ctx.EpisodeTitles for one whitelisted render.
@@ -201,7 +211,7 @@ func renderResolvedTarget(base string, rules naming.NamingRules, facts naming.Na
 	}
 	compiled, err := engine.CompileRulesWithVars(rules, facts.Vars)
 	if err != nil {
-		return "", fmt.Errorf("compile naming rules: %w", err)
+		return "", maintenanceCompileError(err)
 	}
 	variant := compiled.TV
 	if naming.MediaKind(facts.Derived.EffectiveMediaKind) == naming.MediaKindMovie {

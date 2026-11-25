@@ -29,9 +29,9 @@ func buildFixturePayload(t *testing.T) (payloadPath string, meta packagemaker.Me
 	writeTree("sql/001_a.sql", 0o644)
 	writeTree("dist/index.html", 0o644)
 	writeTree("dist/assets/app.js", 0o644)
-	// Defaults are part of the payload contract. attr-rules.yaml is optional
-	// now but must still stage when a transition release carries it for
-	// older updaters.
+	// Defaults are part of the payload contract. attr-rules.yaml and
+	// naming-vars.js are optional for the new updater now, but must still
+	// stage when a transition release carries them for older updaters.
 	writeTree("defaults/attr-rules.yaml", 0o644)
 	writeTree("defaults/naming-vars.js", 0o644)
 	meta = packagemaker.Metadata{
@@ -79,6 +79,44 @@ func TestExtractVerifyPublishHappyPath(t *testing.T) {
 	}
 	if !treeMatchesReleaseDir(releaseDir, hashes) {
 		t.Fatalf("published tree does not match staged hashes")
+	}
+}
+
+func TestExtractVerifyWithoutLegacyDefaultsFiles(t *testing.T) {
+	root := t.TempDir()
+	writeTree := func(rel string, mode os.FileMode) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("content-of-"+rel), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeTree("server", 0o755)
+	writeTree("sql/001_a.sql", 0o644)
+	writeTree("dist/index.html", 0o644)
+	payloadPath := filepath.Join(t.TempDir(), "embedded-update-v1.tar.gz")
+	if _, err := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
+		ServerBinaryPath: filepath.Join(root, "server"),
+		MigrationsDir:    filepath.Join(root, "sql"),
+		FrontendDistDir:  filepath.Join(root, "dist"),
+		Metadata: packagemaker.Metadata{
+			FormatVersion: "embedded-update-v1",
+			ReleaseID:     "release-no-defaults-01",
+			Version:       "0.3.0",
+		},
+		OutputPath:      payloadPath,
+		SourceDateEpoch: 1756000000,
+	}); err != nil {
+		t.Fatalf("build payload without defaults: %v", err)
+	}
+	tempDir := t.TempDir()
+	if _, err := extractPayloadToTemp(payloadPath, tempDir); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if _, err := verifyStagedTree(tempDir); err != nil {
+		t.Fatalf("verify staged tree without naming-vars.js: %v", err)
 	}
 }
 

@@ -299,14 +299,14 @@ describe("SettingsDialog 新分组结构与 provider 导航页", () => {
     expect(screen.queryByRole("option", { name: "文件维护" })).not.toBeInTheDocument();
   });
 
-  // Naming variables is hidden this version (restore steps are in the SettingsDialog.tsx categories comment).
-  it("命名变量分区隐藏：导航无入口，/settings/vars 深链回落到服务连接", async () => {
+  // Naming variables editor is removed ahead of 0.3 retirement.
+  it("命名变量分区已移除：导航无入口，/settings/vars 深链回落到服务连接", async () => {
     stubFetch();
     renderDialog("/settings/vars");
 
     expect((await screen.findAllByRole("heading", { level: 2, name: t("settings.nav.connections") })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: t("settings.nav.vars") })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: t("varsEditor.title") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: t("settings.nav.vars") })).not.toBeInTheDocument();
     const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
     expect(urls.some((url) => url.includes("/naming-vars"))).toBe(false);
   });

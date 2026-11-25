@@ -39,6 +39,10 @@ func Main(args []string) {
 		exitProcess(runRotateSessionSecret(ctx, os.Getenv, os.Stdout, os.Stderr))
 		return
 	}
+	if len(args) > 0 && args[0] == "check-vars" {
+		exitProcess(runCheckVars(ctx, args[1:], os.Getenv, os.Stdout, os.Stderr))
+		return
+	}
 	cfg, err := config.FromFlags(args)
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")

@@ -5,7 +5,6 @@ import { animeCopy, catalogCopy, fileCopy, replacementCopy, settingsCopy } from 
 import { settingsConnectionsCopy } from "./zh-CN.settings-connections";
 import { settingsProviderCopy } from "./zh-CN.settings-provider";
 import { settingsNotificationsCopy } from "./zh-CN.settings-notifications";
-import { varsEditorCopy } from "./zh-CN.vars-editor";
 import { settingsTokenCopy } from "./zh-CN.settings-token";
 import { settingsBackupCopy } from "./zh-CN.settings-backup";
 import { settingsTitleParserCopy } from "./zh-CN.settings-title-parser";
@@ -157,7 +156,6 @@ export const zhCN = {
   replacement: replacementCopy,
   qualityCompare: qualityCompareCopy,
   // 设置区域：c2 的 settingsCopy 打底；四个分文件各自持有的命名空间覆盖同名键。
-  varsEditor: varsEditorCopy,
   settings: { ...settingsCopy, ...settingsConnectionsCopy, ...settingsProviderCopy, ...settingsNotificationsCopy, ...settingsTokenCopy, ...settingsBackupCopy, ...settingsTitleParserCopy },
   grid: gridCopy,
   act: actCopy,

@@ -7,7 +7,6 @@ import { enAnimeCopy, enCatalogCopy, enFileCopy, enReplacementCopy, enSettingsCo
 import { enSettingsConnectionsCopy } from "./en.settings-connections";
 import { enSettingsProviderCopy } from "./en.settings-provider";
 import { enSettingsNotificationsCopy } from "./en.settings-notifications";
-import { enVarsEditorCopy } from "./en.vars-editor";
 import { enSettingsTokenCopy } from "./en.settings-token";
 import { enSettingsBackupCopy } from "./en.settings-backup";
 import { enSettingsTitleParserCopy } from "./en.settings-title-parser";
@@ -154,7 +153,6 @@ export const en = {
   file: enFileCopy,
   replacement: enReplacementCopy,
   qualityCompare: enQualityCompareCopy,
-  varsEditor: enVarsEditorCopy,
   settings: { ...enSettingsCopy, ...enSettingsConnectionsCopy, ...enSettingsProviderCopy, ...enSettingsNotificationsCopy, ...enSettingsTokenCopy, ...enSettingsBackupCopy, ...enSettingsTitleParserCopy },
   grid: enGridCopy,
   act: enActCopy,

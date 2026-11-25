@@ -6007,6 +6007,7 @@ paths:
       tags: [Configuration]
       operationId: getNamingVars
       x-scope: read
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: >-
         The active naming Vars program with its version history and the
         reference data the editor needs (input facts, sample releases, limits).
@@ -6024,6 +6025,7 @@ paths:
       tags: [Configuration]
       operationId: saveNamingVarsVersion
       x-scope: admin
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: >-
         Validates a program and publishes it as a new immutable version that
         becomes active at once, without a restart. If-Match is the revision the
@@ -6059,6 +6061,7 @@ paths:
       tags: [Configuration]
       operationId: getNamingVarsVersion
       x-scope: read
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       parameters:
         - name: revision
           in: path
@@ -6083,6 +6086,7 @@ paths:
       tags: [Configuration]
       operationId: activateNamingVarsVersion
       x-scope: admin
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: >-
         Moves the active pointer to a published revision (a rollback is an
         activation of an older one). If-Match is the revision the caller saw
@@ -6117,6 +6121,7 @@ paths:
       tags: [Configuration]
       operationId: dryRunNamingVars
       x-scope: read
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: >-
         Side-effect-free evaluation of a draft program over sample, persisted
         or typed-in releases. The input is built by the same release-level
@@ -6145,6 +6150,7 @@ paths:
       tags: [Configuration]
       operationId: listNamingVarsReleases
       x-scope: read
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: Recently discovered releases a dry run can evaluate.
       responses:
         '200':
@@ -6162,6 +6168,7 @@ paths:
       tags: [Configuration]
       operationId: exportNamingVars
       x-scope: read
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: >-
         Owner only. The active program text with identifying metadata. Reads
         only; it holds no configuration, secret or frozen evidence.
@@ -6185,6 +6192,7 @@ paths:
       tags: [Configuration]
       operationId: importNamingVars
       x-scope: admin
+      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
       description: >-
         Owner only. Validates an export document and publishes its program as a
         new active version, with the same checks and compare-and-swap as a save.

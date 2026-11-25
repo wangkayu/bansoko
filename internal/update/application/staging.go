@@ -49,9 +49,9 @@ func safeEntryName(name string) (string, error) {
 	switch {
 	case name == packagemaker.ServerEntryPath,
 		name == packagemaker.MetaEntryPath,
-		// Legacy defaults file: not required any more, but updaters released
-		// before its removal demand it when they stage a payload. Keep the name
-		// allowed so a transition release can carry it.
+		// Legacy defaults files: not required any more, but updaters released
+		// before their removal demand them when they stage a payload. Keep both
+		// names allowed so transition releases can carry them.
 		name == "deployment/defaults/attr-rules.yaml",
 		name == "deployment/defaults/naming-vars.js",
 		strings.HasPrefix(name, packagemaker.MigrationsPrefix),
@@ -256,7 +256,6 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 	}
 	for _, required := range []string{
 		packagemaker.ServerEntryPath,
-		"deployment/defaults/naming-vars.js",
 	} {
 		info, statErr := os.Lstat(filepath.Join(releaseDir, required))
 		if statErr != nil || !info.Mode().IsRegular() {

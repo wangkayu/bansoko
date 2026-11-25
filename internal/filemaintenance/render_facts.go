@@ -361,18 +361,25 @@ func (r *NamingTargetRenderer) renderNamingContext(ctx context.Context, animeID,
 		return naming.ResolvedContext{}, "", renderFactsUnavailable("frozen source facts are invalid")
 	}
 	ctxFacts = naming.WithTemplateFacts(ctxFacts, namespaces)
-	var config struct {
-		Vars *namingvars.FrozenEvaluation `json:"vars"`
-	}
-	if err := json.Unmarshal(lineage.frozenConfig, &config); err != nil || config.Vars == nil || config.Vars.Status != "ok" {
-		return naming.ResolvedContext{}, "", renderFactsUnavailable("frozen Vars output unavailable")
-	}
-	ctxFacts, err = naming.WithVars(ctxFacts, config.Vars.Output)
+	// Without a usable frozen Vars output the render gets an empty Vars object
+	// (matching match_render.go): templates that do not reference vars.* render
+	// cleanly, while any template still reading vars.* fails compilation.
+	ctxFacts, err = naming.WithVars(ctxFacts, frozenVarsOutputFromConfig(lineage.frozenConfig))
 	if err != nil {
 		return naming.ResolvedContext{}, "", err
 	}
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: ctxFacts})
 	return resolved, base, err
+}
+
+func frozenVarsOutputFromConfig(raw []byte) map[string]map[string]string {
+	var config struct {
+		Vars *namingvars.FrozenEvaluation `json:"vars"`
+	}
+	if err := json.Unmarshal(raw, &config); err == nil && config.Vars != nil && config.Vars.Status == "ok" && config.Vars.Output != nil {
+		return config.Vars.Output
+	}
+	return map[string]map[string]string{}
 }
 
 func mediaFactStringFromJSON(raw []byte, key string) string {
