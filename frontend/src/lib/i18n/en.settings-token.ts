@@ -85,6 +85,8 @@ export const enSettingsTokenCopy = {
     statusFailed: "Couldn't load update info",
     statusFailedFallback: "Try again later",
     reread: "Reload",
+    manualModeTitle: "The embedded update channel is not wired for this deployment",
+    manualModeHint: "Upgrade this deployment through your package manager or by replacing the binary. This page does not check for or apply updates, and this state is not an error.",
     unknownTitle: "Update info not recognized",
     unknownHint: "Reload later",
     reconnecting: "Connection interrupted, retrying. The latest update progress is kept.",

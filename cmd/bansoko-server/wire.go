@@ -185,7 +185,7 @@ func initializeHTTPServer(
 	fileMaintenance httpapi.FileMaintenanceService,
 	environment serverEnvironment,
 	skipAuth serverSkipAuth,
-	frontendDir serverFrontendDir,
+	frontendFS serverFrontendFS,
 	maintenanceGate httpapi.MaintenanceGate,
 	readinessChecker *readiness.Checker,
 	runtimeLogger httpapi.RuntimeLogger,

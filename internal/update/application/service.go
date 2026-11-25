@@ -61,22 +61,25 @@ type Deps struct {
 	Lane string
 	// ChannelBase is the development/test override of the channel repository
 	// root; production refuses it.
-	ChannelBase               string
-	Production                bool
-	HTTPClient                *http.Client
-	UpdateConnection          UpdateConnectionResolver
-	BuildReleaseID            string
-	BuildVersion              string
-	BuildCompatibilityVersion string
-	BuildBootstrapVersion     string
-	Clock                     func() time.Time
-	UpdateMode                string
+	ChannelBase                        string
+	Production                         bool
+	TargetPlatform, TargetArchitecture string
+	HTTPClient                         *http.Client
+	UpdateConnection                   UpdateConnectionResolver
+	BuildReleaseID                     string
+	BuildVersion                       string
+	BuildCompatibilityVersion          string
+	BuildBootstrapVersion              string
+	Clock                              func() time.Time
+	UpdateMode                         string
 	// Diagnostics and Logger are optional: the update-index reachability
 	// condition is recorded only when a recorder is wired.
 	Diagnostics observabilityport.Recorder
 	Logger      observabilityport.RuntimeLogger
 	// RestartGate is shared with backup restore until the process exits.
 	RestartGate *sync.Mutex
+	// CheckBackupTools is invoked only when applying an update, before network or disk work.
+	CheckBackupTools func() error
 }
 
 type Service struct {
@@ -92,6 +95,7 @@ type Service struct {
 	mu                                                                 sync.Mutex
 	chainRunning                                                       bool
 	restartGate                                                        *sync.Mutex
+	checkBackupTools                                                   func() error
 	lastStatus                                                         Status
 	done                                                               chan struct{}
 	doneOnce                                                           sync.Once
@@ -114,7 +118,7 @@ func NewService(deps Deps) (*Service, error) {
 	if deps.Production && strings.TrimSpace(deps.ChannelBase) != "" {
 		return nil, fmt.Errorf("%w: %s is not allowed in production", ErrUpdateSourceURL, EnvChannelBase)
 	}
-	documentURL, packageRoot, err := LaneSource(deps.Lane, deps.ChannelBase)
+	documentURL, packageRoot, err := laneSourceForPlatform(deps.Lane, deps.ChannelBase, deps.TargetPlatform, deps.TargetArchitecture)
 	if err != nil {
 		return nil, err
 	}
@@ -122,11 +126,12 @@ func NewService(deps Deps) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	resolver.targetPlatform, resolver.targetArchitecture = deps.TargetPlatform, deps.TargetArchitecture
 	clock := deps.Clock
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger, restartGate: deps.RestartGate}, nil
+	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger, restartGate: deps.RestartGate, checkBackupTools: deps.CheckBackupTools}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
@@ -237,6 +242,22 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 			s.restartGate.Unlock()
 		}
 		return Status{}, false, err
+	}
+	if _, pending, err := s.readPendingStatus(); err != nil {
+		return fail(err)
+	} else if pending {
+		return fail(&apperrors.Business{Status: 409, Code: "UPDATE_LOCKED", Message: "An update is already in progress."})
+	}
+	// A promoted child can be serving while its bootstrap parent still owns the update.
+	if record, found, err := journal.Snapshot(filepath.Join(s.updatesRoot, "journal.json")); err != nil {
+		return fail(fmt.Errorf("read durable embedded update status: %w", err))
+	} else if found && record.Active() {
+		return fail(&apperrors.Business{Status: 409, Code: "UPDATE_LOCKED", Message: "An update is already in progress."})
+	}
+	if s.checkBackupTools != nil {
+		if err := s.checkBackupTools(); err != nil {
+			return fail(&apperrors.Business{Status: 503, Code: "UPDATE_BACKUP_TOOLS_UNAVAILABLE", Message: err.Error()})
+		}
 	}
 	client, gateway, err := s.operationClient(ctx)
 	if err != nil {

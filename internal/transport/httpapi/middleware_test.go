@@ -342,7 +342,7 @@ func get(t *testing.T, handler http.Handler, target string) (int, string) {
 // The frontend loads from "/" and routes on the fragment, so the document and
 // the hashed assets are the whole contract this handler owes it.
 func TestFrontendHandlerServesTheBuiltFrontend(t *testing.T) {
-	handler := frontendHandler(frontendDir(t))
+	handler := frontendHandler(os.DirFS(frontendDir(t)))
 
 	if status, body := get(t, handler, "/"); status != http.StatusOK || body != "<!doctype html><title>Bansoko</title>" {
 		t.Fatalf("root = %d %q, want 200 and index.html", status, body)
@@ -356,7 +356,7 @@ func TestFrontendHandlerServesTheBuiltFrontend(t *testing.T) {
 // HTML for these, hiding the 404 from anything that is not the hash-routed
 // frontend — including API paths outside /api/v1.
 func TestFrontendHandlerDoesNotFallBackToIndex(t *testing.T) {
-	handler := frontendHandler(frontendDir(t))
+	handler := frontendHandler(os.DirFS(frontendDir(t)))
 
 	for _, target := range []string{"/settings", "/settings/connections", "/api/v3/anime", "/assets/index-gone.js"} {
 		if status, _ := get(t, handler, target); status != http.StatusNotFound {
@@ -367,7 +367,7 @@ func TestFrontendHandlerDoesNotFallBackToIndex(t *testing.T) {
 
 func TestFrontendHandlerRejectsNonReadMethods(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	frontendHandler(frontendDir(t)).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/", nil))
+	frontendHandler(os.DirFS(frontendDir(t))).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("POST status = %d, want 404", recorder.Code)
 	}
@@ -378,7 +378,7 @@ func TestFrontendHandlerDoesNotEscapeRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(dir), "secret"), []byte("do-not-serve"), 0o600); err != nil {
 		t.Fatalf("write secret: %v", err)
 	}
-	handler := frontendHandler(dir)
+	handler := frontendHandler(os.DirFS(dir))
 
 	for _, target := range []string{"/../secret", "/..%2fsecret", "/assets/../../secret"} {
 		if _, body := get(t, handler, target); body == "do-not-serve" {
@@ -388,7 +388,7 @@ func TestFrontendHandlerDoesNotEscapeRoot(t *testing.T) {
 }
 
 func TestFrontendHandlerWithoutDirectoryIs404(t *testing.T) {
-	if status, _ := get(t, frontendHandler("  "), "/"); status != http.StatusNotFound {
+	if status, _ := get(t, frontendHandler(nil), "/"); status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 when no frontend directory is configured", status)
 	}
 }
@@ -397,7 +397,7 @@ func TestFrontendHandlerWithoutDirectoryIs404(t *testing.T) {
 // the baseline headers and names no third-party origin; script assets (the
 // service worker included) are served without the page CSP.
 func TestSecurityHeaders(t *testing.T) {
-	handler := frontendHandler(frontendDir(t))
+	handler := frontendHandler(os.DirFS(frontendDir(t)))
 	baseline := func(surface string, header http.Header) {
 		t.Helper()
 		for name, want := range map[string]string{

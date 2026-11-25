@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bansoko/frontend"
 	"bansoko/internal/episodetitle"
 	episodetitleadapter "bansoko/internal/episodetitle/adapter"
 	"context"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,9 +53,11 @@ import (
 	plugintargetapplication "bansoko/internal/plugintarget/application"
 	retentionapplication "bansoko/internal/recordretention/application"
 	"bansoko/internal/rtruntime"
+	"bansoko/internal/runtime/bootsecrets"
 	bootstrapcmd "bansoko/internal/runtime/bootstrap"
 	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/config"
+	"bansoko/internal/runtime/configdir"
 	"bansoko/internal/runtime/database"
 	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/runtime/deploymentprovenance"
@@ -63,6 +67,7 @@ import (
 	"bansoko/internal/runtime/migrations"
 	"bansoko/internal/runtime/readiness"
 	"bansoko/internal/transport/httpapi"
+	"bansoko/internal/update/adapter/pgexec"
 	updateapplication "bansoko/internal/update/application"
 	localupdate "bansoko/internal/update/local"
 	"bansoko/internal/workitems"
@@ -93,8 +98,17 @@ func fatalStartupDetail(logger observabilityport.RuntimeLogger, message, reasonC
 }
 
 func main() {
-	mode, args := runtimeCommand(os.Args[1:])
+	argv, err := exportConfigDirFlag(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	mode, args := runtimeCommand(argv)
 	switch mode {
+	case "start":
+		// Native lifecycle: the unified PID1 flow without container privilege
+		// management; it re-execs this binary for migrate/serve children.
+		os.Exit(bootstrapcmd.Start("server"))
 	case "bootstrap":
 		os.Exit(bootstrapcmd.Main(args))
 	case "migrate":
@@ -102,9 +116,53 @@ func main() {
 		return
 	case "update":
 		os.Exit(localupdate.Main(args))
+	case "recover":
+		os.Exit(bootstrapcmd.Recover(args, os.Stdout, os.Stderr))
+	case "reset-password":
+		os.Exit(bootstrapcmd.ResetPassword(args, os.Stdin, os.Stdout, os.Stderr))
+	case "version":
+		os.Exit(runVersion(os.Stdout))
+	case "doctor":
+		os.Exit(runDoctor(args, os.Stdout))
 	default:
 		runServe(args)
 	}
+}
+
+// exportConfigDirFlag strips the global option before any subcommand parses
+// its flags. Exporting the explicit value also passes it to re-exec'd children.
+func exportConfigDirFlag(args []string) ([]string, error) {
+	var dir string
+	remaining := make([]string, 0, len(args))
+	name := "--" + configdir.FlagName
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--":
+			remaining = append(remaining, args[i:]...)
+			i = len(args)
+		case arg == name:
+			if i+1 == len(args) || strings.HasPrefix(args[i+1], "-") {
+				return nil, fmt.Errorf("%s requires a directory", name)
+			}
+			i++
+			dir = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, name+"="):
+			dir = strings.TrimSpace(strings.TrimPrefix(arg, name+"="))
+		default:
+			remaining = append(remaining, arg)
+			continue
+		}
+		if arg != "--" && dir == "" {
+			return nil, fmt.Errorf("%s requires a directory", name)
+		}
+	}
+	if dir != "" {
+		if err := os.Setenv(configdir.EnvConfigDir, dir); err != nil {
+			return nil, fmt.Errorf("set %s: %w", configdir.EnvConfigDir, err)
+		}
+	}
+	return remaining, nil
 }
 
 func runtimeCommand(args []string) (string, []string) {
@@ -112,7 +170,7 @@ func runtimeCommand(args []string) (string, []string) {
 		return "serve", args
 	}
 	switch args[0] {
-	case "bootstrap", "migrate", "serve", "update":
+	case "bootstrap", "migrate", "serve", "update", "start", "recover", "reset-password", "version", "doctor":
 		return args[0], args[1:]
 	default:
 		return "serve", args
@@ -121,6 +179,18 @@ func runtimeCommand(args []string) (string, []string) {
 
 func runServe(args []string) {
 	runtimeLogger := observabilityapplication.NewTeedRuntimeLogger(os.Stderr)
+	// Native standalone serving (no start wrapper): load the serving facts the
+	// deployment start persisted in the config directory. The load is read-only
+	// and explicit environment values always win; a missing file falls through
+	// to the standard configuration checks below.
+	if strings.TrimSpace(os.Getenv(bootsecrets.EnvSessionSecret)) == "" ||
+		strings.TrimSpace(os.Getenv(bootsecrets.EnvSecretEncryptionKey)) == "" ||
+		strings.TrimSpace(os.Getenv(bootsecrets.EnvRuntimeDatabaseURL)) == "" {
+		configDir := configdir.Resolve(configdir.FlagValue(args), os.Getenv)
+		if err := bootsecrets.LoadServingEnvironment(configDir, os.Getenv, os.Setenv); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fatalStartup(runtimeLogger, "deployment secrets in the config directory are not usable", "serving_environment_unusable")
+		}
+	}
 	cfg, err := config.FromFlags(args)
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")
@@ -132,6 +202,9 @@ func runServe(args []string) {
 	defer func() {
 		_ = runtimeLogger.Close()
 	}()
+	// Keep the deployment path in the operator's console, outside the
+	// redacted application log exposed by the Web UI.
+	fmt.Fprintf(os.Stderr, "[startup] resolved config_dir=%q\n", cfg.ConfigDir)
 	// The persistent session secret binds owner sessions to this instance.
 	// Development may run with skip-auth, but a real session secret is still
 	// required so bootstrap/login behave identically across environments.
@@ -693,15 +766,17 @@ func runServe(args []string) {
 			fatalStartup(runtimeLogger, err.Error(), "embedded_update_retired_env")
 		}
 		updateSvc, svcErr := updateapplication.NewService(updateapplication.Deps{
-			RestartGate: restartGate,
-			DB:          db, UpdatesRoot: updatesRoot,
+			RestartGate:      restartGate,
+			CheckBackupTools: func() error { return pgexec.CheckTools(pgexec.DefaultCandidatePaths) },
+			DB:               db, UpdatesRoot: updatesRoot,
 			Lane:             os.Getenv(updateapplication.EnvLane),
 			ChannelBase:      os.Getenv(updateapplication.EnvChannelBase),
 			Production:       cfg.Environment == "production",
 			UpdateConnection: configService,
 			BuildReleaseID:   buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
-			UpdateMode:  cfg.UpdateMode,
+			UpdateMode:     cfg.UpdateMode,
+			TargetPlatform: runtime.GOOS, TargetArchitecture: runtime.GOARCH,
 			Diagnostics: observabilityService, Logger: runtimeLogger,
 		})
 		if svcErr != nil {
@@ -737,7 +812,7 @@ func runServe(args []string) {
 		fileMaintenanceService,
 		serverEnvironment(cfg.Environment),
 		serverSkipAuth(cfg.SkipAuth),
-		serverFrontendDir(cfg.FrontendDir),
+		serverFrontendFS(httpapi.ResolveFrontendFS(cfg.FrontendDir, frontend.FS())),
 		maintenanceGate,
 		readinessChecker,
 		runtimeLogger,

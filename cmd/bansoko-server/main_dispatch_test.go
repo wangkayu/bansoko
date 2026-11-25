@@ -54,6 +54,11 @@ func TestRuntimeCommand(t *testing.T) {
 		{name: "migrate", args: []string{"migrate", "rotate-secret-key"}, mode: "migrate", rest: []string{"rotate-secret-key"}},
 		{name: "migrate check-vars", args: []string{"migrate", "check-vars", "--json"}, mode: "migrate", rest: []string{"check-vars", "--json"}},
 		{name: "local update", args: []string{"update", "check", "--json"}, mode: "update", rest: []string{"check", "--json"}},
+		{name: "native start", args: []string{"start", "--config-dir", "/srv/bansoko"}, mode: "start", rest: []string{"--config-dir", "/srv/bansoko"}},
+		{name: "recover", args: []string{"recover", "status"}, mode: "recover", rest: []string{"status"}},
+		{name: "reset-password", args: []string{"reset-password", "--generate"}, mode: "reset-password", rest: []string{"--generate"}},
+		{name: "version", args: []string{"version"}, mode: "version", rest: []string{}},
+		{name: "doctor", args: []string{"doctor", "--config-dir", "/srv/bansoko"}, mode: "doctor", rest: []string{"--config-dir", "/srv/bansoko"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			mode, rest := runtimeCommand(test.args)

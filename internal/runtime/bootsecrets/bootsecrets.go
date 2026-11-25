@@ -29,7 +29,7 @@ import (
 	"strings"
 	"syscall"
 
-	"bansoko/internal/runtime/bootprepare"
+	"bansoko/internal/runtime/configdir"
 )
 
 const (
@@ -92,12 +92,12 @@ type document struct {
 	DatabaseRuntimePassword string `json:"database_runtime_password,omitempty"`
 }
 
-// ConfigDir returns the deployment config directory.
+// ConfigDir returns the deployment config directory through the unified
+// resolution chain (BANSOKO_CONFIG_DIR, then a writable /config, then the OS
+// user config directory). A --config-dir flag is applied by the subcommand
+// entry points before this resolution runs.
 func ConfigDir(getenv func(string) string) string {
-	if dir := strings.TrimSpace(getenv(EnvConfigDir)); dir != "" {
-		return dir
-	}
-	return bootprepare.DefaultConfigDir
+	return configdir.Resolve("", getenv)
 }
 
 // FilePath returns the secrets file path inside configDir.
@@ -402,6 +402,104 @@ func writeDocument(path string, doc document) (err error) {
 	defer dirHandle.Close()
 	if syncErr := dirHandle.Sync(); syncErr != nil {
 		return fmt.Errorf("sync %s: %w", dir, syncErr)
+	}
+	return nil
+}
+
+// EnsureRuntimeEnvironment resolves (generating and persisting when missing)
+// the deployment secrets and exports the serving environment every child
+// inherits: the session secret, the encryption key and the derived runtime
+// login connection (BANSOKO_RUNTIME_DATABASE_URL, always overwritten from
+// the owner connection so a stale or user-supplied value can never select a
+// different serving login; the DSN is never echoed). The runtime connection
+// is derived before any export so a malformed owner DSN fails closed with
+// the environment untouched. The config directory is created when missing so
+// a native first run can persist its secrets.
+// The PID1 bootstrap and the standalone migrate command share this path.
+func EnsureRuntimeEnvironment(configDir string, getenv func(string) string, setenv func(string, string) error, logf func(string, ...any)) error {
+	if err := configdir.EnsureDir(configDir); err != nil {
+		return err
+	}
+	resolved, err := Resolve(configDir, getenv, nil)
+	if err != nil {
+		return err
+	}
+	runtimeURL := ""
+	if ownerDSN := strings.TrimSpace(getenv(EnvDatabaseURL)); ownerDSN != "" {
+		if runtimeURL, err = RuntimeDatabaseURL(ownerDSN, resolved.Values.DatabaseRuntimePassword); err != nil {
+			return err
+		}
+	}
+	if len(resolved.Generated) > 0 {
+		logf("generated %s and stored them in %s; keep this file with the database when moving the deployment",
+			strings.Join(resolved.Generated, ", "), resolved.Path)
+	}
+	exports := map[string]string{
+		EnvSessionSecret:       resolved.Values.SessionSecret,
+		EnvSecretEncryptionKey: resolved.Values.SecretEncryptionKey,
+	}
+	if runtimeURL != "" {
+		exports[EnvRuntimeDatabaseURL] = runtimeURL
+	}
+	for key, value := range exports {
+		if err := setenv(key, value); err != nil {
+			return fmt.Errorf("set %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// LoadServingEnvironment loads the stored secrets read-only and exports the
+// serving environment values the environment does not already provide. A
+// deployment started directly with `serve` (no bootstrap/start lifecycle) can
+// therefore share the generated deployment secrets from a split deployment:
+// nothing is generated or written, and a missing secrets file is a no-op. An
+// unreadable or corrupt file fails closed. The runtime login connection is
+// derived from the owner connection when both it and the stored runtime
+// password exist and the environment does not already set
+// BANSOKO_RUNTIME_DATABASE_URL.
+func LoadServingEnvironment(configDir string, getenv func(string) string, setenv func(string, string) error) error {
+	values, err := Load(configDir, getenv)
+	if err != nil {
+		return err
+	}
+	if err := applyServingEnvironment(values, getenv, setenv); err != nil {
+		return err
+	}
+	if strings.TrimSpace(getenv(EnvRuntimeDatabaseURL)) != "" {
+		return nil
+	}
+	ownerDSN := strings.TrimSpace(getenv(EnvDatabaseURL))
+	if ownerDSN == "" || strings.TrimSpace(values.DatabaseRuntimePassword) == "" {
+		return nil
+	}
+	runtimeURL, err := RuntimeDatabaseURL(ownerDSN, values.DatabaseRuntimePassword)
+	if err != nil {
+		return err
+	}
+	if err := setenv(EnvRuntimeDatabaseURL, runtimeURL); err != nil {
+		return fmt.Errorf("set %s: %w", EnvRuntimeDatabaseURL, err)
+	}
+	return nil
+}
+
+// applyServingEnvironment exports the session secret and encryption key from
+// values unless the environment already provides them.
+func applyServingEnvironment(values Values, getenv func(string) string, setenv func(string, string) error) error {
+	exports := []struct {
+		key   string
+		value string
+	}{
+		{EnvSessionSecret, values.SessionSecret},
+		{EnvSecretEncryptionKey, values.SecretEncryptionKey},
+	}
+	for _, export := range exports {
+		if strings.TrimSpace(getenv(export.key)) != "" || strings.TrimSpace(export.value) == "" {
+			continue
+		}
+		if err := setenv(export.key, export.value); err != nil {
+			return fmt.Errorf("set %s: %w", export.key, err)
+		}
 	}
 	return nil
 }

@@ -46,12 +46,8 @@ if [[ "${BANSOKO_SKIP_AUTH:-0}" == "1" ]]; then
 fi
 
 # The chain downloads a real Matroska file and reads its resolution, codecs and
-# container with the real mediainfo binary; a missing tool fails, never skips.
-if ! command -v mediainfo >/dev/null 2>&1; then
-  echo "single-episode-real-chain: mediainfo is required on PATH" >&2
-  exit 1
-fi
-
+# container with the MediaInfoLib engine embedded in the server binary, so the
+# host needs no mediainfo; the test asserts the engine self-check instead.
 "$root/scripts/ci/go-test-no-skips.sh" single-episode-real-chain -p 1 ./internal/integration \
   -run '^TestSingleEpisodeRealPostgresQBRSSFileOperation$' \
   -count=1

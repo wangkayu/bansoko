@@ -43,9 +43,21 @@ func Main(args []string) {
 		exitProcess(runCheckVars(ctx, args[1:], os.Getenv, os.Stdout, os.Stderr))
 		return
 	}
-	cfg, err := config.FromFlags(args)
+	cfg, err := config.FromMigrationFlags(args)
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")
+	}
+	// Native standalone migrate (no bootstrap/start wrapper): derive the
+	// serving environment from the config directory so the runtime login role
+	// can be converged. This shares the PID1 bootstrap generation path; a
+	// bootstrap-derived runtime connection always takes precedence.
+	if strings.TrimSpace(os.Getenv(bootsecrets.EnvDatabaseURL)) != "" && strings.TrimSpace(os.Getenv(bootsecrets.EnvRuntimeDatabaseURL)) == "" {
+		configDir := bootsecrets.ConfigDir(os.Getenv)
+		if err := bootsecrets.EnsureRuntimeEnvironment(configDir, os.Getenv, os.Setenv, func(format string, args ...any) {
+			runtimeLogger.Info(ctx, observabilityport.RuntimeEvent{Message: fmt.Sprintf(format, args...), Component: "migrate", Operation: "prepare", Outcome: "info", ReasonCode: "deployment_secrets_generated"})
+		}); err != nil {
+			fatalStartup(runtimeLogger, "deployment environment preparation failed", "deployment_environment_prepare_failed")
+		}
 	}
 	// Migrate always runs with the schema owner: BANSOKO_DATABASE_URL. The
 	// serving pool prefers the derived runtime connection
@@ -59,7 +71,7 @@ func Main(args []string) {
 	defer db.Close()
 	runtimeRole, err := runtimeRoleFromEnv(os.Getenv, cfg.Environment)
 	if err != nil {
-		fatalStartup(runtimeLogger, "runtime database connection is not configured: start through /app/bansoko-server bootstrap, which derives it from BANSOKO_DATABASE_URL", "runtime_role_config_missing")
+		fatalStartup(runtimeLogger, "runtime database connection is not configured: check BANSOKO_DATABASE_URL and the deployment secrets in the config directory", "runtime_role_config_missing")
 	}
 	if runtimeRole != nil {
 		// The baseline creates the runtime group role and provisioning

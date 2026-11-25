@@ -379,6 +379,9 @@ func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker
 	if !sameReleaseMetadata(archiveMeta, currentMeta) {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata differs from the published payload")
 	}
+	if archiveMeta.Platform != target.Platform || archiveMeta.Architecture != target.Architecture {
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata does not match the manifest platform")
+	}
 	if archiveMeta.ReleaseID != manifest.ReleaseID || archiveMeta.Version != manifest.Version ||
 		strings.TrimSpace(archiveMeta.BuildID) == "" || archiveMeta.TargetSchemaVersion != manifest.TargetMigrationVersion {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata does not match the release identity")

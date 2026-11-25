@@ -14,6 +14,7 @@ import (
 
 	"bansoko/internal/fileidentity"
 	"bansoko/internal/library/domain"
+	"bansoko/internal/mediaprobe/mediaprobetest"
 )
 
 func TestAtomicHelpersRequireExpectedParentIdentity(t *testing.T) {
@@ -2057,4 +2058,30 @@ func mustOperationSum(id string) []byte {
 func digest(value string) string {
 	hash := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(hash[:])
+}
+
+// TestOSMediaInspectorReadsEmbeddedMediaInfo drives the default inspector path:
+// no Binary, no external mediainfo on PATH, a real Matroska fixture read by the
+// embedded MediaInfoLib WASI engine.
+func TestOSMediaInspectorReadsEmbeddedMediaInfo(t *testing.T) {
+	t.Setenv("PATH", "")
+	path := mediaprobetest.WriteMatroska(t, canonicalTemp(t), "Episode 01.mkv", mediaprobetest.Options{})
+	snapshot, err := (OSMediaInspector{}).Inspect(context.Background(), "artifact-embedded", path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]any{
+		"media.container":   "Matroska",
+		"media.video_codec": "HEVC",
+		"media.audio_codec": "AAC",
+		"media.resolution":  "1080p",
+		"media.width":       int64(1920),
+		"media.height":      int64(1080),
+	}
+	for name, expected := range checks {
+		fact, ok := snapshot.Values[name]
+		if !ok || fact.State != "value" || fact.Value != expected {
+			t.Fatalf("media fact %s = %+v, want %v", name, fact, expected)
+		}
+	}
 }

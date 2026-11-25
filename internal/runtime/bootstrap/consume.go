@@ -1042,9 +1042,9 @@ func resolveSteadyServe(updatesRoot string) (steadyServe, error) {
 		return steadyServe{}, fmt.Errorf("current overlay pointer is not usable: %w", err)
 	}
 	return steadyServe{
-		binaryPath:  baseServerPath,
-		schemaDir:   baseSchemaDir,
-		frontendDir: baseFrontendDir,
+		binaryPath:  baseServerBinary(),
+		schemaDir:   baseAssetDir(baseSchemaDir),
+		frontendDir: baseAssetDir(baseFrontendDir),
 	}, nil
 }
 
@@ -1314,9 +1314,14 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 				}
 			}
 			cmd := exec.Command(command.path, command.args...)
-			overrides := map[string]string{
-				envSchemaDir:   schemaDir,
-				envFrontendDir: frontendDir,
+			overrides := map[string]string{}
+			// Empty asset dirs stay unset so a native child falls back to the
+			// assets embedded in its own binary.
+			if schemaDir != "" {
+				overrides[envSchemaDir] = schemaDir
+			}
+			if frontendDir != "" {
+				overrides[envFrontendDir] = frontendDir
 			}
 			for key, value := range env {
 				overrides[key] = value
@@ -1493,7 +1498,10 @@ func runConsumeFlow(updatesRoot string) int {
 // overlay fallback names its release (payload digest only when the journal
 // can prove it for exactly that release), base serving clears overlay facts.
 func execSteadyServe(updatesRoot string, outcome consumeOutcome) int {
-	pairs := map[string]string{envSchemaDir: outcome.serveSchemaDir}
+	pairs := map[string]string{}
+	if outcome.serveSchemaDir != "" {
+		pairs[envSchemaDir] = outcome.serveSchemaDir
+	}
 	if outcome.serveFrontendDir != "" {
 		pairs[envFrontendDir] = outcome.serveFrontendDir
 	}

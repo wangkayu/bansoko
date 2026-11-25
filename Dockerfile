@@ -30,6 +30,14 @@ ARG BUILD_DIRTY=true
 ARG API_VERSION=v1
 ARG SCHEMA_VERSION=
 ARG BASE_COMPATIBILITY_VERSION=base-v1
+
+# Fail-closed check of the embedded media inspection engine: the MediaInfoLib
+# WASI module embedded in the binary must instantiate in its pure-Go runtime
+# and parse a real container. A missing or corrupt module fails the image
+# build here instead of the first media probe in production. The check runs
+# on the build platform (Go cross-compiles the target afterwards); the same
+# module ships for every target.
+RUN go test -count=1 ./internal/mediaprobe/ -run 'TestSelfCheck|TestProbeJSONMatroska'
 RUN schema_version="${SCHEMA_VERSION}"; \
     if [ -z "$schema_version" ]; then \
       schema_version="$(for migration in db/migrations/*.sql; do \
@@ -76,6 +84,12 @@ RUN set -eu; \
         echo "    curl -L -o bansoko.tar.gz https://github.com/wangkayu/bansoko/archive/$SOURCE_COMMIT.tar.gz"; \
         echo '    tar -xzf bansoko.tar.gz'; \
         echo "    docker build -t bansoko bansoko-$SOURCE_COMMIT"; \
+        echo; \
+        echo 'The embedded WASI media inspection module (MediaInfoLib, ZenLib,'; \
+        echo 'zlib, built with wasi-sdk / wasi-libc) is built reproducibly from'; \
+        echo 'pinned upstream tarballs listed in scripts/build/mediainfo-wasm/manifest.json:'; \
+        echo; \
+        echo '    bash scripts/build/build-mediainfo-wasm.sh'; \
       } > /out/SOURCE; \
     elif [ "$SOURCE_COMMIT" = unknown ]; then \
       { \
@@ -119,8 +133,22 @@ RUN set -eu; \
       done; \
       [ "$found" = 1 ] || echo "NO LICENCE FILE IN MODULE: $path" >> /out/THIRD_PARTY_LICENSES.txt; \
     done; \
-    [ -s /out/THIRD_PARTY_LICENSES.txt ] || { echo "no third-party licence text collected" >&2; exit 1; }
-
+    [ -s /out/THIRD_PARTY_LICENSES.txt ] || { echo "no third-party licence text collected" >&2; exit 1; }; \
+    { echo '================================================================================'; \
+      echo 'Embedded media inspection engine (MediaInfoLib / ZenLib / zlib / wasi-libc)'; \
+      echo '================================================================================'; \
+      echo; \
+      echo 'These texts belong to the components listed in the Embedded media inspection'; \
+      echo "engine section of THIRD_PARTY_NOTICES.md: C/C++ object code embedded in the Go"; \
+      echo 'binary as a WASI module, outside the Go module graph above.'; \
+      for text in BSD-2-Clause Zlib Apache-2.0 MIT Apache-2.0-with-LLVM-exception; do \
+        echo; \
+        echo '--------------------------------------------------------------------------------'; \
+        echo "$text"; \
+        echo '--------------------------------------------------------------------------------'; \
+        cat "deployment/licenses/$text.txt"; \
+        echo; \
+      done; } >> /out/THIRD_PARTY_LICENSES.txt
 # postgres:17-alpine, pinned by its registry manifest digest. Copy only
 # PostgreSQL's own files; the runtime APK repositories supply their OS libraries.
 FROM postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 AS pg17-tools
@@ -145,14 +173,15 @@ LABEL org.opencontainers.image.licenses="GPL-3.0-only" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$SOURCE_COMMIT"
 
-# mediainfo reads the execution-time media facts (file.resolution, video_codec,
-# audio_codec, container) of every downloaded video; it is started directly
-# with the file path as one argument, never through a shell.
+# The execution-time media facts (file.resolution, video_codec, audio_codec,
+# container) of every downloaded video are read by the MediaInfoLib WASI
+# module embedded in the server binary, so the runtime image installs no
+# external media tool at all.
 # Event scripts can use curl for HTTP and jq for their JSON input.
 # Install the PG clients' direct OS dependencies by soname. APK resolves their
 # transitive dependencies and owns the versions used by all runtime tools.
 RUN apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates tzdata mediainfo curl jq \
+    apk add --no-cache ca-certificates tzdata curl jq \
     'so:libcrypto.so.3' 'so:libedit.so.0' 'so:libgssapi_krb5.so.2' \
     'so:libldap.so.2' 'so:liblz4.so.1' 'so:libssl.so.3' 'so:libz.so.1' 'so:libzstd.so.1'
 WORKDIR /app
@@ -195,14 +224,6 @@ RUN set -eux; \
       ldd "/usr/local/bin/$tool"; \
       "/usr/local/bin/$tool" --version | grep -q " 17\."; \
     done
-
-# Fail-closed verification of the media tool: it must resolve every dynamic
-# dependency and answer --Version. The installed Alpine package version is
-# printed into the build log as build evidence.
-RUN set -eux; \
-    ldd /usr/bin/mediainfo; \
-    mediainfo --Version | grep -q "MediaInfoLib"; \
-    apk list --installed mediainfo libmediainfo
 
 RUN set -eu; \
     curl --version; \

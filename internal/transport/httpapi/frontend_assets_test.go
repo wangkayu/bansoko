@@ -51,7 +51,7 @@ func TestFrontendPrecompressedAssets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	handler := frontendHandler(dir)
+	handler := frontendHandler(os.DirFS(dir))
 	request := func(method, path, encoding, byteRange string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, nil)
 		r.Header.Set("Accept-Encoding", encoding)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bansoko/internal/download/domain"
+	"bansoko/internal/mediaprobe/mediaprobetest"
 )
 
 // realVideoAudioJSON is the shape `mediainfo --Output=JSON` prints for a
@@ -437,5 +438,39 @@ func TestOSMediaProberHonoursACanceledParentContext(t *testing.T) {
 	_, err := (OSMediaProber{Binary: tool}).Probe(ctx, mediaFile(t, "a.mkv"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
+// TestOSMediaProberEmbeddedEngineReadsFacts drives the default path: no Binary,
+// no external mediainfo on PATH, a real Matroska fixture read by the embedded
+// MediaInfoLib WASI engine.
+func TestOSMediaProberEmbeddedEngineReadsFacts(t *testing.T) {
+	t.Setenv("PATH", "")
+	path := mediaprobetest.WriteMatroska(t, t.TempDir(), "Episode 01.mkv", mediaprobetest.Options{})
+	facts, err := (OSMediaProber{}).Probe(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := domain.MediaFacts{Resolution: "1080p", VideoCodec: "HEVC", AudioCodec: "AAC", Container: "mkv"}
+	if facts != want {
+		t.Fatalf("embedded probe facts = %+v, want %+v", facts, want)
+	}
+}
+
+func TestOSMediaProberEmbeddedTimeoutIsTyped(t *testing.T) {
+	t.Setenv("PATH", "")
+	path := mediaprobetest.WriteMatroska(t, t.TempDir(), "slow.mkv", mediaprobetest.Options{})
+	_, err := (OSMediaProber{Timeout: time.Nanosecond}).Probe(context.Background(), path)
+	if !errors.Is(err, domain.ErrMediaProbeTimeout) {
+		t.Fatalf("error = %v, want ErrMediaProbeTimeout", err)
+	}
+}
+
+func TestOSMediaProberEmbeddedOutputLimitIsTyped(t *testing.T) {
+	t.Setenv("PATH", "")
+	path := mediaprobetest.WriteMatroska(t, t.TempDir(), "loud.mkv", mediaprobetest.Options{})
+	_, err := (OSMediaProber{MaxOutputBytes: 64}).Probe(context.Background(), path)
+	if !errors.Is(err, domain.ErrMediaProbeOutputInvalid) {
+		t.Fatalf("error = %v, want ErrMediaProbeOutputInvalid", err)
 	}
 }

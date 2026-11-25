@@ -48,6 +48,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -99,12 +100,20 @@ const (
 // environment text alone.
 func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string) map[string]string {
 	baseDigest := strings.TrimSpace(os.Getenv(deploymentidentity.EnvBaseImageDigest))
+	// A native deployment has no container image to anchor against: mark the
+	// anchor honestly instead of fabricating a sha256 digest. The key is always
+	// written so an inherited anchor can never leak into a container launch.
+	anchor := ""
+	if baseDigest == "" {
+		anchor = deploymentidentity.AnchorNative
+	}
 	return map[string]string{
 		deploymentidentity.EnvSource:               source,
 		deploymentidentity.EnvSelectedReleaseID:    releaseID,
 		deploymentidentity.EnvPayloadDigest:        payloadDigest,
 		deploymentidentity.EnvUpdateOperationID:    operationID,
 		deploymentidentity.EnvBaseImageDigest:      baseDigest,
+		deploymentidentity.EnvAnchorKind:           anchor,
 		deploymentidentity.EnvExpectedProcessBuild: "",
 		deploymentidentity.EnvBootstrapVersion:     embeddedBootstrapVersion,
 	}
@@ -136,9 +145,6 @@ func verifyOverlayIdentity(updatesRoot, releaseID string) (overlayIdentityProof,
 	}
 	if meta.ReleaseID != releaseID {
 		return overlayIdentityProof{}, errors.New("verified release metadata does not match selected release")
-	}
-	if manifest.EmbeddedUpdate == nil {
-		return overlayIdentityProof{}, errors.New("verified release has no embedded update identity")
 	}
 	provenance, err := deploymentprovenance.Read(updatesRoot, releaseID)
 	if err != nil {
@@ -393,17 +399,49 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 
 func basePlan(out plan, reason string) plan {
 	out.mode = modeBase
+	binary := baseServerBinary()
 	if out.kind == "migrate" {
-		out.binaryPath = baseServerPath
-		out.schemaDir = baseSchemaDir
+		out.binaryPath = binary
+		out.schemaDir = baseAssetDir(baseSchemaDir)
 	} else {
-		out.binaryPath = baseServerPath
-		out.migratePath = baseServerPath
-		out.schemaDir = baseSchemaDir
-		out.frontendDir = baseFrontendDir
+		out.binaryPath = binary
+		out.migratePath = binary
+		out.schemaDir = baseAssetDir(baseSchemaDir)
+		out.frontendDir = baseAssetDir(baseFrontendDir)
 	}
 	out.reason = reason
 	return out
+}
+
+// baseServerBinary resolves the executable for base launches: the container
+// path when it exists (container layout), otherwise the running binary
+// itself. A native single-binary start re-execs itself for the serve/migrate
+// children instead of depending on container paths.
+func baseServerBinary() string {
+	if anchor := os.Getenv(nativeAnchorEnv); anchor != "" {
+		return anchor
+	}
+	if info, err := os.Stat(baseServerPath); err == nil && !info.IsDir() {
+		return baseServerPath
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		return exe
+	}
+	return baseServerPath
+}
+
+// baseAssetDir returns the container asset directory only when it exists on
+// disk. An empty result means the child must fall back to the asset set
+// embedded in the binary (native single-binary deployments), so it is never
+// passed down as an explicit override.
+func baseAssetDir(dir string) string {
+	if os.Getenv(nativeAnchorEnv) != "" {
+		return ""
+	}
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return dir
+	}
+	return ""
 }
 
 func overlayPlan(out plan, releaseID, binaryPath, migratePath, schemaDir, frontendDir string) plan {
@@ -466,11 +504,16 @@ func verifyReleaseTree(releaseDir string) error {
 }
 
 func verifyReleaseTreeIdentity(releaseDir string) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
-	return updateapplication.VerifyReleaseTreeIdentity(releaseDir)
+	meta, manifest, err := updateapplication.VerifyReleaseTreeIdentity(releaseDir)
+	if err == nil {
+		err = manifest.EmbeddedUpdate.ValidateTarget(runtime.GOOS, runtime.GOARCH)
+	}
+	return meta, manifest, err
 }
 
 func verifyReleaseTreeMetadata(releaseDir string) (packagemaker.Metadata, error) {
-	return updateapplication.VerifyReleaseTreeMetadata(releaseDir)
+	meta, _, err := verifyReleaseTreeIdentity(releaseDir)
+	return meta, err
 }
 
 func hashFileSHA256(path string) (string, error) {
@@ -511,28 +554,9 @@ func prepareDeploymentEnvironment(getenv func(string) string, setenv func(string
 		return fmt.Errorf("%s is required: the connection of the database account that owns the schema and can create roles", bootsecrets.EnvDatabaseURL)
 	}
 	configDir := bootsecrets.ConfigDir(getenv)
-	resolved, err := bootsecrets.Resolve(configDir, getenv, nil)
-	if err != nil {
-		return err
-	}
-	if len(resolved.Generated) > 0 {
-		log("generated %s and stored them in %s; keep this file with the database when moving the deployment",
-			strings.Join(resolved.Generated, ", "), resolved.Path)
-	}
-	runtimeDSN, err := bootsecrets.RuntimeDatabaseURL(ownerDSN, resolved.Values.DatabaseRuntimePassword)
-	if err != nil {
-		return err
-	}
-	for key, value := range map[string]string{
-		bootsecrets.EnvRuntimeDatabaseURL:  runtimeDSN,
-		bootsecrets.EnvSessionSecret:       resolved.Values.SessionSecret,
-		bootsecrets.EnvSecretEncryptionKey: resolved.Values.SecretEncryptionKey,
-	} {
-		if err := setenv(key, value); err != nil {
-			return fmt.Errorf("export %s: %w", key, err)
-		}
-	}
-	return nil
+	return bootsecrets.EnsureRuntimeEnvironment(configDir, getenv, setenv, func(format string, args ...any) {
+		log(format, args...)
+	})
 }
 
 // runMigrationChild applies the selected tree's schema with the owner
@@ -607,7 +631,16 @@ func run(kind string) int {
 // startup migration never starts the server: the process exits non-zero so the
 // container restart policy retries once the cause is fixed.
 func launchPlan(chosen plan, updatesRoot string) int {
-	pairs := map[string]string{envSchemaDir: chosen.schemaDir}
+	pairs := map[string]string{}
+	if mode := strings.TrimSpace(os.Getenv("BANSOKO_UPDATE_MODE")); mode != "" {
+		pairs["BANSOKO_UPDATE_MODE"] = mode
+	}
+	// Empty schema/frontend dirs mean the child falls back to the assets
+	// embedded in its binary; explicit environment configuration is inherited
+	// through envWithOverrides either way.
+	if chosen.schemaDir != "" {
+		pairs[envSchemaDir] = chosen.schemaDir
+	}
 	if chosen.frontendDir != "" {
 		pairs[envFrontendDir] = chosen.frontendDir
 	}
@@ -744,6 +777,9 @@ func establishProcessPrivileges(getenv func(string) string, setenv func(string, 
 // Main runs the bootstrap command after establishing the configured process
 // ownership. Successful launch paths replace the current process image.
 func Main(args []string) int {
+	if len(args) == 1 && args[0] == "native-handoff" && filepath.IsAbs(os.Getenv(nativeAnchorEnv)) {
+		return run("server")
+	}
 	if err := establishProcessPrivileges(os.Getenv, os.Setenv, bootprepare.OSPrivilegeSystem{}); err != nil {
 		logf("MAINTENANCE fail-closed: process ownership could not be established, nothing was started: %v", err)
 		return 1

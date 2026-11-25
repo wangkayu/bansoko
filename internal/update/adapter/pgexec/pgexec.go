@@ -18,10 +18,12 @@ import (
 
 // DefaultCandidatePaths are the whitelisted runtime locations for the
 // PostgreSQL 17 client tools inside the runtime image (postgresql17-client) and
-// on native deployments with Homebrew.
+// on native deployments (Homebrew, Debian/Ubuntu and RHEL/Fedora packages).
 var DefaultCandidatePaths = []string{
 	"/usr/local/bin/",
 	"/usr/bin/",
+	"/usr/lib/postgresql/17/bin/", // Debian/Ubuntu postgresql-client-17
+	"/usr/pgsql-17/bin/",          // RHEL/Fedora postgresql17
 	"/opt/homebrew/opt/postgresql@17/bin/",
 }
 
@@ -58,6 +60,14 @@ func New(candidateDirs []string) (*Executor, error) {
 		return nil, errors.New("no whitelisted pg_restore found")
 	}
 	return &e, nil
+}
+
+// CheckTools is a read-only preflight shared by doctor and update admission.
+func CheckTools(candidateDirs []string) error {
+	if _, err := New(candidateDirs); err != nil {
+		return fmt.Errorf("PostgreSQL 17 pg_dump/pg_restore are required for backup and embedded updates; install postgresql-client-17 (Debian/Ubuntu), postgresql17 (PGDG RPM), or postgresql@17 (Homebrew): %w", err)
+	}
+	return nil
 }
 
 // Dump writes a custom-format archive of the PG* env database to outPath.

@@ -97,3 +97,12 @@ func TestIsCurrentExecutableRecognizesHardlinks(t *testing.T) {
 		t.Fatalf("SameFile = %v, %v; want true", same, err)
 	}
 }
+
+func TestNativeFallbackKeepsInstalledAnchor(t *testing.T) {
+	anchor := filepath.Join(t.TempDir(), "bansoko-server")
+	t.Setenv(nativeAnchorEnv, anchor)
+	serve, err := resolveSteadyServe(t.TempDir())
+	if err != nil || serve.binaryPath != anchor || serve.schemaDir != "" || serve.frontendDir != "" {
+		t.Fatalf("native fallback = %+v, %v; want installed anchor and embedded assets", serve, err)
+	}
+}

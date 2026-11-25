@@ -128,12 +128,12 @@ def github_raw_url(name="", branch=BRANCH):
     return github_raw_base() + (path + "/" + name if name else path)
 
 
-def github_content_url():
+def github_content_url(prefix=""):
     return (
         github_api_base()
         + "/repos/"
         + github_repository()
-        + "/contents/channel-v1.json"
+        + "/contents/" + prefix + "channel-v1.json"
     )
 
 
@@ -350,7 +350,7 @@ def release_notes(ident, mode, output):
     )
 
 
-def published_channel(token, temp, branch=BRANCH):
+def published_channel(token, temp, branch=BRANCH, prefix=""):
     """The currently published channel, read through the API.
 
     The API answers the committed bytes immediately, unlike the raw host's
@@ -358,7 +358,7 @@ def published_channel(token, temp, branch=BRANCH):
     older one. Only explicit absence (404) means "no channel yet"; any other
     failure refuses.
     """
-    status, body = request(github_content_url() + "?ref=" + branch, token)
+    status, body = request(github_content_url(prefix) + "?ref=" + branch, token)
     if status == 404:
         return None
     if status != 200:
@@ -380,21 +380,41 @@ def preflight(ident):
             release_notes(ident, "manifest", temp / "release-notes.json")
         token = required(GITHUB_TOKEN_ENV)
         require_public_github(token)
-        published = published_channel(token, temp, branch_of(ident))
-        release_tool(
-            "version-gate",
-            "--published",
-            str(published) if published else "",
-            "--version",
-            ident["version"],
-            "--sequence",
-            str(ident["sequence"]),
-            "--source-commit",
-            ident["sha"],
-            "--lane",
-            ident.get("lane", "stable"),
-        )
+        for prefix in ("", "arm64/"):
+            published = published_channel(token, temp, branch_of(ident), prefix)
+            release_tool(
+                "version-gate",
+                "--published",
+                str(published) if published else "",
+                "--version",
+                ident["version"],
+                "--sequence",
+                str(ident["sequence"]),
+                "--source-commit",
+                ident["sha"],
+                "--lane",
+                ident.get("lane", "stable"),
+            )
     print("release preflight passed", ident["release_id"])
+
+
+def native_asset_names(version):
+    return [
+        f"bansoko-{version}-{platform}.tar.gz"
+        for platform in ("linux-amd64", "linux-arm64", "darwin-arm64")
+    ] + ["SHA256SUMS.txt"]
+
+
+def build_native_assets(ident, destination):
+    env = dict(
+        os.environ,
+        BANSOKO_RELEASE_VERSION=ident["version"],
+        BANSOKO_RELEASE_ID=ident["release_id"],
+        BANSOKO_NATIVE_OUTPUT_DIR=str(destination),
+        SOURCE_DATE_EPOCH=run("git", "show", "-s", "--format=%ct", ident["sha"]),
+    )
+    subprocess.run(["bash", "scripts/ci/build-native-release.sh"], cwd=ROOT, env=env, check=True)
+    return [destination / name for name in native_asset_names(ident["version"])]
 
 
 def github_release(ident):
@@ -410,6 +430,7 @@ def github_release(ident):
     notes = OUTPUT / GITHUB_NOTES
     OUTPUT.mkdir(parents=True, exist_ok=True)
     release_notes(ident, "github", notes)
+    assets = build_native_assets(ident, OUTPUT / "native")
     tag = ident["release_id"]
     repository = github_repository()
     existing = subprocess.run(
@@ -421,6 +442,17 @@ def github_release(ident):
         found = decode_json(existing.stdout)
         if found.get("tagName") != tag or found.get("body", "").strip() != notes.read_text().strip():
             fail("an existing GitHub Release for " + tag + " carries different notes")
+        published = decode_json(run("gh", "api", f"repos/{repository}/releases/tags/{tag}"))
+        by_name = {asset["name"]: asset for asset in published["assets"]}
+        missing = []
+        for path in assets:
+            asset = by_name.get(path.name)
+            if asset is None:
+                missing.append(str(path))
+            elif asset.get("digest") != "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest():
+                fail("immutable GitHub Release asset differs: " + path.name)
+        if missing:
+            run("gh", "release", "upload", tag, "--repo", repository, *missing)
         print("github release already present with identical notes", tag)
         return
     subprocess.run(
@@ -436,6 +468,7 @@ def github_release(ident):
             tag,
             "--notes-file",
             str(notes),
+            *(str(path) for path in assets),
         ],
         cwd=ROOT,
         check=True,
@@ -699,8 +732,20 @@ def publish(ident):
             "sbom.spdx.json",
             "provenance.json",
         ]
+        # The legacy package is unchanged. ARM64 has its own immutable namespace.
+        arm = OUTPUT / "arm64"
+        arm_env = dict(
+            env, BANSOKO_RELEASE_OUTPUT_DIR=str(arm), BANSOKO_RELEASE_GOARCH="arm64",
+            BANSOKO_RELEASE_IMAGE_PLATFORM="linux/amd64",
+            BANSOKO_RELEASE_MANIFEST=str(arm / "release-manifest.json"),
+            BANSOKO_RELEASE_ARTIFACT=str(arm / "bansoko-server-linux-arm64"),
+            BANSOKO_RELEASE_EMBEDDED_PAYLOAD=str(arm / "embedded-update-v1.tar.gz"),
+        )
+        for script in ("build-release.sh", "check-release.sh"):
+            subprocess.run(["bash", "scripts/ci/" + script], cwd=ROOT, env=arm_env, check=True)
         require_public_github(required(GITHUB_TOKEN_ENV))
         github_publish(ident, published_files)
+        github_publish(ident, published_files, prefix="arm64/")
         # The same signature verification the signed files must survive, run
         # over the public copies: the bytes are read back from the raw host and
         # verified, not reused from the local build. These files were written
@@ -887,32 +932,32 @@ def github_ensure_branch(token, branch=BRANCH):
         refused("channel branch create", status, body)
 
 
-def github_publish(ident, files):
+def github_publish(ident, files, prefix=""):
     """Upload this version's immutable files and prove they are publicly readable."""
     token = required(GITHUB_TOKEN_ENV)
     branch = branch_of(ident)
     github_ensure_branch(token, branch)
     for name in files:
-        github_put_file(ident["version"], name, (OUTPUT / name).read_bytes(), token, branch)
+        github_put_file(prefix + ident["version"], name, (OUTPUT / prefix / name).read_bytes(), token, branch)
     # Read every file back from the raw host, unauthenticated: that is the
     # address an instance actually fetches, so a readback through the API would
     # prove less than this does.
     for name in files:
-        expected = (OUTPUT / name).read_bytes()
-        code, body = public_readback(github_file_url(ident["version"], name, branch), expected)
+        expected = (OUTPUT / prefix / name).read_bytes()
+        code, body = public_readback(github_file_url(prefix + ident["version"], name, branch), expected)
         if code != 200 or body != expected:
             fail("public readback failed: " + name)
     print("github release files published and publicly read back", ident["release_id"])
 
 
-def channel_files(ident, temp):
+def channel_files(ident, temp, prefix=""):
     """Fetch this version's signed files and prove they name this event.
 
     The files are read from the public raw host — the address an instance
     actually fetches — not reused from the local build.
     """
     for name in ["release-manifest.json", "embedded-update-v1.tar.gz"]:
-        status, body = public_fetch(github_file_url(ident["version"], name, branch_of(ident)))
+        status, body = public_fetch(github_file_url(prefix + ident["version"], name, branch_of(ident)))
         if status != 200:
             fail("channel github readback refused")
         (temp / name).write_bytes(body)
@@ -927,14 +972,18 @@ def channel_files(ident, temp):
         }.items()
     ):
         fail("channel package identity differs from event")
+    expected_arch = "arm64" if prefix else "amd64"
+    segment = manifest.get("embedded_update", {})
+    if (segment.get("platform"), segment.get("architecture")) != ("linux", expected_arch):
+        fail("channel package does not target linux/" + expected_arch)
 
 
-def channel(ident):
+def channel(ident, prefix=""):
     with tempfile.TemporaryDirectory(prefix="bansoko-channel-") as temp:
         temp = Path(temp)
-        channel_files(ident, temp)
+        channel_files(ident, temp, prefix)
         manifest_url = github_file_url(
-            ident["version"], "release-manifest.json", branch_of(ident)
+            prefix + ident["version"], "release-manifest.json", branch_of(ident)
         )
         candidate = temp / "candidate.json"
         run(
@@ -956,7 +1005,12 @@ def channel(ident):
             str(candidate),
         )
         require_public_github(required(GITHUB_TOKEN_ENV))
-        github_channel(candidate, ident, temp)
+        github_channel(candidate, ident, temp, prefix)
+
+
+def advance_channels(ident):
+    channel(ident, "arm64/")
+    channel(ident)
 
 
 def github_content_bytes(info, token):
@@ -979,7 +1033,7 @@ def github_content_bytes(info, token):
     return base64.b64decode(decode_json(body)["content"])
 
 
-def github_channel(candidate, ident, temp):
+def github_channel(candidate, ident, temp, prefix=""):
     """Advance the channel branch blob with the blob sha as its precondition.
 
     The read returns the sha the write must still find. The readback afterwards
@@ -989,7 +1043,7 @@ def github_channel(candidate, ident, temp):
     token = required(GITHUB_TOKEN_ENV)
     hosts = (urllib.parse.urlsplit(github_api_base()).netloc,)
     branch = branch_of(ident)
-    url = github_content_url()
+    url = github_content_url(prefix)
     status, body = request(url + "?ref=" + branch, token, hosts=hosts)
     options = {
         "branch": branch,
@@ -1003,7 +1057,7 @@ def github_channel(candidate, ident, temp):
         options["sha"] = info["sha"]
         if published.read_bytes() == candidate.read_bytes():
             expected = candidate.read_bytes()
-            code, raw = public_readback(github_raw_url("channel-v1.json", branch), expected)
+            code, raw = public_readback(github_raw_url(prefix + "channel-v1.json", branch), expected)
             if code != 200 or raw != expected:
                 fail("identical github channel raw readback mismatch")
             print("github channel already identical and raw readback verified")
@@ -1038,7 +1092,7 @@ def github_channel(candidate, ident, temp):
     if status not in (200, 201):
         refused("github channel conditional write", status, body)
     expected = candidate.read_bytes()
-    code, raw = public_readback(github_raw_url("channel-v1.json", branch), expected)
+    code, raw = public_readback(github_raw_url(prefix + "channel-v1.json", branch), expected)
     if code != 200 or raw != expected:
         fail("github channel raw readback mismatch")
     (temp / "github-raw.json").write_bytes(raw)
@@ -1057,7 +1111,7 @@ STABLE_MODES = {
     "preflight": preflight,
     "image": image,
     "publish": publish,
-    "channel": channel,
+    "channel": advance_channels,
     "github-release": github_release,
 }
 # The test lane has no GitHub Release: a test build is not a release.
@@ -1065,7 +1119,7 @@ TEST_MODES = {
     "test-preflight": preflight,
     "test-image": image,
     "test-publish": publish,
-    "test-channel": channel,
+    "test-channel": advance_channels,
 }
 
 

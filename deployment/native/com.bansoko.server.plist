@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bansoko.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/bansoko-server</string>
+        <string>start</string>
+        <string>--config-dir</string>
+        <string>/Users/ACCOUNT/Library/Application Support/bansoko</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>BANSOKO_DATABASE_URL</key>
+        <string>REPLACE_WITH_POSTGRESQL_CONNECTION_URI</string>
+        <key>BANSOKO_UPDATE_MODE</key>
+        <string>manual</string>
+    </dict>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/ACCOUNT/Library/Logs/bansoko.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ACCOUNT/Library/Logs/bansoko.stderr.log</string>
+</dict>
+</plist>

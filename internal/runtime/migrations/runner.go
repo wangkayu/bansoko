@@ -6,11 +6,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	migrationsdb "bansoko/db/migrations"
 	"bansoko/internal/runtime/migrations/varspreflight"
 )
 
@@ -30,8 +32,17 @@ const (
 )
 
 type Runner struct {
-	DB       *sql.DB
-	Dir      string
+	DB *sql.DB
+	// Dir is the explicit on-disk migration directory. When empty the runner
+	// reads FS instead, falling back to the embedded migration set compiled
+	// into the binary, so a native single-binary deployment needs no mounted
+	// schema directory.
+	Dir string
+	// FS is the migration source used when Dir is empty; nil selects the
+	// embedded set from db/migrations.
+	FS fs.FS
+	// ReadDir and ReadFile override directory reads (test seams). They apply
+	// only to the on-disk Dir path.
 	ReadDir  func(string) ([]os.DirEntry, error)
 	ReadFile func(string) ([]byte, error)
 }
@@ -339,7 +350,15 @@ WHERE condeferrable AND condeferred`).Scan(&deferred); err != nil {
 	return nil
 }
 
+// loadMigrations reads the migration set from the explicitly configured
+// on-disk directory, or from the embedded filesystem (an explicit FS override
+// or the compiled-in db/migrations copy) when no directory is set. Both
+// sources are validated identically, so the embedded set is interchangeable
+// with the mounted directory it ships from.
 func (r Runner) loadMigrations() ([]migration, error) {
+	if strings.TrimSpace(r.Dir) == "" {
+		return r.loadMigrationsFromFS()
+	}
 	readDir := r.ReadDir
 	if readDir == nil {
 		readDir = os.ReadDir
@@ -368,6 +387,43 @@ func (r Runner) loadMigrations() ([]migration, error) {
 		migrations = append(migrations, migration{version: file, contents: contents})
 	}
 	return migrations, nil
+}
+
+func (r Runner) loadMigrationsFromFS() ([]migration, error) {
+	source := r.FS
+	if source == nil {
+		source = migrationsdb.FS
+	}
+	entries, err := fs.ReadDir(source, ".")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
+	}
+	files := migrationFiles(entries)
+	if len(files) == 0 || files[0] != baselineMigrationFile {
+		return nil, fmt.Errorf("%w: first migration must be %s, found %v", ErrInvalidMigrationSet, baselineMigrationFile, files)
+	}
+	migrations := make([]migration, 0, len(files))
+	for _, file := range files {
+		contents, err := fs.ReadFile(source, file)
+		if err != nil {
+			return nil, fmt.Errorf("read migration %s: %w", file, err)
+		}
+		if len(contents) == 0 {
+			return nil, fmt.Errorf("%w: migration %s is empty", ErrInvalidMigrationSet, file)
+		}
+		migrations = append(migrations, migration{version: file, contents: contents})
+	}
+	return migrations, nil
+}
+
+// TargetVersion returns the newest migration version in the embedded set.
+// The version command reports it as the schema target this binary carries.
+func TargetVersion() string {
+	migrations, err := Runner{}.loadMigrationsFromFS()
+	if err != nil || len(migrations) == 0 {
+		return ""
+	}
+	return migrations[len(migrations)-1].version
 }
 
 func verifyInstalled(ctx context.Context, db queryer, migrations []migration) error {

@@ -19,6 +19,18 @@ func TestFromFlagsDefaultsUpdateModeToSharedSafeValue(t *testing.T) {
 	}
 }
 
+func TestFromMigrationFlagsAllowsSecretPreparationInProduction(t *testing.T) {
+	t.Setenv("BANSOKO_SESSION_SECRET", "")
+	args := []string{"--environment=production", "--update-mode=manual"}
+	cfg, err := FromMigrationFlags(args)
+	if err != nil || cfg.Environment != "production" || cfg.UpdateMode != "manual" {
+		t.Fatalf("migration config = (%q, %q), err = %v", cfg.Environment, cfg.UpdateMode, err)
+	}
+	if _, err := FromFlags(args); !errors.Is(err, ErrProductionSessionSecret) {
+		t.Fatalf("serve config error = %v, want %v", err, ErrProductionSessionSecret)
+	}
+}
+
 func TestFromFlagsServesWithDerivedRuntimeConnection(t *testing.T) {
 	t.Setenv("BANSOKO_ENVIRONMENT", "development")
 	t.Setenv("BANSOKO_DATABASE_URL", "postgres://owner:pw@db/bansoko")

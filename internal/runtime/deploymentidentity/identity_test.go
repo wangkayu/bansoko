@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"bansoko/internal/runtime/configdir"
 )
 
 func validDigest() string {
@@ -175,8 +177,9 @@ func TestUpdatesRootDefaultsUnderConfigDirAndAllowsOverride(t *testing.T) {
 	if DefaultUpdatesRoot != "/config/updates" {
 		t.Fatalf("DefaultUpdatesRoot = %q, want /config/updates", DefaultUpdatesRoot)
 	}
-	if got := UpdatesRoot(func(string) string { return "" }); got != DefaultUpdatesRoot {
-		t.Fatalf("default UpdatesRoot = %q, want %q", got, DefaultUpdatesRoot)
+	wantDefault := filepath.Join(configdir.Resolve("", func(string) string { return "" }), "updates")
+	if got := UpdatesRoot(func(string) string { return "" }); got != wantDefault {
+		t.Fatalf("default UpdatesRoot = %q, want %q", got, wantDefault)
 	}
 	if got := UpdatesRoot(func(key string) string {
 		if key == "BANSOKO_CONFIG_DIR" {

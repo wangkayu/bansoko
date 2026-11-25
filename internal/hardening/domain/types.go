@@ -79,6 +79,17 @@ type EmbeddedUpdateSegment struct {
 	ReleaseSequence     int64  `json:"release_sequence"`
 }
 
+// ValidateTarget rejects packages intended for a different runtime platform.
+func (s *EmbeddedUpdateSegment) ValidateTarget(platform, architecture string) error {
+	if s == nil {
+		return errors.New("release manifest has no embedded update segment")
+	}
+	if s.Platform != platform || s.Architecture != architecture {
+		return fmt.Errorf("update targets %s/%s but this installation requires %s/%s", s.Platform, s.Architecture, platform, architecture)
+	}
+	return nil
+}
+
 type ReleaseManifest struct {
 	SchemaVersion          string         `json:"schema_version"`
 	ReleaseSequence        int64          `json:"release_sequence,omitempty"`

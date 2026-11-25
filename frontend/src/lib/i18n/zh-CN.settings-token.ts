@@ -83,6 +83,8 @@ export const settingsTokenCopy = {
     statusFailed: "无法读取更新信息",
     statusFailedFallback: "请稍后再试",
     reread: "重新读取",
+    manualModeTitle: "此部署未启用内嵌更新通道",
+    manualModeHint: "当前部署通过包管理器或替换二进制文件升级；本页不检查、不执行更新，此状态不是错误。",
     unknownTitle: "更新信息无法识别",
     unknownHint: "请稍后重新读取",
     reconnecting: "连接暂时中断，正在重试；已保留最近一次更新进度",

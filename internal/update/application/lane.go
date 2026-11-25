@@ -52,6 +52,10 @@ func laneBranch(lane string) (string, error) {
 // overrides the repository root (development and test fixtures only; the
 // caller is responsible for refusing it in production).
 func LaneSource(lane, base string) (documentURL, packageRoot string, err error) {
+	return laneSourceForPlatform(lane, base, "linux", "amd64")
+}
+
+func laneSourceForPlatform(lane, base, goos, goarch string) (documentURL, packageRoot string, err error) {
 	branch, err := laneBranch(lane)
 	if err != nil {
 		return "", "", err
@@ -64,6 +68,9 @@ func LaneSource(lane, base string) (documentURL, packageRoot string, err error) 
 		root += "/"
 	}
 	packageRoot = root + branch + "/"
+	if goos == "linux" && goarch == "arm64" {
+		packageRoot += "arm64/"
+	}
 	return packageRoot + "channel-v1.json", packageRoot, nil
 }
 

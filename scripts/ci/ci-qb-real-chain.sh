@@ -101,14 +101,10 @@ if ! command -v qbittorrent-nox >/dev/null 2>&1; then
   echo "ci-qb-real-chain: qbittorrent-nox is required" >&2
   exit 1
 fi
-# The single-episode chain downloads a real Matroska file and requires the real
-# mediainfo binary to read its resolution, codecs and container (the runtime image
-# installs the same Alpine package). A missing tool fails the lane; it never
-# skips the media facts proof.
-if ! command -v mediainfo >/dev/null 2>&1; then
-  echo "ci-qb-real-chain: mediainfo is required" >&2
-  exit 1
-fi
+# The single-episode chain downloads a real Matroska file and reads its
+# resolution, codecs and container with the MediaInfoLib engine embedded in the
+# server binary; the lane fails through the test itself if the engine is broken,
+# and needs no host mediainfo.
 # The global /downloads symlink is a machine-wide resource: with two gate
 # slots, two qb lanes could otherwise claim or steal it concurrently.
 # Serialize every lane that touches it on this lock (blocking wait; the

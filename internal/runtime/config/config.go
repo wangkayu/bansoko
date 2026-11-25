@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"bansoko/internal/runtime/bootprepare"
+	"bansoko/internal/runtime/configdir"
 	"bansoko/internal/runtime/deploymentidentity"
 )
 
@@ -99,6 +99,16 @@ func ResolveListenAddress(getenv func(string) string) (string, error) {
 }
 
 func FromFlags(args []string) (Config, error) {
+	return fromFlags(args, true)
+}
+
+// FromMigrationFlags uses the same deployment configuration without requiring
+// a serving session secret before the migration command prepares the secrets.
+func FromMigrationFlags(args []string) (Config, error) {
+	return fromFlags(args, false)
+}
+
+func fromFlags(args []string, requireSessionSecret bool) (Config, error) {
 	flags := flag.NewFlagSet("bansoko-server", flag.ContinueOnError)
 	listenAddr, listenErr := ResolveListenAddress(os.Getenv)
 	if listenErr != nil {
@@ -109,11 +119,11 @@ func FromFlags(args []string) (Config, error) {
 		DatabaseURL:         servingDatabaseURL(os.Getenv),
 		Environment:         envOr("BANSOKO_ENVIRONMENT", "development"),
 		SkipAuth:            os.Getenv("BANSOKO_SKIP_AUTH") == "true",
-		SchemaDir:           envOr("BANSOKO_SCHEMA_DIR", "db/migrations"),
+		SchemaDir:           envOr("BANSOKO_SCHEMA_DIR", ""),
 		SessionSecret:       os.Getenv("BANSOKO_SESSION_SECRET"),
 		SecretEncryptionKey: os.Getenv("BANSOKO_SECRET_ENCRYPTION_KEY"),
-		FrontendDir:         envOr("BANSOKO_FRONTEND_DIR", "frontend/dist"),
-		ConfigDir:           envOr("BANSOKO_CONFIG_DIR", "/config"),
+		FrontendDir:         envOr("BANSOKO_FRONTEND_DIR", ""),
+		ConfigDir:           configdir.Resolve("", os.Getenv),
 		WorkerDisabled:      os.Getenv("BANSOKO_WORKER_DISABLED") == "true",
 		UpdateMode:          UpdateModeFromEnv(os.Getenv),
 		updateModeExplicit:  strings.TrimSpace(os.Getenv("BANSOKO_UPDATE_MODE")) != "",
@@ -127,9 +137,10 @@ func FromFlags(args []string) (Config, error) {
 	flags.StringVar(&cfg.DatabaseURL, "database-url", cfg.DatabaseURL, "PostgreSQL DSN")
 	flags.StringVar(&cfg.Environment, "environment", cfg.Environment, "runtime environment")
 	flags.BoolVar(&cfg.SkipAuth, "skip-auth", cfg.SkipAuth, "development-only auth bypass")
-	flags.StringVar(&cfg.SchemaDir, "schema-dir", cfg.SchemaDir, "migration directory")
+	flags.StringVar(&cfg.SchemaDir, "schema-dir", cfg.SchemaDir, "migration directory (default: embedded set)")
 	flags.StringVar(&cfg.SessionSecret, "session-secret", cfg.SessionSecret, "persistent session HMAC secret")
-	flags.StringVar(&cfg.FrontendDir, "frontend-dir", cfg.FrontendDir, "built frontend directory")
+	flags.StringVar(&cfg.FrontendDir, "frontend-dir", cfg.FrontendDir, "built frontend directory (default: embedded assets when present)")
+	flags.StringVar(&cfg.ConfigDir, "config-dir", cfg.ConfigDir, "config directory (secrets, update workspace)")
 	flags.StringVar(&cfg.UpdateMode, "update-mode", cfg.UpdateMode, "deployment update mode: embedded or manual")
 	if err := flags.Parse(args); err != nil {
 		return Config{}, err
@@ -161,7 +172,7 @@ func FromFlags(args []string) (Config, error) {
 	if !IsValidUpdateMode(cfg.UpdateMode) {
 		return Config{}, fmt.Errorf("BANSOKO_UPDATE_MODE must be one of embedded, manual (got %q)", cfg.UpdateMode)
 	}
-	if cfg.Environment == "production" && len(strings.TrimSpace(cfg.SessionSecret)) < 32 {
+	if requireSessionSecret && cfg.Environment == "production" && len(strings.TrimSpace(cfg.SessionSecret)) < 32 {
 		return Config{}, ErrProductionSessionSecret
 	}
 	if cfg.ListenAddress == "" {
@@ -220,7 +231,7 @@ func envOr(key, fallback string) string {
 // entries are dropped: an unconfigured directory denies nothing.
 func ApplicationDataDirs(getenv func(string) string) []string {
 	candidates := []string{
-		firstNonEmpty(getenv("BANSOKO_CONFIG_DIR"), bootprepare.DefaultConfigDir),
+		configdir.Resolve("", getenv),
 		deploymentidentity.UpdatesRoot(getenv),
 	}
 	dirs := make([]string, 0, len(candidates))
@@ -230,15 +241,6 @@ func ApplicationDataDirs(getenv func(string) string) []string {
 		}
 	}
 	return dirs
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }
 
 // parseFixtureHosts parses BANSOKO_TEST_FIXTURE_HOSTS ("host=ip,host2=ip2")

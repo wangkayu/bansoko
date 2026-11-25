@@ -8,6 +8,7 @@ channel="${BANSOKO_RELEASE_CHANNEL:-stable}"
 output_dir="${BANSOKO_RELEASE_OUTPUT_DIR:-$root/.local-artifacts/bansoko-release}"
 goos="${BANSOKO_RELEASE_GOOS:-linux}"
 goarch="${BANSOKO_RELEASE_GOARCH:-amd64}"
+image_platform="${BANSOKO_RELEASE_IMAGE_PLATFORM:-$goos/$goarch}"
 
 # Embedded-update contract inputs (B1). All of them enter the published
 # manifest, so they are required and validated fail-closed instead of being
@@ -336,7 +337,7 @@ ruby -rjson -rdigest -e '
   end
   images = []
   unless ENV.fetch("BANSOKO_RELEASE_IMAGE_DIGEST", "").empty?
-    images = [{"name" => "bansoko", "digest" => ENV.fetch("BANSOKO_RELEASE_IMAGE_DIGEST"), "platform" => "#{ENV.fetch("BANSOKO_RELEASE_GOOS")}/#{ENV.fetch("BANSOKO_RELEASE_GOARCH")}"}]
+    images = [{"name" => "bansoko", "digest" => ENV.fetch("BANSOKO_RELEASE_IMAGE_DIGEST"), "platform" => ARGV.fetch(2)}]
   end
   # Digest representation note: images[].digest uses the conventional
   # registry "sha256:<64hex>" form; embedded_update.payload_digest is the
@@ -373,7 +374,7 @@ ruby -rjson -rdigest -e '
   notes = ENV.fetch("BANSOKO_RELEASE_NOTES_JSON", "")
   manifest["release_notes"] = JSON.parse(File.read(notes)) unless notes.empty?
   File.write(ARGV.fetch(1), JSON.generate(manifest) + "\n")
-' "$root" "$tmp_dir/manifest.json"
+' "$root" "$tmp_dir/manifest.json" "$image_platform"
 
 # Validate the manifest before it enters the published byte set.
 go -C "$root" run ./cmd/bansoko-release validate-schema --manifest "$tmp_dir/manifest.json" --allow-empty-images="$([[ "${BANSOKO_REHEARSAL:-0}" == "1" ]] && echo true || echo false)" >/dev/null

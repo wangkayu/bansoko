@@ -20,7 +20,7 @@
 // Environment: BANSOKO_DATABASE_URL (the schema-owner connection of the deployment),
 // BANSOKO_SECRET_ENCRYPTION_KEY or the generated key in BANSOKO_CONFIG_DIR/secrets.json
 // (decrypts the typed qB connection secret),
-// BANSOKO_SCHEMA_DIR (default db/migrations).
+// BANSOKO_SCHEMA_DIR (default: the embedded migration set).
 package main
 
 import (
@@ -126,11 +126,11 @@ func runRecoverFence(operationID, owner, manifestDigest, expectedState, terminal
 	return nil
 }
 
+// schemaDir is the explicit migration directory override. Empty selects the
+// migration set embedded in the binary, so the recovery tool works from any
+// working directory in a native deployment.
 func schemaDir() string {
-	if dir := os.Getenv("BANSOKO_SCHEMA_DIR"); dir != "" {
-		return dir
-	}
-	return "db/migrations"
+	return os.Getenv("BANSOKO_SCHEMA_DIR")
 }
 
 func openDB() (*sql.DB, error) {

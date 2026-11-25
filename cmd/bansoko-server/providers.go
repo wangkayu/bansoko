@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -76,7 +77,7 @@ type httpServerBase struct {
 }
 
 type serverEnvironment string
-type serverFrontendDir string
+type serverFrontendFS fs.FS
 type serverSkipAuth bool
 
 type pluginRuntime struct {
@@ -243,7 +244,7 @@ func provideHTTPServerBase(
 	fileMaintenance httpapi.FileMaintenanceService,
 	environment serverEnvironment,
 	skipAuth serverSkipAuth,
-	frontendDir serverFrontendDir,
+	frontendFS serverFrontendFS,
 	maintenanceGate httpapi.MaintenanceGate,
 	readinessChecker *readiness.Checker,
 	runtimeLogger httpapi.RuntimeLogger,
@@ -271,7 +272,7 @@ func provideHTTPServerBase(
 		FileMaintenance:    fileMaintenance,
 		Environment:        string(environment),
 		SkipAuth:           bool(skipAuth),
-		FrontendDir:        string(frontendDir),
+		FrontendFS:         frontendFS,
 		MaintenanceGate:    maintenanceGate,
 		Readiness:          readinessChecker,
 		RuntimeLogger:      runtimeLogger,

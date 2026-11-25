@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"sync"
 	"time"
@@ -390,7 +391,7 @@ type Dependencies struct {
 	FileManager        FileManagerService
 	Environment        string
 	SkipAuth           bool
-	FrontendDir        string
+	FrontendFS         fs.FS
 	SessionTTL         time.Duration
 	RequestTimeout     time.Duration
 	RuntimeLogger      RuntimeLogger
@@ -544,7 +545,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		mcpHandler.ServeHTTP(w, r)
 	}))))
-	root.Handle("/", frontendHandler(s.deps.FrontendDir))
+	root.Handle("/", frontendHandler(s.deps.FrontendFS))
 	return root
 }
 

@@ -1,0 +1,52 @@
+{
+  "artifact": "internal/mediaprobe/mediainfo.wasm.gz",
+  "wasi_sdk": {
+    "name": "wasi-sdk",
+    "version": "27.0",
+    "license": "Apache-2.0 WITH LLVM-exception AND MIT",
+    "copyright": "Copyright (c) 2019-2024, the WebAssembly System Interface project authors",
+    "homepage": "https://github.com/WebAssembly/wasi-sdk",
+    "assets": {
+      "darwin-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-arm64-macos.tar.gz",
+        "sha256": "055c3dc2766772c38e71a05d353e35c322c7b2c6458a36a26a836f9808a550f8"
+      },
+      "linux-x86_64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz",
+        "sha256": "b7d4d944c88503e4f21d84af07ac293e3440b1b6210bfd7fe78e0afd92c23bc2"
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "MediaInfoLib",
+      "version": "25.10",
+      "license": "BSD-2-Clause",
+      "copyright": "Copyright (c) MediaArea.net SARL. All Rights Reserved.",
+      "homepage": "https://mediaarea.net/MediaInfo",
+      "tarball": "libmediainfo_25.10.tar.xz",
+      "url": "https://mediaarea.net/download/source/libmediainfo/25.10/libmediainfo_25.10.tar.xz",
+      "sha256": "ad13d9797b046ce39d0c65a6f81d2aef2429734c21865a6a4c592c7c01f249dd"
+    },
+    {
+      "name": "ZenLib",
+      "version": "0.4.41",
+      "license": "Zlib",
+      "copyright": "Copyright (c) MediaArea.net SARL. All Rights Reserved.",
+      "homepage": "https://github.com/MediaArea/ZenLib",
+      "tarball": "libzen_0.4.41.tar.bz2",
+      "url": "https://mediaarea.net/download/source/libzen/0.4.41/libzen_0.4.41.tar.bz2",
+      "sha256": "eb237d7d3dca6dc6ba068719420a27de0934a783ccaeb2867562b35af3901e2d"
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "license": "Zlib",
+      "copyright": "Copyright (c) 1995-2024 Jean-loup Gailly and Mark Adler",
+      "homepage": "https://zlib.net/",
+      "tarball": "zlib-1.3.1.tar.gz",
+      "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+    }
+  ]
+}

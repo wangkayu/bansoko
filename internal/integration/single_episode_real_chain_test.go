@@ -65,7 +65,7 @@ func TestSingleEpisodeRealPostgresQBRSSFileOperation(t *testing.T) {
 		t.Logf("using configured qB endpoint %q", endpoint)
 	}
 	// The downloaded file is a real Matroska container: the artifact owner reads
-	// its resolution, codecs and container with the real mediainfo binary.
+	// its resolution, codecs and container with the embedded MediaInfoLib engine.
 	requireMediaInfo(t)
 
 	db := disposabledb.ResetDisposableSchema(t)
@@ -740,7 +740,7 @@ WHERE managed_anime_id = $1 AND kind IN ('release_processed', 'download_changed'
 	assertNoDuplicateLiveWorkItems(t, ctx, db)
 
 	// Execution-time media facts: the real file qB downloaded was read by the
-	// real mediainfo binary, and the four facts are stored with the catalog
+	// embedded MediaInfoLib engine, and the four facts are stored with the catalog
 	// vocabulary in artifact_files.facts, the single source every render path and
 	// notification reads.
 	if events := mediaProbeEvents(mediaProbeLogger); len(events) != 0 {

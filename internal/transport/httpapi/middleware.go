@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"net/http"
 	"regexp"
 	"sort"
@@ -544,11 +545,11 @@ func maintenanceRejected() error {
 // catch-all rewrite here would buy the frontend nothing and would turn every
 // mistyped path — including an API path outside /api/v1 — into a 200 HTML
 // response, hiding the 404 that callers need.
-func frontendHandler(dir string) http.Handler {
-	if strings.TrimSpace(dir) == "" {
+func frontendHandler(assets fs.FS) http.Handler {
+	if assets == nil {
 		return http.NotFoundHandler()
 	}
-	fileServer := http.FileServer(http.Dir(dir))
+	fileServer := http.FileServer(http.FS(assets))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
@@ -565,7 +566,7 @@ func frontendHandler(dir string) http.Handler {
 		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
 			w.Header().Set("Content-Security-Policy", DocumentContentSecurityPolicy)
 		}
-		if serveFrontendAsset(w, r, dir) {
+		if serveFrontendAsset(w, r, assets) {
 			return
 		}
 		fileServer.ServeHTTP(w, r)

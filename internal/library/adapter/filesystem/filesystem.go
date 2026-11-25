@@ -20,6 +20,7 @@ import (
 	"bansoko/internal/fileidentity"
 	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
+	"bansoko/internal/mediaprobe"
 )
 
 const defaultInspectorVersion = "local-media-facts-v1"
@@ -3225,12 +3226,18 @@ type mediaInfoTrack struct {
 	DisplayAspectRatio string `json:"DisplayAspectRatio"`
 }
 
+// readMediaInfo produces the MediaInfo JSON document for path. The default
+// engine is the embedded MediaInfoLib WASI module (internal/mediaprobe), so a
+// snapshot needs nothing outside the process; Binary selects the external
+// `mediainfo` command for tests that script the tool's answers.
 func (i OSMediaInspector) readMediaInfo(ctx context.Context, path string) (mediaInfoDocument, error) {
-	binary := i.Binary
-	if binary == "" {
-		binary = "mediainfo"
+	var output []byte
+	var err error
+	if binary := strings.TrimSpace(i.Binary); binary != "" {
+		output, err = exec.CommandContext(ctx, binary, "--Output=JSON", path).Output()
+	} else {
+		output, err = mediaprobe.ProbeJSON(ctx, path, mediaprobe.DefaultMaxOutputBytes)
 	}
-	output, err := exec.CommandContext(ctx, binary, "--Output=JSON", path).Output()
 	if err != nil {
 		return mediaInfoDocument{}, fmt.Errorf("MediaInfo unavailable: %w", err)
 	}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Bansoko server with separate migration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=bansoko
+Group=bansoko
+StateDirectory=bansoko
+StateDirectoryMode=0700
+EnvironmentFile=/etc/bansoko/bansoko.env
+UMask=0077
+ExecStartPre=/usr/local/bin/bansoko-server migrate --environment=production --update-mode=manual --config-dir /var/lib/bansoko
+ExecStart=/usr/local/bin/bansoko-server serve --environment=production --update-mode=manual --config-dir /var/lib/bansoko
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

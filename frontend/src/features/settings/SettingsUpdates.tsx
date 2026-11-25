@@ -302,13 +302,16 @@ export function SettingsUpdates() {
   }
 
   const visibleStatus = (statusError || statusRefetchError || statusReconnectError || !recoveredStatus) && isActiveStatus(lastActiveStatus) ? lastActiveStatus : recoveredStatus;
+  // Manual deployments (update service unwired) report SERVICE_NOT_CONFIGURED;
+  // that is a declared capability state, not a failure, so it renders as a
+  // neutral note instead of the red status error.
+  const statusNotConfigured = statusError instanceof ApiError && statusError.code === "SERVICE_NOT_CONFIGURED";
   const activeStatus = isActiveStatus(visibleStatus);
   const blockedStatus = isBlockedStatus(visibleStatus);
   const historicalStatus = isHistoricalStatus(visibleStatus);
   const unknownStatus = Boolean(visibleStatus && !activeStatus && !blockedStatus && !historicalStatus);
   const statusReady =
     !statusLoading && !statusFetching && !statusError && !statusRefetchError && !statusReconnectError && !activeStatus && !blockedStatus && !unknownStatus;
-
   return (
     <section className="settings-updates">
       <div className="settings-updates-header">
@@ -317,7 +320,9 @@ export function SettingsUpdates() {
 
       {statusLoading && !visibleStatus && <StateBlock kind="busy" skeleton="settings" title={t("settings.updates.loading")} />}
 
-      {(statusError || statusRefetchError || statusReconnectError) && !activeStatus && (
+      {statusNotConfigured && <StateBlock kind="empty" title={t("settings.updates.manualModeTitle")} description={t("settings.updates.manualModeHint")} />}
+
+      {(statusError || statusRefetchError || statusReconnectError) && !activeStatus && !statusNotConfigured && (
         <StateBlock
           kind="error"
           title={t("settings.updates.statusFailed")}

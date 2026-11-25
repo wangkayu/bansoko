@@ -8,11 +8,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
 	"bansoko/internal/runtime/config"
+	"bansoko/internal/runtime/configdir"
 	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/runtime/deploymentprovenance"
 	updateapplication "bansoko/internal/update/application"
@@ -53,8 +55,8 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 		Version:             "0.9.0-rc.10",
 		BuildID:             "b2-test",
 		TargetSchemaVersion: "schema-test",
-		Platform:            "linux",
-		Architecture:        "amd64",
+		Platform:            runtime.GOOS,
+		Architecture:        runtime.GOARCH,
 	}
 	payloadPath := filepath.Join(t.TempDir(), "embedded-update-v1.tar.gz")
 	result, buildErr := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
@@ -85,10 +87,10 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 		Channel: hardeningdomain.ReleaseChannelStable, SourceCommit: "test-source", APIContractVersion: "v2",
 		TargetMigrationVersion: meta.TargetSchemaVersion, RequiredDowntime: true, BackupRequired: true,
 		Rollback: hardeningdomain.RestoreRequired, ArtifactDigest: strings.Repeat("a", 64), Immutable: true,
-		Artifacts: []hardeningdomain.ArtifactRef{{Platform: "linux", Architecture: "amd64", Digest: strings.Repeat("b", 64), Size: 1}},
+		Artifacts: []hardeningdomain.ArtifactRef{{Platform: runtime.GOOS, Architecture: runtime.GOARCH, Digest: strings.Repeat("b", 64), Size: 1}},
 		SBOMRef:   "sha256:" + strings.Repeat("c", 64), ProvenanceRef: "sha256:" + strings.Repeat("d", 64),
 		EmbeddedUpdate: &hardeningdomain.EmbeddedUpdateSegment{
-			FormatVersion: hardeningdomain.EmbeddedUpdateFormatV1, Platform: "linux", Architecture: "amd64", PayloadDigest: result.Digest, PayloadSize: result.Size,
+			FormatVersion: hardeningdomain.EmbeddedUpdateFormatV1, Platform: runtime.GOOS, Architecture: runtime.GOARCH, PayloadDigest: result.Digest, PayloadSize: result.Size,
 			BootstrapMinVersion: "embedded-bootstrap-v1", MinImageVersion: "b1", TargetReleaseID: releaseID, TargetVersion: meta.Version,
 			TargetSchemaVersion: meta.TargetSchemaVersion, ReleaseSequence: 10,
 		},
@@ -255,15 +257,19 @@ func TestPlanLaunchWithoutUpdatesVolumeFallsBackToBase(t *testing.T) {
 	t.Setenv("BANSOKO_UPDATE_MODE", "manual")
 	missingRoot := filepath.Join(t.TempDir(), "does-not-exist")
 
+	baseBinary := baseServerBinary()
+	baseSchema := baseAssetDir(baseSchemaDir)
+	baseFrontend := baseAssetDir(baseFrontendDir)
+
 	got := planLaunch("server", missingRoot)
-	if got.mode != modeBase || got.binaryPath != baseServerPath ||
-		got.schemaDir != baseSchemaDir || got.frontendDir != baseFrontendDir || got.migratePath != baseServerPath {
+	if got.mode != modeBase || got.binaryPath != baseBinary ||
+		got.schemaDir != baseSchema || got.frontendDir != baseFrontend || got.migratePath != baseBinary {
 		t.Fatalf("server plan = %+v, want base with base paths", got)
 	}
 
 	migrated := planLaunch("migrate", missingRoot)
-	if migrated.mode != modeBase || migrated.binaryPath != baseServerPath ||
-		migrated.schemaDir != baseSchemaDir || migrated.frontendDir != "" {
+	if migrated.mode != modeBase || migrated.binaryPath != baseBinary ||
+		migrated.schemaDir != baseSchema || migrated.frontendDir != "" {
 		t.Fatalf("migrate plan = %+v, want base migrate without frontend dir", migrated)
 	}
 }
@@ -747,8 +753,9 @@ func TestUpdatesRootUsesConfiguredRootOrDefault(t *testing.T) {
 	if deploymentidentity.DefaultUpdatesRoot != "/config/updates" {
 		t.Fatalf("DefaultUpdatesRoot = %q, want /config/updates", deploymentidentity.DefaultUpdatesRoot)
 	}
-	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != deploymentidentity.DefaultUpdatesRoot {
-		t.Fatalf("default updates root = %q, want %q", root, deploymentidentity.DefaultUpdatesRoot)
+	wantDefault := filepath.Join(configdir.Resolve("", os.Getenv), "updates")
+	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != wantDefault {
+		t.Fatalf("default updates root = %q, want %q", root, wantDefault)
 	}
 	t.Setenv("BANSOKO_CONFIG_DIR", "/srv/bansoko-config")
 	if root := deploymentidentity.UpdatesRoot(os.Getenv); root != "/srv/bansoko-config/updates" {

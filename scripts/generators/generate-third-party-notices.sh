@@ -77,6 +77,14 @@ with open(out, "w") as f:
     f.write("\n## Frontend production dependencies\n\n| Package | Version | License | Author |\n|---|---|---|---|\n")
     for r in frows:
         f.write("| " + " | ".join(esc(x) for x in r) + " |\n")
+    manifest = json.load(open("scripts/build/mediainfo-wasm/manifest.json"))
+    f.write("\n## Embedded media inspection engine\n\n")
+    f.write("The server embeds MediaInfoLib compiled to a WebAssembly (WASI) module and runs it in the pure-Go wazero runtime (listed under Go modules). `scripts/build/build-mediainfo-wasm.sh` builds the module from the exact, hash-pinned upstream sources named in `scripts/build/mediainfo-wasm/manifest.json`; together with that manifest and `scripts/build/mediainfo-wasm/bridge.cpp` they are the GPL-3.0 §6 corresponding source for the embedded object code. The components keep their own licenses; the full texts ship in `deployment/licenses/`.\n\n")
+    f.write("| Component | Version | License | Source |\n|---|---|---|---|\n")
+    for c in manifest["components"]:
+        f.write("| %s | %s | %s | %s |\n" % (esc(c["name"]), esc(c["version"]), esc(c["license"]), esc(c["url"])))
+    sdk = manifest["wasi_sdk"]
+    f.write("| wasi-libc (wasi-sdk toolchain runtime) | %s | %s | https://github.com/WebAssembly/wasi-libc |\n" % (esc(sdk["version"]), esc(sdk["license"])))
     f.write("\n## Runtime reference data\n\n")
     f.write("The service downloads unmodified bangumi-data 0.3.x snapshots at runtime for provider-ID lookup.\n\n")
     f.write("| Data | Source | License | Attribution |\n|---|---|---|---|\n")

@@ -12,8 +12,7 @@
 #   - PostgreSQL 17 listening on 127.0.0.1:5432, root can run
 #     `su postgres -c psql` to create/drop a disposable role + database
 #   - qbittorrent-nox installed (Debian: apt-get install qbittorrent-nox)
-#   - mediainfo installed (Debian: apt-get install mediainfo); the single-episode
-#     chain reads the downloaded file's media facts with it
+#   - nothing for media facts: the embedded MediaInfoLib engine reads them
 #   - python3 (PBKDF2 WebUI password seeding via scripts/ci/seed-qb-password.sh)
 #
 # Never touches production databases, production qB, or user media paths.

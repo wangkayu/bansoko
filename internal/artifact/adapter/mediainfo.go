@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"bansoko/internal/download/domain"
+	"bansoko/internal/mediaprobe"
 )
 
 const (
@@ -29,20 +30,25 @@ const (
 	mediaInfoWaitDelay = 2 * time.Second
 )
 
-// OSMediaProber reads a local video file's execution-time media facts with the
-// MediaInfo command line tool (`mediainfo --Output=JSON <path>`).
+// OSMediaProber reads a local video file's execution-time media facts. The
+// default path is the embedded MediaInfoLib WASI engine (internal/mediaprobe),
+// which needs no external tools; setting Binary switches to the external
+// `mediainfo` command line tool (`mediainfo --Output=JSON <path>`), a hook kept
+// for tests that exercise the parser against scripted tool output.
 //
-// The downloaded file is untrusted input: the tool is started directly with the
-// absolute path as a single argument (no shell, so no quoting or expansion; an
-// absolute path can never be read as an option), with a minimal environment,
-// no stdin, a per-call timeout and bounded stdout. Every failure is typed
-// (domain.ErrMediaProbe*) and never carries the raw tool output or the path.
+// The downloaded file is untrusted input: the embedded engine only reads the
+// file through a bounded, seekable stream, and the external fallback is started
+// directly with the absolute path as a single argument (no shell, so no quoting
+// or expansion; an absolute path can never be read as an option), with a minimal
+// environment, no stdin, a per-call timeout and bounded stdout. Every failure is
+// typed (domain.ErrMediaProbe*) and never carries the raw tool output or the path.
 type OSMediaProber struct {
-	// Binary is the MediaInfo executable; empty means "mediainfo" on PATH.
+	// Binary forces the external MediaInfo executable; empty (the default) uses
+	// the embedded WASI engine and needs nothing on PATH.
 	Binary string
 	// Timeout bounds one probe; zero means defaultMediaInfoTimeout.
 	Timeout time.Duration
-	// MaxOutputBytes bounds the tool output; zero means maxMediaInfoOutput.
+	// MaxOutputBytes bounds the report size; zero means maxMediaInfoOutput.
 	MaxOutputBytes int
 }
 
@@ -63,10 +69,6 @@ func (p OSMediaProber) Probe(ctx context.Context, path string) (domain.MediaFact
 		return domain.MediaFacts{}, fmt.Errorf("%w: not a regular file", domain.ErrMediaProbeFailed)
 	}
 
-	binary := p.Binary
-	if binary == "" {
-		binary = "mediainfo"
-	}
 	timeout := p.Timeout
 	if timeout <= 0 {
 		timeout = defaultMediaInfoTimeout
@@ -76,9 +78,12 @@ func (p OSMediaProber) Probe(ctx context.Context, path string) (domain.MediaFact
 		limit = maxMediaInfoOutput
 	}
 
+	if p.Binary == "" {
+		return p.probeEmbedded(ctx, absolute, timeout, int64(limit))
+	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(callCtx, binary, "--Output=JSON", absolute)
+	cmd := exec.CommandContext(callCtx, strings.TrimSpace(p.Binary), "--Output=JSON", absolute)
 	cmd.Env = []string{"LC_ALL=C"}
 	// A grandchild that keeps the output pipe open must not hold the call past
 	// its deadline: Wait stops waiting for the copy this long after the kill.
@@ -104,6 +109,32 @@ func (p OSMediaProber) Probe(ctx context.Context, path string) (domain.MediaFact
 		return domain.MediaFacts{}, fmt.Errorf("%w: tool exited with an error", domain.ErrMediaProbeFailed)
 	}
 	return parseMediaInfo(output.buffer.Bytes())
+}
+
+// probeEmbedded runs the default path: MediaInfoLib compiled into the binary as
+// a WASI module. It honors the same contract as the external tool (timeout,
+// bounded report, typed failures, no path or raw output in errors) while
+// depending on nothing outside the process.
+func (p OSMediaProber) probeEmbedded(ctx context.Context, absolute string, timeout time.Duration, limit int64) (domain.MediaFacts, error) {
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	raw, err := mediaprobe.ProbeJSON(callCtx, absolute, limit)
+	if err != nil {
+		if ctx.Err() != nil {
+			return domain.MediaFacts{}, ctx.Err()
+		}
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			return domain.MediaFacts{}, domain.ErrMediaProbeTimeout
+		case errors.Is(err, mediaprobe.ErrOutputLimit):
+			return domain.MediaFacts{}, fmt.Errorf("%w: output exceeds %d bytes", domain.ErrMediaProbeOutputInvalid, limit)
+		case errors.Is(err, mediaprobe.ErrUnavailable):
+			return domain.MediaFacts{}, fmt.Errorf("%w: embedded engine unavailable", domain.ErrMediaProbeUnavailable)
+		default:
+			return domain.MediaFacts{}, fmt.Errorf("%w: embedded probe failed", domain.ErrMediaProbeFailed)
+		}
+	}
+	return parseMediaInfo(raw)
 }
 
 // boundedOutput collects the tool's standard output up to limit bytes. The

@@ -53,7 +53,11 @@ func handoffUnifiedBootstrap(chosen plan, updatesRoot string) (int, bool) {
 		return 0, false
 	}
 	logf("handing off bootstrap to verified unified release %s", releaseID)
-	if err := execProcess(target, []string{target, "bootstrap"}, os.Environ()); err != nil {
+	argv := []string{target, "bootstrap"}
+	if os.Getenv(nativeAnchorEnv) != "" {
+		argv = append(argv, "native-handoff")
+	}
+	if err := execProcess(target, argv, os.Environ()); err != nil {
 		logf("bootstrap handoff exec failed: %v", err)
 		return 1, true
 	}

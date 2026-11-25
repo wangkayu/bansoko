@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
 
 	"bansoko/internal/filemaintenance"
+	"bansoko/internal/mediaprobe"
 	observabilityport "bansoko/internal/observability/port"
 )
 
@@ -18,20 +18,18 @@ import (
 // the persisted facts carry.
 const realChainMediaFactsTemplate = "${anime.title} ${ep.s00e00} [${media.resolution}] [${media.video_codec}].${file.ext}"
 
-// requireMediaInfo fails the test when the mediainfo binary is not on PATH. The
-// real-chain lane declares mediainfo as a prerequisite exactly like
-// qbittorrent-nox: a missing tool must fail the lane, never skip the proof.
+// requireMediaInfo proves the embedded MediaInfoLib engine is alive before the
+// real-chain lane trusts it with the media facts proof. The engine ships inside
+// the server binary, so the lane no longer depends on a host mediainfo binary;
+// a broken engine must fail the lane, never skip the proof.
 func requireMediaInfo(t *testing.T) {
 	t.Helper()
-	path, err := exec.LookPath("mediainfo")
+	t.Setenv("PATH", "")
+	version, err := mediaprobe.SelfCheck(context.Background())
 	if err != nil {
-		t.Fatalf("mediainfo is required on PATH for the real-chain media facts proof: %v", err)
+		t.Fatalf("embedded mediainfo engine failed its self-check: %v", err)
 	}
-	version, err := exec.Command(path, "--Version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("mediainfo --Version failed: %v: %s", err, version)
-	}
-	t.Logf("MEDIAINFO EVIDENCE binary=%s version=%q", path, strings.Join(strings.Fields(string(version)), " "))
+	t.Logf("MEDIAINFO EVIDENCE embedded=%q", version)
 }
 
 // recordingRuntimeLogger keeps every runtime event so a test can assert that a
@@ -67,7 +65,7 @@ func (l *recordingRuntimeLogger) snapshot() []observabilityport.RuntimeEvent {
 
 // assertRealChainMediaFacts requires the four execution-time facts of the
 // downloaded video to be stored with the catalog vocabulary, and returns them.
-// The file was read by the real mediainfo binary from the file qB downloaded.
+// The file was read by the embedded MediaInfoLib engine from the file qB downloaded.
 func assertRealChainMediaFacts(t *testing.T, ctx context.Context, db *sql.DB, artifactID string) map[string]string {
 	t.Helper()
 	var raw []byte

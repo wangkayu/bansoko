@@ -62,13 +62,14 @@ type resolution struct {
 // once per process (the channel URL is deployment configuration, not runtime
 // state) and performs no I/O at construction.
 type channelResolver struct {
-	documentURL    string
-	packageRoot    string
-	documentSource *UpdateHTTPSource
-	packageConfig  UpdateHTTPSourceConfig
-	rootScheme     string
-	rootHost       string
-	rootDirectory  string
+	documentURL                        string
+	packageRoot                        string
+	documentSource                     *UpdateHTTPSource
+	packageConfig                      UpdateHTTPSourceConfig
+	rootScheme                         string
+	rootHost                           string
+	rootDirectory                      string
+	targetPlatform, targetArchitecture string
 }
 
 // newChannelResolver validates the discovery configuration and builds the two
@@ -187,6 +188,11 @@ func (r *channelResolver) resolve(ctx context.Context) (resolution, error) {
 			Status:  503,
 			Code:    "UPDATE_CHANNEL_MISMATCH",
 			Message: "The update channel and its release manifest disagree.",
+		}
+	}
+	if r.targetPlatform != "" {
+		if err := manifest.EmbeddedUpdate.ValidateTarget(r.targetPlatform, r.targetArchitecture); err != nil {
+			return resolution{}, &apperrors.Business{Status: 503, Code: "UPDATE_PLATFORM_MISMATCH", Message: err.Error()}
 		}
 	}
 	return resolution{manifest: manifest, digest: digest, raw: raw, manifestURL: source.ManifestURL(), source: source, fromChannel: true}, nil

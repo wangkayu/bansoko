@@ -98,8 +98,16 @@ func TestQuickstartStoresUpdatesUnderConfig(t *testing.T) {
 	if _, hasUpdatesRoot := app.Environment["BANSOKO_UPDATES_ROOT"]; hasUpdatesRoot {
 		t.Error("quickstart compose should rely on default updates root (/config/updates) instead of setting BANSOKO_UPDATES_ROOT")
 	}
-	if got := deploymentidentity.UpdatesRoot(func(string) string { return "" }); got != "/config/updates" {
-		t.Errorf("default updates root = %q, want /config/updates", got)
+	if got := deploymentidentity.UpdatesRoot(func(key string) string {
+		if key == "BANSOKO_CONFIG_DIR" {
+			return "/config"
+		}
+		return ""
+	}); got != "/config/updates" {
+		t.Errorf("container updates root = %q, want /config/updates", got)
+	}
+	if got := deploymentidentity.UpdatesRoot(func(string) string { return "" }); filepath.Base(got) != "updates" {
+		t.Errorf("default updates root = %q, want <config-dir>/updates", got)
 	}
 	if got := app.Environment["BANSOKO_PORT"]; got != "${BANSOKO_PORT:-8080}" {
 		t.Errorf("quickstart BANSOKO_PORT = %q, want ${BANSOKO_PORT:-8080}", got)

@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"bansoko/internal/runtime/configdir"
 )
 
 // Environment variable names injected by the unified binary's bootstrap mode before exec of the
@@ -34,7 +36,14 @@ const (
 	// running base image does not contain. The value is not part of Identity:
 	// readiness must keep treating a dev process without bootstrap facts as
 	// not_provided, while the updater compares the version itself.
-	EnvBootstrapVersion     = "BANSOKO_BOOTSTRAP_VERSION"
+	EnvBootstrapVersion = "BANSOKO_BOOTSTRAP_VERSION"
+	// EnvAnchorKind marks how the base of this deployment is anchored. The
+	// container writes nothing (the immutable image digest is the anchor); a
+	// native single-binary start writes AnchorNative so the identity can
+	// remain honest instead of carrying a fabricated sha256 image digest.
+	EnvAnchorKind = "BANSOKO_DEPLOYMENT_ANCHOR"
+	// AnchorNative marks a native (non-container) base anchor.
+	AnchorNative            = "native"
 	DefaultUpdatesRoot      = "/config/updates"
 	currentPointerFileName  = "current"
 	payloadDigestHexPattern = `^[0-9a-f]{64}$`
@@ -69,6 +78,9 @@ type Identity struct {
 	// running BuildInfo against the signed overlay metadata. It is deliberately
 	// not part of the HTTP identity card.
 	ExpectedProcessBuildID string `json:"-"`
+	// Anchor records how the deployment base is anchored (EnvAnchorKind). It is
+	// bootstrap provenance, not part of the HTTP identity card.
+	Anchor string `json:"-"`
 }
 
 // FromEnv reads the identity from environment lookup (injectable for tests).
@@ -81,6 +93,7 @@ func FromEnv(getenv func(string) string) Identity {
 		PayloadDigest:          trim(EnvPayloadDigest),
 		UpdateOperationID:      trim(EnvUpdateOperationID),
 		ExpectedProcessBuildID: trim(EnvExpectedProcessBuild),
+		Anchor:                 trim(EnvAnchorKind),
 	}
 }
 
@@ -89,7 +102,7 @@ func FromEnv(getenv func(string) string) Identity {
 // treats that as absent rather than inconsistent.
 func (i Identity) Provided() bool {
 	return i.BaseImageDigest != "" || i.SelectedReleaseID != "" ||
-		i.SelectedSource != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != ""
+		i.SelectedSource != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" || i.Anchor != ""
 }
 
 // Consistency breach classes surfaced as readyz failure detail. Each maps to
@@ -121,17 +134,15 @@ type PointerState struct {
 	Corrupt   bool // present but unreadable or not a valid release token
 }
 
-// UpdatesRoot is the single updates-volume contract shared by bootstrap,
+// UpdatesRoot is the single updates-workspace contract shared by bootstrap,
 // server, updater and readiness. When BANSOKO_UPDATES_ROOT is unset, it
-// defaults to <BANSOKO_CONFIG_DIR>/updates (/config/updates by default).
+// defaults to <config dir>/updates where the config dir follows the unified
+// resolution chain (env override, writable /config, OS user config dir).
 func UpdatesRoot(getenv func(string) string) string {
 	if root := strings.TrimSpace(getenv(EnvUpdatesRoot)); root != "" {
 		return root
 	}
-	if configDir := strings.TrimSpace(getenv("BANSOKO_CONFIG_DIR")); configDir != "" {
-		return filepath.Join(configDir, "updates")
-	}
-	return DefaultUpdatesRoot
+	return filepath.Join(configdir.Resolve("", getenv), "updates")
 }
 
 // Validate checks the intra-identity consistency rules plus the live pointer
@@ -152,14 +163,14 @@ func (i Identity) Validate(pointer *PointerState) error {
 		return ErrSourceInvalid
 	}
 	if i.SelectedSource == SourceBase {
-		if i.BaseImageDigest == "" {
+		if i.BaseImageDigest == "" && i.Anchor != AnchorNative {
 			return ErrBaseImageRequired
 		}
 		if i.SelectedReleaseID != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" {
 			return ErrPayloadOnBase
 		}
 	} else {
-		if i.BaseImageDigest == "" {
+		if i.BaseImageDigest == "" && i.Anchor != AnchorNative {
 			return ErrBaseImageRequired
 		}
 		if i.SelectedReleaseID == "" {

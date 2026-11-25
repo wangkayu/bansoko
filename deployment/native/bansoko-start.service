@@ -1,0 +1,18 @@
+[Unit]
+Description=Bansoko managed server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=bansoko
+Group=bansoko
+StateDirectory=bansoko
+StateDirectoryMode=0700
+EnvironmentFile=/etc/bansoko/bansoko.env
+UMask=0077
+ExecStart=/usr/local/bin/bansoko-server start --config-dir /var/lib/bansoko
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

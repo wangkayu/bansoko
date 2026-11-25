@@ -719,6 +719,7 @@ class PublicationTests(unittest.TestCase):
                 "release_id": ident["release_id"],
                 "version": ident["version"],
                 "release_sequence": ident["sequence"],
+                "embedded_update": {"platform": "linux", "architecture": "amd64"},
             }
         ).encode()
 
@@ -934,8 +935,11 @@ class TestLaneTests(unittest.TestCase):
             patch.object(release, "request", return_value=(404, b"")) as request,
         ):
             release.preflight(self.ident)
-        self.assertTrue(request.call_args[0][0].endswith("?ref=update-channel-test"))
-        self.assertEqual([args[3] for args in commands], ["version-gate"])
+        self.assertEqual(
+            [call.args[0].split("/contents/", 1)[1] for call in request.call_args_list],
+            ["channel-v1.json?ref=update-channel-test", "arm64/channel-v1.json?ref=update-channel-test"],
+        )
+        self.assertEqual([args[3] for args in commands], ["version-gate", "version-gate"])
         gate = commands[-1]
         self.assertEqual(gate[gate.index("--lane") + 1], "test")
         self.assertEqual(gate[gate.index("--version") + 1], "0.1.0-test.130")
@@ -1071,8 +1075,11 @@ class FormalReleaseTests(unittest.TestCase):
             patch.object(release, "request", return_value=(200, json.dumps(info).encode())) as request,
         ):
             release.preflight(self.ident)
-        self.assertIn("?ref=update-channel", request.call_args[0][0])
-        self.assertEqual([args[3] for args in commands], ["release-notes", "version-gate"])
+        self.assertEqual(
+            [call.args[0].split("/contents/", 1)[1] for call in request.call_args_list],
+            ["channel-v1.json?ref=update-channel", "arm64/channel-v1.json?ref=update-channel"],
+        )
+        self.assertEqual([args[3] for args in commands], ["release-notes", "version-gate", "version-gate"])
 
     def test_preflight_first_publication_and_read_failures(self):
         commands = []
@@ -1126,8 +1133,28 @@ class FormalReleaseTests(unittest.TestCase):
                 return release.subprocess.CompletedProcess(args, view[0], stdout=view[1], stderr=b"")
             return release.subprocess.CompletedProcess(args, 0)
 
-        with tempfile.TemporaryDirectory() as temp, patch.object(release, "OUTPUT", Path(temp)), patch.object(release, "run", side_effect=notes), patch.object(release.subprocess, "run", side_effect=gh):
-            release.github_release(self.ident)
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            assets = [output / name for name in release.native_asset_names(self.ident["version"])]
+            for asset in assets:
+                asset.write_bytes(asset.name.encode())
+            published = {"assets": [
+                {"name": asset.name, "digest": "sha256:" + release.hashlib.sha256(asset.read_bytes()).hexdigest()}
+                for asset in assets
+            ]}
+
+            def command(*args, **kwargs):
+                if args[:2] == ("gh", "api"):
+                    return json.dumps(published)
+                return notes(*args, **kwargs)
+
+            with (
+                patch.object(release, "OUTPUT", output),
+                patch.object(release, "build_native_assets", return_value=assets),
+                patch.object(release, "run", side_effect=command),
+                patch.object(release.subprocess, "run", side_effect=gh),
+            ):
+                release.github_release(self.ident)
         return calls
 
     def test_github_release_is_created_from_the_verified_tag_with_the_notes_file(self):
@@ -1137,6 +1164,7 @@ class FormalReleaseTests(unittest.TestCase):
         self.assertIn("--verify-tag", create)
         self.assertTrue(create[create.index("--notes-file") + 1].endswith(release.GITHUB_NOTES))
         self.assertEqual(create[create.index("--repo") + 1], "gh-owner/gh-repo")
+        self.assertEqual([Path(path).name for path in create[-4:]], release.native_asset_names("0.2.0"))
 
     def test_github_release_rerun_accepts_only_identical_notes(self):
         same = json.dumps({"tagName": "v0.2.0", "body": "# 简体中文\n\n## 修复\n- 一项"}).encode()

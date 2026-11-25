@@ -604,6 +604,22 @@ describe("SettingsUpdates", () => {
     expect(statusReads).toBe(2);
   });
 
+  it("shows a neutral manual-mode note when the update channel is not wired", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/update/status")) {
+        return jsonResponse({ code: "SERVICE_NOT_CONFIGURED", message: "update channel not wired" }, 503);
+      }
+      return jsonResponse({ code: "NOT_FOUND" }, 404);
+    });
+    renderUpdates();
+
+    expect(await screen.findByText(t("settings.updates.manualModeTitle"))).toBeInTheDocument();
+    expect(screen.getByText(t("settings.updates.manualModeHint"))).toBeInTheDocument();
+    expect(screen.queryByText(t("settings.updates.statusFailed"))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("settings.updates.check") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("settings.updates.reread") })).not.toBeInTheDocument();
+  });
+
   it("keeps a cached historical status fail-closed until status recovers", async () => {
     const statusResponse = deferred<Response>();
     let statusReads = 0;

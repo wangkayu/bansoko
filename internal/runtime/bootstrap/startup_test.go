@@ -121,7 +121,6 @@ func TestPrepareDeploymentEnvironmentFailsClosed(t *testing.T) {
 	}
 	for name, values := range map[string]map[string]string{
 		"no database url":   {bootsecrets.EnvConfigDir: t.TempDir()},
-		"missing config":    {bootsecrets.EnvDatabaseURL: "postgres://owner:pw@db/bansoko", bootsecrets.EnvConfigDir: filepath.Join(t.TempDir(), "absent")},
 		"corrupt secrets":   {bootsecrets.EnvDatabaseURL: "postgres://owner:pw@db/bansoko", bootsecrets.EnvConfigDir: corruptDir},
 		"keyword-form dsn":  {bootsecrets.EnvDatabaseURL: "host=db user=owner password=pw dbname=bansoko", bootsecrets.EnvConfigDir: t.TempDir()},
 		"runtime role user": {bootsecrets.EnvDatabaseURL: "postgres://bansoko_app:pw@db/bansoko", bootsecrets.EnvConfigDir: t.TempDir()},
@@ -195,17 +194,18 @@ func TestRunServerMigratesSelectedTreeBeforeServing(t *testing.T) {
 	if code := run("server"); code != 0 {
 		t.Fatalf("run = %d", code)
 	}
-	want := []string{"prepare", "migrate:" + baseServerPath + " migrate", "exec:" + baseServerPath + " serve"}
+	baseBinary := baseServerBinary()
+	want := []string{"prepare", "migrate:" + baseBinary + " migrate", "exec:" + baseBinary + " serve"}
 	if strings.Join(rec.events, "|") != strings.Join(want, "|") {
 		t.Fatalf("events = %v, want %v", rec.events, want)
 	}
-	if dir, _ := envValue(rec.migrateEnv, envSchemaDir); dir != baseSchemaDir {
-		t.Fatalf("migration ran against schema dir %q, want the served tree %q", dir, baseSchemaDir)
+	if dir, _ := envValue(rec.migrateEnv, envSchemaDir); dir != baseAssetDir(baseSchemaDir) {
+		t.Fatalf("migration ran against schema dir %q, want the served tree %q", dir, baseAssetDir(baseSchemaDir))
 	}
 	if dsn, _ := envValue(rec.migrateEnv, bootsecrets.EnvRuntimeDatabaseURL); dsn == "" {
 		t.Fatal("migration child did not inherit the runtime connection it provisions")
 	}
-	if dir, _ := envValue(rec.execEnv, envSchemaDir); dir != baseSchemaDir {
+	if dir, _ := envValue(rec.execEnv, envSchemaDir); dir != baseAssetDir(baseSchemaDir) {
 		t.Fatalf("server schema dir %q", dir)
 	}
 	if _, ok := envValue(rec.execEnv, deploymentidentity.EnvSource); ok {
@@ -282,7 +282,7 @@ func TestLaunchPlanMigrateKindHasNoStartupMigration(t *testing.T) {
 	if code := launchPlan(basePlan(plan{kind: "migrate"}, "test"), ""); code != 0 {
 		t.Fatalf("launchPlan = %d", code)
 	}
-	if len(rec.events) != 1 || rec.events[0] != "exec:"+baseServerPath+" migrate" {
+	if len(rec.events) != 1 || rec.events[0] != "exec:"+baseServerBinary()+" migrate" {
 		t.Fatalf("events = %v, want only the migrate exec", rec.events)
 	}
 }
