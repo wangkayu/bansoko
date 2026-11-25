@@ -24,14 +24,13 @@ const preset: BusinessPresetView = {
  tag_filters: { anibt: { require: ["resolution:1080p"], exclude: [] }, title: { require: [], exclude: [] } },
  subscription_defaults: { ignore_multi_video_releases: false },
  snapshot: {
-  schema_version: "business-snapshot-v2",
+  schema_version: "business-snapshot-v3",
   sections: { subgroups: { max_rss: 7, entries: [] }, parser: { episode_patterns: ["global"] }, release_rules: { must_contain: "Global", not_in: "" }, file_rules: { must_contain: "main/", not_in: "extra" }, naming_rules: { language: "js-naming-1", unknown: {directory_template:"",video_filename_template:""}, tv: { directory_template: "tv", video_filename_template: "video" }, movie: { directory_template: "movie", video_filename_template: "movie" }, subtitle_suffix_template: "sub" }, file_effect: { operation: "move", collision_policy: "fail" } },
   section_versions: { subgroups: 1, parser: 2, release_rules: 3, file_rules: 4, naming_rules: 5, file_effect: 6 },
   section_schemas: { subgroups: "1", parser: "2", release_rules: "3", file_rules: "4", naming_rules: "5", file_effect: "6" },
   parser: { schema_version: "parser-policy-envelope-v1", kind: "regex", policy_version: 8, provenance: "global", profile_version: 2, rules_owner_version: 2, source_owner: "global" },
   replacement: { admission_mode: "single_copy", quality_profile: { version: "profile-v2", items: [{ key: "rt.resolution", ranks: [] }] } },
   replacement_version: 9, unclassified_route: "route", file_effect_version: 10,
-  programs: { vars: { version: `naming-vars-v1@sha256:${"b".repeat(64)}`, digest: `sha256:${"b".repeat(64)}` } },
  },
 };
 describe("atomic business load", () => {
@@ -77,23 +76,19 @@ describe("atomic business load", () => {
   await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));
 
   await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
-  // Program digests are provenance and are not shown at all.
-  expect(screen.queryByLabelText("vars digest")).toBeNull();
   expect(screen.queryByText(/sha256/)).toBeNull();
   const frozen=await freezeBusinessDraft(edited);
   expect(frozen.business?.replacement).toEqual({admission_mode:"all",quality_profile:{version:"profile-v2",items:[{key:"rt.resolution",ranks:[["1080p"],["720p"]]}]}});
   expect(frozen.business?.unclassified_route).toBe("skip");
-  expect(frozen.business?.programs).toEqual(preset.snapshot.programs);
+  expect(frozen.business?.schema_version).toBe("business-snapshot-v3");
+  expect(frozen.business).not.toHaveProperty("programs");
   expect(frozen.business_digest).toMatch(/^sha256:[a-f0-9]{64}$/);expect(frozen.business_digest).not.toBe(preset.digest);
   expect(frozen.metadata).toEqual(draft.metadata);expect(frozen.rss_sources).toEqual(draft.rss_sources);expect(frozen.subgroups.entries).toEqual(draft.subgroups.entries);
  });
- it("freezes a naming-vars-v1 program and rejects an unknown base", async () => {
-  Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
-  const digest=`sha256:${"d".repeat(64)}`;
-  const withVars=(version:string)=>{const loaded=loadBusinessPreset(draft,preset);loaded.business!.programs.vars={version,digest};return loaded;};
-  const frozen=await freezeBusinessDraft(withVars(`naming-vars-v1@${digest}`));
-  expect(frozen.business?.programs.vars).toEqual({version:`naming-vars-v1@${digest}`,digest});
-  await expect(freezeBusinessDraft(withVars(`naming-vars-v2@${digest}`))).rejects.toThrow(t("config.validation.configInvalid"));
+ it("rejects a draft carrying an old business snapshot", async () => {
+  const loaded = loadBusinessPreset(draft, preset);
+  Object.assign(loaded.business!, { schema_version: "business-snapshot-v2", programs: {} });
+  await expect(freezeBusinessDraft(loaded)).rejects.toThrow(t("config.validation.configInvalid"));
  });
  it("freezes every section's own value and refuses a draft whose sections were never loaded", async () => {
   Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});

@@ -24,8 +24,7 @@ var consistencyChecks = []struct{ name, query string }{
 	{"download_tasks -> releases", `SELECT count(*) FROM download_tasks t WHERE NOT EXISTS (SELECT 1 FROM releases r WHERE r.id = t.release_id)`},
 	{"download_tasks -> acquisitions", `SELECT count(*) FROM download_tasks t WHERE NOT EXISTS (SELECT 1 FROM acquisitions a WHERE a.id = t.acquisition_id)`},
 	{"every acquisition has a task", `SELECT count(*) FROM acquisitions a WHERE a.execution_branch = 'download' AND NOT EXISTS (SELECT 1 FROM download_tasks t WHERE t.acquisition_id = a.id)`},
-	{"every acquisition has input+manifest+vars", `SELECT count(*) FROM acquisitions a WHERE a.input_canonical_utf8 IS NULL OR a.manifest_digest IS NULL
-		OR (a.id NOT LIKE 'real-%' AND a.vars_evaluation_canonical_utf8 IS NULL)`},
+	{"every acquisition has input+manifest", `SELECT count(*) FROM acquisitions a WHERE a.input_canonical_utf8 IS NULL OR a.manifest_digest IS NULL`},
 	{"input digest = root digest", `SELECT count(*) FROM acquisitions a WHERE a.input_schema_version <> 1
 		OR a.admission_digest <> 'sha256:'||encode(sha256(convert_to('acquisition-input:v1','UTF8')||decode('00','hex')||convert_to(a.input_canonical_utf8,'UTF8')),'hex')
 		OR (a.input->'schema_version') <> to_jsonb(a.input_schema_version)`},

@@ -239,9 +239,6 @@ func FormatSample(value any) string {
 	}
 }
 
-// RootVars is the user Vars namespace: vars.<group>.<name>, dynamic keys.
-const RootVars = "vars"
-
 // Reserved roots: readable names with no fields. `info` used to be reserved
 // while media.hdr carried the inspected media information (naming spec §2.4);
 // the media facts moved under the media root, so nothing is fieldless now.
@@ -280,9 +277,6 @@ func Roots(s Scenario) []string {
 			seen[root] = true
 		}
 	}
-	// vars has dynamic keys (the frozen Vars output) and is readable in
-	// every scenario.
-	seen[RootVars] = true
 	roots := make([]string, 0, len(seen))
 	for root := range seen {
 		roots = append(roots, root)
@@ -302,9 +296,7 @@ func FlatValues(s Scenario, fs *FactSet) map[string]any {
 
 // ScenarioObject returns the nested template object of one scenario: every fact is
 // present (null when absent) so a conditional read of a missing value sees
-// null; reserved roots are empty objects; `vars` carries the frozen Vars and
-// is left out when there are none (the naming wrapper then binds an empty
-// object).
+// null and reserved roots are empty objects.
 func ScenarioObject(s Scenario, fs *FactSet) map[string]any {
 	out := map[string]any{}
 	for _, fact := range ScenarioFacts(s) {
@@ -329,17 +321,6 @@ func ScenarioObject(s Scenario, fs *FactSet) map[string]any {
 	if s&ScenarioNaming != 0 {
 		for _, root := range ReservedRoots {
 			out[root] = map[string]any{}
-		}
-		vars := map[string]any{}
-		if fs != nil && len(fs.Vars) > 0 {
-			for group, values := range fs.Vars {
-				inner := make(map[string]any, len(values))
-				for key, value := range values {
-					inner[key] = value
-				}
-				vars[group] = inner
-			}
-			out["vars"] = vars
 		}
 	}
 	return out

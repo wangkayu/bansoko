@@ -7,7 +7,6 @@ import (
 
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -85,29 +84,21 @@ func TestOwnerDraftParserKindPreviewValidatesAndChangesDigest(t *testing.T) {
 	}
 }
 
-// The unsaved year and TMDB season are what the naming context renders: the
-// overlaid evidence freezes them into the release fact object the renderer
-// reads (anime.year, tmdb.season), replacing the persisted values.
+// The unsaved year, owner season and TMDB binding are projected directly into
+// the typed naming facts, replacing the persisted values.
 func TestMetadataPreviewOverlaysNamingEvidence(t *testing.T) {
-	savedYear, savedSeason := int64(2020), int64(1)
-	evidence := namingvars.AnimeEvidence{AnimeID: "anime-1", AnimeTitle: "Show", AnimeTitleOverride: "Saved", AnimeYear: &savedYear, BgmID: "bgm-1", TmdbID: "tmdb-1", TmdbKind: "tv", TmdbSeason: &savedSeason}
-	overlayVarsAnimeEvidence(&evidence, metadataPreviewFixture())
-	if evidence.AnimeYear == nil || *evidence.AnimeYear != 2031 || evidence.TmdbSeason == nil || *evidence.TmdbSeason != 3 || evidence.TmdbID != "tmdb-9" || evidence.BgmID != "bgm-9" || evidence.AnimeTitleOverride != "Edited Title" {
+	savedYear, savedSeason := 2020, 1
+	evidence := naming.AnimeNamingFacts{ID: "anime-1", Title: "Show", TitleOverride: "Saved", Year: &savedYear, Season: &savedSeason,
+		BGM: naming.BGMNamingFacts{WorkID: "bgm-1"}, TMDB: naming.TMDBNamingFacts{WorkID: "tmdb-1", MediaKind: "tv", Season: 1, SeasonPresent: true}}
+	overlayNamingAnimeFacts(&evidence, metadataPreviewFixture())
+	if evidence.Year == nil || *evidence.Year != 2031 || evidence.Season != nil || !evidence.TMDB.SeasonPresent || evidence.TMDB.Season != 3 || evidence.TMDB.WorkID != "tmdb-9" || evidence.BGM.WorkID != "bgm-9" || evidence.TitleOverride != "Edited Title" {
 		t.Fatalf("overlaid evidence = %+v", evidence)
-	}
-	facts := namingvars.BuildInput(namingvars.ReleaseEvidence{AnimeEvidence: evidence}).Facts
-	if year := naming.FrozenAnimeYear(facts); year == nil || *year != 2031 {
-		t.Fatalf("frozen anime.year = %v, want 2031 (facts %v)", year, facts)
-	}
-	tmdb, _ := facts["tmdb"].(map[string]any)
-	if season, ok := tmdb["season"]; !ok || season == nil {
-		t.Fatalf("frozen tmdb.season missing: %v", facts)
 	}
 
 	// A cleared value clears: the persisted year does not leak back in. The
 	// fixed title is never cleared: an absent preview title keeps it.
-	overlayVarsAnimeEvidence(&evidence, MetadataPreviewInput{})
-	if evidence.AnimeYear != nil || evidence.TmdbSeason != nil || evidence.TmdbID != "" || evidence.BgmID != "" || evidence.AnimeTitleOverride != "Edited Title" {
+	overlayNamingAnimeFacts(&evidence, MetadataPreviewInput{})
+	if evidence.Year != nil || evidence.Season != nil || evidence.TMDB.SeasonPresent || evidence.TMDB.WorkID != "" || evidence.BGM.WorkID != "" || evidence.TitleOverride != "Edited Title" {
 		t.Fatalf("cleared evidence = %+v", evidence)
 	}
 }

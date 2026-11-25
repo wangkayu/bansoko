@@ -14,7 +14,7 @@ import (
 )
 
 const acceptQualifiedQueued = `-- name: AcceptQualifiedQueued :one
-SELECT public.accept_acquisition_queued_with_vars(
+SELECT public.accept_acquisition_queued(
     $1::text,
     $2::text,
     $3::text,
@@ -56,8 +56,7 @@ SELECT public.accept_acquisition_queued_with_vars(
     $39::text,
     $40::text,
     $41::text,
-    $42::jsonb,
-    $43::text
+    $42::jsonb
 )::jsonb AS result
 `
 
@@ -104,12 +103,11 @@ type AcceptQualifiedQueuedParams struct {
 	CausationType               sql.NullString
 	CausationID                 sql.NullString
 	DefaultSections             pqtype.NullRawMessage
-	VarsEvaluation              sql.NullString
 }
 
 // AcceptQualifiedQueued
 //
-//	SELECT public.accept_acquisition_queued_with_vars(
+//	SELECT public.accept_acquisition_queued(
 //	    $1::text,
 //	    $2::text,
 //	    $3::text,
@@ -151,8 +149,7 @@ type AcceptQualifiedQueuedParams struct {
 //	    $39::text,
 //	    $40::text,
 //	    $41::text,
-//	    $42::jsonb,
-//	    $43::text
+//	    $42::jsonb
 //	)::jsonb AS result
 func (q *Queries) AcceptQualifiedQueued(ctx context.Context, arg AcceptQualifiedQueuedParams) (json.RawMessage, error) {
 	row := q.db.QueryRowContext(ctx, acceptQualifiedQueued,
@@ -198,7 +195,6 @@ func (q *Queries) AcceptQualifiedQueued(ctx context.Context, arg AcceptQualified
 		arg.CausationType,
 		arg.CausationID,
 		arg.DefaultSections,
-		arg.VarsEvaluation,
 	)
 	var result json.RawMessage
 	err := row.Scan(&result)

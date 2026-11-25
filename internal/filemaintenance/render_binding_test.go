@@ -142,7 +142,6 @@ func seedBindingPrecedenceChain(t *testing.T, db *sql.DB, renderSnapshot string)
 		ReleaseTitle: "[Group] Binding Show - 01", PlacedPath: "/library/Binding Show/episode.mkv",
 		DownloadName: "episode.mkv", Rules: rules, FrozenEpisode: "1",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	if _, err := db.Exec(`UPDATE media_fact_snapshots
 SET release_facts = release_facts || '{"tmdb_work_id":"release-tmdb","bgm_work_id":"release-bgm"}'::jsonb
 WHERE id = $1`, chain.SnapshotID); err != nil {

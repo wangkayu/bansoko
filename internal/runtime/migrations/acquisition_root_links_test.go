@@ -24,8 +24,19 @@ func seedAcquiredChain(t *testing.T, db *sql.DB, tag string, withArtifact bool) 
 	t.Helper()
 	ctx := context.Background()
 	seedAcceptableRelease(t, db, tag)
-	params := validQueuedForSchema(t, db, "acq-"+tag, "key-"+tag, tag)
-	if _, err := callQueuedAccept(t, db, params); err != nil {
+	var current bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version='163_retire_naming_vars.sql')`).Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	var params queuedParams
+	accept := callQueuedAccept
+	if current {
+		params = validQueued(t, "acq-"+tag, "key-"+tag, tag)
+	} else {
+		params = validHistoricalQueued(t, db, "acq-"+tag, "key-"+tag, tag)
+		accept = callHistoricalQueuedAccept
+	}
+	if _, err := accept(t, db, params); err != nil {
 		t.Fatalf("accept the download root: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE download_tasks SET state='completed' WHERE id=$1`, params.TaskID); err != nil {

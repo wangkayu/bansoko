@@ -11,6 +11,15 @@ import (
 
 func (s *Server) SetEventActions(service *eventactions.Service) { s.deps.EventActions = service }
 
+// requireOwner rejects a caller that is not the owner account.
+func requireOwner(w http.ResponseWriter, r *http.Request) bool {
+	if account, ok := AccountFrom(r.Context()); ok && account.Role == "owner" {
+		return true
+	}
+	writeError(w, r, &APIError{Status: http.StatusForbidden, Code: "OWNER_REQUIRED", Message: "Only the owner may do this."})
+	return false
+}
+
 func (s *Server) eventActions(w http.ResponseWriter, r *http.Request) *eventactions.Service {
 	// Owner only, for every bearer kind; scope authorization (read or admin
 	// depending on the operation) runs in the middleware before this handler.

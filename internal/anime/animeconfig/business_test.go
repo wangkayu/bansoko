@@ -2,7 +2,6 @@ package animeconfig
 
 import (
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/qualityprofile"
 	"encoding/json"
 	"testing"
@@ -28,8 +27,7 @@ func presetFixture(t *testing.T) BusinessSnapshot {
 	}
 	return BusinessSnapshot{SchemaVersion: animedomain.BusinessSnapshotSchemaVersion, Sections: sections, SectionVersions: versions, SectionSchemas: schemas,
 		Parser:      animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2},
-		Replacement: ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}, ReplacementVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
-		Programs: ProgramReferences{Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"}}}
+		Replacement: ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}, ReplacementVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5}
 }
 func TestBusinessFreezeDoesNotFollowGlobalMutation(t *testing.T) {
 	original := presetFixture(t)
@@ -44,25 +42,24 @@ func TestBusinessFreezeDoesNotFollowGlobalMutation(t *testing.T) {
 	original.SectionVersions[animedomain.SectionParser] = 90
 	original.Sections[animedomain.SectionParser][0] = 'x'
 	original.Replacement.QualityProfile[0] = 'x'
-	original.Programs.Vars.Digest = "new-global"
 	after, err := frozen.Digest()
 	if err != nil || before != after {
 		t.Fatalf("frozen preset drift: %s %s %v", before, after, err)
 	}
-	if frozen.ReplacementVersion != 4 || frozen.FileEffectVersion != 5 || frozen.Programs.Vars.Digest != "sha256:vars" {
+	if frozen.ReplacementVersion != 4 || frozen.FileEffectVersion != 5 {
 		t.Fatal("business provenance lost")
 	}
 }
-func TestBusinessRejectsIncompleteOrMismatchedProgramReferences(t *testing.T) {
+func TestBusinessRejectsIncompleteOrOldSnapshots(t *testing.T) {
 	p := presetFixture(t)
 	delete(p.Sections, animedomain.SectionNamingRules)
 	if _, err := p.Freeze(); err == nil {
 		t.Fatal("incomplete preset accepted")
 	}
 	p = presetFixture(t)
-	p.Programs.Vars.Version = "current"
+	p.SchemaVersion = "business-snapshot-v2"
 	if _, err := p.Freeze(); err == nil {
-		t.Fatal("mutable current reference accepted")
+		t.Fatal("old snapshot accepted")
 	}
 	p = presetFixture(t)
 	p.Replacement.QualityProfile = nil

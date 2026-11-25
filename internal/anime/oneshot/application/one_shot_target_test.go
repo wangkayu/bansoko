@@ -12,7 +12,7 @@ import (
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/namingvars"
+	"bansoko/internal/postprocessing/naming"
 )
 
 // Database-free coverage for the finite one-shot target admission boundary.
@@ -47,32 +47,12 @@ func oneShotTargetItem() acquisitiondomain.FeedItem {
 }
 
 func oneShotTargetPreview() animedomain.PreviewReleaseResult {
-	source := `vars.actual = {title: input.release_title};`
-	digest, _ := namingvars.SourceFingerprint(source)
-	program, err := namingvars.NewProgram(namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, source)
-	if err != nil {
-		panic(err)
-	}
-	item := oneShotTargetItem()
-	input := namingvars.Input{ReleaseTitle: item.Title}
-	for _, file := range item.ReleaseFiles {
-		input.Files = append(input.Files, namingvars.File{Name: file.Filename, Path: file.SourcePath, Size: *file.SizeBytes})
-	}
-	// The frozen binding facts the instance's own metadata rows supply (the
-	// same ones the production freeze reads through ItemEvidence): the shipped
-	// default templates name ${anime.year}, ${anime.season_folder} and the
-	// s00e00 shorthand's season, so an admission that expects a rendered target
-	// carries the bound season and the owner-edited year. The title
-	// is deliberately left to the request's coalesced instance title.
-	input.Facts = map[string]any{
-		"anime": map[string]any{"year": "2025"},
-		"tmdb":  map[string]any{"id": "oneshot-tmdb", "kind": "tv", "season": 1, "year": 2025},
-	}
-	// A literal admission record of `source`; fixtures never run the
-	// time-limited evaluator.
-	frozen := namingvars.FrozenEvaluation{Program: program.Ref(), Input: input, Output: namingvars.Vars{"actual": {"title": item.Title}}, Status: "ok"}
+	year, season := 2025, 1
 	return animedomain.PreviewReleaseResult{
-		FrozenVars:    &frozen,
+		NamingAnime: naming.AnimeNamingFacts{
+			Year: &year, Season: &season,
+			TMDB: naming.TMDBNamingFacts{WorkID: "oneshot-tmdb", MediaKind: "tv", Season: season, SeasonPresent: true, Year: &year},
+		},
 		StableItemKey: "guid:guid-one-shot-target",
 		Verdict:       animedomain.ReleaseVerdict("accepted_pending_download"),
 	}

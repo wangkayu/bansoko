@@ -44,8 +44,6 @@ const categories = [
   // Hidden anime: saves immediately with no draft; no longer opened from the account menu/more/?tool=.
   { key: "hidden", labelKey: "settings.nav.hidden", icon: EyeOff },
   { key: "rules", labelKey: "settings.nav.rules", icon: Wand2 },
-  // Custom naming Vars is scheduled for retirement in 0.3; the frontend editor
-  // has been removed and `/settings/vars` falls back to connections.
   { key: "replacement", labelKey: "settings.nav.replacement", icon: Layers },
   { key: "account", labelKey: "settings.nav.account", icon: UserRound },
   { key: "automation", labelKey: "settings.nav.automation", icon: Clock },
@@ -298,7 +296,6 @@ function renderActive(active: CategoryKey) {
       return <SettingsDownload />;
     case "rules":
       return <SettingsRules />;
-    // While naming variables is hidden there is no "vars" branch: the /settings/vars deep link falls back to service connections.
     case "replacement":
       return <SettingsReplacement />;
     case "automation":

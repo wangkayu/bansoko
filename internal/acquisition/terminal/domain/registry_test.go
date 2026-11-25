@@ -145,9 +145,8 @@ func TestRegistryIsStrictOnTheFullInput(t *testing.T) {
 		if s.node.Kind == KindObject {
 			for _, key := range sortedKeys(s.node.Object) {
 				key := key
-				if key == "quality" && strings.Join(s.path, "/") == "media" {
-					// New inputs omit this decode-only historical field. All of
-					// its members stay strict when a historical value is present.
+				if (key == "quality" || key == "year" || key == "season") && strings.Join(s.path, "/") == "media" {
+					// Keep optional media fields strict when present.
 					without := rebuild(input, s.path, func(o Value) Value { delete(o.Object, key); return o })
 					if err := Validate("AcquisitionInputV1", without); err != nil {
 						t.Fatal(err)
@@ -228,8 +227,11 @@ func TestCrossFieldRulesOfTheInput(t *testing.T) {
 	}
 	assertRejected(t, "replace intent with no replacement evidence", "AcquisitionInputV1",
 		with(with(in, "/delivery/collision", str("overwrite")), "/delivery/intent", str("replace")), CodeConstraintViolated, "/delivery/intent")
-	assertRejected(t, "naming vars choice differing from the config's", "AcquisitionInputV1", with(in, "/delivery/naming/vars_choice", str("frozen")),
-		CodeConstraintViolated, "/delivery/naming/vars_choice")
+	legacyNaming := rebuild(in, []string{"delivery", "naming"}, func(v Value) Value {
+		v.Object["vars_choice"] = str("frozen")
+		return v
+	})
+	assertRejected(t, "retired naming vars choice", "AcquisitionInputV1", legacyNaming, CodeUnknownKey, "/delivery/naming/vars_choice")
 
 	// Source: at least one verified info-hash.
 	assertRejected(t, "source with no info-hash", "AcquisitionInputV1",
@@ -255,9 +257,12 @@ func TestCrossFieldRulesOfTheInput(t *testing.T) {
 		CodeConstraintViolated, "/config/sections/0/config_version")
 	assertRejected(t, "rules_version 0", "AcquisitionInputV1", with(in, "/config/rules_version", j(t, `{"state":"known","value":0,"reason_code":null}`)), CodeConstraintViolated, "/config/rules_version/value")
 
-	// Vars: late_file is a future design and is refused, not converted.
-	assertRejected(t, "late_file vars", "AcquisitionInputV1", with(in, "/config/vars", j(t, `{"mode":"late_file"}`)),
-		CodeInputSchemaUnsupported, "/config/vars/mode")
+	// Retired Vars cannot be written to new inputs.
+	legacyConfig := rebuild(in, []string{"config"}, func(v Value) Value {
+		v.Object["vars"] = j(t, `{"mode":"disabled"}`)
+		return v
+	})
+	assertRejected(t, "retired config vars", "AcquisitionInputV1", legacyConfig, CodeUnknownKey, "/config/vars")
 
 	// Limits: the fixed formula for max_polls, and the budget relations.
 	assertRejected(t, "max_polls off the fixed formula", "AcquisitionInputV1", with(in, "/limits/sync/max_polls", i64(10082)),

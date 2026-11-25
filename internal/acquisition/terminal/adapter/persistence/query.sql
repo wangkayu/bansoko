@@ -1,5 +1,5 @@
 -- name: AcceptQualifiedQueued :one
-SELECT public.accept_acquisition_queued_with_vars(
+SELECT public.accept_acquisition_queued(
     sqlc.narg(acquisition_id)::text,
     sqlc.narg(entry_kind)::text,
     sqlc.narg(access_scope)::text,
@@ -41,6 +41,5 @@ SELECT public.accept_acquisition_queued_with_vars(
     sqlc.narg(correlation_id)::text,
     sqlc.narg(causation_type)::text,
     sqlc.narg(causation_id)::text,
-    sqlc.narg(default_sections)::jsonb,
-    sqlc.narg(vars_evaluation)::text
+    sqlc.narg(default_sections)::jsonb
 )::jsonb AS result;

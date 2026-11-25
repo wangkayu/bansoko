@@ -6,8 +6,6 @@ import (
 
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/namingvars"
-	"bansoko/internal/postprocessing/naming"
 )
 
 // MetadataMatchIdempotencyReusedError reports one idempotency key reused for a
@@ -72,23 +70,6 @@ func sectionResolutionError(err error) error {
 		return &apperrors.Validation{Code: sectionErr.Code, Details: []apperrors.FieldViolation{{Field: &field, Code: sectionErr.Code, Message: sectionErr.Message}}}
 	}
 	return &apperrors.Business{Status: 422, Code: "OVERRIDE_MODE_INVALID", Message: "Section values must be complete replace values."}
-}
-
-// NamingVarsSnapshot returns the loaded naming-variable snapshot or a typed configuration error.
-func NamingVarsSnapshot(field string) (map[string]map[string]string, error) {
-	vars, _, err := namingvars.Current()
-	if err != nil {
-		name := field
-		return nil, &apperrors.Validation{
-			Code:    naming.ErrCodeNamingVarsUnknown,
-			Details: []apperrors.FieldViolation{{Field: &name, Code: naming.ErrCodeNamingVarsUnknown, Message: "naming vars are not loaded; check the naming variable program"}},
-		}
-	}
-	return vars, nil
-}
-
-func namingVarsSnapshot(field string) (map[string]map[string]string, error) {
-	return NamingVarsSnapshot(field)
 }
 
 // BusinessSnapshotInvalidError reports a submitted draft whose frozen business

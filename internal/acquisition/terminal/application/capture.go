@@ -11,7 +11,6 @@ import (
 	"bansoko/internal/anime/metadatabinding"
 	catalogdb "bansoko/internal/catalog/adapter/persistence"
 	catalogreader "bansoko/internal/catalog/application"
-	"bansoko/internal/namingvars"
 )
 
 // Only package-owned intent resolution may assemble these requests. No exported
@@ -29,7 +28,7 @@ type qualificationRequest struct {
 type catalogRequest struct{ observationID, feedID, seedKey string }
 
 // captureQualification performs fixed SELECTs in a read-only snapshot. Exact
-// feed and Vars readers own their reads separately; their immutable identities
+// feed readers own their reads separately; their immutable identities
 // are rechecked by 132 at acceptance, not authorized by this capture transaction.
 func captureQualification(ctx context.Context, db *sql.DB, revisions *draft.Service, req qualificationRequest) (admissionCapture, error) {
 	if db == nil || revisions == nil || req.releaseID == "" || req.requestHash == "" {
@@ -75,7 +74,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 	}
 	// The managed anime's own titles are captured with the same row: the
 	// acceptance freezes the override and the provider catalog title, and both the
-	// Vars input and the typed plan read them back.
+	// typed plan reads them back.
 	mg.titleOverride, mg.providerTitle = strings.TrimSpace(rawTitleOverride.String), strings.TrimSpace(rawProviderTitle.String)
 	m.managementNone = (req.entryMode == "one_shot_seed" || req.entryMode == "one_shot_snapshot")
 	if m.managementNone && req.configKind == "owner" {
@@ -199,14 +198,6 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 	}
 	if err := captureWorkTitlesTx(ctx, tx, &m); err != nil {
 		return admissionCapture{}, materialError("metadata", err)
-	}
-	// Load and validate the exact Vars source from this same transaction.
-	if err := tx.QueryRowContext(ctx, `SELECT content #>> '{}' FROM naming_vars_versions WHERE fingerprint=$1`, m.config.business.Programs.Vars.Digest).Scan(&m.programs.varsSource); err != nil {
-		return admissionCapture{}, materialError("programs", err)
-	}
-	m.programs.vars, err = namingvars.NewProgram(m.config.business.Programs.Vars, m.programs.varsSource)
-	if err != nil {
-		return admissionCapture{}, materialError("programs", err)
 	}
 	if req.catalog != nil {
 		c := req.catalog

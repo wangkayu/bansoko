@@ -63,7 +63,6 @@ func TestNamingTargetRendererTvBranch(t *testing.T) {
 		ReleaseTitle: "[Group] 测试番组 - 03", PlacedPath: "/library/Anime/EP03.mkv",
 		DownloadName: "EP03.mkv", Rules: rendererRules(), FrozenEpisode: "3",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	renderer := NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rendererRules()})
 
 	target, err := renderer.RenderTarget(context.Background(), SnapshotObservation{
@@ -92,7 +91,6 @@ func TestNamingTargetRendererMovieBranch(t *testing.T) {
 		ReleaseTitle: "[Group] 剧场版标题", PlacedPath: "/library/Movie/MovieTitle.mkv",
 		DownloadName: "MovieTitle.mkv", Rules: rendererRules(),
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	renderer := NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rendererRules()})
 
 	target, err := renderer.RenderTarget(context.Background(), SnapshotObservation{
@@ -121,7 +119,6 @@ func TestNamingTargetRendererTitleOverrideAndErrors(t *testing.T) {
 	if _, err := db.Exec(`UPDATE managed_anime SET title_override = '覆盖标题' WHERE id = 'anime-render-override'`); err != nil {
 		t.Fatal(err)
 	}
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	renderer := NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rendererRules()})
 	target, err := renderer.RenderTarget(context.Background(), SnapshotObservation{
 		AnimeID: "anime-render-override", PlacementID: chain.PlacementID,

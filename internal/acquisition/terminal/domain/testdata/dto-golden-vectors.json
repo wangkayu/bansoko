@@ -224,10 +224,6 @@
         },
         "runtime_version": "parser-v1"
       },
-      "vars": {
-        "mode": "disabled",
-        "runtime_version": "naming-vars-v1"
-      },
       "rules_version": {
         "$fixture": "absent"
       }
@@ -277,6 +273,16 @@
           "year": 2020
         },
         "reason_code": null
+      },
+      "year": {
+        "state": "known",
+        "value": 2026,
+        "reason_code": null
+      },
+      "season": {
+        "state": "known",
+        "value": 0,
+        "reason_code": null
       }
     },
     "delivery": {
@@ -303,7 +309,6 @@
         "templates": {
           "$fixture": "naming_section"
         },
-        "vars_choice": "disabled",
         "runtime_version": "js-naming-1"
       },
       "source_cleanup": {
@@ -695,9 +700,6 @@
           },
           "reason_code": null
         },
-        "vars": {
-          "$fixture": "absent"
-        },
         "naming_schema": {
           "state": "known",
           "value": "naming-rules-v1",
@@ -824,24 +826,24 @@
       "type": "ConfigV1",
       "domain": "acquisition-input:config:v1",
       "definition": "config",
-      "expected_sha256": "2175c86b7321765e42b43902635e2a2bbe6afa39365969da8b67790221977c7e",
-      "expected_bytes": 1974
+      "expected_sha256": "d34f52aa0b3477fbffefdb54daf0ecf54135efd78e3de3f0784896797e6f3e24",
+      "expected_bytes": 1912
     },
     {
       "id": "GV04",
       "type": "MediaV1",
       "domain": "acquisition-input:media:v1",
       "definition": "media",
-      "expected_sha256": "9e8bf8552deea2bf252bf2d3cfb6f77d2e7306c195b874e06f56ee6454ce69fa",
-      "expected_bytes": 788
+      "expected_sha256": "80a387aeeecfe526d2871b3f97eccc9168536d1274f88aebca65bdcbc381d21b",
+      "expected_bytes": 901
     },
     {
       "id": "GV05",
       "type": "DeliveryV1",
       "domain": "acquisition-input:delivery:v1",
       "definition": "delivery",
-      "expected_sha256": "86b113f62cd8e32ab2011d691f03c438183b3fa9eeff8721e22f0c001605cc0f",
-      "expected_bytes": 844
+      "expected_sha256": "19068065b27d43ac0bcab0f7a1cba2b1ee6d95e084826023d4bd9a04f75ec2ed",
+      "expected_bytes": 819
     },
     {
       "id": "GV06",
@@ -864,16 +866,16 @@
       "type": "AcquisitionInputV1",
       "domain": "acquisition-input:v1",
       "definition": "input",
-      "expected_sha256": "36b5ffb6aa27fb1a087b1633cd7a91941e7c990213970a82b0a46c307946c5ec",
-      "expected_bytes": 6464
+      "expected_sha256": "ed9208b0d92ed16afe6b727571cba9baa65af600766fbfc0d039efb18b299552",
+      "expected_bytes": 6490
     },
     {
       "id": "GV09",
       "type": "FileFactV1",
       "domain": "placement-file-facts:v1",
       "definition": "file_fact",
-      "expected_sha256": "bbe5290e81e02fa431812815c2132dafbeb1e7b343e20e2c670b94cdb74b6014",
-      "expected_bytes": 6291
+      "expected_sha256": "6f4395e9f2741a83439f1a71e456095bfd159bc2c242795cd1098a323509babb",
+      "expected_bytes": 6233
     },
     {
       "id": "GV10",

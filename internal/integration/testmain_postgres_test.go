@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 
-	"bansoko/internal/namingvars"
 	"bansoko/internal/runtime/database"
 	"bansoko/internal/testutil/disposabledb/guard"
 )
@@ -15,22 +14,10 @@ import (
 // database. Keep the package boundary clean so submitted fake tasks from a
 // crash-window test cannot affect the next package.
 func TestMain(m *testing.M) {
-	initializeIntegrationRegistries()
 	cleanupIntegrationDatabase()
 	exitCode := m.Run()
 	cleanupIntegrationDatabase()
 	os.Exit(exitCode)
-}
-
-func initializeIntegrationRegistries() {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	varsFingerprint, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		panic(err)
-	}
-	if err := namingvars.SetActive(vars, varsFingerprint); err != nil {
-		panic(err)
-	}
 }
 
 func cleanupIntegrationDatabase() {

@@ -516,7 +516,7 @@ func TestRSSListViewCurrentInputMatchesCandidateRevision(t *testing.T) {
 	const entryRef = "70031"
 	const groupRef = "678"
 	submitted := readmodelProviderDraftWithGroups(t, generated.SubscriptionOriginMikan, entryRef, groupRef)
-	business, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	business, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

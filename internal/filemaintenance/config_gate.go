@@ -57,7 +57,7 @@ func (r *NamingTargetRenderer) CurrentConfigHold(ctx context.Context, animeID st
 		return nil, 0, err
 	}
 	engine := naming.NewEngine()
-	compiled, err := engine.CompileRulesWithVars(rules, files[0].Vars)
+	compiled, err := engine.CompileRules(rules)
 	if err != nil {
 		return hold, blocked, nil
 	}

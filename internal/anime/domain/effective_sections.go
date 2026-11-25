@@ -53,17 +53,11 @@ type ConfigRevisionIdentity struct {
 // section and its five rules sections, each a complete value. Global is never
 // read; a missing section fails closed.
 func ResolveDraftEffectiveSections(draft AnimeDraft) (ResolvedSections, error) {
-	return ResolveDraftEffectiveSectionsWithVars(draft, nil)
-}
-
-// ResolveDraftEffectiveSectionsWithVars is the save-time form: naming templates
-// are validated against the injected Vars snapshot.
-func ResolveDraftEffectiveSectionsWithVars(draft AnimeDraft, vars map[string]map[string]string) (ResolvedSections, error) {
 	subgroupsOverride, violations := SubgroupsSectionOverride(draft.Subgroups)
 	if len(violations) > 0 {
 		return ResolvedSections{}, fmt.Errorf("subgroups override: %s", violations[0].Message)
 	}
-	rulesOverrides, violations := RulesSectionOverridesWithVars(draft.Rules.Sections, vars)
+	rulesOverrides, violations := RulesSectionOverrides(draft.Rules.Sections)
 	if len(violations) > 0 {
 		violation := violations[0]
 		if violation.Code != "OVERRIDE_MODE_INVALID" {

@@ -17,7 +17,6 @@ import (
 	downloadadmission "bansoko/internal/download/admission"
 	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/events"
-	"bansoko/internal/namingvars"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	plugintargetport "bansoko/internal/plugintarget/port"
@@ -63,7 +62,6 @@ type frozenPolicySnapshot struct {
 	MetadataVersion   int64                              `json:"metadata_version"`
 	Parser            *parser.Provenance                 `json:"parser"`
 	RulesVersion      int64                              `json:"rules_version"`
-	Vars              *namingvars.FrozenEvaluation       `json:"vars,omitempty"`
 	SectionSchemas    map[string]string                  `json:"section_schemas"`
 	SectionVersions   map[string]int64                   `json:"section_versions"`
 }

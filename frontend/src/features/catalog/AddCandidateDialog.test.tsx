@@ -35,7 +35,8 @@ describe("Custom candidate explicit save boundary", () => {
   expect(mocks.save.mock.calls[0][0]).toMatchObject({ origin: "custom", origin_entry_ref: null, title: "Custom Anime", instance_label: "Living Room", subgroups: { entries: [] }, rss_sources: [{ source_kind: "custom_rss", locator: "https://feed.example.test/rss", group_name: "Exact Group" }] });
   expect(mocks.save.mock.calls[0][0].rss_sources).toHaveLength(1);
   const saved = mocks.save.mock.calls[0][0];
-  expect(saved.business?.programs).toEqual((await import("../../testing/businessPreset")).preset.snapshot.programs);
+  expect(saved.business?.schema_version).toBe("business-snapshot-v3");
+  expect(saved.business).not.toHaveProperty("programs");
   expect(saved.business_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   // Every rules section is one-time input (owner 2026-10-20): the new draft
   // takes a complete copy of the Global value, tag_filters included.

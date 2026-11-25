@@ -12,7 +12,6 @@ import (
 // automatic entry: a filtered release is rejected by both.
 func TestDirectReleaseFilterEntryPolicy(t *testing.T) {
 	m := qualificationFixture(t, "subscription_direct")
-	m.programs.varsSource = "vars.actual = {title: input.release_title};"
 	m.bgm = &anime.BGMBinding{WorkId: "123"}
 	m.tmdb = &anime.TMDBBinding{WorkId: "456", MediaKind: "tv", Season: 1}
 	m.config.business.Sections[anime.SectionReleaseRules] = json.RawMessage(`{"must_contain":"NEVER_MATCH_THIS","not_in":""}`)

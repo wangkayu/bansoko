@@ -16,7 +16,6 @@ import (
 	"bansoko/internal/agentguide"
 	animedomain "bansoko/internal/anime/domain"
 	animetransport "bansoko/internal/anime/transport"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/transport/mcp"
 )
@@ -320,7 +319,7 @@ func TestAppendixDraftIsAValidAnimeDraft(t *testing.T) {
 	// carries, so the appendix on its own cannot be previewed: the guide must
 	// route it through load_business_preset, and the loaded draft must satisfy
 	// what preview and save require.
-	if _, err := animedomain.ResolveDraftSectionsFromBusiness(mapped, nil); err == nil {
+	if _, err := animedomain.ResolveDraftSectionsFromBusiness(mapped); err == nil {
 		t.Fatal("the appendix draft unexpectedly resolves without a business snapshot; revisit the load step in the guide")
 	}
 	if !strings.Contains(appendix, "`load_business_preset`") {
@@ -336,7 +335,7 @@ func TestAppendixDraftIsAValidAnimeDraft(t *testing.T) {
 	if digest, err := loaded.Business.Digest(); err != nil || digest != *loaded.BusinessDigest {
 		t.Fatalf("loaded appendix business digest = %s, %v; draft says %s", digest, err, *loaded.BusinessDigest)
 	}
-	if _, err := animedomain.ResolveDraftSectionsFromBusiness(loaded, nil); err != nil {
+	if _, err := animedomain.ResolveDraftSectionsFromBusiness(loaded); err != nil {
 		t.Fatalf("the loaded appendix draft cannot be previewed: %v", err)
 	}
 	if violations := animedomain.ValidateDraft(loaded); len(violations) > 0 {
@@ -376,9 +375,6 @@ func guideBusinessPreset(t *testing.T) animedomain.BusinessSnapshot {
 	preset.Replacement = animedomain.ReplacementValue{AdmissionMode: "all",
 		QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"subgroup.score","ranks":[]},{"key":"rt.sub_lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"rt.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"rt.revision","ranks":[]}]}`)}
 	preset.UnclassifiedRoute = "skip"
-	preset.Programs = animedomain.ProgramReferences{
-		Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
-	}
 	return preset
 }
 

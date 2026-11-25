@@ -33,7 +33,6 @@ const (
 	ErrCodeTemplateCompileError    = "TEMPLATE_COMPILE_ERROR"
 	ErrCodeTemplateLimitExceeded   = "TEMPLATE_LIMIT_EXCEEDED"
 	ErrCodeTemplateTimeout         = "TEMPLATE_TIMEOUT"
-	ErrCodeNamingVarsUnknown       = "NAMING_VARS_UNKNOWN"
 	ErrCodeNamingTargetInvalid     = "NAMING_TARGET_INVALID"
 	ErrCodeNamingTargetNotAbsolute = "NAMING_TARGET_NOT_ABSOLUTE"
 	ErrCodeSubtitleSuffixInvalid   = "SUBTITLE_SUFFIX_INVALID"
@@ -242,15 +241,7 @@ func unsupportedLanguageError(field string, language string) *Error {
 
 // Compile compiles one template in the naming language.
 func (e *Engine) Compile(kind TemplateKind, source string) (CompiledTemplate, error) {
-	return e.compile(kind, source, Language, nil)
-}
-
-// CompileWithVars compiles one template and validates its `vars` references
-// against the caller-supplied snapshot. The engine never reads the process-wide
-// snapshot itself: the owner of that lifecycle injects it, so validation cannot
-// silently depend on global state.
-func (e *Engine) CompileWithVars(kind TemplateKind, source string, vars map[string]map[string]string) (CompiledTemplate, error) {
-	return e.compile(kind, source, Language, vars)
+	return e.compile(kind, source, Language)
 }
 
 // isOneTemplateLiteral reports whether a wrapped body is exactly one untagged
@@ -270,7 +261,7 @@ func isOneTemplateLiteral(expression string) bool {
 	return ok && literal.Tag == nil
 }
 
-func (e *Engine) compile(kind TemplateKind, source, language string, vars map[string]map[string]string) (CompiledTemplate, error) {
+func (e *Engine) compile(kind TemplateKind, source, language string) (CompiledTemplate, error) {
 	if !SupportedLanguage(language) {
 		return CompiledTemplate{}, unsupportedLanguageError(string(kind), language)
 	}
@@ -292,8 +283,7 @@ func (e *Engine) compile(kind TemplateKind, source, language string, vars map[st
 	if strings.Contains(source, "`") && !isOneTemplateLiteral(expression) {
 		return CompiledTemplate{}, &Error{Code: ErrCodeTemplateCompileError, Field: string(kind), Message: "the template is the text between the backticks: do not wrap it in backticks, and write a literal backtick as \\`"}
 	}
-	// Validation runs on every compile, cached program or not: the program cache
-	// is keyed by source, while the `vars` snapshot is a separate input.
+	// Validation runs on every compile, cached program or not.
 	if err := validateTemplateLimits(source, kind); err != nil {
 		return CompiledTemplate{}, err
 	}
@@ -302,7 +292,7 @@ func (e *Engine) compile(kind TemplateKind, source, language string, vars map[st
 	// facts, the guard and the compiled program all describe the expansion. See
 	// shorthand.go for the recognition rule and the season semantics.
 	expression = expandShorthands(expression)
-	analyzed, err := analyzeNamingExpression(profile, expression, kind, vars)
+	analyzed, err := analyzeNamingExpression(profile, expression, kind)
 	if err != nil {
 		return CompiledTemplate{}, err
 	}
@@ -347,27 +337,20 @@ func (e *Engine) compile(kind TemplateKind, source, language string, vars map[st
 }
 
 func (e *Engine) CompileRules(rules NamingRules) (CompiledNamingRules, error) {
-	return e.compileRules(rules, nil)
+	return e.compileRules(rules)
 }
 
-// CompileRulesWithVars compiles a complete rules set and validates every
-// template's `vars` references against the injected snapshot. Configuration
-// saves use this form so an unsaveable template is refused at save time.
-func (e *Engine) CompileRulesWithVars(rules NamingRules, vars map[string]map[string]string) (CompiledNamingRules, error) {
-	return e.compileRules(rules, vars)
-}
-
-func (e *Engine) compileRules(rules NamingRules, vars map[string]map[string]string) (CompiledNamingRules, error) {
+func (e *Engine) compileRules(rules NamingRules) (CompiledNamingRules, error) {
 	if !SupportedLanguage(rules.Language) {
 		return CompiledNamingRules{}, unsupportedLanguageError("rules", rules.Language)
 	}
 
 	compileVariant := func(v NamingVariant, field string) (CompiledVariant, error) {
-		d, err := e.compile(KindDirectory, v.DirectoryTemplate, rules.Language, vars)
+		d, err := e.compile(KindDirectory, v.DirectoryTemplate, rules.Language)
 		if err != nil {
 			return CompiledVariant{}, fmt.Errorf("compile %s directory template: %w", field, err)
 		}
-		f, err := e.compile(KindVideoFilename, v.VideoFilenameTemplate, rules.Language, vars)
+		f, err := e.compile(KindVideoFilename, v.VideoFilenameTemplate, rules.Language)
 		if err != nil {
 			return CompiledVariant{}, fmt.Errorf("compile %s video filename template: %w", field, err)
 		}
@@ -387,7 +370,7 @@ func (e *Engine) compileRules(rules NamingRules, vars map[string]map[string]stri
 	}
 	result := CompiledNamingRules{TV: tv, Movie: movie, Unknown: unknown}
 	if strings.TrimSpace(rules.SubtitleSuffixTemplate) != "" {
-		s, err := e.compile(KindSubtitleSuffix, rules.SubtitleSuffixTemplate, rules.Language, vars)
+		s, err := e.compile(KindSubtitleSuffix, rules.SubtitleSuffixTemplate, rules.Language)
 		if err != nil {
 			return result, fmt.Errorf("compile subtitle suffix template: %w", err)
 		}
@@ -400,7 +383,7 @@ func (e *Engine) compileRules(rules NamingRules, vars map[string]map[string]stri
 // (tv, movie and unknown) must have a video filename template. An empty one
 // would only fail later, when a file is rendered; the unknown variant gets no
 // special case .
-func ValidateSavableRules(rules NamingRules) error {
+func validateCompleteRules(rules NamingRules) error {
 	for _, variant := range []struct {
 		field string
 		value NamingVariant
@@ -412,32 +395,22 @@ func ValidateSavableRules(rules NamingRules) error {
 	return nil
 }
 
-// ValidateSavableRulesWithVars extends the completeness check with the target
-// shape: each variant's directory template must render an absolute directory.
-// It renders against the fixed catalog sample, so a syntactically valid but
-// relative template is refused before it is stored. Save paths pass the loaded
-// Vars snapshot; a missing ${vars...} reference is the caller's typed refusal.
-func ValidateSavableRulesWithVars(rules NamingRules, vars map[string]map[string]string) error {
-	if err := ValidateSavableRules(rules); err != nil {
+// ValidateSavableRules checks completeness and renders each directory template
+// against the fixed catalog sample, refusing a relative target before storage.
+func ValidateSavableRules(rules NamingRules) error {
+	if err := validateCompleteRules(rules); err != nil {
 		return err
 	}
 	sample, ok := ResolveSampleContext("sample-tv")
 	if !ok {
 		return errors.New("naming sample context is unavailable")
 	}
-	if vars != nil {
-		withVars, err := WithVars(sample, vars)
-		if err != nil {
-			return err
-		}
-		sample = withVars
-	}
 	engine := NewEngine()
 	for _, variant := range []struct {
 		field string
 		value NamingVariant
 	}{{"tv", rules.TV}, {"movie", rules.Movie}, {"unknown", rules.Unknown}} {
-		compiled, err := engine.CompileWithVars(KindDirectory, variant.value.DirectoryTemplate, vars)
+		compiled, err := engine.Compile(KindDirectory, variant.value.DirectoryTemplate)
 		if err != nil {
 			return err
 		}
@@ -575,7 +548,7 @@ func withEmptyFacts(err error, kind TemplateKind, empty []string) error {
 		return err
 	}
 	switch namingErr.Code {
-	case ErrCodeTemplateTimeout, ErrCodeTemplateLimitExceeded, ErrCodeNamingVarsUnknown, ErrCodeNamingFactUndefined:
+	case ErrCodeTemplateTimeout, ErrCodeTemplateLimitExceeded, ErrCodeNamingFactUndefined:
 		return err
 	}
 	return &Error{
@@ -650,9 +623,6 @@ func executionError(kind TemplateKind, callErr error) error {
 	if strings.Contains(lowered, "interrupt") || strings.Contains(lowered, "timed out") {
 		return &Error{Code: ErrCodeTemplateTimeout, Field: string(kind), Message: "template execution exceeded timeout"}
 	}
-	if strings.Contains(lowered, "vars") && (strings.Contains(lowered, "undefined") || strings.Contains(lowered, "unknown")) {
-		return &Error{Code: ErrCodeNamingVarsUnknown, Field: string(kind), Message: message}
-	}
 	if strings.Contains(message, "exceeds the") {
 		return &Error{Code: ErrCodeTemplateLimitExceeded, Field: string(kind), Message: message}
 	}
@@ -676,9 +646,9 @@ func guardRoot(rt *goja.Runtime, object *goja.Object, label string) goja.Value {
 	}))
 }
 
-// guardContext replaces every object-valued context root, and every group inside
-// the Vars root, with a declared-only proxy. Anything else, and any property
-// these objects do not declare, must fail loudly: a computed access like
+// guardContext replaces every object-valued context root with a declared-only
+// proxy. Anything else, and any property these objects do not declare, must fail
+// loudly: a computed access like
 // `Anime['Bo'+'gus']` used to slip past the source-text whitelist and render the
 // literal string "undefined" into a target path. It runs per render on the
 // freshly built context, so nothing from a previous render survives.
@@ -688,13 +658,6 @@ func guardContext(rt *goja.Runtime, context *goja.Object, profile *languageProfi
 		object, ok := value.(*goja.Object)
 		if !ok || goja.IsUndefined(value) || goja.IsNull(value) {
 			continue
-		}
-		if name == profile.varsRoot {
-			for _, group := range object.Keys() {
-				if inner, ok := object.Get(group).(*goja.Object); ok {
-					_ = object.Set(group, guardRoot(rt, inner, name+"."+group))
-				}
-			}
 		}
 		_ = context.Set(name, guardRoot(rt, object, name))
 	}

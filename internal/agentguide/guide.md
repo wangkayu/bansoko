@@ -340,7 +340,7 @@ A record with `entry_kind=one_shot` also carries `one_shot_id`, the marker handl
 | Step | MCP tool | operationId | CLI |
 |---|---|---|---|
 | Trigger one manual dispatch run of an automation kind (`group_discovery`, `rss_refresh`, `metadata_match`, `catalog_refresh`) | `automation_run` | `runAutomation` | - |
-| Read the Global business preset (sections, parser policy, retention, program references and `digest`) | `get_business_preset` | `getBusinessPreset` | - |
+| Read the Global business preset (sections, parser policy, retention and `digest`) | `get_business_preset` | `getBusinessPreset` | - |
 
 System and schedules:
 

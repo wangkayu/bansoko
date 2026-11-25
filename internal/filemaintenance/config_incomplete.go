@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"bansoko/internal/namingvars"
-	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 )
 
 // Exclusion reasons of a maintenance render that cannot produce a target. They
@@ -110,7 +109,7 @@ type currentAnimeConfig struct {
 	ownerYear       sql.NullInt64
 	// ownerMediaKind is the stored owner media kind; NULL reads as tv.
 	ownerMediaKind sql.NullString
-	titles         namingvars.AnimeEvidence
+	titles         naming.AnimeNamingFacts
 }
 
 // effectiveMediaKind is the owner media kind: only movie selects the movie
@@ -147,11 +146,10 @@ func (c currentAnimeConfig) missingBindings() []string {
 // release and file fact alone. An unset owner season or year stays nil: the
 // template renders it empty.
 func (c currentAnimeConfig) apply(facts *naming.AnimeNamingFacts) {
-	facts.BGM = naming.BGMNamingFacts{WorkID: c.bgmWorkID, Title: c.titles.BgmTitle, TitleCN: c.titles.BgmTitleCN, Year: providerYear(c.titles.BgmYear)}
-	facts.TMDB = naming.TMDBNamingFacts{
-		WorkID: c.tmdbWorkID, MediaKind: c.effectiveMediaKind(),
-		TitleCN: c.titles.TmdbTitleCN, OriginalTitle: c.titles.TmdbOriginalTitle, Year: providerYear(c.titles.TmdbYear),
-	}
+	facts.BGM = c.titles.BGM
+	facts.BGM.WorkID = c.bgmWorkID
+	facts.TMDB = c.titles.TMDB
+	facts.TMDB.WorkID, facts.TMDB.MediaKind = c.tmdbWorkID, c.effectiveMediaKind()
 	if c.tmdbSeason.Valid {
 		season := int(c.tmdbSeason.Int64)
 		facts.TMDB.Season, facts.TMDB.SeasonPresent, facts.TMDB.SeasonBound = season, true, season == 0
@@ -182,8 +180,9 @@ func (r *NamingTargetRenderer) currentAnimeConfig(ctx context.Context, animeID s
 	if err := c.check(); err != nil {
 		return c, err
 	}
-	c.titles = namingvars.AnimeEvidence{AnimeID: animeID, BgmID: c.bgmWorkID, TmdbID: c.tmdbWorkID, TmdbKind: c.tmdbBindingKind}
-	if err := namingvarspersistence.FillWorkTitles(ctx, r.db, &c.titles); err != nil {
+	c.titles = naming.AnimeNamingFacts{ID: animeID}
+	c.titles.BGM.WorkID, c.titles.TMDB.WorkID, c.titles.TMDB.MediaKind = c.bgmWorkID, c.tmdbWorkID, c.tmdbBindingKind
+	if err := namingpersistence.FillWorkTitles(ctx, r.db, &c.titles); err != nil {
 		return c, err
 	}
 	return c, nil

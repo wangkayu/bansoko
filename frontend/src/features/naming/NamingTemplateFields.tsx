@@ -405,11 +405,7 @@ function NamingHelpDialog({
   const grouped = groupFacts(fields);
   return (
     <Dialog open={open} onRequestClose={() => onOpenChange(false)} tier="M" title={t("naming.helpTitle")}>
-      {/* Custom variables (vars.*) are hidden in the current version: the help covers syntax only and
-          omits vars_keys. When reintroducing them, switch back to
-          t("naming.helpBody", { keys: catalog.vars_keys.join(", ") || t("naming.none") }).
-          The field and variable panels come from the backend catalog, which already excludes vars.*;
-          no filtering needed here. */}
+      {/* The help covers the built-in syntax and the backend catalog's facts. */}
       <p className="naming-muted text-caption">{t("naming.helpSyntax")}</p>
       <div className="naming-help">
         <section className="naming-help-section">

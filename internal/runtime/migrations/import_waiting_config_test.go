@@ -23,7 +23,7 @@ func TestImportWaitingConfigMigrationKeepsPlansOfEveryState(t *testing.T) {
 		tag := "wait-" + state
 		seedAcceptableRelease(t, owner, tag)
 		p := validHistoricalQueued(t, owner, tag, tag+"-key", tag)
-		if _, err := callQueuedAccept(t, owner, p); err != nil {
+		if _, err := callHistoricalQueuedAccept(t, owner, p); err != nil {
 			t.Fatal(err)
 		}
 		for _, statement := range []struct {

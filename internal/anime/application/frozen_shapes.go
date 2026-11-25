@@ -6,7 +6,6 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	downloadadmission "bansoko/internal/download/admission"
 	downloaddomain "bansoko/internal/download/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
 )
 
@@ -48,14 +47,15 @@ type FrozenDownloadInput struct {
 type ConfigRevisionIdentity = animedomain.ConfigRevisionIdentity
 
 type FrozenPolicySnapshot struct {
-	ConfigIdentity    ConfigRevisionIdentity       `json:"config_identity"`
-	EffectiveDigest   string                       `json:"effective_digest"`
-	EffectiveSections json.RawMessage              `json:"effective_sections"`
-	EvaluatorVersion  *string                      `json:"evaluator_version,omitempty"`
-	MetadataVersion   int64                        `json:"metadata_version"`
-	Parser            *parser.Provenance           `json:"parser"`
-	RulesVersion      int64                        `json:"rules_version"`
-	Vars              *namingvars.FrozenEvaluation `json:"vars,omitempty"`
-	SectionSchemas    map[string]string            `json:"section_schemas"`
-	SectionVersions   map[string]int64             `json:"section_versions"`
+	ConfigIdentity    ConfigRevisionIdentity `json:"config_identity"`
+	EffectiveDigest   string                 `json:"effective_digest"`
+	EffectiveSections json.RawMessage        `json:"effective_sections"`
+	EvaluatorVersion  *string                `json:"evaluator_version,omitempty"`
+	MetadataVersion   int64                  `json:"metadata_version"`
+	Parser            *parser.Provenance     `json:"parser"`
+	RulesVersion      int64                  `json:"rules_version"`
+	// Vars is retained only as opaque historical evidence. New snapshots never populate it.
+	Vars            json.RawMessage   `json:"vars,omitempty"`
+	SectionSchemas  map[string]string `json:"section_schemas"`
+	SectionVersions map[string]int64  `json:"section_versions"`
 }

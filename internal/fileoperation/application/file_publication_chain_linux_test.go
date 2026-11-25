@@ -1089,6 +1089,9 @@ func runPublicationProofChain(t *testing.T, operation domain.OperationKind, faul
 	if err := protocol.ValidateFileFact(fact); err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := fact.Object["render_inputs"].Object["vars"]; ok {
+		t.Fatal("new FileFact contains retired render inputs")
+	}
 	if fact.Object["provenance"].Object["operation_ref"].Object["value"].String != c.Owner.ID || fact.Object["locator"].Object["source_cleanup"].String != preparedResult.sourceCleanup {
 		t.Fatal("execution FileFact lost operation/cleanup")
 	}
@@ -1117,7 +1120,7 @@ func runPublicationProofChain(t *testing.T, operation domain.OperationKind, faul
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := factTx.QueryRow(`SELECT public.vars_filefact_valid($1,$2::jsonb) AND public.filefact_source_relation_valid($1,$3,$4,$2::jsonb)`, preparedResult.root, preparedResult.fileFactCanonical, f.artifactID, preparedResult.fileRef).Scan(&factValid); err != nil || !factValid {
+	if err := factTx.QueryRow(`SELECT public.filefact_source_relation_valid($1,$2,$3,$4::jsonb)`, preparedResult.root, f.artifactID, preparedResult.fileRef, preparedResult.fileFactCanonical).Scan(&factValid); err != nil || !factValid {
 		factTx.Rollback()
 		t.Fatalf("FileFact consumers=%v err=%v", factValid, err)
 	}

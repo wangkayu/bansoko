@@ -70,7 +70,6 @@ func TestRenderMatchEpisodeTitleResolvesCacheFirst(t *testing.T) {
 		SourceGroup: "Group", ReleaseTitle: "[Group] 测试番组 - 03", PlacedPath: "/library/Anime/EP07.mkv",
 		DownloadName: "EP07.mkv", Rules: rendererRules(), FrozenEpisode: "3",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 
 	client := &matchCountingEpisodeClient{list: episodetitle.List{Episodes: []episodetitle.Episode{{Number: 7, Title: "Chosen 7"}}}}
 	rules := matchEpisodeTitleRules("[${tmdb.ep_title}] ${sanitize(anime.title)} - E${pad(ep.display, 2)}.${file.ext}")
@@ -111,7 +110,6 @@ func TestRenderMatchEpisodeTitleLookupStaysTyped(t *testing.T) {
 		SourceGroup: "Group", ReleaseTitle: "[Group] 测试番组 - 03", PlacedPath: "/library/Anime/EP07.mkv",
 		DownloadName: "EP07.mkv", Rules: rendererRules(), FrozenEpisode: "3",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 
 	client := &matchCountingEpisodeClient{err: errors.New("provider unreachable")}
 	rules := matchEpisodeTitleRules("[${tmdb.ep_title}] ${sanitize(anime.title)}.${file.ext}")

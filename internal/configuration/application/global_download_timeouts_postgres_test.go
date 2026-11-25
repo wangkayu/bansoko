@@ -54,7 +54,6 @@ func TestGlobalDownloadTimeoutsSection(t *testing.T) {
 		t.Fatalf("listed view = %+v", view)
 	}
 
-	seedActivePrograms(t, ctx, svc)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

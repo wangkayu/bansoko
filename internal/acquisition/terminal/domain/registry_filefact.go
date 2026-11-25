@@ -36,10 +36,6 @@ func init() {
 		F("media_kind", Enum("tv", "movie")), F("season", Int(0, maxI64)), F("season_bound", Bool),
 		F("bgm_work_id", FVOf(IDType)), F("tmdb_work_id", FVOf(IDType)), F("effective_title", FVOf(Display)), F("extension", FVOf(Text(0, 64))),
 	))
-	register("VarsResultV1", Obj(
-		F("program_digest", DigestOf), F("input_digest", DigestOf), F("output", Ref("VarsMapV1")),
-		F("runtime_version", Text(1, 128)), F("evaluated_at", Time),
-	))
 	register("LocatorFactV1", Obj(
 		F("final_object", FVOf(Ref("PathObjectV1"))), F("source_cleanup", Enum("not_required", "completed", "failed", "uncertain")),
 	))
@@ -75,7 +71,7 @@ func init() {
 		return nil
 	}))
 	register("RenderInputsV1", Obj(
-		F("replay", Ref("ReplayV1")), F("binding", FVOf(Ref("BindingV1"))), F("vars", FVOf(Ref("VarsResultV1"))),
+		F("replay", Ref("ReplayV1")), F("binding", FVOf(Ref("BindingV1"))),
 		F("naming_schema", FVOf(Text(1, 128))), F("naming_digest", FVOf(DigestOf)), F("render_program_version", FVOf(Text(1, 128))),
 	))
 	register("SourceOffsetV1", Obj(

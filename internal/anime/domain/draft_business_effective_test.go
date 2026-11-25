@@ -35,7 +35,7 @@ func completeDraftWithBusiness(t *testing.T, business *BusinessSnapshot) AnimeDr
 }
 
 func TestResolveDraftSectionsFromBusinessRequiresASnapshot(t *testing.T) {
-	if _, err := ResolveDraftSectionsFromBusiness(AnimeDraft{}, nil); err == nil {
+	if _, err := ResolveDraftSectionsFromBusiness(AnimeDraft{}); err == nil {
 		t.Fatal("a draft without a business snapshot has nothing to resolve from")
 	}
 }
@@ -44,7 +44,7 @@ func TestResolveDraftSectionsFromBusinessRequiresASnapshot(t *testing.T) {
 // section the draft lacks fails closed instead of falling back to anything.
 func TestResolveDraftSectionsFromBusinessUsesTheDraftValues(t *testing.T) {
 	draft := completeDraftWithBusiness(t, businessForEffectiveTest(t))
-	sections, err := ResolveDraftSectionsFromBusiness(draft, nil)
+	sections, err := ResolveDraftSectionsFromBusiness(draft)
 	if err != nil {
 		t.Fatalf("ResolveDraftSectionsFromBusiness: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestResolveDraftSectionsFromBusinessUsesTheDraftValues(t *testing.T) {
 		}
 	}
 	draft.Rules.Sections.Naming = nil
-	if _, err := ResolveDraftSectionsFromBusiness(draft, nil); err == nil {
+	if _, err := ResolveDraftSectionsFromBusiness(draft); err == nil {
 		t.Fatal("a draft without a naming value must fail closed")
 	}
 }
@@ -63,7 +63,7 @@ func TestResolveDraftSectionsFromBusinessUsesTheDraftValues(t *testing.T) {
 // max_rss is part of the frozen value.
 func TestResolveDraftSectionsFromBusinessKeepsTheDraftSubgroupsWithoutEntries(t *testing.T) {
 	draft := completeDraftWithBusiness(t, businessForEffectiveTest(t))
-	sections, err := ResolveDraftSectionsFromBusiness(draft, nil)
+	sections, err := ResolveDraftSectionsFromBusiness(draft)
 	if err != nil {
 		t.Fatal(err)
 	}

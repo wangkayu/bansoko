@@ -133,9 +133,6 @@ func TestCandidateActivationMaterializesProviderSourcesThroughDispatcher(t *test
 		subscriptiondomain.SubscriptionStopped,
 	} {
 		t.Run(string(initialState), func(t *testing.T) {
-			// The load-business-preset action inside this flow reads the
-			// active naming-vars program, so the schema must carry the
-			// published test registries, not a bare migration-only schema.
 			db := animetest.OpenTestDB(t)
 			ctx := context.Background()
 			mockAniBT := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

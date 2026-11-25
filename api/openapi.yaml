@@ -6,8 +6,8 @@ info:
     HTTP API for Bansoko. Product state is read
     directly from anime owners and the source-to-file owner chain. Naming
     configuration errors use TEMPLATE_COMPILE_ERROR for syntax or static
-    reference failures and NAMING_VARS_UNKNOWN for Vars keys missing from the
-    active startup snapshot. Compilation guarantees syntax and static-reference
+    reference failures, including an undeclared identifier such as the retired
+    vars.* channel. Compilation guarantees syntax and static-reference
     legality, not successful rendering for a concrete file; runtime naming
     errors are returned per file in preview and execution outcomes.
 servers:
@@ -820,7 +820,7 @@ paths:
         description: >-
           Read the current Global business preset: the defaults a new
           subscription copies once (complete business snapshot with sections,
-          parser policy, retention, file-effect route and program references,
+          parser policy, retention and file-effect route,
           its digest, the tag_filters default, and the subscription_defaults
           default of the per-subscription admission toggles). Reading creates
           or applies nothing. To put it into a draft with your own edits, use
@@ -6002,230 +6002,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Unprocessable'
-  /naming-vars:
-    get:
-      tags: [Configuration]
-      operationId: getNamingVars
-      x-scope: read
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: >-
-        The active naming Vars program with its version history and the
-        reference data the editor needs (input facts, sample releases, limits).
-      responses:
-        '200':
-          description: Active program, versions and editor reference data.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsState'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /naming-vars/versions:
-    post:
-      tags: [Configuration]
-      operationId: saveNamingVarsVersion
-      x-scope: admin
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: >-
-        Validates a program and publishes it as a new immutable version that
-        becomes active at once, without a restart. If-Match is the revision the
-        caller saw active (0 when none is). An invalid program changes
-        nothing; its 422 details carry byte offsets (start, end) into the
-        submitted source with LF line endings. Accepted evaluations already
-        frozen keep the program they were frozen with.
-      parameters:
-        - $ref: '#/components/parameters/IfMatchVersion'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NamingVarsSaveInput'
-      responses:
-        '201':
-          description: The new active version.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsProgram'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
-        '503':
-          $ref: '#/components/responses/Unavailable'
-  /naming-vars/versions/{revision}:
-    get:
-      tags: [Configuration]
-      operationId: getNamingVarsVersion
-      x-scope: read
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      parameters:
-        - name: revision
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
-      responses:
-        '200':
-          description: One published version with its program text.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsProgram'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /naming-vars/active:
-    put:
-      tags: [Configuration]
-      operationId: activateNamingVarsVersion
-      x-scope: admin
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: >-
-        Moves the active pointer to a published revision (a rollback is an
-        activation of an older one). If-Match is the revision the caller saw
-        active.
-      parameters:
-        - $ref: '#/components/parameters/IfMatchVersion'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NamingVarsActivateInput'
-      responses:
-        '200':
-          description: The version that is active now.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsProgram'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
-        '503':
-          $ref: '#/components/responses/Unavailable'
-  /naming-vars/dry-runs:
-    post:
-      tags: [Configuration]
-      operationId: dryRunNamingVars
-      x-scope: read
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: >-
-        Side-effect-free evaluation of a draft program over sample, persisted
-        or typed-in releases. The input is built by the same release-level
-        builder acceptance uses, so a result equals what acceptance would
-        freeze for the same evidence. A draft that fails static validation
-        reports diagnostics and evaluates no release. Nothing is stored.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NamingVarsDryRunInput'
-      responses:
-        '200':
-          description: Draft diagnostics and one outcome per release.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsDryRunResult'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
-  /naming-vars/releases:
-    get:
-      tags: [Configuration]
-      operationId: listNamingVarsReleases
-      x-scope: read
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: Recently discovered releases a dry run can evaluate.
-      responses:
-        '200':
-          description: Persisted releases, newest first.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/NamingVarsReleaseOption'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /naming-vars/export:
-    get:
-      tags: [Configuration]
-      operationId: exportNamingVars
-      x-scope: read
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: >-
-        Owner only. The active program text with identifying metadata. Reads
-        only; it holds no configuration, secret or frozen evidence.
-      responses:
-        '200':
-          description: Export document of the active program.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsDocument'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: Only the owner may export.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /naming-vars/imports:
-    post:
-      tags: [Configuration]
-      operationId: importNamingVars
-      x-scope: admin
-      x-surface-keep: "transition: legacy Vars API remains supported in 0.2.x after the hidden editor removal; the whole surface retires in 0.3"
-      description: >-
-        Owner only. Validates an export document and publishes its program as a
-        new active version, with the same checks and compare-and-swap as a save.
-        An unsupported or inconsistent document changes nothing.
-      parameters:
-        - $ref: '#/components/parameters/IfMatchVersion'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NamingVarsDocument'
-      responses:
-        '201':
-          description: The imported version, now active.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NamingVarsProgram'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: Only the owner may import.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
-        '503':
-          $ref: '#/components/responses/Unavailable'
   /metadata/search:
     get:
       tags: [Metadata]
@@ -7467,7 +7243,7 @@ paths:
         anime would do, and writes nothing. The target is rendered with that
         anime's current TV naming template: the chosen episode is final (no
         offset applies, `ep.source` is `manual`), the anime facts are read now,
-        and release-level facts (Vars output, rt and anibt values, release
+        and release-level facts (rt and anibt values, release
         title and source group) come from the file's own acquisition when it
         has one and are absent otherwise. A template that needs a fact the
         evidence lacks is a blocker in the answer, not an error. Applies to a detached
@@ -16093,292 +15869,6 @@ components:
           maxItems: 64
           items:
             type: string
-    NamingVarsVersion:
-      type: object
-      additionalProperties: false
-      required: [revision, digest, runtime, origin, note, source_bytes, created_at, activated_at, active]
-      properties:
-        revision:
-          type: integer
-          format: int64
-          minimum: 1
-          description: Publication number; the compare-and-swap token of the active pointer.
-        digest:
-          type: string
-          description: Canonical source fingerprint, the identity frozen evaluations record.
-        runtime:
-          type: string
-          enum: [naming-vars-v1]
-        origin:
-          type: string
-          enum: [file, editor, import]
-        note:
-          type: string
-          maxLength: 200
-        source_bytes:
-          type: integer
-          minimum: 0
-        created_at:
-          type: string
-          format: date-time
-        activated_at:
-          type: string
-          format: date-time
-          nullable: true
-        active:
-          type: boolean
-    NamingVarsProgram:
-      type: object
-      additionalProperties: false
-      required: [version, source]
-      properties:
-        version:
-          $ref: '#/components/schemas/NamingVarsVersion'
-        source:
-          type: string
-          description: Canonical program text (LF line endings).
-    NamingVarsInputFact:
-      type: object
-      additionalProperties: false
-      required: [path, type, nullable, label_key, description_key]
-      properties:
-        path:
-          type: string
-          description: Fact path under input, for example anime.title.
-        type:
-          type: string
-          enum: [string, integer, timestamp, boolean, list]
-        nullable:
-          type: boolean
-        sample_value:
-          type: string
-        label_key:
-          type: string
-        description_key:
-          type: string
-    NamingVarsSample:
-      type: object
-      additionalProperties: false
-      required: [ref, release_title, file_count]
-      properties:
-        ref:
-          type: string
-        release_title:
-          type: string
-        file_count:
-          type: integer
-          minimum: 0
-    NamingVarsLimits:
-      type: object
-      additionalProperties: false
-      required: [max_source_bytes, max_output_bytes, max_collection, timeout_ms, max_note_length, max_targets]
-      properties:
-        max_source_bytes:
-          type: integer
-        max_output_bytes:
-          type: integer
-        max_collection:
-          type: integer
-        timeout_ms:
-          type: integer
-        max_note_length:
-          type: integer
-        max_targets:
-          type: integer
-    NamingVarsState:
-      type: object
-      additionalProperties: false
-      required: [active, versions, input_facts, samples, limits]
-      properties:
-        active:
-          $ref: '#/components/schemas/NamingVarsProgram'
-        versions:
-          type: array
-          description: Newest first, at most 200.
-          items:
-            $ref: '#/components/schemas/NamingVarsVersion'
-        input_facts:
-          type: array
-          items:
-            $ref: '#/components/schemas/NamingVarsInputFact'
-        samples:
-          type: array
-          items:
-            $ref: '#/components/schemas/NamingVarsSample'
-        limits:
-          $ref: '#/components/schemas/NamingVarsLimits'
-    NamingVarsSaveInput:
-      type: object
-      additionalProperties: false
-      required: [source]
-      properties:
-        source:
-          type: string
-        note:
-          type: string
-          maxLength: 200
-    NamingVarsActivateInput:
-      type: object
-      additionalProperties: false
-      required: [revision]
-      properties:
-        revision:
-          type: integer
-          format: int64
-          minimum: 1
-    NamingVarsDryRunFile:
-      type: object
-      additionalProperties: false
-      required: [path, size]
-      properties:
-        path:
-          type: string
-          minLength: 1
-          maxLength: 1024
-        size:
-          type: integer
-          format: int64
-          minimum: 0
-    NamingVarsDryRunTarget:
-      type: object
-      additionalProperties: false
-      required: [kind]
-      properties:
-        kind:
-          type: string
-          enum: [sample, release, custom]
-        sample:
-          type: string
-          description: Sample ref, for kind sample.
-        release_id:
-          type: string
-          description: Persisted release id, for kind release.
-        title:
-          type: string
-          maxLength: 1024
-          description: Release title, for kind custom.
-        files:
-          type: array
-          maxItems: 50
-          items:
-            $ref: '#/components/schemas/NamingVarsDryRunFile'
-    NamingVarsDryRunInput:
-      type: object
-      additionalProperties: false
-      required: [source, targets]
-      properties:
-        source:
-          type: string
-        targets:
-          type: array
-          maxItems: 8
-          items:
-            $ref: '#/components/schemas/NamingVarsDryRunTarget'
-    NamingVarsDiagnostic:
-      type: object
-      additionalProperties: false
-      required: [code, message]
-      properties:
-        code:
-          type: string
-          enum: [source_empty, source_too_large, syntax_error, unbounded_expansion, dynamic_execution, too_many_assignments, evaluation_failed, output_missing, output_not_scalar, output_invalid, interrupted]
-        message:
-          type: string
-        start:
-          type: integer
-          minimum: 0
-          description: Byte offset where the finding starts in the LF-normalized source; absent when it has no place.
-        end:
-          type: integer
-          minimum: 0
-    NamingVarsDryRunTargetResult:
-      type: object
-      additionalProperties: false
-      required: [kind, ref, title, file_count, status, output, diagnostics]
-      properties:
-        kind:
-          type: string
-          enum: [sample, release, custom]
-        ref:
-          type: string
-        title:
-          type: string
-        file_count:
-          type: integer
-          minimum: 0
-        status:
-          type: string
-          enum: [ok, error, interrupted, unavailable]
-        output:
-          type: object
-          description: The vars produced, by group and key; empty unless status is ok.
-          additionalProperties:
-            type: object
-            additionalProperties:
-              type: string
-        diagnostics:
-          type: array
-          items:
-            $ref: '#/components/schemas/NamingVarsDiagnostic'
-        reason:
-          type: string
-          enum: [release_not_found, inventory_missing, parser_unavailable, evidence_unreadable]
-          description: Why a release could not be evaluated, when status is unavailable.
-    NamingVarsDryRunResult:
-      type: object
-      additionalProperties: false
-      required: [diagnostics, targets]
-      properties:
-        digest:
-          type: string
-          description: Fingerprint of the draft; absent when the draft failed static validation.
-        diagnostics:
-          type: array
-          items:
-            $ref: '#/components/schemas/NamingVarsDiagnostic'
-        targets:
-          type: array
-          items:
-            $ref: '#/components/schemas/NamingVarsDryRunTargetResult'
-    NamingVarsReleaseOption:
-      type: object
-      additionalProperties: false
-      required: [id, title, anime_title]
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        anime_title:
-          type: string
-    NamingVarsDocument:
-      type: object
-      additionalProperties: false
-      required: [format, format_version, runtime, digest, revision, note, exported_at, source]
-      properties:
-        format:
-          type: string
-          enum: [bansoko-naming-vars]
-        format_version:
-          type: integer
-          minimum: 1
-        runtime:
-          type: string
-          description: Input contract the program was written for.
-        digest:
-          type: string
-        revision:
-          type: integer
-          format: int64
-          minimum: 0
-        note:
-          type: string
-          maxLength: 200
-        exported_at:
-          type: string
-          format: date-time
-        source:
-          type: string
     FileManagerRootUnavailable:
       type: string
       description: >-
@@ -19260,7 +18750,7 @@ components:
     NamingTemplateCatalog:
       type: object
       additionalProperties: false
-      required: [language, fields, functions, shorthands, samples, vars_keys, vars_loaded_at]
+      required: [language, fields, functions, shorthands, samples]
       properties:
         language:
           type: string
@@ -19281,14 +18771,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NamingCatalogSample'
-        vars_keys:
-          type: array
-          items:
-            type: string
-        vars_loaded_at:
-          type: string
-          format: date-time
-          nullable: true
     NamingCatalogField:
       type: object
       additionalProperties: false
@@ -20822,11 +20304,11 @@ components:
     BusinessSnapshot:
       type: object
       additionalProperties: false
-      required: [schema_version, sections, section_versions, section_schemas, parser, replacement, replacement_version, unclassified_route, file_effect_version, programs]
+      required: [schema_version, sections, section_versions, section_schemas, parser, replacement, replacement_version, unclassified_route, file_effect_version]
       properties:
         schema_version:
           type: string
-          enum: [business-snapshot-v2]
+          enum: [business-snapshot-v3]
         sections:
           $ref: '#/components/schemas/BusinessSections'
         section_versions:
@@ -20847,23 +20329,6 @@ components:
           type: integer
           format: int64
           minimum: 0
-        programs:
-          type: object
-          additionalProperties: false
-          required: [vars]
-          properties:
-            vars:
-              $ref: '#/components/schemas/BusinessProgramRef'
-    BusinessProgramRef:
-      type: object
-      additionalProperties: false
-      required: [version, digest]
-      properties:
-        version:
-          type: string
-        digest:
-          type: string
-          pattern: '^sha256:[a-f0-9]{64}$'
     BusinessSections:
       type: object
       additionalProperties: false

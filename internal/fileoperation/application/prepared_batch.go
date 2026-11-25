@@ -51,9 +51,6 @@ func (s *Service) captureArtifactBatch(ctx context.Context, plan *postProcessing
 	if err := loadTypedPlanInput(ctx, tx, b); err != nil {
 		return nil, err
 	}
-	if _, err := capturedVarsResult(b); err != nil {
-		return nil, err
-	}
 	// The "keep unknown files" switch is the batch plan's frozen route, read
 	// with the snapshot below; the live instance switch is never consulted.
 	var captured struct {

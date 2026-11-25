@@ -11,7 +11,6 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
 	"bansoko/internal/persistence/txscope"
 	facts "bansoko/internal/release/facts"
@@ -181,18 +180,6 @@ func TestExportedReleaseParserEvidenceMatchesAutomaticSelection(t *testing.T) {
 	}
 }
 
-func initTestNamingVars(t *testing.T) {
-	t.Helper()
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fingerprint, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatalf("naming vars fingerprint: %v", err)
-	}
-	if err := namingvars.SetActive(vars, fingerprint); err != nil {
-		t.Fatalf("activate naming vars: %v", err)
-	}
-}
-
 func sizePointer(value int64) *int64 { return &value }
 
 // The acceptance regression for this slice: one non-default selected
@@ -201,7 +188,6 @@ func sizePointer(value int64) *int64 { return &value }
 // bundled profile would render 07, a file-name parse would render 99, and only
 // the selected parser's frozen Release identity (42) may appear.
 func TestTargetPlanningUsesTheSelectedParserProfile(t *testing.T) {
-	initTestNamingVars(t)
 	const kind = "test-target-selected-parser"
 	adapter := registerRecordingParser(t, kind, "42")
 

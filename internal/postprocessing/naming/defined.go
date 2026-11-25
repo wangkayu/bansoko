@@ -41,7 +41,7 @@ func IsFactError(code string) bool {
 //   - anibt.* is defined for an AniBT release or source; mikan.* when the
 //     source is Mikan.
 //
-// Every other root (vars has its own NAMING_VARS_UNKNOWN check) is defined.
+// Every other root is defined.
 func undefinedFacts(empty []string, facts *templatefacts.FactSet) []string {
 	var undefined []string
 	for _, path := range empty {

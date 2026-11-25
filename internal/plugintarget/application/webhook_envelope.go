@@ -42,9 +42,8 @@ type webhookEnvelope struct {
 
 // buildWebhookEnvelope returns the body of one webhook attempt.
 // frozenPayload is the delivery's canonical payload; its facts are stored
-// under the registry fact paths, and only registry facts and frozen vars are
-// kept, so the document never carries a bookkeeping id or a key the registry
-// does not describe.
+// under the registry fact paths, and only registry facts are kept, so the
+// document never carries a bookkeeping id or a key the registry does not describe.
 func buildWebhookEnvelope(deliveryID, trigger string, attempt int, at time.Time, message outboundMessage, frozenPayload []byte) ([]byte, error) {
 	var canonical struct {
 		Facts map[string]any `json:"facts"`
@@ -69,12 +68,12 @@ func buildWebhookEnvelope(deliveryID, trigger string, attempt int, at time.Time,
 	return bytes.TrimRight(out.Bytes(), "\n"), nil
 }
 
-// nestUnifiedFacts keeps the registry facts and vars.<group>.<name> values of
-// a unified fact map and nests them by path segment: {"anime": {"title": …}}.
+// nestUnifiedFacts keeps registry facts and nests them by path segment:
+// {"anime": {"title": …}}.
 func nestUnifiedFacts(facts map[string]any) map[string]any {
 	keys := make([]string, 0, len(facts))
 	for key := range facts {
-		if _, registered := templatefacts.Lookup(key); registered || isVarsPath(key) {
+		if _, registered := templatefacts.Lookup(key); registered {
 			keys = append(keys, key)
 		}
 	}
@@ -106,11 +105,6 @@ func nestUnifiedFacts(facts map[string]any) map[string]any {
 		}
 	}
 	return out
-}
-
-func isVarsPath(key string) bool {
-	segments := strings.Split(key, ".")
-	return len(segments) == 3 && segments[0] == templatefacts.RootVars && segments[1] != "" && segments[2] != ""
 }
 
 // SignWebhook returns the X-Webhook-Signature value for one attempt:

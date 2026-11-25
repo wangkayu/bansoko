@@ -142,10 +142,7 @@ export async function freezeBusinessDraft(draft: AnimeDraft): Promise<AnimeDraft
   if (!draft.business) return draft;
   const next = structuredClone(draft);
   const business: BusinessSnapshot = structuredClone(draft.business);
-  for (const [kind, ref] of Object.entries(business.programs)) {
-    const bases = kind === "vars" ? ["naming-vars-v1"] : ["release-facts-v1"];
-    if (!/^sha256:[a-f0-9]{64}$/.test(ref.digest) || !bases.some((base) => ref.version === `${base}@${ref.digest}`)) throw new Error(t("config.validation.configInvalid"));
-  }
+  if (business.schema_version !== "business-snapshot-v3" || "programs" in business) throw new Error(t("config.validation.configInvalid"));
   business.sections.subgroups = structuredClone(draft.subgroups);
   const rules = draft.rules.sections;
   for (const [key, name] of RULE_SECTIONS) {

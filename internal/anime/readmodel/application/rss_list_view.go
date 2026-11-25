@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"time"
@@ -20,11 +19,10 @@ import (
 	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/filekinds"
-	"bansoko/internal/namingvars"
-	varspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/parser"
 	"bansoko/internal/parserpolicy"
 	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	providerdomain "bansoko/internal/provider/domain"
 	rssapplication "bansoko/internal/rss/application"
 	selectionapplication "bansoko/internal/selection/application"
@@ -713,7 +711,7 @@ func (s *Service) readRSSListViewForOwner(ctx context.Context, input ReadRSSList
 	// The list renders at most limit releases per source (one more tells that the
 	// source is truncated) and none of the download, artifact or target sections,
 	// so the read stops there instead of loading the owner's whole history.
-	workspace, err := s.readAnimeWorkspace(ctx, input.ManagedAnimeID, workspaceReadOptions{releasesPerSource: limit + 1, releasesOnly: true, varsEvidence: true, fileIdentity: true})
+	workspace, err := s.readAnimeWorkspace(ctx, input.ManagedAnimeID, workspaceReadOptions{releasesPerSource: limit + 1, releasesOnly: true, fileIdentity: true})
 	if err != nil {
 		return RSSListView{}, err
 	}
@@ -784,26 +782,14 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 	domainHold := animedomain.AdmittedMetadataHold(animedomain.MetadataHoldFromBindings(bgm, tmdb), allowMissingLinkage)
 	view := RSSListView{Mode: mode, ConfigIdentity: identity, MetadataHold: domainHold, GeneratedAt: time.Now().UTC(), Groups: []RSSListGroup{}, UnusedFeedIdentities: []PreviewFeedSnapshotRef{}, LimitPerGroup: limit,
 		Versions: rssListVersions()}
-	// The instance Vars program is the same one RSS admission freezes for a
-	// subscribed anime (target_acquisition). Without it every owner-mode file
-	// rendered "exact frozen Vars evaluation is required" (B8 live). A missing
-	// program keeps the typed naming_vars_unavailable outcome per file.
-	var varsProgram *namingvars.Program
-	varsAnime := namingvars.AnimeEvidence{AnimeID: workspace.ManagedAnime.ID}
-	if s != nil && s.db != nil {
-		if program, loadErr := varspersistence.LoadInstanceProgram(ctx, s.db, workspace.ManagedAnime.ID); loadErr == nil {
-			varsProgram = &program
-			// The anime evidence acceptance freezes for this subscription,
-			// loaded once for every release of the view.
-			if varsAnime, err = varspersistence.LoadAnimeEvidence(ctx, s.db, workspace.ManagedAnime.ID); err != nil {
-				return RSSListView{}, err
-			}
-			if metadataPreview != nil {
-				overlayVarsAnimeEvidence(&varsAnime, *metadataPreview)
-				if err := varspersistence.FillWorkTitles(ctx, s.db, &varsAnime); err != nil {
-					return RSSListView{}, err
-				}
-			}
+	anime, err := namingpersistence.LoadAnimeFacts(ctx, s.db, workspace.ManagedAnime.ID)
+	if err != nil {
+		return RSSListView{}, err
+	}
+	if metadataPreview != nil {
+		overlayNamingAnimeFacts(&anime, *metadataPreview)
+		if err := namingpersistence.FillWorkTitles(ctx, s.db, &anime); err != nil {
+			return RSSListView{}, err
 		}
 	}
 	unknownRoute, err := s.ownerUnknownRoute(ctx, workspace.ManagedAnime.ID)
@@ -957,16 +943,10 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		if evaluated.ReasonDetail != nil {
 			viewItem.Evaluation.ReasonDetail = *evaluated.ReasonDetail
 		}
-		// Like RSS admission, Vars are frozen only from an exact persisted
-		// inventory with every size known; without it the file stays
-		// nonrenderable rather than inventing a Vars sample.
-		if varsProgram != nil {
-			if files, ok := exactVarsFiles(item); ok {
-				varsEvidence := varspersistence.PersistedReleaseEvidence(varsAnime, release.ID, item, naming.VarsEpisode(evidence.NamingFacts()), release.rawSourceFacts, release.inputHashV1, release.inputHashV2)
-				varsEvidence.Files = files
-				frozen := varsProgram.FreezeEvaluation(namingvars.BuildInput(varsEvidence))
-				evaluated.FrozenVars = &frozen
-			}
+		evaluated.NamingAnime = anime
+		if evaluated.NamingTorrent.HashV1 == "" && evaluated.NamingTorrent.HashV2 == "" {
+			evaluated.NamingTorrent.HashV1 = release.inputHashV1
+			evaluated.NamingTorrent.HashV2 = release.inputHashV2
 		}
 		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, evidence, unknownRoute, nil, nil)
 		if err != nil {
@@ -1141,7 +1121,7 @@ func (s *Service) composeRSSListViewForSpan(
 	oneShot bool,
 	fileSelections rssListFileSelections,
 ) (RSSListView, error) {
-	varsAnime, err := s.draftVarsAnimeEvidence(ctx, draft)
+	anime, err := s.draftNamingAnimeFacts(ctx, draft)
 	if err != nil {
 		return RSSListView{}, err
 	}
@@ -1153,7 +1133,7 @@ func (s *Service) composeRSSListViewForSpan(
 	if b := draft.Metadata.Tmdb; b != nil {
 		tmdbID, tmdbKind = b.WorkId, string(b.MediaKind)
 	}
-	titleSuggestions, err := s.readTitleSuggestions(ctx, bgmID, tmdbID, tmdbKind, varsAnime.AnimeProviderTitle)
+	titleSuggestions, err := s.readTitleSuggestions(ctx, bgmID, tmdbID, tmdbKind, anime.ProviderTitle)
 	if err != nil {
 		return RSSListView{}, err
 	}
@@ -1258,7 +1238,7 @@ func (s *Service) composeRSSListViewForSpan(
 		groupSelection := selection
 		groupSelection.Offset = entry.offset.Value
 		groupSelection.Span = entry.offset.Span
-		if err := s.evaluateFeedItemsWithSelection(ctx, &result, 0, string(sourceKind), preview.GroupName, providerdomain.GroupRefOrZero(providerdomain.Kind(entry.provider), entry.groupRef), groupSelection, effective, hold, draft.Title, varsAnime, preview.Items, preview.Manifests, draft.Business); err != nil {
+		if err := s.evaluateFeedItemsWithSelection(ctx, &result, 0, string(sourceKind), preview.GroupName, providerdomain.GroupRefOrZero(providerdomain.Kind(entry.provider), entry.groupRef), groupSelection, effective, hold, draft.Title, anime, preview.Items, preview.Manifests, draft.Business); err != nil {
 			return RSSListView{}, err
 		}
 		releasesByKey := make(map[string]animedomain.PreviewReleaseResult, len(result.Releases))
@@ -1985,23 +1965,6 @@ func selectionSource(sources map[string]string, groupRef string) string {
 	return RSSListSelectionSourceConfigured
 }
 
-// exactVarsFiles is the Vars file inventory exactly as RSS admission builds
-// it (target_acquisition): every persisted file with its size; any unknown
-// size means there is no exact inventory.
-func exactVarsFiles(item acquisitiondomain.FeedItem) ([]namingvars.File, bool) {
-	files := []namingvars.File{}
-	if len(item.ReleaseFiles) == 0 {
-		return files, false
-	}
-	for _, file := range item.ReleaseFiles {
-		if file.SizeBytes == nil {
-			return files, false
-		}
-		files = append(files, namingvars.File{Name: path.Base(file.SourcePath), Path: file.SourcePath, Size: *file.SizeBytes})
-	}
-	return files, true
-}
-
 // seedTitleTags is the title-parse tag set of a feed-snapshot seed, read with
 // the same pinned parser the title row evaluates.
 func seedTitleTags(title string) *[]string {
@@ -2009,39 +1972,33 @@ func seedTitleTags(title string) *[]string {
 	return &tags
 }
 
-// draftVarsAnimeEvidence is the Vars anime evidence of a configuration draft:
+// draftNamingAnimeFacts projects the naming facts of a configuration draft:
 // the draft title, the fixed title an acceptance writes as the override, the
 // provider catalog title the subscription will freeze, and the binding (what
 // an acceptance of this draft freezes) and the bound works' recorded titles. A
 // draft names no managed anime yet.
-func (s *Service) draftVarsAnimeEvidence(ctx context.Context, draft animedomain.AnimeDraft) (namingvars.AnimeEvidence, error) {
-	evidence := namingvars.AnimeEvidence{AnimeTitle: draft.Title}
+func (s *Service) draftNamingAnimeFacts(ctx context.Context, draft animedomain.AnimeDraft) (naming.AnimeNamingFacts, error) {
+	evidence := naming.AnimeNamingFacts{Title: draft.Title, Year: draft.Metadata.Year, Season: draft.Metadata.Season}
 	// Acceptance freezes the edited title as title_override, which outranks
 	// every provider and metadata title; the preview must rank it the same.
 	if fixed := animeapplication.FixedTitle(draft.Title, draft.TitleOverride); fixed != nil {
-		evidence.AnimeTitleOverride = *fixed
+		evidence.TitleOverride = *fixed
 	}
 	providerTitle, err := s.draftProviderTitle(ctx, draft)
 	if err != nil {
 		return evidence, err
 	}
-	evidence.AnimeProviderTitle = providerTitle
-	if y := draft.Metadata.Year; y != nil {
-		year := int64(*y)
-		evidence.AnimeYear = &year
-	}
-	if s := draft.Metadata.Season; s != nil {
-		season := int64(*s)
-		evidence.AnimeSeason = &season
-	}
+	evidence.ProviderTitle = providerTitle
 	if b := draft.Metadata.Bgm; b != nil {
-		evidence.BgmID = b.WorkId
+		evidence.BGM.WorkID = b.WorkId
 	}
 	if b := draft.Metadata.Tmdb; b != nil {
-		season := int64(b.Season)
-		evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = b.WorkId, string(b.MediaKind), &season
+		evidence.TMDB = naming.TMDBNamingFacts{WorkID: b.WorkId, MediaKind: string(b.MediaKind), Season: b.Season, SeasonPresent: true}
 	}
-	return evidence, varspersistence.FillWorkTitles(ctx, s.varsQuerier(), &evidence)
+	if s != nil && s.db != nil {
+		return evidence, namingpersistence.FillWorkTitles(ctx, s.db, &evidence)
+	}
+	return evidence, nil
 }
 
 // draftProviderTitle is the provider catalog title a subscription of this
@@ -2060,12 +2017,11 @@ func (s *Service) draftProviderTitle(ctx context.Context, draft animedomain.Anim
 	if draft.OriginEntryRef == nil || strings.TrimSpace(*draft.OriginEntryRef) == "" {
 		return "", nil
 	}
-	querier := s.varsQuerier()
-	if querier == nil {
+	if s == nil || s.db == nil {
 		return "", nil
 	}
 	var title string
-	err := querier.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 SELECT title FROM provider_catalog_entries
 WHERE provider=$1 AND provider_entry_ref=$2
 ORDER BY observed_at DESC, id DESC LIMIT 1`, string(draft.Origin), strings.TrimSpace(*draft.OriginEntryRef)).Scan(&title)

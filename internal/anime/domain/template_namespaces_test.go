@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	acquisition "bansoko/internal/acquisition/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -21,7 +20,6 @@ func TestPreviewRendersFrozenNamespacesWithoutReparsing(t *testing.T) {
 	effective.Rules.Naming.Tv.DirectoryTemplate = "/library/${rt.title}"
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "[${rt.group}] ${anibt.lang ? `[${anibt.lang}]` : ''}E${ep.display}.${file.ext}"
 	release := PreviewReleaseResult{
-		FrozenVars:    &namingvars.FrozenEvaluation{Status: "ok", Input: namingvars.Input{ReleaseTitle: "t", Files: []namingvars.File{}}, Output: namingvars.Vars{}},
 		FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: "3", Number: "3", Display: "3"},
 	}
 	title := "[SampleGroup] Sample Title - 03 [1080p][CHS].mkv"

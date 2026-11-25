@@ -35,8 +35,6 @@
 2	./internal/identitymetadata/adapter/persistence
 2	./internal/metadata/adapter/persistence
 2	./internal/integration
-2	./internal/namingvars/adapter/persistence
-2	./internal/namingvars/editor
 2	./internal/observability/application
 2	./internal/release/facts
 2	./internal/recordretention/adapter/persistence

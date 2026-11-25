@@ -35,7 +35,6 @@ func TestRenderMatchOverRealRows(t *testing.T) {
 		SourceGroup: "Group", ReleaseTitle: "[Group] 测试番组 - 03 special", PlacedPath: "/library/Anime/EP03.mkv",
 		DownloadName: "EP03.mkv", Rules: rendererRules(), FrozenEpisode: "3",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	seedAnimeForRenderer(t, db, "anime-nolineage", "无出处番", "tv")
 	seedAnimeForRenderer(t, db, "anime-movie", "剧场番", "movie")
 
@@ -81,14 +80,13 @@ func TestRenderMatchOverRealRows(t *testing.T) {
 		t.Fatalf("system facts only = %+v, %v", got, err)
 	}
 
-	// The Vars output frozen on the file's acquisition reaches the template;
-	// without one the value does not exist.
+	// A template that still reads the retired vars.* channel fails compile as an
+	// unknown identifier: the maintenance render never evaluates a stored Vars
+	// program, and a pre-0.3 placement's frozen Vars config is ignored.
 	vars := matchRules("${vars.actual.size}.${file.ext}")
-	if got, err = render(vars, input); err != nil || got.Path != "/library/测试番组/Season 02/1024.mkv" {
-		t.Fatalf("frozen vars = %+v, %v", got, err)
-	}
-	if _, err = render(vars, MatchRenderInput{ManagedAnimeID: "anime-nolineage", FileName: "EP03.mkv", Season: 1, Episode: 3}); !errors.As(err, &failure) || failure.Code != MatchRenderFactsMissing {
-		t.Fatalf("vars without lineage = %v", err)
+	var namingErr *naming.Error
+	if _, err = render(vars, input); !errors.As(err, &namingErr) || namingErr.Code != naming.ErrCodeTemplateCompileError {
+		t.Fatalf("retired vars template = %v, want TEMPLATE_COMPILE_ERROR", err)
 	}
 
 	// A TMDB work bound as a movie names no season of a show.
@@ -114,35 +112,33 @@ func TestRenderMatchOverRealRows(t *testing.T) {
 // A file with no placement still carries its own lineage. The exact path of
 // the completed operation that published it (or, for a file left at its
 // download source, the artifact file record there) supplies the release facts,
-// the rt values, the source group name and the frozen Vars output. A path with no
+// the rt values and the source group name. A path with no
 // lineage stays facts_missing, and a placement lineage wins when both exist.
 func TestRenderMatchPathLineage(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
 	defer db.Close()
 	ctx := context.Background()
-	unplaced := seedPlacedRenderChain(t, db, placedRenderChainSpec{
+	_ = seedPlacedRenderChain(t, db, placedRenderChainSpec{
 		Key: "unplaced", AnimeID: "anime-path", AnimeTitle: "路径番", TMDBMediaKind: "tv", TMDBSeason: 1,
 		SourceGroup: "PathGroup", ReleaseTitle: "[PathGroup] 路径番 - 05 [1080p]", PlacedPath: "/library/路径番/EP05.mkv",
 		DownloadName: "EP05.mkv", Rules: rendererRules(), FrozenEpisode: "5", NoPlacement: true,
 	})
-	freezeRenderFixtureBusiness(t, db, unplaced.OperationID)
 	placed := seedPlacedRenderChain(t, db, placedRenderChainSpec{
 		Key: "placed", AnimeID: "anime-path", AnimeTitle: "路径番", TMDBMediaKind: "tv", TMDBSeason: 1,
 		SourceGroup: "PlacementGroup", ReleaseTitle: "[PlacementGroup] 路径番 - 06 [1080p]", PlacedPath: "/library/路径番/EP06.mkv",
 		DownloadName: "EP06.mkv", Rules: rendererRules(), FrozenEpisode: "6",
 	})
-	freezeRenderFixtureBusiness(t, db, placed.OperationID)
 	render := func(rules naming.NamingRules, in MatchRenderInput) (MatchRender, error) {
 		return NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rules}).RenderMatch(ctx, in)
 	}
-	grouped := matchRules("${sanitize(anime.title)} - E${pad(ep.display, 2)} [${rt.res}] [${vars.actual.size}] ${anime.group}.${file.ext}")
+	grouped := matchRules("${sanitize(anime.title)} - E${pad(ep.display, 2)} [${rt.res}] ${anime.group}.${file.ext}")
 	// The completed operation target names the file's own artifact lineage.
 	in := MatchRenderInput{
 		ManagedAnimeID: "anime-path", LineagePath: "/library/路径番/EP05.mkv", FileName: "EP05.mkv",
 		SizeBytes: 1024, Season: 2, Episode: 7,
 	}
 	got, err := render(grouped, in)
-	if err != nil || got.Path != "/library/路径番/Season 02/路径番 - E07 [1080p] [1024] PathGroup.mkv" || !got.Lineage {
+	if err != nil || got.Path != "/library/路径番/Season 02/路径番 - E07 [1080p] PathGroup.mkv" || !got.Lineage {
 		t.Fatalf("path lineage = %+v, %v", got, err)
 	}
 	// The artifact file record at the download source path is the fallback for
@@ -165,7 +161,7 @@ func TestRenderMatchPathLineage(t *testing.T) {
 		ManagedAnimeID: "anime-path", LineagePlacementID: placed.PlacementID, LineagePath: "/library/路径番/EP05.mkv",
 		FileName: "EP06.mkv", SizeBytes: 1024, Season: 2, Episode: 7,
 	}
-	if got, err = render(grouped, both); err != nil || got.Path != "/library/路径番/Season 02/路径番 - E07 [1080p] [1024] PlacementGroup.mkv" {
+	if got, err = render(grouped, both); err != nil || got.Path != "/library/路径番/Season 02/路径番 - E07 [1080p] PlacementGroup.mkv" || !got.Lineage {
 		t.Fatalf("placement wins = %+v, %v", got, err)
 	}
 }

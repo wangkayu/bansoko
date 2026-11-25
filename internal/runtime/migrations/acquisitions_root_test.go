@@ -39,7 +39,6 @@ var acqColumns = []acqColumn{
 	{"requirements_digest", "text"}, {"requirements_item_count", "integer"}, {"requirements_required_count", "integer"},
 	{"requirements_sealed_at", "timestamptz"},
 	{"target_requirements_digest", "text"}, {"target_digest", "text"}, {"target_sealed_at", "timestamptz"},
-	{"vars_evaluation_canonical_utf8", "text"},
 }
 
 func acqDigest(c string) string { return "sha256:" + strings.Repeat(c, 64) }
@@ -74,7 +73,6 @@ func validAcq(id, key string, accepted time.Time) map[string]any {
 		"target_requirements_digest":         nil,
 		"target_digest":                      nil,
 		"target_sealed_at":                   nil,
-		"vars_evaluation_canonical_utf8":     nil,
 	}
 }
 

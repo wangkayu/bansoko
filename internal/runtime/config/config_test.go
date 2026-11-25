@@ -190,17 +190,3 @@ func TestFromFlagsRejectsMalformedTestFixtureHosts(t *testing.T) {
 		t.Fatalf("expected ErrFixtureHostsConfig, got %v", err)
 	}
 }
-
-func TestFromFlagsResolvesFixedSeedPaths(t *testing.T) {
-	t.Setenv("BANSOKO_CONFIG_DIR", "/srv/bansoko-config")
-	cfg, err := FromFlags(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NamingVarsConfigPath != "/srv/bansoko-config/naming-vars.js" {
-		t.Fatalf("config workspace path = %q", cfg.NamingVarsConfigPath)
-	}
-	if cfg.NamingVarsDefaultsPath != "deployment/defaults/naming-vars.js" {
-		t.Fatalf("bundled default path = %q", cfg.NamingVarsDefaultsPath)
-	}
-}

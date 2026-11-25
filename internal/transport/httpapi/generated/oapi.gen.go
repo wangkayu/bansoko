@@ -477,7 +477,7 @@ const (
 
 // Defines values for BusinessSnapshotSchemaVersion.
 const (
-	BusinessSnapshotSchemaVersionBusinessSnapshotV2 BusinessSnapshotSchemaVersion = "business-snapshot-v2"
+	BusinessSnapshotSchemaVersionBusinessSnapshotV3 BusinessSnapshotSchemaVersion = "business-snapshot-v3"
 )
 
 // Defines values for CatalogEntrySynopsisProvider.
@@ -1283,77 +1283,6 @@ const (
 	NamingTemplatePreviewInputTemplateKindDirectory      NamingTemplatePreviewInputTemplateKind = "directory"
 	NamingTemplatePreviewInputTemplateKindSubtitleSuffix NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
 	NamingTemplatePreviewInputTemplateKindVideoFilename  NamingTemplatePreviewInputTemplateKind = "video_filename"
-)
-
-// Defines values for NamingVarsDiagnosticCode.
-const (
-	NamingVarsDiagnosticCodeDynamicExecution   NamingVarsDiagnosticCode = "dynamic_execution"
-	NamingVarsDiagnosticCodeEvaluationFailed   NamingVarsDiagnosticCode = "evaluation_failed"
-	NamingVarsDiagnosticCodeInterrupted        NamingVarsDiagnosticCode = "interrupted"
-	NamingVarsDiagnosticCodeOutputInvalid      NamingVarsDiagnosticCode = "output_invalid"
-	NamingVarsDiagnosticCodeOutputMissing      NamingVarsDiagnosticCode = "output_missing"
-	NamingVarsDiagnosticCodeOutputNotScalar    NamingVarsDiagnosticCode = "output_not_scalar"
-	NamingVarsDiagnosticCodeSourceEmpty        NamingVarsDiagnosticCode = "source_empty"
-	NamingVarsDiagnosticCodeSourceTooLarge     NamingVarsDiagnosticCode = "source_too_large"
-	NamingVarsDiagnosticCodeSyntaxError        NamingVarsDiagnosticCode = "syntax_error"
-	NamingVarsDiagnosticCodeTooManyAssignments NamingVarsDiagnosticCode = "too_many_assignments"
-	NamingVarsDiagnosticCodeUnboundedExpansion NamingVarsDiagnosticCode = "unbounded_expansion"
-)
-
-// Defines values for NamingVarsDocumentFormat.
-const (
-	NamingVarsDocumentFormatBansokoNamingVars NamingVarsDocumentFormat = "bansoko-naming-vars"
-)
-
-// Defines values for NamingVarsDryRunTargetKind.
-const (
-	NamingVarsDryRunTargetKindCustom  NamingVarsDryRunTargetKind = "custom"
-	NamingVarsDryRunTargetKindRelease NamingVarsDryRunTargetKind = "release"
-	NamingVarsDryRunTargetKindSample  NamingVarsDryRunTargetKind = "sample"
-)
-
-// Defines values for NamingVarsDryRunTargetResultKind.
-const (
-	NamingVarsDryRunTargetResultKindCustom  NamingVarsDryRunTargetResultKind = "custom"
-	NamingVarsDryRunTargetResultKindRelease NamingVarsDryRunTargetResultKind = "release"
-	NamingVarsDryRunTargetResultKindSample  NamingVarsDryRunTargetResultKind = "sample"
-)
-
-// Defines values for NamingVarsDryRunTargetResultReason.
-const (
-	NamingVarsDryRunTargetResultReasonEvidenceUnreadable NamingVarsDryRunTargetResultReason = "evidence_unreadable"
-	NamingVarsDryRunTargetResultReasonInventoryMissing   NamingVarsDryRunTargetResultReason = "inventory_missing"
-	NamingVarsDryRunTargetResultReasonParserUnavailable  NamingVarsDryRunTargetResultReason = "parser_unavailable"
-	NamingVarsDryRunTargetResultReasonReleaseNotFound    NamingVarsDryRunTargetResultReason = "release_not_found"
-)
-
-// Defines values for NamingVarsDryRunTargetResultStatus.
-const (
-	NamingVarsDryRunTargetResultStatusError       NamingVarsDryRunTargetResultStatus = "error"
-	NamingVarsDryRunTargetResultStatusInterrupted NamingVarsDryRunTargetResultStatus = "interrupted"
-	NamingVarsDryRunTargetResultStatusOk          NamingVarsDryRunTargetResultStatus = "ok"
-	NamingVarsDryRunTargetResultStatusUnavailable NamingVarsDryRunTargetResultStatus = "unavailable"
-)
-
-// Defines values for NamingVarsInputFactType.
-const (
-	NamingVarsInputFactTypeBoolean   NamingVarsInputFactType = "boolean"
-	NamingVarsInputFactTypeInteger   NamingVarsInputFactType = "integer"
-	NamingVarsInputFactTypeList      NamingVarsInputFactType = "list"
-	NamingVarsInputFactTypeString    NamingVarsInputFactType = "string"
-	NamingVarsInputFactTypeTimestamp NamingVarsInputFactType = "timestamp"
-)
-
-// Defines values for NamingVarsVersionOrigin.
-const (
-	NamingVarsVersionOriginEditor NamingVarsVersionOrigin = "editor"
-	NamingVarsVersionOriginFile   NamingVarsVersionOrigin = "file"
-	NamingVarsVersionOriginImport NamingVarsVersionOrigin = "import"
-)
-
-// Defines values for NamingVarsVersionRuntime.
-const (
-	NamingVarsVersionRuntimeNamingVarsV1 NamingVarsVersionRuntime = "naming-vars-v1"
 )
 
 // Defines values for NetworkRouteTestResultHealth.
@@ -4251,12 +4180,6 @@ type BusinessPresetView struct {
 	TagFilters TagFilterRules `json:"tag_filters"`
 }
 
-// BusinessProgramRef defines model for BusinessProgramRef.
-type BusinessProgramRef struct {
-	Digest  string `json:"digest"`
-	Version string `json:"version"`
-}
-
 // BusinessRecord defines model for BusinessRecord.
 type BusinessRecord struct {
 	Entry      SubscriptionLogEntry     `json:"entry"`
@@ -4311,11 +4234,8 @@ type BusinessSections struct {
 
 // BusinessSnapshot defines model for BusinessSnapshot.
 type BusinessSnapshot struct {
-	FileEffectVersion int64                  `json:"file_effect_version"`
-	Parser            BusinessParserEnvelope `json:"parser"`
-	Programs          struct {
-		Vars BusinessProgramRef `json:"vars"`
-	} `json:"programs"`
+	FileEffectVersion  int64                         `json:"file_effect_version"`
+	Parser             BusinessParserEnvelope        `json:"parser"`
 	Replacement        BusinessReplacement           `json:"replacement"`
 	ReplacementVersion int64                         `json:"replacement_version"`
 	SchemaVersion      BusinessSnapshotSchemaVersion `json:"schema_version"`
@@ -6540,13 +6460,11 @@ type NamingTemplate struct {
 
 // NamingTemplateCatalog defines model for NamingTemplateCatalog.
 type NamingTemplateCatalog struct {
-	Fields       []NamingCatalogField          `json:"fields"`
-	Functions    []NamingCatalogFunction       `json:"functions"`
-	Language     NamingTemplateCatalogLanguage `json:"language"`
-	Samples      []NamingCatalogSample         `json:"samples"`
-	Shorthands   []NamingCatalogShorthand      `json:"shorthands"`
-	VarsKeys     []string                      `json:"vars_keys"`
-	VarsLoadedAt *time.Time                    `json:"vars_loaded_at"`
+	Fields     []NamingCatalogField          `json:"fields"`
+	Functions  []NamingCatalogFunction       `json:"functions"`
+	Language   NamingTemplateCatalogLanguage `json:"language"`
+	Samples    []NamingCatalogSample         `json:"samples"`
+	Shorthands []NamingCatalogShorthand      `json:"shorthands"`
 }
 
 // NamingTemplateCatalogLanguage defines model for NamingTemplateCatalog.Language.
@@ -6614,191 +6532,6 @@ type NamingVariant struct {
 	// VideoFilenameTemplate Video filename template body, written like directory_template (interpolations included, no outer backticks).
 	VideoFilenameTemplate string `json:"video_filename_template"`
 }
-
-// NamingVarsActivateInput defines model for NamingVarsActivateInput.
-type NamingVarsActivateInput struct {
-	Revision int64 `json:"revision"`
-}
-
-// NamingVarsDiagnostic defines model for NamingVarsDiagnostic.
-type NamingVarsDiagnostic struct {
-	Code    NamingVarsDiagnosticCode `json:"code"`
-	End     *int                     `json:"end,omitempty"`
-	Message string                   `json:"message"`
-
-	// Start Byte offset where the finding starts in the LF-normalized source; absent when it has no place.
-	Start *int `json:"start,omitempty"`
-}
-
-// NamingVarsDiagnosticCode defines model for NamingVarsDiagnostic.Code.
-type NamingVarsDiagnosticCode string
-
-// NamingVarsDocument defines model for NamingVarsDocument.
-type NamingVarsDocument struct {
-	Digest        string                   `json:"digest"`
-	ExportedAt    time.Time                `json:"exported_at"`
-	Format        NamingVarsDocumentFormat `json:"format"`
-	FormatVersion int                      `json:"format_version"`
-	Note          string                   `json:"note"`
-	Revision      int64                    `json:"revision"`
-
-	// Runtime Input contract the program was written for.
-	Runtime string `json:"runtime"`
-	Source  string `json:"source"`
-}
-
-// NamingVarsDocumentFormat defines model for NamingVarsDocument.Format.
-type NamingVarsDocumentFormat string
-
-// NamingVarsDryRunFile defines model for NamingVarsDryRunFile.
-type NamingVarsDryRunFile struct {
-	Path string `json:"path"`
-	Size int64  `json:"size"`
-}
-
-// NamingVarsDryRunInput defines model for NamingVarsDryRunInput.
-type NamingVarsDryRunInput struct {
-	Source  string                   `json:"source"`
-	Targets []NamingVarsDryRunTarget `json:"targets"`
-}
-
-// NamingVarsDryRunResult defines model for NamingVarsDryRunResult.
-type NamingVarsDryRunResult struct {
-	Diagnostics []NamingVarsDiagnostic `json:"diagnostics"`
-
-	// Digest Fingerprint of the draft; absent when the draft failed static validation.
-	Digest  *string                        `json:"digest,omitempty"`
-	Targets []NamingVarsDryRunTargetResult `json:"targets"`
-}
-
-// NamingVarsDryRunTarget defines model for NamingVarsDryRunTarget.
-type NamingVarsDryRunTarget struct {
-	Files *[]NamingVarsDryRunFile    `json:"files,omitempty"`
-	Kind  NamingVarsDryRunTargetKind `json:"kind"`
-
-	// ReleaseId Persisted release id, for kind release.
-	ReleaseId *string `json:"release_id,omitempty"`
-
-	// Sample Sample ref, for kind sample.
-	Sample *string `json:"sample,omitempty"`
-
-	// Title Release title, for kind custom.
-	Title *string `json:"title,omitempty"`
-}
-
-// NamingVarsDryRunTargetKind defines model for NamingVarsDryRunTarget.Kind.
-type NamingVarsDryRunTargetKind string
-
-// NamingVarsDryRunTargetResult defines model for NamingVarsDryRunTargetResult.
-type NamingVarsDryRunTargetResult struct {
-	Diagnostics []NamingVarsDiagnostic           `json:"diagnostics"`
-	FileCount   int                              `json:"file_count"`
-	Kind        NamingVarsDryRunTargetResultKind `json:"kind"`
-
-	// Output The vars produced, by group and key; empty unless status is ok.
-	Output map[string]map[string]string `json:"output"`
-
-	// Reason Why a release could not be evaluated, when status is unavailable.
-	Reason *NamingVarsDryRunTargetResultReason `json:"reason,omitempty"`
-	Ref    string                              `json:"ref"`
-	Status NamingVarsDryRunTargetResultStatus  `json:"status"`
-	Title  string                              `json:"title"`
-}
-
-// NamingVarsDryRunTargetResultKind defines model for NamingVarsDryRunTargetResult.Kind.
-type NamingVarsDryRunTargetResultKind string
-
-// NamingVarsDryRunTargetResultReason Why a release could not be evaluated, when status is unavailable.
-type NamingVarsDryRunTargetResultReason string
-
-// NamingVarsDryRunTargetResultStatus defines model for NamingVarsDryRunTargetResult.Status.
-type NamingVarsDryRunTargetResultStatus string
-
-// NamingVarsInputFact defines model for NamingVarsInputFact.
-type NamingVarsInputFact struct {
-	DescriptionKey string `json:"description_key"`
-	LabelKey       string `json:"label_key"`
-	Nullable       bool   `json:"nullable"`
-
-	// Path Fact path under input, for example anime.title.
-	Path        string                  `json:"path"`
-	SampleValue *string                 `json:"sample_value,omitempty"`
-	Type        NamingVarsInputFactType `json:"type"`
-}
-
-// NamingVarsInputFactType defines model for NamingVarsInputFact.Type.
-type NamingVarsInputFactType string
-
-// NamingVarsLimits defines model for NamingVarsLimits.
-type NamingVarsLimits struct {
-	MaxCollection  int `json:"max_collection"`
-	MaxNoteLength  int `json:"max_note_length"`
-	MaxOutputBytes int `json:"max_output_bytes"`
-	MaxSourceBytes int `json:"max_source_bytes"`
-	MaxTargets     int `json:"max_targets"`
-	TimeoutMs      int `json:"timeout_ms"`
-}
-
-// NamingVarsProgram defines model for NamingVarsProgram.
-type NamingVarsProgram struct {
-	// Source Canonical program text (LF line endings).
-	Source  string            `json:"source"`
-	Version NamingVarsVersion `json:"version"`
-}
-
-// NamingVarsReleaseOption defines model for NamingVarsReleaseOption.
-type NamingVarsReleaseOption struct {
-	AnimeTitle string `json:"anime_title"`
-	Id         string `json:"id"`
-	Title      string `json:"title"`
-}
-
-// NamingVarsSample defines model for NamingVarsSample.
-type NamingVarsSample struct {
-	FileCount    int    `json:"file_count"`
-	Ref          string `json:"ref"`
-	ReleaseTitle string `json:"release_title"`
-}
-
-// NamingVarsSaveInput defines model for NamingVarsSaveInput.
-type NamingVarsSaveInput struct {
-	Note   *string `json:"note,omitempty"`
-	Source string  `json:"source"`
-}
-
-// NamingVarsState defines model for NamingVarsState.
-type NamingVarsState struct {
-	Active     NamingVarsProgram     `json:"active"`
-	InputFacts []NamingVarsInputFact `json:"input_facts"`
-	Limits     NamingVarsLimits      `json:"limits"`
-	Samples    []NamingVarsSample    `json:"samples"`
-
-	// Versions Newest first, at most 200.
-	Versions []NamingVarsVersion `json:"versions"`
-}
-
-// NamingVarsVersion defines model for NamingVarsVersion.
-type NamingVarsVersion struct {
-	ActivatedAt *time.Time `json:"activated_at"`
-	Active      bool       `json:"active"`
-	CreatedAt   time.Time  `json:"created_at"`
-
-	// Digest Canonical source fingerprint, the identity frozen evaluations record.
-	Digest string                  `json:"digest"`
-	Note   string                  `json:"note"`
-	Origin NamingVarsVersionOrigin `json:"origin"`
-
-	// Revision Publication number; the compare-and-swap token of the active pointer.
-	Revision    int64                    `json:"revision"`
-	Runtime     NamingVarsVersionRuntime `json:"runtime"`
-	SourceBytes int                      `json:"source_bytes"`
-}
-
-// NamingVarsVersionOrigin defines model for NamingVarsVersion.Origin.
-type NamingVarsVersionOrigin string
-
-// NamingVarsVersionRuntime defines model for NamingVarsVersion.Runtime.
-type NamingVarsVersionRuntime string
 
 // NetworkRoute defines model for NetworkRoute.
 type NetworkRoute struct {
@@ -10879,24 +10612,6 @@ type SearchMetadataParams struct {
 // SearchMetadataParamsProvider defines parameters for SearchMetadata.
 type SearchMetadataParamsProvider string
 
-// ActivateNamingVarsVersionParams defines parameters for ActivateNamingVarsVersion.
-type ActivateNamingVarsVersionParams struct {
-	// IfMatch Expected current owner version for optimistic concurrency. Use 0 to create: the request succeeds only when the owner does not exist yet.
-	IfMatch IfMatchVersion `json:"If-Match"`
-}
-
-// ImportNamingVarsParams defines parameters for ImportNamingVars.
-type ImportNamingVarsParams struct {
-	// IfMatch Expected current owner version for optimistic concurrency. Use 0 to create: the request succeeds only when the owner does not exist yet.
-	IfMatch IfMatchVersion `json:"If-Match"`
-}
-
-// SaveNamingVarsVersionParams defines parameters for SaveNamingVarsVersion.
-type SaveNamingVarsVersionParams struct {
-	// IfMatch Expected current owner version for optimistic concurrency. Use 0 to create: the request succeeds only when the owner does not exist yet.
-	IfMatch IfMatchVersion `json:"If-Match"`
-}
-
 // ListObservabilityDiagnosticsParams defines parameters for ListObservabilityDiagnostics.
 type ListObservabilityDiagnosticsParams struct {
 	// Cursor Opaque keyset pagination cursor.
@@ -11278,18 +10993,6 @@ type PreviewMediaRecognitionJSONRequestBody = MediaRecognitionPreviewInput
 
 // SearchMetadataAutomaticallyJSONRequestBody defines body for SearchMetadataAutomatically for application/json ContentType.
 type SearchMetadataAutomaticallyJSONRequestBody = MetadataAutomaticSearchInput
-
-// ActivateNamingVarsVersionJSONRequestBody defines body for ActivateNamingVarsVersion for application/json ContentType.
-type ActivateNamingVarsVersionJSONRequestBody = NamingVarsActivateInput
-
-// DryRunNamingVarsJSONRequestBody defines body for DryRunNamingVars for application/json ContentType.
-type DryRunNamingVarsJSONRequestBody = NamingVarsDryRunInput
-
-// ImportNamingVarsJSONRequestBody defines body for ImportNamingVars for application/json ContentType.
-type ImportNamingVarsJSONRequestBody = NamingVarsDocument
-
-// SaveNamingVarsVersionJSONRequestBody defines body for SaveNamingVarsVersion for application/json ContentType.
-type SaveNamingVarsVersionJSONRequestBody = NamingVarsSaveInput
 
 // AcquireSeedOnceJSONRequestBody defines body for AcquireSeedOnce for application/json ContentType.
 type AcquireSeedOnceJSONRequestBody = AcquireSeedOnceInput
@@ -13655,30 +13358,6 @@ type ServerInterface interface {
 
 	// (GET /metadata/tmdb/works/{work_id}/seasons/{season}/episodes)
 	ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workId string, season int)
-
-	// (GET /naming-vars)
-	GetNamingVars(w http.ResponseWriter, r *http.Request)
-
-	// (PUT /naming-vars/active)
-	ActivateNamingVarsVersion(w http.ResponseWriter, r *http.Request, params ActivateNamingVarsVersionParams)
-
-	// (POST /naming-vars/dry-runs)
-	DryRunNamingVars(w http.ResponseWriter, r *http.Request)
-
-	// (GET /naming-vars/export)
-	ExportNamingVars(w http.ResponseWriter, r *http.Request)
-
-	// (POST /naming-vars/imports)
-	ImportNamingVars(w http.ResponseWriter, r *http.Request, params ImportNamingVarsParams)
-
-	// (GET /naming-vars/releases)
-	ListNamingVarsReleases(w http.ResponseWriter, r *http.Request)
-
-	// (POST /naming-vars/versions)
-	SaveNamingVarsVersion(w http.ResponseWriter, r *http.Request, params SaveNamingVarsVersionParams)
-
-	// (GET /naming-vars/versions/{revision})
-	GetNamingVarsVersion(w http.ResponseWriter, r *http.Request, revision int64)
 
 	// (GET /observability/diagnostics)
 	ListObservabilityDiagnostics(w http.ResponseWriter, r *http.Request, params ListObservabilityDiagnosticsParams)
@@ -19229,267 +18908,6 @@ func (siw *ServerInterfaceWrapper) ListTMDBCandidateEpisodes(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
-// GetNamingVars operation middleware
-func (siw *ServerInterfaceWrapper) GetNamingVars(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetNamingVars(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ActivateNamingVarsVersion operation middleware
-func (siw *ServerInterfaceWrapper) ActivateNamingVarsVersion(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ActivateNamingVarsVersionParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatchVersion
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = IfMatch
-
-	} else {
-		err := fmt.Errorf("Header parameter If-Match is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ActivateNamingVarsVersion(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DryRunNamingVars operation middleware
-func (siw *ServerInterfaceWrapper) DryRunNamingVars(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DryRunNamingVars(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ExportNamingVars operation middleware
-func (siw *ServerInterfaceWrapper) ExportNamingVars(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ExportNamingVars(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ImportNamingVars operation middleware
-func (siw *ServerInterfaceWrapper) ImportNamingVars(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ImportNamingVarsParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatchVersion
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = IfMatch
-
-	} else {
-		err := fmt.Errorf("Header parameter If-Match is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ImportNamingVars(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListNamingVarsReleases operation middleware
-func (siw *ServerInterfaceWrapper) ListNamingVarsReleases(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListNamingVarsReleases(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// SaveNamingVarsVersion operation middleware
-func (siw *ServerInterfaceWrapper) SaveNamingVarsVersion(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params SaveNamingVarsVersionParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatchVersion
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = IfMatch
-
-	} else {
-		err := fmt.Errorf("Header parameter If-Match is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.SaveNamingVarsVersion(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetNamingVarsVersion operation middleware
-func (siw *ServerInterfaceWrapper) GetNamingVarsVersion(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "revision" -------------
-	var revision int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "revision", r.PathValue("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "revision", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetNamingVarsVersion(w, r, revision)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListObservabilityDiagnostics operation middleware
 func (siw *ServerInterfaceWrapper) ListObservabilityDiagnostics(w http.ResponseWriter, r *http.Request) {
 
@@ -21646,14 +21064,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/metadata/search/automatic", wrapper.SearchMetadataAutomatically)
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/tmdb/works/{work_id}/seasons", wrapper.ListTMDBWorkSeasons)
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/tmdb/works/{work_id}/seasons/{season}/episodes", wrapper.ListTMDBCandidateEpisodes)
-	m.HandleFunc("GET "+options.BaseURL+"/naming-vars", wrapper.GetNamingVars)
-	m.HandleFunc("PUT "+options.BaseURL+"/naming-vars/active", wrapper.ActivateNamingVarsVersion)
-	m.HandleFunc("POST "+options.BaseURL+"/naming-vars/dry-runs", wrapper.DryRunNamingVars)
-	m.HandleFunc("GET "+options.BaseURL+"/naming-vars/export", wrapper.ExportNamingVars)
-	m.HandleFunc("POST "+options.BaseURL+"/naming-vars/imports", wrapper.ImportNamingVars)
-	m.HandleFunc("GET "+options.BaseURL+"/naming-vars/releases", wrapper.ListNamingVarsReleases)
-	m.HandleFunc("POST "+options.BaseURL+"/naming-vars/versions", wrapper.SaveNamingVarsVersion)
-	m.HandleFunc("GET "+options.BaseURL+"/naming-vars/versions/{revision}", wrapper.GetNamingVarsVersion)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/diagnostics", wrapper.ListObservabilityDiagnostics)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/records", wrapper.ListObservabilityRecords)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/release-batches/{batch_key}", wrapper.ListReleaseBatchEntries)

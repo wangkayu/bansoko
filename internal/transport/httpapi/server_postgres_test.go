@@ -29,7 +29,6 @@ import (
 	configurationapplication "bansoko/internal/configuration/application"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/metadata/matcher"
-	"bansoko/internal/namingvars"
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/parserpolicy"
 	providerdomain "bansoko/internal/provider/domain"
@@ -81,7 +80,6 @@ type rigOption func(*Dependencies)
 
 func newTestRig(t *testing.T, environment string, skipAuth bool, options ...rigOption) *testRig {
 	t.Helper()
-	ensureTestNamingVars(t)
 	db := disposabledb.ResetDisposableSchema(t)
 	access := accessapplication.NewServiceWithSessionSecret(db, []byte("test-session-secret-0123456789abcdef"))
 	workStore, err := workitems.NewStore(db, 0, nil)
@@ -260,21 +258,6 @@ func withStart(payload map[string]any) map[string]any {
 	}
 	out["start"] = true
 	return out
-}
-
-// ensureTestNamingVars installs an explicitly loaded, empty snapshot for HTTP
-// tests whose naming rules do not reference vars. Tests of populated vars must
-// install their own snapshot; an uninitialized registry must remain an error.
-func ensureTestNamingVars(t *testing.T) {
-	t.Helper()
-	vars := namingvars.Vars{}
-	fingerprint, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatalf("fingerprint naming vars: %v", err)
-	}
-	if err := namingvars.SetActive(vars, fingerprint); err != nil {
-		t.Fatalf("activate naming vars: %v", err)
-	}
 }
 
 func TestBootstrapLoginAndSessionLifecycle(t *testing.T) {

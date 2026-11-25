@@ -188,7 +188,7 @@ async function mockSettingsReads(page: Page) {
   );
   await page.route("**/api/v1/template-catalogs/naming", (route) =>
     getOnly(route, () =>
-      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [], vars_keys: [], vars_loaded_at: null } satisfies NamingTemplateCatalog) }),
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [] } satisfies NamingTemplateCatalog) }),
     ),
   );
   await page.route("**/api/v1/config/naming-templates", (route) =>
@@ -1202,8 +1202,6 @@ test.describe("settings fixture coverage", () => {
             functions: [],
             shorthands: [{ name: "e00", expansion: "pad(ep.number, 2)", example: "01" }],
             samples: [{ ref: "sample-tv", label: "剧集样例" }],
-            vars_keys: [],
-            vars_loaded_at: null,
           } satisfies NamingTemplateCatalog),
         }),
       ),

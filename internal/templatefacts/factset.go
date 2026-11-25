@@ -29,8 +29,8 @@ type FactSet struct {
 	Download DownloadFacts
 	Replaced ReplacedFacts
 	Taker    TakerFacts
-	// Rt, Anibt and Mikan are the value namespaces keyed by Field.Key; Vars
-	// the frozen user Vars output. Mikan carries only the origin RSS source's
+	// Rt, Anibt and Mikan are the value namespaces keyed by Field.Key. Mikan
+	// carries only the origin RSS source's
 	// group identity (there is no Mikan tag namespace); the source's
 	// configured display group name is anime.group, not a namespace field.
 	// Rt is the reltitle parse of the release title; FileRt is the separate
@@ -39,7 +39,6 @@ type FactSet struct {
 	FileRt Values
 	Anibt  Values
 	Mikan  Values
-	Vars   map[string]map[string]string
 }
 
 // TaskFacts describes this acquisition's entry, not the anime's metadata origin.
@@ -280,7 +279,7 @@ type TitleCandidates struct {
 	Override, Provider, TmdbCN, BgmCN, Bgm, Base string
 }
 
-// EffectiveTitle applies the one title order naming and the Vars input use:
+// EffectiveTitle applies the one title order naming and notification projections use:
 // the title override the subscription stored (anime.title_override), the
 // provider catalog title it froze (anime.provider_title), the TMDB title for
 // the request language (tmdb.title_cn), the BGM Chinese title (bgm.title_cn),

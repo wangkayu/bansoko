@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -16,14 +15,6 @@ import (
 // subtitle whose own name names none renders (sub.lang falls back to it).
 func companionPreviewFixture(t *testing.T, title string) (EffectiveConfig, PreviewReleaseResult, acquisitiondomain.FeedItem) {
 	t.Helper()
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fp, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.SetActive(vars, fp); err != nil {
-		t.Fatal(err)
-	}
 	defaultNaming, err := DefaultSectionValue(SectionNamingRules)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +34,7 @@ func companionPreviewFixture(t *testing.T, title string) (EffectiveConfig, Previ
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "1"))
-	release.FrozenVars = explicitTestFrozenVars()
+	release.NamingAnime = previewFixtureAnime()
 	return effective, release, item
 }
 

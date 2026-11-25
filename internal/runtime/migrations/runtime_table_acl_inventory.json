@@ -667,8 +667,7 @@
     "reason": "product owner DML (metadata work titles)",
     "direct_access": [
       "internal/identitymetadata/adapter/persistence/work_titles.go",
-      "internal/acquisition/terminal/application/work_titles.go",
-      "internal/namingvars/adapter/persistence/release_evidence.go"
+      "internal/acquisition/terminal/application/work_titles.go"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
@@ -683,21 +682,6 @@
     "direct_access": [
       "internal/configuration/application/naming_templates.go",
       "internal/configuration/application/global_sections.go"
-    ],
-    "closure_slice": "retained product owner",
-    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
-  },
-  {
-    "table": "naming_vars_versions",
-    "privileges": [
-      "INSERT"
-    ],
-    "reason": "product owner DML from the listed application code",
-    "direct_access": [
-      "internal/testutil/frozenpolicy/business.go",
-      "internal/namingvars/adapter/persistence/query.sql",
-      "internal/namingvars/adapter/persistence/generated/query.sql.go",
-      "internal/namingvars/adapter/persistence/generated/querier.go"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"

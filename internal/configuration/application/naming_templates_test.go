@@ -41,7 +41,7 @@ func TestNormalizeNamingTemplateLibrarySplitsTheDefaultBody(t *testing.T) {
 			{Key: "a", Name: " First ", Rules: rules},
 			{Key: "b", Name: "Second", Rules: rules},
 		},
-	}, map[string]map[string]string{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestNormalizeNamingTemplateLibraryRefusals(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := normalizeNamingTemplateLibrary(tc.input, map[string]map[string]string{})
+			_, _, err := normalizeNamingTemplateLibrary(tc.input)
 			if got := namingTemplateErrorCode(err); got != tc.code {
 				t.Fatalf("code = %q (%v), want %q", got, err, tc.code)
 			}

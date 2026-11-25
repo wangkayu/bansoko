@@ -118,8 +118,6 @@ func newMCPAgentFlowRig(t *testing.T) *mcpFlowEnv {
 	t.Helper()
 	rig := newTestRig(t, "development", false)
 	db := rig.db
-	animetest.InstallRegistries()
-	animetest.PublishRegistries(t, db)
 	animetest.SeedQbConnection(t, db)
 
 	data := animetest.ValidTestTorrentBytes()

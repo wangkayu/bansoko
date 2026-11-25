@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -16,14 +15,6 @@ import (
 // message, and produces no target. This is the non-Postgres form of the same
 // boundary the preview service test pins end to end.
 func TestCompiledTemplateRenderFailureIsCarriedPerFile(t *testing.T) {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fp, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.SetActive(vars, fp); err != nil {
-		t.Fatal(err)
-	}
 	throwing := "${(() => { if (anime.title_base) { throw new Error('缺少标题'); } return ''; })()}"
 	rules := NamingRules{
 		Language: NamingRulesLanguageJsNaming1,
@@ -45,7 +36,7 @@ func TestCompiledTemplateRenderFailureIsCarriedPerFile(t *testing.T) {
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "3"))
-	release.FrozenVars = explicitTestFrozenVars()
+	release.NamingAnime = previewFixtureAnime()
 	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
 	if outcome.RenderedTarget != nil {
 		t.Fatalf("a throwing template must not produce a target: %+v", outcome)
@@ -62,14 +53,6 @@ func TestCompiledTemplateRenderFailureIsCarriedPerFile(t *testing.T) {
 // result ("-.mkv"), naming the missing fact, and otherwise shows the target
 // with the facts that rendered empty.
 func TestPreviewRefusesOnlyAnInvalidRenderedName(t *testing.T) {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fp, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.SetActive(vars, fp); err != nil {
-		t.Fatal(err)
-	}
 	rules := NamingRulesFromDomain(naming.DefaultNamingRules())
 	rules.Tv.VideoFilenameTemplate = "${bgm.id}-${anibt.lang}.${file.ext}"
 	effective := EffectiveConfig{Rules: EffectiveRules{
@@ -83,7 +66,7 @@ func TestPreviewRefusesOnlyAnInvalidRenderedName(t *testing.T) {
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "3"))
-	release.FrozenVars = explicitTestFrozenVars()
+	release.NamingAnime = previewFixtureAnime()
 	outcome := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show - 03.mkv", "video", 0, release.FrozenEpisode, false, false)
 	if outcome.RenderedTarget != nil {
 		t.Fatalf("a template needing absent work ids must not produce a target: %q", *outcome.RenderedTarget)

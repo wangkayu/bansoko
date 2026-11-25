@@ -10,7 +10,7 @@ import (
 // video goes.
 func TestDefaultUnknownTemplateKeepsTheOriginalNameUnderExtras(t *testing.T) {
 	engine := NewEngine()
-	compiled, err := engine.CompileRulesWithVars(DefaultNamingRules(), map[string]map[string]string{})
+	compiled, err := engine.CompileRules(DefaultNamingRules())
 	if err != nil {
 		t.Fatal(err)
 	}

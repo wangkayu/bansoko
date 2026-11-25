@@ -208,8 +208,6 @@ export const namingCopy = {
   shorthandPair: "{token} → {example}",
   exampleTitle: "示例：{value}",
   helpTitle: "命名模板语法与变量",
-  // helpBody 介绍自定义变量（vars.*），当前版本隐藏、暂不使用；帮助弹窗改用 helpSyntax。
-  helpBody: "变量写作 ${变量路径}，也可引用 ${vars.group.name}。自定义变量由设置里的变量程序生成，保存后立即生效；当前自定义变量：{keys}。仅下列字段和函数可用。",
   helpSyntax: "变量写作 ${变量路径}。仅下列字段和函数可用。",
   none: "无",
   fields: "可用字段",

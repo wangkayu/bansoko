@@ -73,9 +73,8 @@ func TestCompileReportsSourceSpans(t *testing.T) {
 
 func TestRenderReadsValueNamespacesOnEveryTrigger(t *testing.T) {
 	sourceFacts := []byte(`{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"x","tags":["resolution:1080p","sub_lang:CHT","sub_lang:chs","sub_lang:CHS"],"value_tags":["title:进击的巨人"]},"anibt":{"tags":["language:CHT","language:CHS","format:MKV"]}}`)
-	vars := map[string]any{"info": map[string]any{"tag": "WEB", "source_url": "https://x"}, "bad": "x"}
-	facts := ValueFacts(vars, sourceFacts, func(v string) any { return v })
-	for key, want := range map[string]any{"rt.title": "进击的巨人", "rt.res": "1080p", "rt.lang": "chs+CHT", "rt.group": nil, "anibt.lang": "CHS+CHT", "anibt.format": "MKV", "anibt.tag": nil, "vars.info.tag": "WEB"} {
+	facts := ValueFacts(sourceFacts, func(v string) any { return v })
+	for key, want := range map[string]any{"rt.title": "进击的巨人", "rt.res": "1080p", "rt.lang": "chs+CHT", "rt.group": nil, "anibt.lang": "CHS+CHT", "anibt.format": "MKV", "anibt.tag": nil} {
 		if got, ok := facts[key]; !ok || got != want {
 			t.Errorf("%s = %#v (%v); want %#v", key, got, ok, want)
 		}
@@ -93,15 +92,15 @@ func TestRenderReadsValueNamespacesOnEveryTrigger(t *testing.T) {
 			// release whose rt/anibt tags the payload froze.
 			continue
 		}
-		message, ok := RenderMessage(trigger, "{{vars.info.tag}} {{rt.lang}}", "{{defaultIfEmpty(anibt.tag, '-')}} {{vars.info.missing}}", facts)
-		if !ok || !message.Valid() || message.Title != "WEB chs+CHT" || message.Body != "- " {
+		message, ok := RenderMessage(trigger, "{{rt.title}} {{rt.lang}}", "{{defaultIfEmpty(anibt.tag, '-')}} {{anibt.format}}", facts)
+		if !ok || !message.Valid() || message.Title != "进击的巨人 chs+CHT" || message.Body != "- MKV" {
 			t.Fatalf("%s: %+v", trigger, message)
 		}
 	}
 	if errors, _ := Compile(TriggerDownloadSubmitted, "{{vars.input.x}}", "{{vars.info}}"); len(errors) != 2 {
 		t.Fatalf("vars.input and a bare group must not compile: %+v", errors)
 	}
-	if facts := ValueFacts(nil, []byte(`{"anibt":"broken"}`), func(v string) any { return v }); facts["anibt.format"] != nil || len(facts) != len(ValueFactKeys) {
+	if facts := ValueFacts([]byte(`{"anibt":"broken"}`), func(v string) any { return v }); facts["anibt.format"] != nil || len(facts) != len(ValueFactKeys) {
 		t.Fatalf("undecodable source facts = %#v", facts)
 	}
 }

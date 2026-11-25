@@ -175,7 +175,7 @@ func TestPrepareVideoRenameRenderIsStrictlyCacheFirst(t *testing.T) {
 
 	rules := naming.DefaultNamingRules()
 	rules.TV.VideoFilenameTemplate = "[${tmdb.ep_title}].${file.ext}"
-	compiled, err := naming.NewEngine().CompileRulesWithVars(rules, nil)
+	compiled, err := naming.NewEngine().CompileRules(rules)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 //   2. Source outside the copy tables contains no Chinese literals (comments excepted).
 
 const SOURCE_ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const COPY_CALLS = new Set(["t", "tryT", "reasonLabel", "reasonView", "knownReasonLabel", "namingFailureDetail", "namingPendingLabel"]);
+const COPY_CALLS = new Set(["t", "tryT", "reasonLabel", "reasonView", "knownReasonLabel", "namingFailureDetail"]);
 const CJK = /[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/;
 
 // The api/ layer's network fallback wording goes only into error "details"; ownerModel recognizes the server's fixed descriptions.

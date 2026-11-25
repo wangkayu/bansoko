@@ -139,13 +139,3 @@ export function reasonView(code: string | null | undefined): ReasonView | undefi
 export function reasonLabel(code: string | null | undefined): string | undefined {
   return reasonView(code)?.text;
 }
-
-/**
- * For reason codes where the target simply cannot render yet without being a configuration error
- *   (naming variables not ready) return the copy; the rest return undefined and the caller shows
- *   the server's template-error original under the "naming failed" heading.
- */
-export function namingPendingLabel(code: string | null | undefined): string | undefined {
-  if (code && normalizeReasonCode(code) === "naming_vars_unavailable") return knownReasonLabel(code);
-  return undefined;
-}

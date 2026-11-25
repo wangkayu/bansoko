@@ -121,7 +121,6 @@ func TestBusinessDraftDatabaseGuardRejectsUnknownAndInvalidDigest(t *testing.T) 
 	frozen := frozenBusinessFixture(t)
 	draft.Business = frozen.Business
 	draft.BusinessDigest = frozen.BusinessDigest
-	seedBusinessPrograms(t, db, &draft)
 	raw, err := json.Marshal(draft)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +181,6 @@ func TestCandidateSaveAndPatchCarryProviderGroupOffsets(t *testing.T) {
 	draft.ProviderGroupOffsets = []animedomain.ProviderGroupOffsetDraft{
 		{ProviderGroupRef: "301", EpisodeOffset: -48, EpisodeSpan: 2},
 	}
-	seedBusinessPrograms(t, db, &draft)
 	saved, err := service.SaveAnimeConfigCandidate(ctx, CandidateDraftInput{Draft: draft})
 	if err != nil {
 		t.Fatalf("save: %v", err)

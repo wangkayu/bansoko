@@ -28,7 +28,7 @@ func checkQualificationFixture(t *testing.T) {
 	db := disposabledb.ResetDisposableSchemaAsOwner(t)
 	ctx := context.Background()
 	fixture := qualificationFixture(t, "automatic_source")
-	b, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,9 +227,6 @@ func checkQualificationFixture(t *testing.T) {
 	}
 	// Read-only against the root set; it restores the metadata binding,
 	// work titles and release tags it arranges before the accepting subtests.
-	t.Run("U1g_vars_preview_equals_frozen", func(t *testing.T) {
-		checkVarsPreviewEqualsFrozenPostgres(t, ctx, db, runtimeDB, runtimeService, qualificationRequest{configKind: "owner", catalogKind: "provider_snapshot", releaseID: "rel-1", requestHash: fixture.config.requestHash, catalog: &catalogRequest{observationID: group.ID, feedID: feed.ID, seedKey: "seed"}})
-	})
 	t.Run("B2b_direct", func(t *testing.T) { checkDirectReleasePostgres(t, ctx, db, runtimeDB, runtimeService) })
 	t.Run("service", func(t *testing.T) {
 		checkAcceptServicePostgres(t, ctx, db, runtimeDB, runtimeService, qualificationRequest{configKind: "owner", catalogKind: "provider_snapshot", releaseID: "rel-1", catalog: &catalogRequest{observationID: group.ID, feedID: feed.ID, seedKey: "seed"}}, b)

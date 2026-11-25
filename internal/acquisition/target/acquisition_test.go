@@ -8,20 +8,8 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
+	"bansoko/internal/postprocessing/naming"
 )
-
-func TestMain(m *testing.M) {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	varsFingerprint, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		panic(err)
-	}
-	if err := namingvars.SetActive(vars, varsFingerprint); err != nil {
-		panic(err)
-	}
-	os.Exit(m.Run())
-}
 
 // testEffectiveConfig resolves the code-owned defaults for the sections the
 // pre-download plan consumes, so the scenario is the same configuration shape
@@ -69,29 +57,13 @@ func testScenarioItem() acquisitiondomain.FeedItem {
 }
 
 func testScenarioPreview() animedomain.PreviewReleaseResult {
+	year, season := 2025, 1
 	return animedomain.PreviewReleaseResult{
 		StableItemKey: "guid:guid-shared-admission",
 		Verdict:       animedomain.ReleaseVerdict("accepted_pending_download"),
-		// The target render consumes only the Release's frozen Vars evaluation;
-		// there is no active-sample fallback.
-		FrozenVars: &namingvars.FrozenEvaluation{
-			Status: "ok",
-			Output: namingvars.Vars{"test": {"marker": "ok"}},
-			// The frozen acceptance input is the only place the render reads the
-			// anime's title, its provider year and its bound season: the shipped
-			// default templates name ${anime.title}, ${anime.year} and
-			// ${anime.season_folder}, and the s00e00 shorthand needs the bound season
-			// to render SxxExx rather than an empty season. A scenario that
-			// expects a rendered target therefore carries the facts an admission
-			// freezes for a metadata-bound anime; a scenario without them is an
-			// unbound anime, which the default rules refuse by name.
-			Input: namingvars.Input{
-				ReleaseTitle: "[RealGroup] Preview Show [E07] [1080p]",
-				Facts: map[string]any{
-					"anime": map[string]any{"title_base": "Preview Show", "title": "Preview Show", "year": "2025", "year_source": "tmdb"},
-					"tmdb":  map[string]any{"id": "preview-tmdb", "kind": "tv", "season": 1, "year": 2025},
-				},
-			},
+		NamingAnime: naming.AnimeNamingFacts{
+			Title: "Preview Show", Year: &year, Season: &season,
+			TMDB: naming.TMDBNamingFacts{WorkID: "preview-tmdb", MediaKind: "tv", Season: season, SeasonPresent: true, Year: &year},
 		},
 	}
 }

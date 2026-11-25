@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -20,15 +19,13 @@ func TestSubtitlePlacementComposesTheCompanionFilename(t *testing.T) {
 	// suffix template renders sub.lang_tag, which falls back to its
 	// rt.lang (SC) for a subtitle whose own tag names no language.
 	artifact := artifactContext{
-		releaseID:     "release-1",
-		animeTitle:    "Show",
-		rawFacts:      json.RawMessage(`{"title":"[RealGroup] Show - 01 [CHS] [1080p]"}`),
-		sourceFacts:   json.RawMessage(`{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@x","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Show"]}}`),
-		sourceKind:    "rss",
-		groupName:     "RealGroup",
-		acceptedFacts: true,
+		releaseID:   "release-1",
+		animeTitle:  "Show",
+		rawFacts:    json.RawMessage(`{"title":"[RealGroup] Show - 01 [CHS] [1080p]"}`),
+		sourceFacts: json.RawMessage(`{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@x","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Show"]}}`),
+		sourceKind:  "rss",
+		groupName:   "RealGroup",
 	}
-	frozen := &namingvars.FrozenEvaluation{Status: "ok", Output: namingvars.Vars{"test": {"marker": "ok"}}}
 
 	for _, tc := range []struct {
 		name           string
@@ -49,11 +46,11 @@ func TestSubtitlePlacementComposesTheCompanionFilename(t *testing.T) {
 				rules.SubtitleSuffixTemplate = *tc.suffixTemplate
 			}
 			engine := naming.NewEngine()
-			compiled, err := engine.CompileRulesWithVars(rules, frozen.Output)
+			compiled, err := engine.CompileRules(rules)
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := buildNamingContext(artifact, artifactFileContext{sourcePath: tc.subtitlePath, mediaKind: "subtitle", sizeBytes: 20}, nil, frozen)
+			resolved, err := buildNamingContext(artifact, artifactFileContext{sourcePath: tc.subtitlePath, mediaKind: "subtitle", sizeBytes: 20}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

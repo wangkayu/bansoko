@@ -15,6 +15,7 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	draftapplication "bansoko/internal/anime/draft/application"
 	"bansoko/internal/apperrors"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/frozenpolicy"
 )
@@ -70,7 +71,7 @@ VALUES ('qb-movie-test', 'qbittorrent', 'movie-test', 'http://127.0.0.1:1', 'sec
 	seed := oneShotAgentSeedForPayload(t, payload)
 	recordOneShotSeedGroup(t, db, seed, oneShotSeedGroupName)
 	seed.Title = seedTitle
-	business, businessErr := frozenpolicy.SeedBusiness(context.Background(), db, `vars.test = {marker: input.release_title};`)
+	business, businessErr := frozenpolicy.Business()
 	if businessErr != nil {
 		t.Fatal(businessErr)
 	}
@@ -140,13 +141,14 @@ VALUES ('qb-movie-test', 'qbittorrent', 'movie-test', 'http://127.0.0.1:1', 'sec
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Mirror admission exactly: load typed naming facts from the same temporary
+	// owner rows, inside the transaction that created them.
 	animeID := probeAnimeEvidenceTx(t, service, tx, draft)
-	frozen, err := freezeBusinessVarsTx(context.Background(), tx, business, item, animeID, "", nil)
+	evaluation.NamingAnime, err = namingpersistence.LoadAnimeFacts(context.Background(), tx, animeID)
 	tx.Rollback()
 	if err != nil {
 		t.Fatal(err)
 	}
-	evaluation.FrozenVars = &frozen
 	plan := planOneShotTargets(context.Background(), acquisitiontarget.FilesystemProbe{}, oneShotTargetRequest(
 		"release-movie-probe",
 		draft,

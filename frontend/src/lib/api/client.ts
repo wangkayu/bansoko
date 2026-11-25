@@ -1984,58 +1984,6 @@ export function previewNamingTemplate(
   return request("/template-previews/naming", { method: "POST", body: input });
 }
 
-// --- Naming Vars program editor ------------------------------------------------
-
-export type NamingVarsState = Schema<"NamingVarsState">;
-export type NamingVarsProgram = Schema<"NamingVarsProgram">;
-export type NamingVarsVersion = Schema<"NamingVarsVersion">;
-export type NamingVarsInputFact = Schema<"NamingVarsInputFact">;
-export type NamingVarsSample = Schema<"NamingVarsSample">;
-export type NamingVarsDiagnostic = Schema<"NamingVarsDiagnostic">;
-export type NamingVarsDryRunTarget = Schema<"NamingVarsDryRunTarget">;
-export type NamingVarsDryRunTargetResult = Schema<"NamingVarsDryRunTargetResult">;
-export type NamingVarsDryRunResult = Schema<"NamingVarsDryRunResult">;
-export type NamingVarsReleaseOption = Schema<"NamingVarsReleaseOption">;
-export type NamingVarsDocument = Schema<"NamingVarsDocument">;
-
-export function getNamingVars(): Promise<NamingVarsState> {
-  return request("/naming-vars", { method: "GET" });
-}
-
-export function getNamingVarsVersion(revision: number): Promise<NamingVarsProgram> {
-  return request(`/naming-vars/versions/${revision}`, { method: "GET" });
-}
-
-export function listNamingVarsReleases(): Promise<NamingVarsReleaseOption[]> {
-  return request("/naming-vars/releases", { method: "GET" });
-}
-
-export function dryRunNamingVars(source: string, targets: NamingVarsDryRunTarget[]): Promise<NamingVarsDryRunResult> {
-  return request("/naming-vars/dry-runs", { method: "POST", body: { source, targets } });
-}
-
-/** `expectedRevision` is the revision the editor saw active; a mismatch is a 409. */
-export function saveNamingVarsVersion(source: string, note: string, expectedRevision: number): Promise<NamingVarsProgram> {
-  return request("/naming-vars/versions", {
-    method: "POST",
-    body: note.trim() ? { source, note } : { source },
-    ifMatchVersion: expectedRevision,
-  });
-}
-
-export function activateNamingVarsVersion(revision: number, expectedRevision: number): Promise<NamingVarsProgram> {
-  return request("/naming-vars/active", { method: "PUT", body: { revision }, ifMatchVersion: expectedRevision });
-}
-
-export function exportNamingVars(): Promise<NamingVarsDocument> {
-  return request("/naming-vars/export", { method: "GET" });
-}
-
-export function importNamingVars(document: NamingVarsDocument, expectedRevision: number): Promise<NamingVarsProgram> {
-  return request("/naming-vars/imports", { method: "POST", body: document, ifMatchVersion: expectedRevision });
-}
-
-
 // --- FileMaintenance: neutral scan, owner truth, replacement policies -------
 
 export type FileMaintenancePolicyView = Schema<"FileMaintenancePolicyView">;

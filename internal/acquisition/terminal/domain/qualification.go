@@ -33,13 +33,11 @@ func init() {
 	register("ObservationQualificationV1", Obj(F("scope", Ref("GroupScopeV1")), F("snapshot_ref", IDType), F("snapshot_version", Int(1, maxI64)), F("observation_digest", DigestOf)))
 	register("FeedQualificationV1", Obj(F("snapshot_ref", IDType), F("snapshot_version", Int(1, maxI64)), F("scope", Ref("GroupScopeV1")), F("group_ref", Text(1, 128)),
 		F("content_hash", DigestOf), F("hash_schema", Enum("provider-feed-snapshot-v2")), F("projection_schema", Enum("torrent-manifest-v1")), F("stable_seed_key", Text(1, 256)), F("payload_digest", DigestOf), F("manifest_digest", DigestOf)))
-	register("TranslationIdentityV1", Obj(F("schema_version", Text(1, 128)), F("data_version", Text(1, 128)), F("content_digest", DigestOf)))
-	register("ProgramQualificationV1", Obj(F("vars_digest", Nullable(DigestOf)), F("translation", Nullable(Ref("TranslationIdentityV1")))))
 	register("PlacementQualificationV1", Union("kind", map[string]*objectSchema{
 		"none": Obj(), "existing": Obj(F("placement_ref", IDType), F("expected_revision", Int(1, maxI64)), F("file_fact_digest", DigestOf)),
 	}))
 	shape := Obj(F("config", Ref("ConfigQualificationV1")), F("management", Ref("ManagementQualificationV1")), F("source", Ref("SourceQualificationV1")),
-		F("observation", Nullable(Ref("ObservationQualificationV1"))), F("feed", Nullable(Ref("FeedQualificationV1"))), F("programs", Ref("ProgramQualificationV1")), F("placement", Ref("PlacementQualificationV1")))
+		F("observation", Nullable(Ref("ObservationQualificationV1"))), F("feed", Nullable(Ref("FeedQualificationV1"))), F("placement", Ref("PlacementQualificationV1")))
 	register("QualificationV1", Custom(func(r reader, v Value) error {
 		if err := shape.validate(r, v); err != nil {
 			return err
@@ -64,7 +62,7 @@ func init() {
 	}))
 }
 
-// Qualification keeps the validated seven-member value private. Its constructor
+// Qualification keeps the validated six-member value private. Its constructor
 // never loads live state; the accepting transaction must recheck every claim.
 type Qualification struct{ value Value }
 

@@ -38,6 +38,7 @@ import (
 	"bansoko/internal/runtime/config"
 	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/runtime/deploymentprovenance"
+	"bansoko/internal/runtime/migrations/varspreflight"
 	updateradapter "bansoko/internal/update/adapter/pgexec"
 	updateapp "bansoko/internal/update/application"
 	updatefence "bansoko/internal/update/fence"
@@ -160,6 +161,7 @@ func spawnChild(cmd *exec.Cmd) (*childProcess, error) {
 type consumeFX struct {
 	VerifyBackup     func(backupID string) error
 	VerifyTargetTree func(releaseID string) error
+	CheckMigration   func(releaseID string) error
 	RunMigrate       func(releaseID string) error
 	RestoreDatabase  func(backupID string) error
 	RemoveRelease    func(releaseID string) error
@@ -627,30 +629,21 @@ func runConsume(j *embeddedupdate.FileJournal, record embeddedupdate.Record,
 func (f *consumeFlow) phasePendingMigration() consumeOutcome {
 	if backupErr := f.fx.VerifyBackup(f.record.BackupID); backupErr != nil {
 		detail := fmt.Sprintf("backup %s unusable before migration: %v", f.record.BackupID, backupErr)
-		// Pre-effect abort: nothing irreversible landed; legacy transition
-		// pending_migration -> failed is legal and reopens admissions.
-		if !f.advance(embeddedupdate.StepFailed, backupErr.Error(), detail, nil) {
-			return f.parkActive(embeddedupdate.StepPendingMigration, "cannot persist backup-abort checkpoint")
-		}
-		if removeErr := f.fx.RemoveRelease(f.target); removeErr != nil {
-			return f.parkActive(embeddedupdate.StepFailed, "backup abort cleanup failed: "+removeErr.Error())
-		}
-		if releaseErr := f.releaseFence(embeddedupdate.StepFailed); releaseErr != nil {
-			if !f.advance(embeddedupdate.StepFenceClosurePending, releaseErr.Error(),
-				"pre-migration backup abort requires owner-scoped fence closure",
-				func(r *embeddedupdate.Record) { r.FenceClosureTarget = embeddedupdate.StepFailed }) {
-				return f.parkActive(embeddedupdate.StepFailed,
-					"backup abort and fence-closure checkpoint could not be persisted")
-			}
-			return f.parkActive(embeddedupdate.StepFenceClosurePending,
-				"owner-scoped fence closure is retryable: "+releaseErr.Error())
-		}
-		f.closeJournalOnce()
-		return execFallbackOutcome(f.updatesRoot, "pre-migration backup verification aborted the operation: "+detail)
+		return f.abortBeforeMigration(backupErr, detail)
 	}
 
 	treeErr := f.fx.VerifyTargetTree(f.target)
 	if treeErr == nil {
+		if f.fx.CheckMigration != nil {
+			if err := f.fx.CheckMigration(f.target); err != nil {
+				var blocked *varspreflight.Blocked
+				if errors.As(err, &blocked) {
+					return f.abortBeforeMigration(blocked, "overlay migration rejected by naming Vars preflight")
+				}
+				// A read failure on replay cannot prove which schema is installed.
+				return f.parkActive(embeddedupdate.StepPendingMigration, "cannot complete migration preflight")
+			}
+		}
 		migrateErr := f.fx.RunMigrate(f.target)
 		treeErr = migrateErr
 		if treeErr == nil {
@@ -670,6 +663,25 @@ func (f *consumeFlow) phasePendingMigration() consumeOutcome {
 			"cannot persist rollback_started; DB already touched by migrate, manual review required")
 	}
 	return f.phaseRestoreDatabase()
+}
+
+func (f *consumeFlow) abortBeforeMigration(cause error, detail string) consumeOutcome {
+	if !f.advance(embeddedupdate.StepFailed, cause.Error(), detail, nil) {
+		return f.parkActive(embeddedupdate.StepPendingMigration, "cannot persist pre-migration abort checkpoint")
+	}
+	if err := f.fx.RemoveRelease(f.target); err != nil {
+		return f.parkActive(embeddedupdate.StepFailed, "pre-migration abort cleanup failed: "+err.Error())
+	}
+	if err := f.releaseFence(embeddedupdate.StepFailed); err != nil {
+		if !f.advance(embeddedupdate.StepFenceClosurePending, err.Error(),
+			"pre-migration abort requires owner-scoped fence closure",
+			func(r *embeddedupdate.Record) { r.FenceClosureTarget = embeddedupdate.StepFailed }) {
+			return f.parkActive(embeddedupdate.StepFailed, "cannot persist pre-migration fence-closure checkpoint")
+		}
+		return f.parkActive(embeddedupdate.StepFenceClosurePending, "owner-scoped fence closure is retryable: "+err.Error())
+	}
+	f.closeJournalOnce()
+	return execFallbackOutcome(f.updatesRoot, detail+": "+cause.Error())
 }
 
 // phasePromote atomically moves the pointer to the migrated target, records
@@ -1225,6 +1237,17 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 				return fmt.Errorf("invalid release token %q", releaseID)
 			}
 			return verifyReleaseTree(relDirOf(updatesRoot, releaseID))
+		},
+		CheckMigration: func(releaseID string) error {
+			filename := filepath.Join(releaseSchemaDir(relDirOf(updatesRoot, releaseID)), varspreflight.Migration)
+			if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
+				return nil
+			} else if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+			defer cancel()
+			return varspreflight.CheckPending(ctx, db)
 		},
 		RunMigrate: func(releaseID string) error {
 			dir := relDirOf(updatesRoot, releaseID)

@@ -21,7 +21,6 @@ func TestGlobalSubscriptionDefaultsSection(t *testing.T) {
 	})
 	svc := NewService(db, newConnectionTestSecretStore(t, db))
 	// The business snapshot references the active Vars program.
-	seedActivePrograms(t, ctx, svc)
 
 	find := func() configurationdomain.GlobalSectionView {
 		t.Helper()

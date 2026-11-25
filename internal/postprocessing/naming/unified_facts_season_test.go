@@ -4,8 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"bansoko/internal/templatefacts"
 )
 
 func seasonPtr(value int) *int { return &value }
@@ -149,89 +147,5 @@ func TestReplayedRenderersKeepTheTMDBSeason(t *testing.T) {
 	var replayErr *Error
 	if _, err := compiled.RenderVideoDetailed(render3, seasonContext(seasonPtr(5), TMDBNamingFacts{MediaKind: "tv"})); !errors.As(err, &replayErr) || replayErr.Code != ErrCodeNamingFactMissing || strings.Join(replayErr.Missing, ",") != "anime.season_folder" {
 		t.Fatalf("naming-render-3 unbound = %v, want %s naming anime.season_folder", err, ErrCodeNamingFactMissing)
-	}
-}
-
-// TestFrozenInputSeason maps the season of a frozen Vars input: a recorded
-// owner season (or null) is read as is; an input frozen before the owner
-// season existed names the season its TMDB binding named under
-// naming-render-3, so the current renderer reproduces the old target.
-func TestFrozenInputSeason(t *testing.T) {
-	fs := templatefacts.FactSet{Tmdb: templatefacts.TmdbFacts{ID: "100", Kind: "tv", Season: templatefacts.Int64(3)}}
-	current := templatefacts.VarsInputObject(&fs)
-	if _, ok := current["anime"].(map[string]any)["season"]; !ok {
-		t.Fatalf("a new Vars input must carry anime.season")
-	}
-	ctx := WithFrozenReleaseFacts(NamingContext{}, current)
-	if ctx.Anime.Season != nil {
-		t.Fatalf("recorded null season = %v; want unset (the TMDB season never stands in)", *ctx.Anime.Season)
-	}
-	fs.Anime.Season = templatefacts.Int64(1)
-	ctx = WithFrozenReleaseFacts(NamingContext{}, templatefacts.VarsInputObject(&fs))
-	if ctx.Anime.Season == nil || *ctx.Anime.Season != 1 {
-		t.Fatalf("recorded season = %v; want 1", ctx.Anime.Season)
-	}
-
-	legacy := templatefacts.VarsInputObject(&fs)
-	delete(legacy["anime"].(map[string]any), "season")
-	ctx = WithFrozenReleaseFacts(NamingContext{}, legacy)
-	if ctx.Anime.Season == nil || *ctx.Anime.Season != 3 {
-		t.Fatalf("legacy input season = %v; want the TMDB season 3 naming-render-3 named", ctx.Anime.Season)
-	}
-	// An older input bound to season 0 without the continuous-SP flag named
-	// no season, and still names none.
-	fs.Tmdb.Season = templatefacts.Int64(0)
-	legacy = templatefacts.VarsInputObject(&fs)
-	delete(legacy["anime"].(map[string]any), "season")
-	if season := FrozenAnimeSeason(legacy, WithFrozenReleaseFacts(NamingContext{}, legacy).Anime.TMDB); season != nil {
-		t.Fatalf("legacy unpreserved season 0 = %d; want none", *season)
-	}
-}
-
-// TestLegacyFrozenInputRendersAsBefore renders the default templates from an
-// input frozen before the owner season: with a bound season the current
-// renderer gives the target naming-render-3 gave from the same input, and
-// without one both renderers refuse the season-less render through the same
-// empty `${sf}` segment of the current default templates.
-func TestLegacyFrozenInputRendersAsBefore(t *testing.T) {
-	engine := NewEngine()
-	compiled, err := engine.CompileRules(DefaultNamingRules())
-	if err != nil {
-		t.Fatal(err)
-	}
-	render3, _ := engine.ForRenderer("naming-render-3")
-	for _, season := range []*int64{templatefacts.Int64(2), nil} {
-		fs := templatefacts.FactSet{Anime: templatefacts.AnimeFacts{TitleBase: "Show"}}
-		if season != nil {
-			fs.Tmdb = templatefacts.TmdbFacts{ID: "100", Kind: "tv", Season: season}
-		}
-		frozen := templatefacts.VarsInputObject(&fs)
-		delete(frozen["anime"].(map[string]any), "season")
-		base := NamingContext{
-			File:    FileNamingFacts{OriginalName: "a.mkv", Basename: "a", Extension: "mkv"},
-			Release: ReleaseNamingFacts{FrozenEpisode: &FrozenEpisodeNamingFacts{Raw: "7", Number: "7", Display: "7"}},
-		}
-		ctx := DefaultRegistry().ResolveAll(ResolverInput{Facts: WithFrozenReleaseFacts(base, frozen)}).Context
-		now, nowErr := compiled.RenderVideoDetailed(engine, ctx)
-		before, beforeErr := compiled.RenderVideoDetailed(render3, ctx)
-		if season == nil {
-			var nowErrTyped, beforeErrTyped *Error
-			if !errors.As(nowErr, &nowErrTyped) || !errors.As(beforeErr, &beforeErrTyped) ||
-				nowErrTyped.Code != ErrCodeNamingFactMissing || beforeErrTyped.Code != ErrCodeNamingFactMissing ||
-				strings.Join(nowErrTyped.Missing, ",") != "anime.season_folder" ||
-				strings.Join(beforeErrTyped.Missing, ",") != "anime.season_folder" {
-				t.Fatalf("season-less legacy input: current %v, naming-render-3 %v", nowErr, beforeErr)
-			}
-			continue
-		}
-		if nowErr != nil {
-			t.Fatalf("season %v: %v", season, nowErr)
-		}
-		if beforeErr != nil {
-			t.Fatalf("season %v: %v", season, beforeErr)
-		}
-		if now.Directory != before.Directory || now.Filename != before.Filename {
-			t.Fatalf("season %v: current %q/%q, naming-render-3 %q/%q", season, now.Directory, now.Filename, before.Directory, before.Filename)
-		}
 	}
 }

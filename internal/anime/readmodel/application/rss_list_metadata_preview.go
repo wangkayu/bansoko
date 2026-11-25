@@ -5,7 +5,7 @@ import (
 
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
+	"bansoko/internal/postprocessing/naming"
 )
 
 // MetadataPreviewInput is the complete unsaved metadata value an owner_draft
@@ -71,33 +71,21 @@ func overlayWorkspaceMetadata(workspace *AnimeWorkspace, preview MetadataPreview
 	workspace.Metadata = metadata
 }
 
-// overlayVarsAnimeEvidence replaces the metadata-owned facts of the persisted
-// anime evidence with the unsaved value. The bound works' titles and years
-// are then re-read from the recorded works (FillWorkTitles) by the caller,
-// exactly as for a persisted binding; nothing is fetched from the network.
-func overlayVarsAnimeEvidence(evidence *namingvars.AnimeEvidence, preview MetadataPreviewInput) {
+// overlayNamingAnimeFacts applies the unsaved binding before loading its titles.
+func overlayNamingAnimeFacts(evidence *naming.AnimeNamingFacts, preview MetadataPreviewInput) {
 	// The title is fixed: an absent preview title keeps the stored one.
 	if preview.TitleOverride != nil {
-		evidence.AnimeTitleOverride = strings.TrimSpace(*preview.TitleOverride)
+		evidence.TitleOverride = strings.TrimSpace(*preview.TitleOverride)
 	}
-	evidence.AnimeYear = nil
-	if preview.Year != nil {
-		year := int64(*preview.Year)
-		evidence.AnimeYear = &year
-	}
-	evidence.AnimeSeason = nil
-	if preview.Season != nil {
-		season := int64(*preview.Season)
-		evidence.AnimeSeason = &season
-	}
-	evidence.BgmID = ""
+	evidence.Year = cloneOptionalInt(preview.Year)
+	evidence.Season = cloneOptionalInt(preview.Season)
+	evidence.BGM = naming.BGMNamingFacts{}
 	if preview.BGM != nil {
-		evidence.BgmID = strings.TrimSpace(preview.BGM.WorkID)
+		evidence.BGM.WorkID = strings.TrimSpace(preview.BGM.WorkID)
 	}
-	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "", "", nil
+	evidence.TMDB = naming.TMDBNamingFacts{}
 	if preview.TMDB != nil {
-		season := int64(preview.TMDB.Season)
-		evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = preview.TMDB.WorkID, preview.TMDB.MediaKind, &season
+		evidence.TMDB = naming.TMDBNamingFacts{WorkID: preview.TMDB.WorkID, MediaKind: preview.TMDB.MediaKind, Season: preview.TMDB.Season, SeasonPresent: true}
 	}
 }
 

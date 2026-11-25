@@ -213,6 +213,9 @@ func mergeFrozenSnapshot(primary any, secondary []byte) (json.RawMessage, error)
 	for key, value := range own {
 		merged[key] = value
 	}
+	// The source snapshots remain sealed; only the new operation omits these keys.
+	delete(merged, "vars")
+	delete(merged, "vars_digest")
 	return json.Marshal(merged)
 }
 

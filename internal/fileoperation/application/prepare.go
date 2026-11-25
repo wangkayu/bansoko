@@ -596,14 +596,11 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 	var resolved naming.ResolvedContext
 	var err error
 	engine := naming.NewEngine()
-	if prep.config.vars == nil || prep.config.vars.Status != "ok" {
-		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, fmt.Errorf("frozen Vars evaluation unavailable"))
-	}
-	compiled, err := engine.CompileRulesWithVars(prep.config.naming, prep.config.vars.Output)
+	compiled, err := engine.CompileRules(prep.config.naming)
 	if err != nil {
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
-	resolved, err = buildNamingContext(artifact, file, frozenEpisode, prep.config.vars)
+	resolved, err = buildNamingContext(artifact, file, frozenEpisode)
 	if err != nil {
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
@@ -919,15 +916,12 @@ func (s *Service) prepareSubtitleFileTx(ctx context.Context, tx *sql.Tx, artifac
 	}
 
 	engine := naming.NewEngine()
-	if prep.config.vars == nil || prep.config.vars.Status != "ok" {
-		return s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, fmt.Errorf("frozen Vars evaluation unavailable"))
-	}
-	compiled, err := engine.CompileRulesWithVars(prep.config.naming, prep.config.vars.Output)
+	compiled, err := engine.CompileRules(prep.config.naming)
 	if err != nil {
 		return s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}
 
-	resolved, err := buildNamingContext(artifact, file, frozenEpisode, prep.config.vars)
+	resolved, err := buildNamingContext(artifact, file, frozenEpisode)
 	if err != nil {
 		return s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
 	}

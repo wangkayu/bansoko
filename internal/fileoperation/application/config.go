@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
 	"bansoko/internal/postprocessing/naming"
 	providerdomain "bansoko/internal/provider/domain"
@@ -32,9 +31,8 @@ func effectiveConfigFromFrozenDownloadPolicy(frozenPolicy []byte) (effectiveConf
 		return effectiveConfig{}, fmt.Errorf("%w: the download task has no frozen policy", ErrFrozenConfigRequired)
 	}
 	var frozen struct {
-		EffectiveSections map[string]json.RawMessage   `json:"effective_sections"`
-		SectionVersions   map[string]int64             `json:"section_versions"`
-		Vars              *namingvars.FrozenEvaluation `json:"vars"`
+		EffectiveSections map[string]json.RawMessage `json:"effective_sections"`
+		SectionVersions   map[string]int64           `json:"section_versions"`
 	}
 	if err := json.Unmarshal(frozenPolicy, &frozen); err != nil {
 		return effectiveConfig{}, fmt.Errorf("%w: decode frozen policy: %v", ErrFrozenConfigRequired, err)
@@ -69,7 +67,6 @@ func effectiveConfigFromFrozenDownloadPolicy(frozenPolicy []byte) (effectiveConf
 		versions[key] = value
 	}
 	return effectiveConfig{
-		vars:       frozen.Vars,
 		naming:     namingRules,
 		parser:     parser,
 		effect:     effect,
@@ -106,11 +103,7 @@ func marshalConfigSnapshot(config effectiveConfig, validation map[string]any, pa
 		"safety_version":     animedomain.SafetyVersion,
 		"effective_versions": sections,
 		"naming_rules":       config.naming,
-		"vars":               config.vars,
 		"file_effect":        config.effect,
-	}
-	if config.vars != nil {
-		snapshot["vars"] = map[string]any{"program": config.vars.Program, "input": config.vars.Input, "output": config.vars.Output, "status": config.vars.Status, "diagnostic": config.vars.Diagnostic}
 	}
 	if parserProvenance != nil {
 		snapshot["parser"] = *parserProvenance
@@ -188,8 +181,8 @@ func frozenSeasonColumn(season int, seasonBound bool) sql.NullInt64 {
 // file and resolves Parsed/Derived through the default resolver registry.
 // It performs no I/O and no implicit metadata lookups. The frozen episode of
 // the file is the only episode authority; without one parsed.episode is null.
-func buildNamingContext(artifact artifactContext, file artifactFileContext, frozenEpisode *naming.FrozenEpisodeNamingFacts, evaluations ...*namingvars.FrozenEvaluation) (naming.ResolvedContext, error) {
-	facts, err := namingContextFacts(artifact, file, frozenEpisode, evaluations...)
+func buildNamingContext(artifact artifactContext, file artifactFileContext, frozenEpisode *naming.FrozenEpisodeNamingFacts) (naming.ResolvedContext, error) {
+	facts, err := namingContextFacts(artifact, file, frozenEpisode)
 	if err != nil {
 		return naming.ResolvedContext{}, err
 	}
@@ -199,7 +192,7 @@ func buildNamingContext(artifact artifactContext, file artifactFileContext, froz
 // namingContextFacts is buildNamingContext before resolution: the Layer 1
 // facts alone, which the configuration gate resolves again with the anime's
 // current configuration in place of the frozen one.
-func namingContextFacts(artifact artifactContext, file artifactFileContext, frozenEpisode *naming.FrozenEpisodeNamingFacts, evaluations ...*namingvars.FrozenEvaluation) (naming.NamingContext, error) {
+func namingContextFacts(artifact artifactContext, file artifactFileContext, frozenEpisode *naming.FrozenEpisodeNamingFacts) (naming.NamingContext, error) {
 	var ctx naming.NamingContext
 
 	animeTitle := strings.TrimSpace(artifact.animeTitle)
@@ -268,20 +261,19 @@ func namingContextFacts(artifact artifactContext, file artifactFileContext, froz
 	}
 	ctx = naming.WithTemplateFacts(ctx, namespaces)
 
-	if len(evaluations) == 0 || evaluations[0] == nil || evaluations[0].Status != "ok" {
-		return naming.NamingContext{}, fmt.Errorf("exact frozen Vars output required")
+	ctx.Anime.Year = artifact.ownerYear
+	ctx.Anime.Season = artifact.ownerSeason
+	if !artifact.ownerSeasonPresent {
+		if legacy := naming.AnimeSeason("", ctx.Anime.TMDB, false); legacy != nil {
+			season := int(*legacy)
+			ctx.Anime.Season = &season
+		}
 	}
-	// anime.year is the owner-edited year the acceptance froze with the Vars
-	// input, the value the pre-download target rendered with.
-	ctx.Anime.Year = naming.FrozenAnimeYear(evaluations[0].Input.Facts)
-	// anime.season is the owner-edited season frozen the same way; an input
-	// accepted before it was frozen names the season its binding named.
-	ctx.Anime.Season = naming.FrozenAnimeSeason(evaluations[0].Input.Facts, ctx.Anime.TMDB)
 	if file.namingSeason != nil {
 		season := *file.namingSeason
 		ctx.Anime.Season = &season
 	}
-	return naming.WithVars(ctx, evaluations[0].Output)
+	return ctx, nil
 }
 
 func mediaFactString(facts map[string]any, key string) string {

@@ -2,12 +2,8 @@ package naming
 
 import (
 	"errors"
-	"fmt"
-	"strconv"
-	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	"bansoko/internal/namingvars"
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/templatefacts"
 )
@@ -24,9 +20,6 @@ type NamingContext struct {
 	File    FileNamingFacts        `json:"File"`
 	Parsed  ParsedNamingVariables  `json:"Parsed"`
 	Derived DerivedNamingVariables `json:"Derived"`
-	// Vars contains user-defined presentation variables. It is intentionally
-	// separate from identity-owned fields and is never used by resolvers.
-	Vars map[string]map[string]string `json:"Vars,omitempty"`
 	// Rt and AniBTTags are the frozen reltitle and AniBT tag value namespaces
 	// (templatefacts), projected from the Release's frozen source facts. They
 	// reach templates under the rt and anibt roots, not under these Go names;
@@ -90,44 +83,10 @@ func WithTemplateFacts(ctx NamingContext, facts templatefacts.Facts) NamingConte
 	return ctx
 }
 
-// WithVars injects a validated Vars snapshot into a naming context. It is the
-// shared, pure assembly boundary for runtime naming paths; callers that need
-// deployment Vars should obtain them with WithCurrentVars first. A defensive
-// copy prevents a render from observing later mutation of the active snapshot.
-func WithVars(ctx NamingContext, vars map[string]map[string]string) (NamingContext, error) {
-	validated := namingvars.Vars(vars)
-	if err := validated.Validate(); err != nil {
-		return NamingContext{}, fmt.Errorf("inject naming vars: %w", err)
-	}
-	ctx.Vars = make(map[string]map[string]string, len(vars))
-	for group, values := range vars {
-		ctx.Vars[group] = make(map[string]string, len(values))
-		for name, value := range values {
-			ctx.Vars[group][name] = value
-		}
-	}
-	return ctx, nil
-}
-
-// WithCurrentVars injects the initialized deployment Vars snapshot. Missing
-// initialization is an explicit error: runtime naming must never silently
-// render with an empty Vars object.
-func WithCurrentVars(ctx NamingContext) (NamingContext, error) {
-	vars, _, err := namingvars.Current()
-	if err != nil {
-		return NamingContext{}, fmt.Errorf("load active naming vars: %w", err)
-	}
-	return WithVars(ctx, vars)
-}
-
-// BuildResolvedContext injects active presentation Vars and resolves registered
-// Parsed/Derived values from the supplied frozen facts.
+// BuildResolvedContext resolves registered Parsed/Derived values from the
+// supplied frozen facts.
 func BuildResolvedContext(ctx NamingContext) (ResolvedContext, error) {
-	withVars, err := WithCurrentVars(ctx)
-	if err != nil {
-		return ResolvedContext{}, err
-	}
-	return DefaultRegistry().ResolveAll(ResolverInput{Facts: withVars}), nil
+	return DefaultRegistry().ResolveAll(ResolverInput{Facts: ctx}), nil
 }
 
 // AnimeNamingFacts holds the managed-anime facts and metadata bindings.
@@ -308,137 +267,4 @@ type DerivedNamingVariables struct {
 	EffectiveTitleSource string // override | provider | tmdb_cn | bgm_cn | bgm | base
 	EffectiveMediaKind   string // tv | movie
 	SeasonFolder         string
-}
-
-// VarsEpisode converts a frozen release episode identity into Vars evidence;
-// nil stays nil.
-func VarsEpisode(f *FrozenEpisodeNamingFacts) *namingvars.EpisodeEvidence {
-	if f == nil {
-		return nil
-	}
-	return &namingvars.EpisodeEvidence{Raw: f.Raw, Number: f.Number, Display: f.Display, Offset: int64(f.Offset)}
-}
-
-// WithFrozenReleaseFacts fills the release-level binding and torrent facts a
-// pre-download render reads from the release's frozen Vars input (the
-// namingvars release fact object every admission and preview site builds):
-// anime.id, the bound work ids and native titles, the bound season and the
-// torrent metadata. The media kind keeps its own frozen source (the parser
-// identity); a nil or older input leaves every value unknown.
-// FrozenAnimeYear reads the owner-edited year a frozen Vars input recorded
-// (input.anime.year, a decimal string); nil when it recorded none.
-func FrozenAnimeYear(facts map[string]any) *int {
-	object, _ := facts["anime"].(map[string]any)
-	text, _ := object["year"].(string)
-	year, err := strconv.Atoi(strings.TrimSpace(text))
-	if err != nil || year < templatefacts.MinYear || year > templatefacts.MaxYear {
-		return nil
-	}
-	return &year
-}
-
-// FrozenAnimeSeason reads the owner-edited season a frozen Vars input
-// recorded (input.anime.season; nil when it recorded null). A frozen input
-// without the member predates the owner season (naming-render-4): it maps to
-// the season naming-render-3 named from its TMDB binding (AnimeSeason without
-// the unbound default), so rendering it with the current renderer gives the
-// same season, season folder and ep.s00e00 as before. tmdb is the binding
-// restored from the same frozen evidence.
-func FrozenAnimeSeason(facts map[string]any, tmdb TMDBNamingFacts) *int {
-	object, _ := facts["anime"].(map[string]any)
-	value, present := object["season"]
-	if !present {
-		legacy := AnimeSeason("", tmdb, false)
-		if legacy == nil {
-			return nil
-		}
-		season := int(*legacy)
-		return &season
-	}
-	var season int
-	switch typed := value.(type) {
-	case int64:
-		season = int(typed)
-	case int:
-		season = typed
-	case float64:
-		season = int(typed)
-	default:
-		return nil
-	}
-	if season < 0 {
-		return nil
-	}
-	return &season
-}
-
-func WithFrozenReleaseFacts(ctx NamingContext, facts map[string]any) NamingContext {
-	member := func(root, key string) any {
-		object, _ := facts[root].(map[string]any)
-		return object[key]
-	}
-	text := func(root, key string) string {
-		value, _ := member(root, key).(string)
-		return value
-	}
-	number := func(root, key string) *int64 {
-		switch value := member(root, key).(type) {
-		case int64:
-			return &value
-		case int:
-			n := int64(value)
-			return &n
-		case float64:
-			n := int64(value)
-			return &n
-		}
-		return nil
-	}
-	if facts == nil {
-		return ctx
-	}
-	if id := text("anime", "id"); id != "" {
-		ctx.Anime.ID = id
-	}
-	// The anime's own titles come from the same frozen facts, so a rendering
-	// that reads only the frozen input derives the same effective title as the
-	// acceptance did. A frozen input without title_base (older schema) keeps the
-	// caller's title.
-	if base := text("anime", "title_base"); base != "" {
-		ctx.Anime.Title = base
-	}
-	ctx.Anime.TitleOverride = text("anime", "title_override")
-	ctx.Anime.ProviderTitle = text("anime", "provider_title")
-	ctx.Anime.BGM.WorkID, ctx.Anime.BGM.Title, ctx.Anime.BGM.TitleCN = text("bgm", "id"), text("bgm", "title"), text("bgm", "title_cn")
-	ctx.Anime.TMDB.WorkID, ctx.Anime.TMDB.TitleCN, ctx.Anime.TMDB.OriginalTitle = text("tmdb", "id"), text("tmdb", "title_cn"), text("tmdb", "title")
-	// anime.year is the owner-edited year frozen with the input. An older
-	// input froze the provider projection with its source (anime.year_source);
-	// that source is restored on its work so a naming-render-1 replay
-	// recomputes the same value.
-	if year, err := strconv.Atoi(text("anime", "year")); err == nil {
-		ctx.Anime.Year = &year
-		switch text("anime", "year_source") {
-		case "tmdb":
-			ctx.Anime.TMDB.Year = &year
-		case "bgm":
-			ctx.Anime.BGM.Year = &year
-		}
-	}
-	// The bound season is frozen as tmdb.season. Restoring it (and its
-	// presence) is what lets season-derived values — anime.season and
-	// anime.season_folder — resolve for a pre-download render, exactly as the
-	// artifact render reads the same binding from the frozen snapshot. A null
-	// season (an unbound anime) stays unknown instead of defaulting.
-	if season := number("tmdb", "season"); season != nil {
-		ctx.Anime.TMDB.Season = int(*season)
-		ctx.Anime.TMDB.SeasonPresent = true
-	}
-	// anime.season is the owner-edited season frozen with the input; an
-	// older input that never froze it names the season its TMDB binding named.
-	ctx.Anime.Season = FrozenAnimeSeason(facts, ctx.Anime.TMDB)
-	ctx.Torrent = TorrentNamingFacts{
-		Size: number("torrent", "size"), FileCount: number("torrent", "file_count"),
-		HashV1: text("torrent", "hash_v1"), HashV2: text("torrent", "hash_v2"),
-	}
-	return ctx
 }

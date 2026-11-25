@@ -14,19 +14,16 @@ import (
 	anime "bansoko/internal/anime/domain"
 	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/filekinds"
-	"bansoko/internal/namingvars"
+
 	mediaparser "bansoko/internal/parser"
-	"bansoko/internal/postprocessing/naming"
-	"bansoko/internal/templatefacts"
 )
 
 type admissionEvaluation struct {
-	inputDigest    string
-	input          protocol.Value
-	manifest       catalog.TorrentManifest
-	payload        []byte
-	witness        preparationWitness
-	varsCompletion varsEvaluationCompletion
+	inputDigest string
+	input       protocol.Value
+	manifest    catalog.TorrentManifest
+	payload     []byte
+	witness     preparationWitness
 }
 
 func valueOf(v any) (protocol.Value, error) {
@@ -113,8 +110,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	}
 	// No simplified input is persisted. Every execution group is validated by
 	// the existing closed registry; external transport cannot pass this value.
-	var completion varsEvaluationCompletion
-	config, err := evaluationConfig(c, evidence, ctx, &completion)
+	config, err := evaluationConfig(c, evidence)
 	if err != nil {
 		return admissionEvaluation{}, err
 	}
@@ -160,7 +156,6 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	if err != nil {
 		return admissionEvaluation{}, err
 	}
-	delivery.Object["naming"].Object["vars_choice"] = protocol.Value{Kind: protocol.KindString, String: "frozen"}
 	media, err := protocol.ParseStrict(protocol.Canonical(intent.media))
 	if err != nil {
 		return admissionEvaluation{}, err
@@ -213,9 +208,9 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	}
 	raw := protocol.Canonical(input)
 	digest := protocol.Digest("acquisition-input:v1", raw)
-	return admissionEvaluation{inputDigest: digest, input: input, manifest: *seed.Manifest, payload: append([]byte(nil), seed.Payload...), varsCompletion: completion}, nil
+	return admissionEvaluation{inputDigest: digest, input: input, manifest: *seed.Manifest, payload: append([]byte(nil), seed.Payload...)}, nil
 }
-func evaluationConfig(c admissionCapture, e target.ParserEvidence, ctx context.Context, completion *varsEvaluationCompletion) (protocol.Value, error) {
+func evaluationConfig(c admissionCapture, e target.ParserEvidence) (protocol.Value, error) {
 	resolved := captureSections(c.material)
 	keys := append([]string(nil), anime.EffectiveSectionOrder...)
 	sort.Strings(keys)
@@ -252,10 +247,6 @@ func evaluationConfig(c admissionCapture, e target.ParserEvidence, ctx context.C
 	if c.configKind == "saved_revision" {
 		identity = map[string]any{"kind": "saved_revision", "candidate_ref": c.material.config.candidateID, "revision": c.material.config.revision, "managed_anime_ref": frozenValue("known", c.material.management.managedID)}
 	}
-	vars, err := evaluateFrozenVars(c, e, ctx, completion)
-	if err != nil {
-		return protocol.Value{}, err
-	}
 	var rules any = frozenValue("absent", nil)
 	if c.configKind == "owner" {
 		if c.material.rulesOwnerVersion < 1 || p.RulesOwnerVersion != c.material.rulesOwnerVersion {
@@ -268,7 +259,7 @@ func evaluationConfig(c admissionCapture, e target.ParserEvidence, ctx context.C
 		p.RulesOwnerVersion = 0
 	}
 	provenance := nativeParserProvenance(p, selection)
-	return valueOf(map[string]any{"identity": identity, "effective_digest": c.configDigest, "sections": sections, "parser": map[string]any{"selection": frozenValue("known", selection), "provenance": frozenValue("known", provenance), "runtime_version": "parser-v1"}, "vars": vars, "rules_version": rules})
+	return valueOf(map[string]any{"identity": identity, "effective_digest": c.configDigest, "sections": sections, "parser": map[string]any{"selection": frozenValue("known", selection), "provenance": frozenValue("known", provenance), "runtime_version": "parser-v1"}, "rules_version": rules})
 }
 func prepareAdmission(c admissionCapture, e admissionEvaluation, intent acquisitionIntent, a acceptAccess, r requestIdentity, limits witnessLimits) (preparedNative, error) {
 	qualification, err := protocol.ParseStrict(c.qualification.Canonical())
@@ -388,101 +379,10 @@ func prepareAdmission(c admissionCapture, e admissionEvaluation, intent acquisit
 	args.BusinessSnapshot = sqlJSON(c.businessJSON)
 	args.WitnessMaxBytes = sqlInt(int64(limits.bytes))
 	args.WitnessMaxRows = sqlInt(int64(limits.unionRows))
-	record, err := e.varsCompletion.record(e.input.Object["config"].Object["vars"], id, e.inputDigest)
-	if err != nil {
-		return preparedNative{}, err
-	}
-	return preparedNative{args: args, varsRecord: record}, nil
+	return preparedNative{args: args}, nil
 }
 
 func decimalRevision(v int64) string { return strconv.FormatInt(v, 10) }
 func generatedParams(id, task, submit, settle string) generated.AcceptQualifiedQueuedParams {
 	return generated.AcceptQualifiedQueuedParams{AcquisitionID: sqlString(id), DownloadTaskID: sqlString(task), TaskIdempotencyKey: sqlString(task), SubmitWorkItemID: sqlString(submit), SettleWorkItemID: sqlString(settle), SettleIdempotencyKey: sqlString(settle)}
-}
-
-func evaluateFrozenVars(c admissionCapture, e target.ParserEvidence, ctx context.Context, completion *varsEvaluationCompletion) (any, error) {
-	if c.material.programs.varsSource == "" {
-		return nil, materialError("programs", nil)
-	}
-	seed, err := admissionSeed(c)
-	if err != nil {
-		return nil, err
-	}
-	evidence := namingvars.ReleaseEvidence{
-		AnimeEvidence: acceptAnimeEvidence(c.material),
-		ReleaseTitle:  seed.Title, ReleaseID: c.material.release.id,
-		Episode: naming.VarsEpisode(e.NamingFacts()),
-		HashV1:  seed.Manifest.InfoHashV1, HashV2: seed.Manifest.InfoHashV2,
-	}
-	// Undecodable source facts leave rt / anibt null, as naming reads them.
-	evidence.Tags, _ = templatefacts.FromSourceFacts(c.material.releaseSourceFacts)
-	files := []any{}
-	for _, file := range seed.Manifest.Files {
-		evidence.Files = append(evidence.Files, namingvars.File{Name: file.Filename, Path: file.SourcePath, Size: file.SizeBytes})
-		files = append(files, map[string]any{"name": file.Filename, "path": file.SourcePath, "size": file.SizeBytes})
-	}
-	input := namingvars.BuildInput(evidence)
-	if namingvars.InputTooLarge(input) {
-		return nil, torrentTooLarge(nil)
-	}
-	result, err := evaluateVarsCompletion(ctx, c.material.programs.vars, input, serverVarsEvidenceClock)
-	if namingvars.IsInterrupted(err) {
-		// Transient: nothing is frozen or committed; the acceptance may retry.
-		return nil, acceptError(503, "ACCEPTANCE_UNKNOWN", "vars_evaluation_interrupted", err)
-	}
-	if err != nil {
-		return nil, acceptError(422, "INPUT_SCHEMA_UNSUPPORTED", "vars_evaluation_failed", err)
-	}
-	*completion = result
-	output := result.output
-	ref := c.material.programs.vars.Ref()
-	runtime := c.material.programs.vars.RuntimeVersion()
-	program := map[string]any{"schema_version": 1, "source": c.material.programs.varsSource, "digest": ref.Digest, "version": ref.Version, "runtime_version": runtime, "timeout_ms": namingvars.DefaultTimeout.Milliseconds(), "max_input_bytes": 262144, "max_output_bytes": 8192, "max_collection_len": 256, "max_string_bytes": 8192}
-	// known_inputs records the evidence the program read: the title, the files
-	// and the release fact object (VarsInputV1).
-	known := map[string]any{"release_title": frozenValue("known", seed.Title), "files": files, "facts": input.Facts}
-	return map[string]any{"mode": "frozen", "program": program, "known_inputs": known, "output": output, "status": "ok", "reason_code": nil}, nil
-}
-
-// acceptAnimeEvidence is the Vars anime evidence this acceptance freezes: the
-// managed anime's own titles (base, override, provider), the material's
-// binding and the bound works' recorded titles (the same values media.title /
-// title_override / provider_title / bgm / tmdb / *_titles freeze).
-func acceptAnimeEvidence(m qualificationMaterial) namingvars.AnimeEvidence {
-	evidence := namingvars.AnimeEvidence{
-		AnimeID:            m.management.managedID,
-		AnimeTitle:         m.management.title,
-		AnimeTitleOverride: m.management.titleOverride,
-		AnimeProviderTitle: m.management.providerTitle,
-	}
-	if m.animeYear != nil {
-		year := int64(*m.animeYear)
-		evidence.AnimeYear = &year
-	}
-	if m.animeSeason != nil {
-		season := int64(*m.animeSeason)
-		evidence.AnimeSeason = &season
-	}
-	if m.bgm != nil && strings.TrimSpace(m.bgm.WorkId) != "" {
-		evidence.BgmID = m.bgm.WorkId
-		if t := m.bgmTitles; t != nil {
-			evidence.BgmTitle, evidence.BgmTitleCN = t.title, t.titleCN
-			if t.year != nil {
-				year := int64(*t.year)
-				evidence.BgmYear = &year
-			}
-		}
-	}
-	if m.tmdb != nil {
-		season := int64(m.tmdb.Season)
-		evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = m.tmdb.WorkId, string(m.tmdb.MediaKind), &season
-		if t := m.tmdbTitles; t != nil {
-			evidence.TmdbTitleCN, evidence.TmdbOriginalTitle = t.titleCN, t.originalTitle
-			if t.year != nil {
-				year := int64(*t.year)
-				evidence.TmdbYear = &year
-			}
-		}
-	}
-	return evidence
 }

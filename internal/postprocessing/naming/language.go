@@ -21,11 +21,9 @@ func SupportedLanguage(language string) bool {
 
 // languageProfile is everything the engine and analyser need for the language.
 type languageProfile struct {
-	// roots are the context roots a template reads; varsRoot is the context key
-	// carrying Vars (the `vars` identifier binds it). Short roots are real
+	// roots are the context roots a template reads. Short roots are real
 	// identifier aliases, not source-text substitutions.
-	roots    map[string]bool
-	varsRoot string
+	roots map[string]bool
 	// index is the leaf whitelist; nullable the facts the missing check covers.
 	index    catalogFieldIndex
 	nullable map[string]bool
@@ -64,7 +62,7 @@ func languageProfileOf() *languageProfile {
 }
 
 func buildProfile() *languageProfile {
-	p := &languageProfile{varsRoot: "vars", roots: map[string]bool{}, nullable: map[string]bool{}}
+	p := &languageProfile{roots: map[string]bool{}, nullable: map[string]bool{}}
 	paths := []string{}
 	for _, fact := range templatefacts.ScenarioFacts(templatefacts.ScenarioNaming) {
 		paths = append(paths, fact.Path)
@@ -75,9 +73,6 @@ func buildProfile() *languageProfile {
 	p.index = indexPaths(paths)
 	bindings := []string{}
 	for _, root := range templatefacts.Roots(templatefacts.ScenarioNaming) {
-		if root == "vars" {
-			continue
-		}
 		p.roots[root] = true
 		// A reserved root has no fields; it still resolves so a reference to one
 		// of its (future) fields is an unknown-field error, not an identifier one.
@@ -89,7 +84,7 @@ func buildProfile() *languageProfile {
 		p.roots[alias] = true
 		bindings = append(bindings, alias+"=context."+canonical)
 	}
-	p.bindings = "const " + strings.Join(bindings, ", ") + ", vars=context.vars || {}"
+	p.bindings = "const " + strings.Join(bindings, ", ")
 	return p
 }
 
@@ -110,11 +105,11 @@ func (p *languageProfile) isRoot(name string) bool { return p.roots[name] }
 
 // guardedRoots lists the context keys the declared-only guard wraps.
 func (p *languageProfile) guardedRoots() []string {
-	out := make([]string, 0, len(p.roots)+1)
+	out := make([]string, 0, len(p.roots))
 	for root := range p.roots {
 		out = append(out, root)
 	}
-	return append(out, p.varsRoot)
+	return out
 }
 
 // object builds the plain template object for one render from its projected

@@ -161,7 +161,6 @@ export const enSettingsCopy = {
     policy: "Group Limit & Alignment",
     hidden: "Hidden Anime",
     rules: "Default Rules",
-    vars: "Naming Variables",
     unclassified: "Unclassified Files",
     replacement: "Episode versions",
     automation: "Scheduled Tasks",

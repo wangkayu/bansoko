@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/episodeidentity"
@@ -200,33 +198,15 @@ var ValueFactKeys = func() []string {
 	return keys
 }()
 
-// unsafePayloadKey matches the key names a file notification payload may not
-// carry (file_notification_safe, migration 175). A Vars key that matches
-// is left out of every payload.
-var unsafePayloadKey = regexp.MustCompile(`(secret|token|password|credential|url)`)
-
-// ValueFacts projects the value namespaces onto payload keys:
-// vars.<group>.<name> from the frozen Vars output, rt.<field> and
-// anibt.<field> from the release's frozen source_facts. text bounds and
-// sanitizes each value (nil drops it to null). Every rt/anibt key is present
-// (null when absent; rt.uncensored is a boolean); a Vars key is present only when the output has it.
-// Undecodable source facts yield no rt/anibt values. The SQL twin is
-// notification_value_facts (last re-created by migration 132); a parity test keeps them equal.
-func ValueFacts(vars map[string]any, sourceFacts []byte, text func(string) any) map[string]any {
-	facts := make(map[string]any, len(ValueFactKeys)+len(vars))
+// ValueFacts projects rt.<field> and anibt.<field> from the release's frozen
+// source_facts. text bounds and sanitizes each value (nil drops it to null).
+// Every key is present (null when absent; rt.uncensored is a boolean).
+// Undecodable source facts yield no values. The SQL twin is
+// notification_value_facts (last re-created by migration 163).
+func ValueFacts(sourceFacts []byte, text func(string) any) map[string]any {
+	facts := make(map[string]any, len(ValueFactKeys))
 	for _, key := range ValueFactKeys {
 		facts[key] = nil
-	}
-	for group, raw := range vars {
-		values, _ := raw.(map[string]any)
-		for name, value := range values {
-			key := templatefacts.RootVars + "." + group + "." + name
-			raw, ok := value.(string)
-			if !ok || unsafePayloadKey.MatchString(strings.ToLower(key)) {
-				continue
-			}
-			facts[key] = text(raw)
-		}
 	}
 	namespaces, err := templatefacts.FromSourceFacts(sourceFacts)
 	if err != nil {
@@ -332,29 +312,6 @@ func InputSourceTags(snapshot []byte) json.RawMessage {
 		return nil
 	}
 	return input.Source.Tags
-}
-
-// InputVarsOutput returns the frozen Vars output of an acquisition input
-// snapshot (config.vars.output), or nil.
-func InputVarsOutput(snapshot []byte) map[string]any {
-	input, ok := decodeObject(snapshot)
-	if !ok {
-		return nil
-	}
-	config, _ := input["config"].(map[string]any)
-	vars, _ := config["vars"].(map[string]any)
-	output, _ := vars["output"].(map[string]any)
-	return output
-}
-
-// varsPathPattern is a vars.<group>.<name> reference (namingvars key rules).
-var varsPathPattern = regexp.MustCompile(`^vars\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
-
-// IsVarsPath reports whether name is a well-formed vars.<group>.<name>
-// reference. Templates may read any such key: the catalog
-// cannot list them because the keys are the user's Vars output.
-func IsVarsPath(name string) bool {
-	return varsPathPattern.MatchString(name) && !strings.HasPrefix(name, "vars.input.")
 }
 
 // TitleFactKeys are the native work titles and the TMDB work summary frozen in

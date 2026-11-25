@@ -11,7 +11,6 @@ import (
 
 func TestAcceptPrepareFreezesCombinedEpisodeSpan(t *testing.T) {
 	m := qualificationFixture(t, "subscription_direct")
-	m.programs.varsSource = "vars.actual = {title: input.release_title};"
 	m.catalog.feed.Seeds[0].Title = "[Group] Show - 02 [1080p]"
 	m.bgm = &anime.BGMBinding{WorkId: "123"}
 	m.tmdb = &anime.TMDBBinding{WorkId: "456", MediaKind: "tv", Season: 1}

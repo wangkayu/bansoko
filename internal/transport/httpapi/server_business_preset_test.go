@@ -3,16 +3,12 @@ package httpapi
 import (
 	"bansoko/internal/anime/animeconfig"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
 func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
 	value := animeconfig.BusinessSnapshot{SchemaVersion: animedomain.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 12}, Replacement: animeconfig.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"rt.resolution","ranks":[["1080p"],["720p"]]}]}`)}, ReplacementVersion: 17, FileEffectVersion: 19, UnclassifiedRoute: "route"}
-	digest := "sha256:" + strings.Repeat("a", 64)
-	value.Programs = animeconfig.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}}
 	for _, name := range animedomain.EffectiveSectionOrder {
 		v, err := animedomain.DefaultSectionValue(name)
 		if err != nil {
@@ -40,7 +36,7 @@ func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
 	if _, err := businessPresetView(value, json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]},"hidden":true}`), subscriptionDefaults); err == nil {
 		t.Fatal("hidden tag_filters field crossed public boundary")
 	}
-	if view.Snapshot.ReplacementVersion != 17 || view.Snapshot.FileEffectVersion != 19 || view.Snapshot.Parser.PolicyVersion != 12 || view.Snapshot.Programs.Vars.Digest != digest || len(view.Snapshot.Replacement.QualityProfile.Items) != 1 || view.Snapshot.Replacement.QualityProfile.Items[0].Ranks[0][0] != "1080p" {
+	if view.Snapshot.ReplacementVersion != 17 || view.Snapshot.FileEffectVersion != 19 || view.Snapshot.Parser.PolicyVersion != 12 || len(view.Snapshot.Replacement.QualityProfile.Items) != 1 || view.Snapshot.Replacement.QualityProfile.Items[0].Ranks[0][0] != "1080p" {
 		t.Fatalf("lost frozen evidence: %+v", view)
 	}
 	if view.Digest == "" {

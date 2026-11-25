@@ -63,7 +63,7 @@ func packPayload(args []string) error {
 	serverBinary := flags.String("server-binary", "", "compiled server binary")
 	migrationsDir := flags.String("migrations-dir", "", "db/migrations directory with forward-only SQL")
 	frontendDist := flags.String("frontend-dist", "", "built frontend dist directory (index.html required)")
-	defaultsDir := flags.String("defaults-dir", "", "release defaults directory (naming-vars.js required)")
+	defaultsDir := flags.String("defaults-dir", "", "release defaults directory (attr-rules.yaml; naming-vars.js is packed when present for older updaters)")
 	output := flags.String("output", "", "payload archive output path (.tar.gz)")
 	sourceDateEpoch := flags.Int64("source-date-epoch", 0, "deterministic SOURCE_DATE_EPOCH")
 	formatVersion := flags.String("format-version", hardeningdomain.EmbeddedUpdateFormatV1, "embedded update format version")

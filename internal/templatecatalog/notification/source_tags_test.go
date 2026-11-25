@@ -4,7 +4,7 @@ import "testing"
 
 func TestInputSourceTagsRemainFrozen(t *testing.T) {
 	input := []byte(`{"source":{"title":{"state":"known","value":"Show 2160p"},"tag_evidence":{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"frozen","tags":["resolution:720p"]},"anibt":{"tags":["tag:HEVC"]}}}}`)
-	facts := ValueFacts(nil, InputSourceTags(input), func(s string) any { return s })
+	facts := ValueFacts(InputSourceTags(input), func(s string) any { return s })
 	if facts["rt.res"] != "720p" {
 		t.Fatalf("frozen resolution = %#v", facts["rt.res"])
 	}

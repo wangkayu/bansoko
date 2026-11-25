@@ -92,9 +92,6 @@ func (s *Service) ApplyAnimeConfigCandidate(ctx context.Context, candidateID, ke
 		return result, &apperrors.Business{Status: 409, Code: "BUSINESS_OWNER_VERSION_CONFLICT", Message: "target owner version vector changed"}
 	}
 	b := revision.Business
-	if err := verifyBusinessProgramsTx(ctx, tx, *b); err != nil {
-		return result, err
-	}
 	animeID := input.TargetManagedAnimeID
 	// No source, metadata, provider-selection/manual-intent, download or artifact writes.
 	for _, name := range animedomain.EffectiveSectionOrder {

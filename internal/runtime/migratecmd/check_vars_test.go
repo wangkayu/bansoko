@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"bansoko/internal/namingvars/preflight"
+	preflight "bansoko/internal/runtime/migrations/varspreflight"
 )
 
 func TestWriteCheckVarsReport(t *testing.T) {

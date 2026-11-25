@@ -64,8 +64,7 @@ type acquisitionIntent struct {
 	fileSelection *filekinds.Selection
 }
 type preparedNative struct {
-	args       generated.AcceptQualifiedQueuedParams
-	varsRecord string
+	args generated.AcceptQualifiedQueuedParams
 }
 type pendingAcceptance struct {
 	receipt  string
@@ -173,13 +172,6 @@ func replayTx(ctx context.Context, tx *sql.Tx, a acceptAccess, r requestIdentity
 	if hash != r.hash {
 		return pendingAcceptance{}, true, acceptError(409, "IDEMPOTENCY_KEY_REUSED", "idempotency_key_reused", nil)
 	}
-	var consistent bool
-	if err := tx.QueryRowContext(ctx, `SELECT vars_evidence_consistent(id) FROM acquisitions WHERE access_scope=$1 AND request_namespace=$2 AND request_key=$3`, a.scope, r.namespace, r.key).Scan(&consistent); err != nil {
-		return pendingAcceptance{}, true, err
-	}
-	if !consistent {
-		return pendingAcceptance{}, true, acceptError(500, "INTERNAL_INVARIANT", "VARS_EVALUATION_EVIDENCE_INCONSISTENT", nil)
-	}
 	v, err := protocol.ParseStrict(raw)
 	if err == nil {
 		err = protocol.Validate("AcceptReceiptV1", v)
@@ -221,7 +213,6 @@ func acceptNativeTxWithDefaults(ctx context.Context, scope txscope.Tx, p prepare
 		return pendingAcceptance{}, acceptError(500, "INTERNAL_INVARIANT", "default_directory_invalid", err)
 	}
 	p.args.DefaultSections = sqlJSON(string(defaults))
-	p.args.VarsEvaluation = sql.NullString{String: p.varsRecord, Valid: p.varsRecord != ""}
 	raw, err := generated.New(tx).AcceptQualifiedQueued(ctx, p.args)
 	if err != nil {
 		return pendingAcceptance{}, mapAcceptanceError(err)

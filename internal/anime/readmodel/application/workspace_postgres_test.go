@@ -633,14 +633,14 @@ WHERE id = $1`, targetID, base.Add(time.Duration(i)*time.Minute)); err != nil {
 		t.Fatalf("a release without targets must carry none: %+v / %+v", r.AcquisitionTargets, r.TargetObservations)
 	}
 
-	lean, err := service.readAnimeWorkspace(ctx, animeID, workspaceReadOptions{releasesPerSource: 2, releasesOnly: true, varsEvidence: true})
+	lean, err := service.readAnimeWorkspace(ctx, animeID, workspaceReadOptions{releasesPerSource: 2, releasesOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(lean.Releases) != 2 || lean.Releases[0].ID != "rel-batch-4" || lean.Releases[1].ID != "rel-batch-3" {
 		t.Fatalf("per-source limit must keep the newest releases first: %+v", lean.Releases)
 	}
-	if lean.Releases[0].rawSourceFacts == nil || lean.AcquisitionTargets != nil || len(lean.DownloadTasks) != 0 || len(lean.Logs) != 0 {
+	if lean.AcquisitionTargets != nil || len(lean.DownloadTasks) != 0 || len(lean.Logs) != 0 {
 		t.Fatalf("a releases-only read must skip the other sections: %+v", lean)
 	}
 	if len(lean.RSSSources) != len(workspace.RSSSources) || lean.Rules.Version != workspace.Rules.Version {

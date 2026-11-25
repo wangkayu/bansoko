@@ -682,7 +682,7 @@ async function mockShellReads(page: Page) {
   );
   await page.route("**/api/v1/template-catalogs/naming", (route) =>
     route.request().method() === "GET"
-      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ fields: [], functions: [], samples: [], vars_keys: [], vars_loaded_at: null }) })
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ fields: [], functions: [], samples: [] }) })
       : fulfillMethodNotAllowed(route, "GET"),
   );
   await page.route("**/api/v1/config/naming-templates", (route) =>

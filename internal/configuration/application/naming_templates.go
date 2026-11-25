@@ -91,11 +91,7 @@ func (s *Service) GetNamingTemplateLibrary(ctx context.Context) (configurationdo
 
 // PutNamingTemplateLibrary replaces the whole library with expected-version CAS.
 func (s *Service) PutNamingTemplateLibrary(ctx context.Context, expected int64, input configurationdomain.NamingTemplateLibraryInput) (configurationdomain.NamingTemplateLibraryView, error) {
-	vars, err := namingVarsSnapshot(animedomain.SectionNamingRules)
-	if err != nil {
-		return configurationdomain.NamingTemplateLibraryView{}, err
-	}
-	library, defaultRules, err := normalizeNamingTemplateLibrary(input, vars)
+	library, defaultRules, err := normalizeNamingTemplateLibrary(input)
 	if err != nil {
 		return configurationdomain.NamingTemplateLibraryView{}, err
 	}
@@ -207,7 +203,7 @@ func namingTemplateLibraryView(library storedNamingTemplateLibrary, version int6
 
 // normalizeNamingTemplateLibrary validates the submitted library and returns
 // the stored document (non-default bodies only) and the default body.
-func normalizeNamingTemplateLibrary(input configurationdomain.NamingTemplateLibraryInput, vars map[string]map[string]string) (storedNamingTemplateLibrary, json.RawMessage, error) {
+func normalizeNamingTemplateLibrary(input configurationdomain.NamingTemplateLibraryInput) (storedNamingTemplateLibrary, json.RawMessage, error) {
 	if len(input.Templates) == 0 {
 		return storedNamingTemplateLibrary{}, nil, namingTemplateViolation(errNamingTemplateListEmpty, "templates", "keep at least one naming template")
 	}
@@ -235,7 +231,7 @@ func normalizeNamingTemplateLibrary(input configurationdomain.NamingTemplateLibr
 			return storedNamingTemplateLibrary{}, nil, namingTemplateViolation(errNamingTemplateNameDuplicate, prefix+".name", "duplicate template name")
 		}
 		names[name] = true
-		rules, err := normalizeNamingTemplateRules(item.Rules, vars, prefix+".rules")
+		rules, err := normalizeNamingTemplateRules(item.Rules, prefix+".rules")
 		if err != nil {
 			return storedNamingTemplateLibrary{}, nil, err
 		}
@@ -255,7 +251,7 @@ func normalizeNamingTemplateLibrary(input configurationdomain.NamingTemplateLibr
 
 // normalizeNamingTemplateRules runs the naming save validation and drops the
 // legacy `preset` reference: a template is its concrete templates.
-func normalizeNamingTemplateRules(raw json.RawMessage, vars map[string]map[string]string, field string) (json.RawMessage, error) {
+func normalizeNamingTemplateRules(raw json.RawMessage, field string) (json.RawMessage, error) {
 	var value animedomain.NamingRules
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -267,9 +263,9 @@ func normalizeNamingTemplateRules(raw json.RawMessage, vars map[string]map[strin
 	if err != nil {
 		return nil, err
 	}
-	err = animedomain.ValidateSectionValueWithVars(animedomain.SectionNamingRules, encoded, vars)
+	err = animedomain.ValidateSectionValue(animedomain.SectionNamingRules, encoded)
 	if err == nil {
-		err = animedomain.ValidateNamingSectionForSave(encoded, vars)
+		err = animedomain.ValidateNamingSectionForSave(encoded)
 	}
 	if err != nil {
 		var namingErr *naming.Error

@@ -23,7 +23,6 @@ import (
 	artifactapplication "bansoko/internal/artifact/application"
 	"bansoko/internal/fileidentity"
 	"bansoko/internal/library/domain"
-	"bansoko/internal/namingvars"
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
@@ -108,7 +107,7 @@ func TestBuildNamingContextAndRenderTarget(t *testing.T) {
 	}, artifactFileContext{
 		sourcePath: "/downloads/source.mkv", mediaKind: "video", sizeBytes: 42,
 		fingerprint: fingerprintJSONForTest(digest, 42), facts: json.RawMessage(`{"resolution":"1080p","video_codec":"HEVC","container":"mkv"}`),
-	}, &naming.FrozenEpisodeNamingFacts{Raw: "01", Number: "1", Display: "1"}, realFrozenVarsFixture())
+	}, &naming.FrozenEpisodeNamingFacts{Raw: "01", Number: "1", Display: "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -725,11 +724,7 @@ func ownerTestDB(t *testing.T) *sql.DB {
 // facts this fixture already writes, so the accepted replacement binding names
 // exactly the path the planner will render for an overwrite operation.
 //
-// No naming domain logic is duplicated here. The naming rules and the
-// frozen vars are unmarshalled from the fixture's own frozen policy, and the
-// rendering is performed by the same engine, compiled rules and context builder
-// the planner uses (prepare.go:384-436): naming.NewEngine ->
-// CompileRulesWithVars -> buildNamingContext -> RenderVideo -> renderedTarget.
+// The render uses the same naming rules and context builder as the planner.
 // The artifact context is decoded from the media evidence the ACCEPTED input
 // carries (fixtureAcceptedArtifact), never from fixture constants: a default
 // template that names an accepted media fact (anime.year, the TMDB season, the
@@ -749,28 +744,6 @@ func renderFixtureOverwriteTarget(t *testing.T, policy map[string]any, fixture f
 	if err := json.Unmarshal(rulesRaw, &rules); err != nil {
 		return "", fmt.Errorf("decode fixture naming rules: %w", err)
 	}
-	varsRaw, err := json.Marshal(policy["vars"])
-	if err != nil {
-		return "", err
-	}
-	var vars namingvars.FrozenEvaluation
-	if err := json.Unmarshal(varsRaw, &vars); err != nil {
-		return "", fmt.Errorf("decode fixture frozen vars: %w", err)
-	}
-	// The accept freezes the owner year and season into the Vars input facts
-	// (acquisitionfixture, fixture_anime_year / fixture_anime_season); the
-	// incumbent must sit at the target the planner renders from that same input.
-	if vars.Input.Facts == nil {
-		vars.Input.Facts = map[string]any{}
-	}
-	anime := map[string]any{"season": nil}
-	if year, ok := policy["fixture_anime_year"]; ok && year != nil {
-		anime["year"] = fmt.Sprint(year)
-	}
-	if season, ok := policy["fixture_anime_season"]; ok && season != nil {
-		anime["season"] = season
-	}
-	vars.Input.Facts["anime"] = anime
 	resolved, err := buildNamingContext(
 		fixtureAcceptedArtifact(t, policy, fixture),
 		artifactFileContext{
@@ -785,13 +758,12 @@ func renderFixtureOverwriteTarget(t *testing.T, policy map[string]any, fixture f
 			facts:        json.RawMessage(`{"resolution":"1080p"}`),
 		},
 		&naming.FrozenEpisodeNamingFacts{Raw: "01", Number: "1", Display: "1"},
-		&vars,
 	)
 	if err != nil {
 		return "", err
 	}
 	engine := naming.NewEngine()
-	compiled, err := engine.CompileRulesWithVars(rules, vars.Output)
+	compiled, err := engine.CompileRules(rules)
 	if err != nil {
 		return "", err
 	}
@@ -850,6 +822,18 @@ func fixtureAcceptedArtifact(t *testing.T, policy map[string]any, fixture fileFi
 		rawFacts:       json.RawMessage(`{"title":"[Test Group] Fixture Anime - 01"}`),
 		parsedFacts:    json.RawMessage(`{"episode":1,"group_name":"Test Group"}`),
 	}
+	owner, err := json.Marshal(map[string]any{"year": policy["fixture_anime_year"], "season": policy["fixture_anime_season"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var edited struct {
+		Year   *int `json:"year"`
+		Season *int `json:"season"`
+	}
+	if err := json.Unmarshal(owner, &edited); err != nil {
+		t.Fatal(err)
+	}
+	artifact.ownerYear, artifact.ownerSeason, artifact.ownerSeasonPresent = edited.Year, edited.Season, true
 	if in.Title.State == "known" {
 		if err := json.Unmarshal(in.Title.Value, &artifact.animeTitle); err != nil {
 			t.Fatal(err)

@@ -15,9 +15,6 @@ type workspaceReadOptions struct {
 	// releasesPerSource > 0 reads only the newest N releases of each RSS source;
 	// 0 reads them all.
 	releasesPerSource int
-	// varsEvidence reads each release's stored source facts and torrent input
-	// hashes with the release row.
-	varsEvidence bool
 	// releasesOnly skips the sections the owner RSS list never renders
 	// (downloads, artifacts, file operations, handoffs, targets, logs, episode
 	// progress) and the per-release target sets.
@@ -154,7 +151,7 @@ func (s *Service) readAnimeWorkspace(ctx context.Context, managedAnimeID string,
 			return AnimeWorkspace{}, err
 		}
 	}
-	releases, err := s.readReleasesApplication(ctx, subscription.ID, releaseReadOptions{perSourceLimit: options.releasesPerSource, targets: byRelease, vars: options.varsEvidence, fileIdentity: options.fileIdentity})
+	releases, err := s.readReleasesApplication(ctx, subscription.ID, releaseReadOptions{perSourceLimit: options.releasesPerSource, targets: byRelease, fileIdentity: options.fileIdentity})
 	if err != nil {
 		return AnimeWorkspace{}, err
 	}

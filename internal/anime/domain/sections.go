@@ -169,7 +169,7 @@ func marshalAndDecode(union interface{ MarshalJSON() ([]byte, error) }) (Overrid
 }
 
 // SectionValidationError carries a typed section problem whose code is owned by
-// the section validator (for example a naming template's NAMING_VARS_UNKNOWN)
+// the section validator (for example a naming template's TEMPLATE_COMPILE_ERROR)
 // through draft resolution without relabelling it as a generic override error.
 type SectionValidationError struct {
 	Code    string
@@ -181,10 +181,6 @@ func (e *SectionValidationError) Error() string { return e.Message }
 
 // RulesSectionOverrides decodes the six rules section overrides from a draft
 // or owner value into their DB section names.
-func RulesSectionOverrides(sections RulesSections) (map[string]OverrideValue, []FieldViolation) {
-	return RulesSectionOverridesWithVars(sections, nil)
-}
-
 // RulesPreviewSections is the serialized unsaved owner rules patch carried by
 // the RSSListView owner_draft read mode: the live request path, not the
 // retired flat rules preview route.
@@ -198,10 +194,7 @@ func RulesPreviewSectionOverrides(sections RulesPreviewSections) (map[string]Ove
 	return RulesSectionOverrides(value)
 }
 
-// RulesSectionOverridesWithVars is the save-time form: naming rules are
-// validated against the injected Vars snapshot, so a template that reads a
-// variable the deployment has not loaded is refused before it is stored.
-func RulesSectionOverridesWithVars(sections RulesSections, vars map[string]map[string]string) (map[string]OverrideValue, []FieldViolation) {
+func RulesSectionOverrides(sections RulesSections) (map[string]OverrideValue, []FieldViolation) {
 	result := map[string]OverrideValue{}
 	var violations []FieldViolation
 	decode := func(section string, union interface{ MarshalJSON() ([]byte, error) }) {
@@ -210,9 +203,9 @@ func RulesSectionOverridesWithVars(sections RulesSections, vars map[string]map[s
 			violations = append(violations, FieldViolation{Field: "rules." + section, Code: "OVERRIDE_MODE_INVALID", Message: "section must be a complete replace value"})
 			return
 		}
-		err = ValidateSectionValueWithVars(section, override.Value, vars)
+		err = ValidateSectionValue(section, override.Value)
 		if err == nil && section == SectionNamingRules {
-			err = ValidateNamingSectionForSave(override.Value, vars)
+			err = ValidateNamingSectionForSave(override.Value)
 		}
 		if err != nil {
 			code := "OVERRIDE_MODE_INVALID"
@@ -311,16 +304,13 @@ func ValidateRulesSections(sections RulesSections) []FieldViolation {
 }
 
 // ValidateNamingSectionForSave is the save-only completeness and target-shape
-// check of a typed naming value: every variant needs a video filename template,
-// and every directory template must render an absolute path against the loaded
-// Vars snapshot. Read-back of stored values (ValidateSectionValue) does not
-// re-judge it.
-func ValidateNamingSectionForSave(raw json.RawMessage, vars map[string]map[string]string) error {
+// check of a typed naming value. Read-back of stored values does not re-judge it.
+func ValidateNamingSectionForSave(raw json.RawMessage) error {
 	var value NamingRules
 	if err := decodeStrictJSON(raw, &value); err != nil {
 		return fmt.Errorf("naming rules value must be typed naming rules")
 	}
-	if err := naming.ValidateSavableRulesWithVars(NamingRulesToDomain(value), vars); err != nil {
+	if err := naming.ValidateSavableRules(NamingRulesToDomain(value)); err != nil {
 		return fmt.Errorf("naming rules are incomplete: %w", err)
 	}
 	return nil
@@ -328,14 +318,6 @@ func ValidateNamingSectionForSave(raw json.RawMessage, vars map[string]map[strin
 
 // ValidateSectionValue enforces typed bounds on a complete replace value.
 func ValidateSectionValue(section string, raw json.RawMessage) error {
-	return ValidateSectionValueWithVars(section, raw, nil)
-}
-
-// ValidateSectionValueWithVars is the save-time form: naming templates are
-// checked against the injected Vars snapshot. nil leaves `vars` references
-// unvalidated (read-back of already-stored configuration); a non-nil snapshot,
-// including an empty one, is enforced.
-func ValidateSectionValueWithVars(section string, raw json.RawMessage, vars map[string]map[string]string) error {
 	switch section {
 	case SectionSubgroups:
 		var value SubgroupsSection
@@ -479,7 +461,7 @@ func ValidateSectionValueWithVars(section string, raw json.RawMessage, vars map[
 		if !naming.SupportedLanguage(string(value.Language)) {
 			return fmt.Errorf("naming rules language must be %q", naming.Language)
 		}
-		if _, err := naming.NewEngine().CompileRulesWithVars(NamingRulesToDomain(value), vars); err != nil {
+		if _, err := naming.NewEngine().CompileRules(NamingRulesToDomain(value)); err != nil {
 			return fmt.Errorf("naming rules do not compile: %w", err)
 		}
 	case SectionFileEffect:
@@ -583,17 +565,11 @@ func DecodeStoredSections(subgroupsOverride OverrideValue, rulesOverrides map[st
 // section must carry its value; Global is never read. Download completion is
 // Global-only and not part of a draft: the code default is reported.
 func ResolveDraftEffective(draft AnimeDraft) (EffectiveConfig, error) {
-	return ResolveDraftEffectiveWithVars(draft, nil)
-}
-
-// ResolveDraftEffectiveWithVars is the save-time form: naming templates are
-// validated against the injected Vars snapshot.
-func ResolveDraftEffectiveWithVars(draft AnimeDraft, vars map[string]map[string]string) (EffectiveConfig, error) {
 	subgroupsOverride, violations := SubgroupsSectionOverride(draft.Subgroups)
 	if len(violations) > 0 {
 		return EffectiveConfig{}, fmt.Errorf("subgroups override: %s", violations[0].Message)
 	}
-	rulesOverrides, violations := RulesSectionOverridesWithVars(draft.Rules.Sections, vars)
+	rulesOverrides, violations := RulesSectionOverrides(draft.Rules.Sections)
 	if len(violations) > 0 {
 		violation := violations[0]
 		if violation.Code != "OVERRIDE_MODE_INVALID" {

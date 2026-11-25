@@ -92,7 +92,7 @@ beforeEach(() => {
     const url = new URL(String(input), "http://localhost");
     if (url.pathname === "/api/v1/config/naming-templates") return json(library);
     if (url.pathname === "/api/v1/template-catalogs/naming") {
-      return json({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [], vars_keys: [], vars_loaded_at: null });
+      return json({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [] });
     }
     if (url.pathname === "/api/v1/parser-catalog") return json(parsers);
     if (url.pathname === "/api/v1/file-manager/recognition/preview" && init?.method === "POST") {

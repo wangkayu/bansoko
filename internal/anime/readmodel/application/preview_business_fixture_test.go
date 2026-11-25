@@ -4,7 +4,6 @@ import (
 	domain "bansoko/internal/anime/domain"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/frozenpolicy"
-	"context"
 	"testing"
 )
 
@@ -20,7 +19,7 @@ func seedPreviewBusiness(t *testing.T, s *Service, d *domain.AnimeDraft) {
 	if s.db == nil {
 		s.db = animetest.OpenTestDB(t)
 	}
-	b, err := frozenpolicy.SeedBusiness(context.Background(), s.db, `vars.actual = {title: input.release_title, count: input.files.length};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

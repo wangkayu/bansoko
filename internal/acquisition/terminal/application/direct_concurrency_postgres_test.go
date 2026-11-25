@@ -39,7 +39,7 @@ func TestDirectConcurrencyPostgres(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			b, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+			b, err := frozenpolicy.Business()
 			if err != nil {
 				t.Fatal(err)
 			}

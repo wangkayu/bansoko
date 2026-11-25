@@ -260,6 +260,5 @@ VALUES ($1, $2, $3, 'facts-v1', $4)`,
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	return chain
 }

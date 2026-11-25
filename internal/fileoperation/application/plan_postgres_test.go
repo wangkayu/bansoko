@@ -10,7 +10,6 @@ import (
 
 	animedomain "bansoko/internal/anime/domain"
 	artifactapplication "bansoko/internal/artifact/application"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/persistence/txscope"
 	runtimeworker "bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -118,14 +117,12 @@ func TestPostProcessingPlanExecutesNamingForVerifiedArtifact(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT frozen_config_snapshot FROM file_operations WHERE artifact_id=$1 LIMIT 1`, fixture.artifactID).Scan(&snapshot); err != nil {
 		t.Fatal(err)
 	}
-	var stored struct {
-		Vars namingvars.FrozenEvaluation `json:"vars"`
-	}
+	var stored map[string]json.RawMessage
 	if err := json.Unmarshal(snapshot, &stored); err != nil {
 		t.Fatal(err)
 	}
-	if err := stored.Vars.Output.Validate(); err != nil {
-		t.Fatalf("persisted disabled vars: %v", err)
+	if _, ok := stored["vars"]; ok {
+		t.Fatal("new operation snapshot contains retired vars")
 	}
 	if operations == 0 {
 		var items []byte

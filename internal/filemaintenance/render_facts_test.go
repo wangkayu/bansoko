@@ -1,7 +1,6 @@
 package filemaintenance
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -148,50 +147,5 @@ func TestMissingTemplateFactsGuardsTheSourceGroupIdentity(t *testing.T) {
 	grouped.Source.Group = providerdomain.GroupRef{}
 	if got := missingTemplateFacts(legacy, compiled.TV.RequiredFacts(), recorded, grouped); strings.Join(got, ",") != "Source.Group" {
 		t.Fatalf("lost group identity must block, got %v", got)
-	}
-}
-
-func TestFrozenVarsOutputFromConfigFallsBackToEmptyForNonOK(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{"ok", `{"vars":{"status":"ok","output":{"anime":{"ep":"01"}}}}`, "01"},
-		{"error status", `{"vars":{"status":"error","output":{"anime":{"ep":"01"}}}}`, ""},
-		{"missing vars", `{}`, ""},
-		{"invalid json", `{`, ""},
-	}
-	engine := naming.NewEngine()
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			vars := frozenVarsOutputFromConfig([]byte(tc.raw))
-			if vars == nil {
-				t.Fatalf("expected non-nil empty map")
-			}
-			if got := vars["anime"]["ep"]; got != tc.want {
-				t.Fatalf("vars[anime][ep] = %q, want %q", got, tc.want)
-			}
-			// Non-Vars rules must always compile even when frozen Vars was not ok.
-			if _, err := engine.CompileRulesWithVars(naming.DefaultNamingRules(), vars); err != nil {
-				t.Fatalf("default rules should compile with %s frozen vars: %v", tc.name, err)
-			}
-			// Rules referencing vars.* must fail when frozen Vars was not ok.
-			withVars := naming.DefaultNamingRules()
-			withVars.TV.VideoFilenameTemplate = "${vars.anime.ep}.${file.ext}"
-			_, err := engine.CompileRulesWithVars(withVars, vars)
-			if tc.want == "" && err == nil {
-				t.Fatalf("vars template must fail compilation when frozen vars is %s", tc.name)
-			}
-			if tc.want == "" {
-				_, renderErr := renderResolvedTarget("episode.mkv", withVars, contextWithoutOptionalMediaTags(t), nil, naming.RendererVersion)
-				if !errors.Is(renderErr, naming.ErrRenderFactsUnavailable) {
-					t.Fatalf("maintenance Vars error = %v, want ErrRenderFactsUnavailable", renderErr)
-				}
-			}
-			if tc.want != "" && err != nil {
-				t.Fatalf("vars template should compile when frozen vars is ok: %v", err)
-			}
-		})
 	}
 }

@@ -28,8 +28,6 @@
 ./internal/identitymetadata/adapter/persistence
 ./internal/metadata/adapter/persistence
 ./internal/integration
-./internal/namingvars/adapter/persistence
-./internal/namingvars/editor
 ./internal/observability/application
 ./internal/parserpolicy
 ./internal/plugintarget/application

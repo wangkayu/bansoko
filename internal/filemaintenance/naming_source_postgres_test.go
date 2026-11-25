@@ -52,7 +52,6 @@ func TestSubscriptionlessNamingSourceServesPathDiffAndPlanner(t *testing.T) {
 	seedAnimeForRenderer(t, db, animeID, "退订番组", "tv")
 	seedNamingOwnerWithoutSubscription(t, db, animeID)
 	seedPathDiffRows(t, db, "skip")
-	freezeAnimeRenderFixtureBusiness(t, db, "anime-diff")
 	// The path-diff fixture uses a separate anime; give it the same rules owner
 	// without creating a subscription so preview exercises the production source.
 	seedNamingOwnerWithoutSubscription(t, db, "anime-diff")
@@ -68,7 +67,6 @@ func TestSubscriptionlessNamingSourceServesPathDiffAndPlanner(t *testing.T) {
 		DownloadName: "EP01.mkv", Rules: rendererRules(), FrozenEpisode: "1",
 		Coverage: []string{"tv:e1"},
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	if _, err := db.Exec(`UPDATE reconciliation_files SET facts = facts || jsonb_build_object('placement_id', $1::text) WHERE managed_anime_id = $2 AND generation = 1 AND file_path = $3`,
 		chain.PlacementID, animeID, "/library/退订番组/Season 01/EP01.mkv"); err != nil {
 		t.Fatal(err)

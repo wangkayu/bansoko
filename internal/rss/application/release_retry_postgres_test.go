@@ -243,7 +243,6 @@ func TestRetryWorksWhileTheSubscriptionIsStopped(t *testing.T) {
 // automatic acceptance: episodes the library already holds are not
 // downloaded again.
 func TestRetryRespectsFillMissingDedup(t *testing.T) {
-	initTestNamingVars(t)
 	db, _, service := newRetryFixture(t, false, true, "release-retry-dedup")
 	service.SetTargetAcquisition(missingTargetProbe{})
 	service.SetTargetStore(target.NewStore(targetpersistence.NewRepository(db)))

@@ -47,7 +47,6 @@ import (
 	posterpersistence "bansoko/internal/identitymetadata/adapter/persistence"
 	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/metadata/matcher"
-	namingvarseditor "bansoko/internal/namingvars/editor"
 	observabilitypersistence "bansoko/internal/observability/adapter/persistence"
 	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
@@ -302,7 +301,6 @@ func provideHTTPDependencies(
 	dependencies.ImageCovers = imageCovers
 	dependencies.PluginTargets = pluginTarget
 	dependencies.TemplateCatalog = templateCatalog
-	dependencies.NamingVars = namingvarseditor.NewService(dependencies.DB)
 	if fileManager != nil {
 		dependencies.FileManager = fileManager
 	}

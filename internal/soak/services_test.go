@@ -15,8 +15,6 @@ import (
 	ownershipapplication "bansoko/internal/anime/ownership/application"
 	readmodel "bansoko/internal/anime/readmodel/application"
 	"bansoko/internal/filemaintenance"
-	"bansoko/internal/namingvars"
-	varspersistence "bansoko/internal/namingvars/adapter/persistence"
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/parserpolicy"
 	facts "bansoko/internal/release/facts"
@@ -33,29 +31,6 @@ type noFeed struct{}
 
 func (noFeed) Fetch(context.Context, string) (rootapplication.FeedResult, error) {
 	return rootapplication.FeedResult{}, fmt.Errorf("soak: no external feed access")
-}
-
-// installRegistries installs the naming vars registry the owner and readmodel
-// services evaluate with.
-func installRegistries(db *sql.DB) error {
-	source := `vars.test = {marker: "ok"};`
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	vfp, err := namingvars.SourceFingerprint(source)
-	if err != nil {
-		return err
-	}
-	if err := namingvars.SetActive(vars, vfp); err != nil {
-		return err
-	}
-	ctx := context.Background()
-	computed, err := namingvars.Run(source, namingvars.DefaultInput, namingvars.DefaultTimeout)
-	if err != nil {
-		return err
-	}
-	if err := namingvars.NewStore(varspersistence.NewRepository(db)).PublishSource(ctx, source, computed, vfp); err != nil {
-		return fmt.Errorf("publish vars: %w", err)
-	}
-	return nil
 }
 
 // ownerServices are the real owner services over the runtime database.
@@ -140,7 +115,7 @@ func (s *ownerServices) subscribeTemplate(ctx context.Context, key, label, locat
 			Title:      "Soak " + label,
 		})
 	}
-	b, err := frozenpolicy.SeedBusiness(ctx, s.DB, `vars.actual = {title: input.release_title};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		return generated.SubscribeResult{}, err
 	}

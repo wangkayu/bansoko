@@ -14,11 +14,8 @@ import (
 	"bansoko/internal/batchplan"
 	downloadadmission "bansoko/internal/download/admission"
 	library "bansoko/internal/library/domain"
-	"bansoko/internal/namingvars"
-	varspersistence "bansoko/internal/namingvars/adapter/persistence"
-	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	providerdomain "bansoko/internal/provider/domain"
-	"path"
 )
 
 // targetAcquisition is the immutable result of the transaction-free phase of
@@ -30,12 +27,8 @@ type targetAcquisition struct {
 	admission           acquisitiontarget.AdmissionResult
 	planReason          string
 	releaseFiles        []acquisitiondomain.ReleaseFile
-	vars                *namingvars.FrozenEvaluation
 	downloaderAdmission *downloadadmission.Result
 	downloaderError     error
-	// varsInterrupted: the Vars evaluation hit its time limit. Nothing is
-	// frozen; the release evaluation retries instead.
-	varsInterrupted error
 	// replacements: one approval per overwrite target observed present (a
 	// batch replaces per file).
 	replacements []*terminal.ReplacementCapture
@@ -143,31 +136,12 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		}
 	}
 	planned := &evidence.ParserEvidence
-	program, err := varspersistence.LoadInstanceProgram(ctx, s.db, snapshot.managedAnimeID)
+	anime, err := namingpersistence.LoadAnimeFacts(ctx, s.db, snapshot.managedAnimeID)
 	if err != nil {
-		return &targetAcquisition{admission: acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: "naming_vars_program_missing"}, planReason: err.Error()}
+		return failed("naming_metadata_unavailable", err.Error())
 	}
-	episode := naming.VarsEpisode(evidence.namingFacts())
-	varsEvidence, err := varspersistence.ItemEvidence(ctx, s.db, snapshot.managedAnimeID, snapshot.releaseID, item, episode)
-	if err != nil {
-		return &targetAcquisition{admission: acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: "naming_vars_evidence_unavailable"}, planReason: err.Error()}
-	}
-	for _, file := range item.ReleaseFiles {
-		if file.SizeBytes == nil {
-			return &targetAcquisition{admission: acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: "naming_vars_inventory_missing"}, planReason: "exact Vars inventory size missing"}
-		}
-		varsEvidence.Files = append(varsEvidence.Files, namingvars.File{Name: path.Base(file.SourcePath), Path: file.SourcePath, Size: *file.SizeBytes})
-	}
-	varsInput := namingvars.BuildInput(varsEvidence)
-	if namingvars.InputTooLarge(varsInput) {
-		_, code, detail := torrentTooLargeOutcome()
-		return &targetAcquisition{admission: acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: code}, planReason: detail}
-	}
-	frozenVars, varsErr := program.Freeze(varsInput)
-	if varsErr != nil {
-		return &targetAcquisition{varsInterrupted: varsErr}
-	}
-	release.FrozenVars = &frozenVars
+	release.NamingAnime = anime
+	release.NamingTorrent = animedomain.TorrentFactsForItem(item)
 	// A managed loser of an admitted replace decision at a replace target's
 	// path is not a collision: its approval is captured here and the target
 	// is published as an atomic replacement whatever the global policy.
@@ -230,8 +204,7 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		ClaimableAt:         claimable,
 	}, s.targetProbe)
 	result := &targetAcquisition{
-		vars: &frozenVars,
-		set:  admitted.Set, observations: admitted.Observations, admission: admitted.Admission,
+		set: admitted.Set, observations: admitted.Observations, admission: admitted.Admission,
 		planReason: admitted.PlanReason, releaseFiles: admitted.ReleaseFiles,
 	}
 	if admitted.BatchPlan.Version != "" {

@@ -54,7 +54,6 @@ export const configKeys = {
   parserCatalog: ["config", "parser-catalog"] as const,
   networkRoutes: ["config", "network-routes"] as const,
   pluginTargets: ["config", "plugin-targets"] as const,
-  namingVars: ["config", "naming-vars"] as const,
 };
 
 /** The subgroup dictionary (the provider pool): read locally, keyed by provider. `user` is the

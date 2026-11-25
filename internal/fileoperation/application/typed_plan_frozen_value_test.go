@@ -104,7 +104,7 @@ func TestTypedPlanUsesAcceptedSourceEvidence(t *testing.T) {
 		if err := applyTypedPlanInput(raw, b); err != nil {
 			t.Fatal(err)
 		}
-		resolved, err := buildNamingContext(b.artifact, artifactFileContext{sourcePath: "/d/a.mkv", mediaKind: "video", sizeBytes: 1}, nil, realFrozenVarsFixture())
+		resolved, err := buildNamingContext(b.artifact, artifactFileContext{sourcePath: "/d/a.mkv", mediaKind: "video", sizeBytes: 1}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,6 +121,69 @@ func TestTypedPlanUsesAcceptedSourceEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestTypedPlanOwnerFactsDistinguishLegacyAndExplicitAbsence(t *testing.T) {
+	for _, tc := range []struct {
+		name, year, season, legacyAnime string
+		wantYear                        string
+		wantSeason                      *int
+	}{
+		{name: "legacy edited", legacyAnime: `{"year":"2024","season":2}`, wantYear: "2024", wantSeason: intPtrForOwnerFacts(2)},
+		{name: "legacy explicit unset", legacyAnime: `{"season":null}`},
+		{name: "legacy before owner season", legacyAnime: `{}`, wantSeason: intPtrForOwnerFacts(3)},
+		{name: "new explicit unset", year: `{"state":"absent","value":null}`, season: `{"state":"absent","value":null}`, legacyAnime: `{"year":"2024","season":2}`},
+		{name: "new known zero", year: `{"state":"known","value":2025}`, season: `{"state":"known","value":0}`, wantYear: "2025", wantSeason: intPtrForOwnerFacts(0)},
+		{name: "mixed fields fall back independently", season: `{"state":"known","value":0}`, legacyAnime: `{"year":"2024","season":"ignored"}`, wantYear: "2024", wantSeason: intPtrForOwnerFacts(0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body struct {
+				Config map[string]json.RawMessage `json:"config"`
+				Media  map[string]json.RawMessage `json:"media"`
+			}
+			if err := json.Unmarshal([]byte(nativeinput.Canonical(t, "sha256:"+stringRepeatA(64), "sha256:"+stringRepeatA(64))), &body); err != nil {
+				t.Fatal(err)
+			}
+			delete(body.Config, "vars")
+			if tc.legacyAnime != "" {
+				body.Config["vars"] = json.RawMessage(`{"mode":"frozen","status":"error","output":"unused","known_inputs":{"facts":{"anime":` + tc.legacyAnime + `}}}`)
+			}
+			delete(body.Media, "year")
+			delete(body.Media, "season")
+			body.Media["tmdb"] = json.RawMessage(`{"state":"known","value":{"work_ref":"tmdb-fixture","kind":"tv","season":3}}`)
+			if tc.year != "" {
+				body.Media["year"] = json.RawMessage(tc.year)
+			}
+			if tc.season != "" {
+				body.Media["season"] = json.RawMessage(tc.season)
+			}
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var b artifactPreparedBatch
+			if err := applyTypedPlanInput(raw, &b); err != nil {
+				t.Fatal(err)
+			}
+			resolved, err := buildNamingContext(b.artifact, artifactFileContext{}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := naming.UnifiedFacts(resolved.Context).Anime.Year; got != tc.wantYear {
+				t.Fatalf("owner year = %q, want %q", got, tc.wantYear)
+			}
+			got := resolved.Context.Anime.Season
+			if tc.wantSeason == nil {
+				if got != nil {
+					t.Fatalf("owner season = %d, want unset", *got)
+				}
+			} else if got == nil || *got != *tc.wantSeason {
+				t.Fatalf("owner season = %v, want %d", got, *tc.wantSeason)
+			}
+		})
+	}
+}
+
+func intPtrForOwnerFacts(n int) *int { return &n }
 
 func stringRepeatA(n int) string {
 	b := make([]byte, n)
@@ -152,6 +215,7 @@ func TestTypedPlanFreezesWorkTitlesAndTorrentFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	media := body["media"].(map[string]any)
+	media["year"] = map[string]any{"state": "known", "value": 2024, "reason_code": nil}
 	media["bgm_titles"] = map[string]any{"state": "known", "value": map[string]any{"title": "進撃の巨人", "title_cn": nil, "year": 2019}, "reason_code": nil}
 	media["tmdb_titles"] = map[string]any{"state": "known", "value": map[string]any{"title_cn": "进击的巨人", "original_title": "進撃の巨人", "year": 2020}, "reason_code": nil}
 	source := body["source"].(map[string]any)
@@ -166,9 +230,7 @@ func TestTypedPlanFreezesWorkTitlesAndTorrentFacts(t *testing.T) {
 	if err := applyTypedPlanInput(frozen, b); err != nil {
 		t.Fatal(err)
 	}
-	vars := realFrozenVarsFixture()
-	vars.Input.Facts = map[string]any{"anime": map[string]any{"year": "2024"}}
-	resolved, err := buildNamingContext(b.artifact, artifactFileContext{sourcePath: "/d/a.mkv", mediaKind: "video", sizeBytes: 1}, nil, vars)
+	resolved, err := buildNamingContext(b.artifact, artifactFileContext{sourcePath: "/d/a.mkv", mediaKind: "video", sizeBytes: 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

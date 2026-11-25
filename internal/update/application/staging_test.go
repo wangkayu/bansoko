@@ -3,6 +3,7 @@ package application
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,46 @@ func TestExtractVerifyPublishHappyPath(t *testing.T) {
 	}
 	if !treeMatchesReleaseDir(releaseDir, hashes) {
 		t.Fatalf("published tree does not match staged hashes")
+	}
+}
+
+func TestTransitionPayloadSatisfiesPre03Updaters(t *testing.T) {
+	payloadPath, _ := buildFixturePayload(t)
+	tempDir := t.TempDir()
+	if _, err := extractPayloadToTemp(payloadPath, tempDir); err != nil {
+		t.Fatalf("extract transition payload: %v", err)
+	}
+	if _, err := verifyStagedTree(tempDir); err != nil {
+		t.Fatalf("current updater rejects transition payload: %v", err)
+	}
+
+	// This is the required-file loop shared by the 0.2.0, 0.2.1 and 0.2.2
+	// updaters. Keep the compatibility proof at their boundary rather than
+	// merely checking that the file happens to appear in package metadata.
+	requiredByOldUpdater := func(releaseDir string) error {
+		for _, required := range []string{
+			packagemaker.ServerEntryPath,
+			"deployment/defaults/naming-vars.js",
+		} {
+			info, err := os.Lstat(filepath.Join(releaseDir, required))
+			if err != nil || !info.Mode().IsRegular() {
+				return fmt.Errorf("payload misses required release file %s", required)
+			}
+		}
+		return nil
+	}
+	for _, version := range []string{"0.2.0", "0.2.1", "0.2.2"} {
+		t.Run(version, func(t *testing.T) {
+			if err := requiredByOldUpdater(tempDir); err != nil {
+				t.Fatalf("old updater required-file check: %v", err)
+			}
+		})
+	}
+	if err := os.Remove(filepath.Join(tempDir, "deployment/defaults/naming-vars.js")); err != nil {
+		t.Fatal(err)
+	}
+	if err := requiredByOldUpdater(tempDir); err == nil {
+		t.Fatal("old updater required-file check accepts a payload without naming-vars.js")
 	}
 }
 

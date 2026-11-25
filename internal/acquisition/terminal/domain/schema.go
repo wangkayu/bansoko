@@ -17,7 +17,7 @@ import (
 // branches and member types of that object have already passed.
 
 // CodeInputSchemaUnsupported marks a structurally valid value that names a branch
-// the current release deliberately does not execute (a future Vars mode, a future
+// the current release deliberately does not execute (for example a future
 // media-info shape). It is refused, never converted into a supported one.
 const CodeInputSchemaUnsupported Code = "INPUT_SCHEMA_UNSUPPORTED"
 

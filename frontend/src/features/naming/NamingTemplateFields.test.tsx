@@ -75,8 +75,6 @@ const catalog: NamingTemplateCatalog = {
 		{ ref: "sample-tv", label: "剧集样例" },
 		{ ref: "sample-movie", label: "电影样例" },
 	],
-	vars_keys: ["anime"],
-	vars_loaded_at: "2026-09-23T00:00:00Z",
 };
 
 function preview(overrides: Partial<NamingTemplatePreview> = {}): NamingTemplatePreview {
@@ -488,10 +486,9 @@ describe("NamingTemplateFields", () => {
     fireEvent.click(await screen.findByRole("button", { name: t("naming.help") }));
 
     const dialog = await screen.findByRole("dialog");
-    // Custom variables are hidden in the current version: the help covers syntax only, with no vars examples and no vars_keys listed (the catalog does carry "anime").
+    // The help covers the built-in syntax and fact catalog; retired Vars never appear.
     expect(dialog).toHaveTextContent(t("naming.helpSyntax"));
     expect(dialog).not.toHaveTextContent("vars.");
-    expect(dialog).not.toHaveTextContent(t("naming.helpBody", { keys: "anime" }));
     // The field tree: grouping + the full template spelling + type + a nullable badge + example values.
 		expect(dialog).toHaveTextContent("Anime");
 		expect(dialog).toHaveTextContent("${Anime.Title}");

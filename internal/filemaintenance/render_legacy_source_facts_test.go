@@ -26,7 +26,6 @@ func TestNamingTargetRendererReplaysLegacyReleaseSourceFacts(t *testing.T) {
 		PlacedPath:   "/library/Legacy Show/Season 01/Legacy Show - 1 [Group]",
 		DownloadName: "Legacy Show - 01.mkv", Rules: rules, FrozenEpisode: "1",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	// The fixture writes the converged input; pre-convergence rows have no
 	// tag_evidence, so remove it to reproduce the real legacy shape. The row
 	// predates the input contract that now requires the field, so the fixture

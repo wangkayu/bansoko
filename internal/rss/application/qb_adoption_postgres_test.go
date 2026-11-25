@@ -30,7 +30,6 @@ func (f *fixedDownloaderAdmission) MatchAdmission(_ context.Context, request dow
 }
 
 func TestOrdinaryRSSDownloaderAdmissionZeroUniqueAndAmbiguous(t *testing.T) {
-	initTestNamingVars(t)
 	for _, test := range []struct {
 		name       string
 		matcher    *fixedDownloaderAdmission
@@ -126,7 +125,6 @@ func TestOrdinaryRSSDownloaderAdmissionZeroUniqueAndAmbiguous(t *testing.T) {
 }
 
 func TestOrdinaryRSSDownloaderAdmissionConcurrentFinishCreatesOneOwnerChain(t *testing.T) {
-	initTestNamingVars(t)
 	db := openRSSDatabase(t)
 	sourceID, _ := seedRSSOwner(t, db, false, true)
 	store, err := workitems.NewStore(db, 0, nil)

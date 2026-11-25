@@ -64,10 +64,9 @@ func largeReleaseTorrent(t *testing.T, root string) ([]byte, torrent.Metadata) {
 
 // A subscription release of 619 first-level files is admitted through the
 // ordinary refresh and evaluation: the download task names the stored target
-// set instead of carrying it, every target names the frozen vars evaluation by
-// digest, and every frozen document stays within its bound.
+// set instead of carrying it, no target records retired Vars, and every frozen
+// document stays within its bound.
 func TestSubscriptionAdmitsALargeFirstLevelReleaseWithAReferenceFrozenRecord(t *testing.T) {
-	initTestNamingVars(t)
 	ctx := context.Background()
 	db := openRSSDatabase(t)
 	sourceID, _ := seedRSSOwner(t, db, false, true)
@@ -125,8 +124,12 @@ func TestSubscriptionAdmitsALargeFirstLevelReleaseWithAReferenceFrozenRecord(t *
 		t.Fatalf("stored target set has %d targets, want every episode", targetCount)
 	}
 	var factsRaw []byte
-	if err := db.QueryRowContext(ctx, `SELECT frozen_input->'target_facts' FROM download_tasks WHERE release_id = $1`, claim.Owner.ID).Scan(&factsRaw); err != nil {
+	var policyHasVars bool
+	if err := db.QueryRowContext(ctx, `SELECT frozen_input->'target_facts', frozen_policy ? 'vars' FROM download_tasks WHERE release_id = $1`, claim.Owner.ID).Scan(&factsRaw, &policyHasVars); err != nil {
 		t.Fatal(err)
+	}
+	if policyHasVars {
+		t.Fatal("frozen task policy still carries retired Vars")
 	}
 	var facts map[string]json.RawMessage
 	if err := json.Unmarshal(factsRaw, &facts); err != nil {
@@ -139,15 +142,14 @@ func TestSubscriptionAdmitsALargeFirstLevelReleaseWithAReferenceFrozenRecord(t *
 	if _, embedded := facts["targets"]; embedded || reference.Admission != string(target.AdmissionDownload) || reference.TargetCount != targetCount || !strings.HasPrefix(reference.TargetSetDigest, "sha256:") {
 		t.Fatalf("frozen target facts = %+v (targets embedded: %t), want the reference to %d stored targets", reference, embedded, targetCount)
 	}
-	var withVars, withoutDigest int
+	var withVars int
 	if err := db.QueryRowContext(ctx, `
-SELECT COUNT(*) FILTER (WHERE render_snapshot ? 'vars'),
-       COUNT(*) FILTER (WHERE COALESCE(render_snapshot->>'vars_digest', '') NOT LIKE 'sha256:%')
-FROM acquisition_targets WHERE release_id = $1`, claim.Owner.ID).Scan(&withVars, &withoutDigest); err != nil {
+SELECT COUNT(*) FILTER (WHERE render_snapshot ?| ARRAY['vars', 'vars_digest'])
+FROM acquisition_targets WHERE release_id = $1`, claim.Owner.ID).Scan(&withVars); err != nil {
 		t.Fatal(err)
 	}
-	if withVars != 0 || withoutDigest != 0 {
-		t.Fatalf("render snapshots: %d embed vars, %d do not name a vars digest", withVars, withoutDigest)
+	if withVars != 0 {
+		t.Fatalf("%d render snapshots still carry retired Vars", withVars)
 	}
 
 	// Every capped document, measured as its column CHECK measures it (the jsonb
@@ -162,7 +164,6 @@ FROM acquisition_targets WHERE release_id = $1`, claim.Owner.ID).Scan(&withVars,
 		{"download_tasks.frozen_input.selected_release", `SELECT octet_length((frozen_input->'selected_release')::text) FROM download_tasks WHERE release_id = $1`, 65536},
 		{"download_tasks.frozen_input", `SELECT pg_column_size(frozen_input::text::jsonb) FROM download_tasks WHERE release_id = $1`, 1048576},
 		{"download_tasks.frozen_policy", `SELECT pg_column_size(frozen_policy::text::jsonb) FROM download_tasks WHERE release_id = $1`, 1048576},
-		{"download_tasks.frozen_policy.vars.input", `SELECT octet_length((frozen_policy->'vars'->'input')::text) FROM download_tasks WHERE release_id = $1`, 262144},
 		{"work_items.input_snapshot", `SELECT COALESCE(MAX(pg_column_size(w.input_snapshot::text::jsonb)), 0) FROM work_items w JOIN download_tasks d ON d.id = w.owner_id WHERE d.release_id = $1`, 1048576},
 		{"acquisition_targets.render_snapshot", `SELECT MAX(pg_column_size(render_snapshot::text::jsonb)) FROM acquisition_targets WHERE release_id = $1`, 1048576},
 		{"acquisition_targets.config_snapshot", `SELECT MAX(pg_column_size(config_snapshot::text::jsonb)) FROM acquisition_targets WHERE release_id = $1`, 1048576},

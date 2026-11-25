@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
-
-	"bansoko/internal/namingvars"
 )
 
 // businessPresetForLoadTest is a complete Global preset as ReadBusinessPreset
@@ -30,9 +28,6 @@ func businessPresetForLoadTest(t *testing.T) BusinessSnapshot {
 	business.Replacement = ReplacementValue{AdmissionMode: "all",
 		QualityProfile: json.RawMessage(`{"version":"profile-v2","items":[{"key":"subgroup.score","ranks":[]},{"key":"rt.sub_lang","ranks":[["SC"],["TC"],["JPN"],["ENG"]]},{"key":"rt.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"rt.revision","ranks":[]}]}`)}
 	business.ReplacementVersion, business.UnclassifiedRoute, business.FileEffectVersion = 4, "skip", 5
-	business.Programs = ProgramReferences{
-		Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
-	}
 	// The Global subgroups section knows one group the draft does not name.
 	var subgroups SubgroupsSection
 	if err := json.Unmarshal(business.Sections[SectionSubgroups], &subgroups); err != nil {
@@ -97,7 +92,7 @@ func TestLoadBusinessIntoDraftFreezesTheDraftEdits(t *testing.T) {
 	if err != nil || digest != *loaded.BusinessDigest {
 		t.Fatalf("business digest = %v, %v; the draft says %s", digest, err, *loaded.BusinessDigest)
 	}
-	if loaded.Business.Programs != preset.Programs || loaded.Business.Parser.Kind != preset.Parser.Kind || loaded.Business.UnclassifiedRoute != preset.UnclassifiedRoute {
+	if loaded.Business.Parser.Kind != preset.Parser.Kind || loaded.Business.UnclassifiedRoute != preset.UnclassifiedRoute {
 		t.Fatalf("non-section preset fields changed: %+v", loaded.Business)
 	}
 
@@ -145,7 +140,7 @@ func TestLoadBusinessIntoDraftFreezesTheDraftEdits(t *testing.T) {
 
 	// Preview resolves the draft over its snapshot; save takes the snapshot's
 	// sections. They must be the same configuration.
-	resolved, err := ResolveDraftSectionsFromBusiness(loaded, nil)
+	resolved, err := ResolveDraftSectionsFromBusiness(loaded)
 	if err != nil {
 		t.Fatalf("preview resolution of the loaded draft: %v", err)
 	}

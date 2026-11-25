@@ -152,7 +152,7 @@ func expandShorthands(expression string) string {
 // the expansion and never validates a template, because the validating analysis
 // runs on the expanded expression.
 func interpolationSpans(expression string) ([][2]int, error) {
-	analyzer := newExpressionAnalyzer(languageProfileOf(), KindDirectory, nil)
+	analyzer := newExpressionAnalyzer(languageProfileOf(), KindDirectory)
 	analyzer.allowShorthands = true
 	if err := analyzer.analyze(expression); err != nil {
 		return nil, err

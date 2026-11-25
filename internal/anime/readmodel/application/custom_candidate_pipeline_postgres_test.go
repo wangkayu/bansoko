@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -44,7 +43,7 @@ func TestPGCustomCandidateExactSnapshotPreviewAndAtomicCAS(t *testing.T) {
 	ctx := context.Background()
 	view, services := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
 	input := readmodelCandidateInput(t, db, readmodelTestDraft(t))
-	business, err := frozenpolicy.SeedBusiness(ctx, db, `vars.marker = {value: "frozen-custom", title: input.release_title};`)
+	business, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,29 +103,12 @@ func TestPGCustomCandidateExactSnapshotPreviewAndAtomicCAS(t *testing.T) {
 			t.Fatalf("torrent fetch failure not projected for %q: %+v", row.Seed.Title, row)
 		}
 	}
-	frozen, err := view.freezePreviewVars(ctx, business.Programs.Vars, acquisitiondomain.FeedItem{Title: "Test Show - 01"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if frozen.Status != "ok" || frozen.Output["marker"]["value"] != "frozen-custom" || frozen.Output["marker"]["title"] != "Test Show - 01" {
-		t.Fatalf("actual frozen Vars output %+v", frozen)
-	}
-	if _, err := frozenpolicy.SeedBusiness(ctx, db, `vars.marker = {value: "unrelated-new-source"};`); err != nil {
-		t.Fatal(err)
-	}
-	replay, err := view.freezePreviewVars(ctx, business.Programs.Vars, acquisitiondomain.FeedItem{Title: "Test Show - 01"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(replay.Output, frozen.Output) {
-		t.Fatalf("exact Vars replay changed %+v", replay)
-	}
 	saved, err := services.Draft.GetAnimeConfigCandidateRevision(ctx, candidate.Id, revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Business.Programs != business.Programs {
-		t.Fatal("frozen Vars program substituted")
+	if saved.Business == nil || saved.Business.SchemaVersion != business.SchemaVersion {
+		t.Fatal("saved revision lost its business snapshot")
 	}
 	restarted, _ := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
 	restarted.seedPreviews = view.seedPreviews
@@ -197,7 +179,7 @@ func TestPGCustomSnapshotFetchAdmitsDormantPreset(t *testing.T) {
 	ctx := context.Background()
 	_, services := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
 	input := readmodelCandidateInput(t, db, readmodelTestDraft(t))
-	business, err := frozenpolicy.SeedBusiness(ctx, db, `vars.marker = {value: "dormant-custom", title: input.release_title};`)
+	business, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

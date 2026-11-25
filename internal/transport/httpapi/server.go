@@ -381,7 +381,6 @@ type Dependencies struct {
 	EventActions       *eventactions.Service
 	EmbeddedUpdate     EmbeddedUpdateService
 	TemplateCatalog    TemplateCatalogService
-	NamingVars         NamingVarsService
 	Reconciliation     ReconciliationService
 	CandidateFacts     CandidateFactsService
 	TorrentStructure   TorrentStructureService
@@ -472,9 +471,6 @@ func NewProductionServer(deps Dependencies) (*Server, error) {
 	}
 	if deps.TemplateCatalog == nil {
 		return nil, errors.New("httpapi template catalog service is nil")
-	}
-	if deps.NamingVars == nil {
-		return nil, errors.New("httpapi naming vars service is nil")
 	}
 	if deps.Reconciliation == nil {
 		return nil, errors.New("httpapi reconciliation service is nil")

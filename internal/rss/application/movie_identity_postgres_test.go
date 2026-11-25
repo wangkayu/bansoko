@@ -249,7 +249,6 @@ SELECT release_facts FROM media_fact_snapshots WHERE release_id = 'release-tv-se
 // movie parser provenance — with a title that carries a year and a torrent
 // entry whose name carries digits.
 func TestMovieBindingReleaseChainRendersAndPersistsMovieTargetPostgres(t *testing.T) {
-	initTestNamingVars(t)
 	db := openRSSDatabase(t)
 	ctx := context.Background()
 	sourceID, _ := seedRSSOwner(t, db, false, true)
@@ -380,7 +379,6 @@ WHERE release_id = 'release-movie-target' AND media_kind = 'video'`).Scan(&rerea
 // existing TV target shape: the season directory and episode token are rendered
 // from the frozen typed identity.
 func TestTVBindingReleaseChainRendersAndPersistsTVTargetPostgres(t *testing.T) {
-	initTestNamingVars(t)
 	db := openRSSDatabase(t)
 	ctx := context.Background()
 	sourceID, _ := seedRSSOwner(t, db, false, true)

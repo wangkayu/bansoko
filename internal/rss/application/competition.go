@@ -410,7 +410,7 @@ func (e *competitionWriteFailed) Unwrap() error { return e.err }
 //  1. the gate (competitionGate) decides whether the round runs at all;
 //  2. the round is decided in a read-only transaction;
 //  3. every decided release runs the decided stage of the one release
-//     evaluation outside any transaction (target probe, naming vars, qB). A
+//     evaluation outside any transaction (target probe, naming, qB). A
 //     release whose decided stage fails is left out and the round is decided
 //     again without it (it takes no episode and keeps no other release out);
 //  4. the commit (commitCompetition) locks the managed anime, the
@@ -484,8 +484,8 @@ func (s *Service) runDecidedStages(ctx context.Context, claim workitems.Claim, r
 		case err != nil:
 			run.exclude(decision.ReleaseID, safeReason(err.Error()), false)
 		case outcome.Kind == worker.OutcomeRetry:
-			// The decided stage could not finish (naming vars interrupted, a
-			// qB lookup failed): the release waits for a later round.
+			// The decided stage could not finish (naming interrupted or a qB
+			// lookup failed): the release waits for a later round.
 			run.exclude(decision.ReleaseID, safeReason(outcome.Reason), true)
 		case outcome.Kind != worker.OutcomeFinish || outcome.WriteOwner == nil:
 			// Nothing to write (a parser policy fault): the release keeps

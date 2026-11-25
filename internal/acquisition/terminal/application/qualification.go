@@ -8,7 +8,6 @@ import (
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"
 	catalog "bansoko/internal/catalog/domain"
-	"bansoko/internal/namingvars"
 )
 
 var errQualificationMaterial = errors.New("qualification material unavailable")
@@ -62,10 +61,6 @@ type catalogMaterial struct {
 	feed        catalog.ProviderFeedSnapshot
 	seedKey     string
 }
-type programMaterial struct {
-	vars       namingvars.Program
-	varsSource string
-}
 
 // admissionCapture is backend-only, immutable after construction, and has no
 // JSON assembly surface. B1 will consume it inside this package, never transport.
@@ -90,7 +85,6 @@ type qualificationMaterial struct {
 	payloadDigest  string
 	catalogKind    string
 	catalog        *catalogMaterial // nil is the explicitly chosen direct-release path.
-	programs       programMaterial
 	bgm            *anime.BGMBinding
 	tmdb           *anime.TMDBBinding
 	// ownerMediaKind is the owner pin of the naming branch (tv | movie). It
@@ -99,18 +93,17 @@ type qualificationMaterial struct {
 	ownerMediaKind *string
 	// animeYear is the owner-edited naming year (anime.year); nil when unset.
 	// It comes from the same source as the binding (saved or submitted draft,
-	// or the owner's metadata row) and is frozen in the Vars input.
+	// or the owner's metadata row) and is frozen in media.year.
 	animeYear *int
 	// animeSeason is the owner-edited naming season (anime.season; 0 =
-	// specials); nil when unset. Same source as animeYear, frozen in the Vars
-	// input; independent of the TMDB binding's season.
+	// specials); nil when unset. Same source as animeYear, frozen in media.season; independent of the TMDB binding's season.
 	animeSeason *int
 	// bgmTitles / tmdbTitles are the recorded native titles of the bound
 	// works (metadata_work_titles); nil when the work was never observed.
 	bgmTitles  *workTitles
 	tmdbTitles *workTitles
 	// releaseSourceFacts is the release's frozen source_facts (rt / anibt
-	// value namespaces for the Vars input); nil when the release has none.
+	// value namespaces); nil when the release has none.
 	releaseSourceFacts    []byte
 	metadataVersion       int64
 	parserKind            string
@@ -164,9 +157,6 @@ func constructQualification(m qualificationMaterial) (admissionCapture, error) {
 		config["request_hash"], config["config_digest"] = m.config.requestHash, digest
 	default:
 		return bad("config", nil)
-	}
-	if m.programs.vars.Ref() != m.config.business.Programs.Vars {
-		return bad("programs", nil)
 	}
 	var observation, feed any
 	payloadDigest := m.payloadDigest
@@ -222,7 +212,6 @@ func constructQualification(m qualificationMaterial) (admissionCapture, error) {
 		"management":  managementQualificationValue(m),
 		"source":      map[string]any{"kind": "release", "release_ref": r.id, "expected_version": r.version, "source_ref": map[string]any{"ref": r.sourceID, "version": r.sourceVersion}},
 		"observation": observation, "feed": feed,
-		"programs":  map[string]any{"vars_digest": m.programs.vars.Ref().Digest, "translation": nil},
 		"placement": map[string]any{"kind": "none"},
 	})
 	if err != nil {

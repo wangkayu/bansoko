@@ -8,20 +8,11 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
 func TestRenderPreviewFileForNameKeepsMediaToTheFile(t *testing.T) {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fp, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.SetActive(vars, fp); err != nil {
-		t.Fatal(err)
-	}
 	defaultNaming, err := DefaultSectionValue(SectionNamingRules)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +29,7 @@ func TestRenderPreviewFileForNameKeepsMediaToTheFile(t *testing.T) {
 		TitleTags:       &acquisitiondomain.TitleTagSet{Tags: []string{"resolution:1080p"}},
 	}
 	release := EvaluateFeedItemWithIdentity(item, SourceEvaluationInput{GroupName: "RealGroup"}, effective, domainValue[MetadataHold](domainValue[MetadataHold](generated.MetadataHold{})), tvEpisodeIdentity(t, "1"))
-	release.FrozenVars = explicitTestFrozenVars()
+	release.NamingAnime = previewFixtureAnime()
 	// media.* is the inspected file's own measurement; the release title's
 	// [1080p] is the release's fact and stays under rt.res. The filename omits
 	// the resolution and no probe has run, so media.resolution is empty: it is
@@ -86,14 +77,6 @@ func tvEpisodeIdentity(t *testing.T, episode string) episodeidentity.EpisodeIden
 
 func manifestPreviewFixture(t *testing.T) (EffectiveConfig, PreviewReleaseResult, acquisitiondomain.FeedItem) {
 	t.Helper()
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fp, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.SetActive(vars, fp); err != nil {
-		t.Fatal(err)
-	}
 	defaultNaming, err := DefaultSectionValue(SectionNamingRules)
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +96,7 @@ func manifestPreviewFixture(t *testing.T) (EffectiveConfig, PreviewReleaseResult
 	}
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "1"))
-	release.FrozenVars = explicitTestFrozenVars()
+	release.NamingAnime = previewFixtureAnime()
 	return effective, release, item
 }
 
@@ -373,14 +356,6 @@ func TestPreviewFilesForManifestMovieNonMainVideosAreUnknown(t *testing.T) {
 // bundled profile renders 07, while the frozen identity from the selected
 // parser renders 42.
 func TestRenderPreviewFileForNameConsumesFrozenReleaseEpisode(t *testing.T) {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	fp, err := namingvars.Fingerprint(vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.SetActive(vars, fp); err != nil {
-		t.Fatal(err)
-	}
 	defaultNaming, err := DefaultSectionValue(SectionNamingRules)
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +372,7 @@ func TestRenderPreviewFileForNameConsumesFrozenReleaseEpisode(t *testing.T) {
 	source := SourceEvaluationInput{GroupName: "RealGroup"}
 
 	release := EvaluateFeedItemWithIdentity(item, source, effective, domainValue[MetadataHold](generated.MetadataHold{}), tvEpisodeIdentity(t, "1"))
-	release.FrozenVars = explicitTestFrozenVars()
+	release.NamingAnime = previewFixtureAnime()
 	release.FrozenEpisode = nil
 	unresolved := renderPreviewFileForName(item, release, effective, "Preview Show", source, "Preview Show [E07].mkv", "video", 0, release.FrozenEpisode, false, false)
 	if unresolved.RenderedTarget != nil {

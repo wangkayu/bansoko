@@ -142,7 +142,6 @@ func TestResolveReleaseParserEvidenceUnsetMediaKindIsTVWhateverTheBinding(t *tes
 // frozen movie identity, and the frozen target config snapshot must carry the
 // media kind evidence — digits in the filename must not re-open TV parsing.
 func TestTargetPlanningMovieBindingUsesMovieNamingBranch(t *testing.T) {
-	initTestNamingVars(t)
 	service := &Service{
 		targetAcquisitionConfigured: true,
 		targetProbe:                 missingTargetProbe{},

@@ -43,9 +43,6 @@ import (
 	metadatapersistence "bansoko/internal/metadata/adapter/persistence"
 	"bansoko/internal/metadata/matcher"
 	metadatarefresh "bansoko/internal/metadata/refresh"
-	"bansoko/internal/namingvars"
-	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
-	namingvarspreflight "bansoko/internal/namingvars/preflight"
 	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
@@ -93,43 +90,6 @@ func fatalStartupDetail(logger observabilityport.RuntimeLogger, message, reasonC
 		ErrorClass: "startup_fatal",
 	})
 	os.Exit(1)
-}
-
-func warnDeprecatedVarsTemplates(ctx context.Context, db *sql.DB, logger observabilityport.RuntimeLogger) {
-	hits, err := namingvarspreflight.ScanEditableTemplates(ctx, db)
-	if err != nil {
-		logger.Warn(ctx, observabilityport.RuntimeEvent{
-			Message:    "naming vars deprecation scan could not complete; run `bansoko-server migrate check-vars` before upgrading to 0.3",
-			Component:  "runtime",
-			Operation:  "naming_vars_preflight",
-			Outcome:    "warning",
-			ReasonCode: "naming_vars_preflight_failed",
-		})
-		return
-	}
-	if len(hits) == 0 {
-		return
-	}
-	logger.Warn(ctx, observabilityport.RuntimeEvent{
-		Message:    formatVarsDeprecationWarning(hits),
-		Component:  "runtime",
-		Operation:  "naming_vars_preflight",
-		Outcome:    "warning",
-		ReasonCode: "naming_vars_templates_deprecated",
-	})
-}
-
-func formatVarsDeprecationWarning(hits []namingvarspreflight.Hit) string {
-	const maxListed = 10
-	listed := make([]string, 0, min(len(hits), maxListed))
-	for i := 0; i < len(hits) && i < maxListed; i++ {
-		listed = append(listed, hits[i].String())
-	}
-	extra := ""
-	if len(hits) > maxListed {
-		extra = fmt.Sprintf(" (+%d more)", len(hits)-maxListed)
-	}
-	return fmt.Sprintf("custom naming Vars will be retired in 0.3; replace %d template reference(s) before upgrading (run `bansoko-server migrate check-vars` for the full list): %s%s", len(hits), strings.Join(listed, ", "), extra)
 }
 
 func main() {
@@ -202,23 +162,6 @@ func runServe(args []string) {
 			fatalStartup(runtimeLogger, "runtime database role separation violated", "runtime_role_separation_violated")
 		}
 	}
-	// The database owns the naming Vars program: the file only seeds the first
-	// version. A stored version is never replaced by a restart; a file that
-	// differs is reported, not applied.
-	varsInit, err := namingvars.InitializeDetailed(ctx, namingvars.NewStore(namingvarspersistence.NewRepository(db)), cfg.NamingVarsConfigPath, cfg.NamingVarsDefaultsPath)
-	if err != nil {
-		fatalStartupDetail(runtimeLogger, "naming vars initialization failed", "naming_vars_init_failed", cfg.NamingVarsConfigPath)
-	}
-	if varsInit.FileDiverged {
-		runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
-			Message:    "naming vars file differs from the stored program; the stored program stays active, import the file in the editor to use it",
-			Component:  "runtime",
-			Operation:  "naming_vars_init",
-			Outcome:    "warning",
-			ReasonCode: "naming_vars_file_diverged",
-		})
-	}
-	warnDeprecatedVarsTemplates(ctx, db, runtimeLogger)
 	// Adopted reltitle binary (owner 2026-11-01): a file at
 	// <config>/rt/reltitle overrides the compiled-in parser when it passes the
 	// adoption chain (regular executable, -version, an rt-serve-1 hello and one

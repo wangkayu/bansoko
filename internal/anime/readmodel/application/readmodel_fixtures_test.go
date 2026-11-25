@@ -56,7 +56,7 @@ type readmodelTestServices struct {
 
 func (services *readmodelTestServices) SubscribeAnime(ctx context.Context, input generated.SubscribeAnimeInput, idempotencyKey string) (generated.SubscribeResult, error) {
 	if input.Draft.Business == nil {
-		b, err := frozenpolicy.SeedBusiness(ctx, services.DB, `vars.actual = {title: input.release_title};`)
+		b, err := frozenpolicy.Business()
 		if err != nil {
 			return generated.SubscribeResult{}, err
 		}

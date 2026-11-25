@@ -60,7 +60,7 @@ func TestDeliveryReplacements(t *testing.T) {
 		}
 	}
 	var accept string
-	if err := db.QueryRowContext(ctx, `SELECT pg_get_functiondef('public.accept_acquisition_queued_without_vars'::regproc)`).Scan(&accept); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT pg_get_functiondef('public.accept_acquisition_queued'::regproc)`).Scan(&accept); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(accept, "'1'::jsonb") {

@@ -82,10 +82,9 @@ func mapAcceptanceError(err error) error {
 
 // TorrentTooLargeCode is the typed refusal of an admission whose frozen record
 // would exceed a stored bound. Every frozen carrier is bounded independently
-// of the target count, but the release-level file inventory (release_files
-// and the naming vars input) is still frozen once per carrier, so a torrent
-// that lists enough files is refused here instead of failing as an internal
-// error.
+// of the target count, but the release-level file inventory is still frozen
+// once per carrier, so a torrent that lists enough files is refused here
+// instead of failing as an internal error.
 const TorrentTooLargeCode = "TORRENT_TOO_LARGE"
 
 // MaxFrozenTaskBlobBytes is the stored bound of download_tasks.frozen_input,

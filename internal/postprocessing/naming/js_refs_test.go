@@ -5,23 +5,19 @@ import (
 	"testing"
 )
 
-func analyzeExpression(t *testing.T, expression string, vars map[string]map[string]string) error {
+func analyzeExpression(t *testing.T, expression string) error {
 	t.Helper()
-	_, err := validateNamingExpression(expression, KindDirectory, vars)
+	_, err := validateNamingExpression(expression, KindDirectory)
 	return err
 }
 
 // TestValidateNamingExpressionRefusesUnknownReferences covers the references
 // the analyser is responsible for: a field the catalog does not advertise, an
-// identifier nothing introduces, a dynamic index into a context root, and a
-// vars key the loaded snapshot does not carry.
+// identifier nothing introduces, and a dynamic index into a context root.
 func TestValidateNamingExpressionRefusesUnknownReferences(t *testing.T) {
-	loaded := map[string]map[string]string{"custom": {"label": "Custom"}}
-
 	cases := []struct {
 		name       string
 		expression string
-		vars       map[string]map[string]string
 		want       string
 		code       string
 	}{
@@ -51,32 +47,14 @@ func TestValidateNamingExpressionRefusesUnknownReferences(t *testing.T) {
 			want:       "dynamic context field access is not allowed",
 		},
 		{
-			name:       "computed vars index",
-			expression: "`${vars[key]}`",
-			vars:       loaded,
-			want:       "dynamic or unsupported vars reference",
-			code:       ErrCodeNamingVarsUnknown,
-		},
-		{
-			name:       "unloaded vars group",
-			expression: "`${vars.other.label}`",
-			vars:       loaded,
-			want:       `naming vars group "other" is not loaded`,
-			code:       ErrCodeNamingVarsUnknown,
-		},
-		{
-			name:       "unloaded vars key",
-			expression: "`${vars.custom.missing}`",
-			vars:       loaded,
-			want:       `naming vars key "custom"."missing" is not loaded`,
-			code:       ErrCodeNamingVarsUnknown,
-		},
-		{
-			name:       "nothing loaded refuses every vars reference",
+			name:       "retired vars root is an undeclared identifier",
 			expression: "`${vars.custom.label}`",
-			vars:       map[string]map[string]string{},
-			want:       `naming vars group "custom" is not loaded`,
-			code:       ErrCodeNamingVarsUnknown,
+			want:       "unknown template identifier vars",
+		},
+		{
+			name:       "retired context vars field is unknown",
+			expression: "`${context.vars.custom.label}`",
+			want:       "unknown context field context.vars",
 		},
 		{
 			name:       "alias root with an unknown field",
@@ -92,7 +70,7 @@ func TestValidateNamingExpressionRefusesUnknownReferences(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := analyzeExpression(t, tc.expression, tc.vars)
+			err := analyzeExpression(t, tc.expression)
 			if err == nil {
 				t.Fatalf("expression %q was accepted, want a refusal", tc.expression)
 			}
@@ -112,12 +90,9 @@ func TestValidateNamingExpressionRefusesUnknownReferences(t *testing.T) {
 // TestValidateNamingExpressionAcceptsLegitimateTemplates is the other direction:
 // nothing that works today may be refused because the analyser is narrow.
 func TestValidateNamingExpressionAcceptsLegitimateTemplates(t *testing.T) {
-	loaded := map[string]map[string]string{"custom": {"label": "Custom"}}
-
 	accepted := []struct {
 		name       string
 		expression string
-		vars       map[string]map[string]string
 	}{
 		{name: "advertised fields", expression: "`${anime.title} - E${pad(ep.display, 2)}`"},
 		{name: "deep advertised leaf", expression: "`${media.resolution}`"},
@@ -132,15 +107,13 @@ func TestValidateNamingExpressionAcceptsLegitimateTemplates(t *testing.T) {
 		{name: "hoisted local used before its declaration", expression: "`${(() => { return later; var later = 1; })()}`"},
 		{name: "conditional and binary operators", expression: "`${anime.title ? anime.title : 'untitled'}`"},
 		{name: "object literal with a shorthand reference", expression: "`${JSON.stringify({ title: anime.title })}`"},
-		{name: "loaded vars reference", expression: "`${vars.custom.label}`", vars: loaded},
-		{name: "no snapshot means vars are not checked", expression: "`${vars.custom.label}`"},
 		{name: "alias root dereferencing an advertised field", expression: "`${anime.title}`"},
 		{name: "empty expression", expression: ""},
 	}
 
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := analyzeExpression(t, tc.expression, tc.vars); err != nil {
+			if err := analyzeExpression(t, tc.expression); err != nil {
 				t.Fatalf("expression %q was refused: %v", tc.expression, err)
 			}
 		})

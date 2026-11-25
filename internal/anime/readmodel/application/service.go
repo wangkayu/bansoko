@@ -9,7 +9,6 @@ import (
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/release/facts"
 )
 
@@ -57,12 +56,6 @@ type Service struct {
 	// observations reads persisted provider group observations; nil reads the
 	// database directly.
 	observations GroupObservationReader
-
-	// previewMaterials caches the immutable Vars programs a preview evaluates
-	// with, so they are not re-read for every release.
-	previewMaterials previewMaterialCache
-	// loadVarsProgramSource replaces the database read when set.
-	loadVarsProgramSource func(context.Context, namingvars.ProgramRef) (namingvars.Program, error)
 }
 
 func NewService(db *sql.DB, deps Dependencies) (*Service, error) {

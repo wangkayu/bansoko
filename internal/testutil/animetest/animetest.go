@@ -12,52 +12,15 @@ import (
 	"testing"
 
 	"bansoko/internal/apperrors"
-	"bansoko/internal/namingvars"
-	varspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/testutil/disposabledb"
 
 	"github.com/lib/pq"
 )
 
-// InstallRegistries installs the shared test naming vars.
-// It is safe to call from package TestMain functions and individual tests.
-func InstallRegistries() {
-	vars := namingvars.Vars{"test": {"marker": "ok"}}
-	varsFingerprint, err := namingvars.SourceFingerprint(`vars.test = {marker: "ok"};`)
-	if err != nil {
-		panic(err)
-	}
-	if err := namingvars.SetActive(vars, varsFingerprint); err != nil {
-		panic(err)
-	}
-}
-
-// OpenTestDB installs shared registries and resets the guarded disposable schema.
+// OpenTestDB resets the guarded disposable schema.
 func OpenTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	InstallRegistries()
-	db := disposabledb.ResetDisposableSchema(t)
-	PublishRegistries(t, db)
-	return db
-}
-
-// PublishRegistries persists the shared test naming vars source installed by
-// InstallRegistries, so a business snapshot can load its exact version.
-func PublishRegistries(t *testing.T, db *sql.DB) {
-	t.Helper()
-	ctx := context.Background()
-	source := `vars.test = {marker: "ok"};`
-	vars, err := namingvars.Run(source, namingvars.DefaultInput, namingvars.DefaultTimeout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fp, err := namingvars.SourceFingerprint(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := namingvars.NewStore(varspersistence.NewRepository(db)).PublishSource(ctx, source, vars, fp); err != nil {
-		t.Fatal(err)
-	}
+	return disposabledb.ResetDisposableSchema(t)
 }
 
 // CountRows returns the row count for a table in the test database.
@@ -242,8 +205,8 @@ func OwnerTestDB(t *testing.T) *sql.DB {
 
 // SetOwnerYear sets the owner-edited year (anime_metadata.year) of an anime,
 // the only value ${anime.year} renders. Call it after the metadata row is
-// seeded and before the release is accepted, which freezes it into the Vars
-// input.
+// seeded and before the release is accepted, which freezes it into the
+// acquisition input.
 func SetOwnerYear(t *testing.T, animeID string, year int) {
 	t.Helper()
 	result, err := OwnerTestDB(t).ExecContext(context.Background(), `

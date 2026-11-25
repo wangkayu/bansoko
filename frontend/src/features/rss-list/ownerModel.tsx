@@ -8,7 +8,7 @@ import { StatePill, Button } from "../../ui";
 import { ReasonText } from "../../ui/ReasonText";
 import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles";
 import { groupBoundSubtitles } from "../../lib/boundSubtitles";
-import { emptyFactsNote, knownReasonLabel, namingFailureDetail, namingPendingLabel, reasonLabel } from "../../lib/i18n/reasons";
+import { emptyFactsNote, knownReasonLabel, namingFailureDetail, reasonLabel } from "../../lib/i18n/reasons";
 import { t } from "../../lib/i18n";
 import { labelValue } from "../../lib/i18n/format";
 import { groupLabel, disambiguateGroupNames } from "../../lib/groupLabels";
@@ -152,8 +152,7 @@ const HARD_GATE_OUTCOMES: ReadonlySet<string> = new Set(["ignored_nested", "igno
  *  target. A render failure is not a landing failure — output rendering and execution
  *  failure/unreachable paths are strictly layered, and future probe/execution codes do not belong
  *  here: with no target they degrade into the neutral "target pending", leaving the verdict to ③ /
- *  the seed row. naming_* is the naming-domain prefix (e.g. naming_fact_missing_*); codes like
- *  naming_vars_unavailable equally state directly why there is no output. */
+ *  the seed row. naming_* is the naming-domain prefix (e.g. naming_fact_missing_*). */
 function isRenderDiagnostic(code: string): boolean {
   // The naming engine's codes are uppercase (NAMING_TARGET_NOT_ABSOLUTE) and landing diagnostics
 //   keep their case; normalize uniformly before judging so case never decides whether a failure
@@ -336,8 +335,7 @@ function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubt
   // Same-name-not-kept arrives as target_diagnostic (the same source as the video row's duplicateConflict).
   const duplicate = parsed?.target_diagnostic?.code === "target_duplicate";
   const reasonCode = duplicate ? "target_duplicate" : filtered ? (preview ? preview.reason_code : parsed?.outcome_reason ?? outcome) : undefined;
-  const pending = preview?.render_error ? namingPendingLabel(preview.reason_code) : undefined;
-  const failure = preview?.render_error && !pending ? namingFailureDetail(preview.reason_code, preview.empty_facts) ?? preview.render_error : undefined;
+  const failure = preview?.render_error ? namingFailureDetail(preview.reason_code, preview.empty_facts) ?? preview.render_error : undefined;
   return {
     key: path,
     path,
@@ -347,7 +345,7 @@ function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubt
     included: !filtered && !duplicate,
     reasonCode,
     target: preview ? preview.rendered_target : parsed?.target_path ?? undefined,
-    targetProblem: pending ?? failure,
+    targetProblem: failure,
   };
 }
 
@@ -456,8 +454,7 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
       reason: describeReason(file.reason_code),
       target: file.rendered_target ?? undefined,
       targetNote: file.rendered_target ? emptyFactsNote(file.empty_facts) : undefined,
-      targetError: file.render_error && !namingPendingLabel(file.reason_code) ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined,
-      targetPending: file.render_error ? namingPendingLabel(file.reason_code) : undefined,
+      targetError: file.render_error ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined,
     })),
     extras: task || retries.length > 0 ? <>
       {task && task.state !== "failed" && <StatePill tone={downloadTaskStateTone(task.state)}>{downloadTaskStateLabel(task.state)}</StatePill>}

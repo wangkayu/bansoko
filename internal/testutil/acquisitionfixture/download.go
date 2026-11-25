@@ -11,12 +11,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
-	"bansoko/internal/acquisition/terminal/varsevidence"
+
 	anime "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
+
 	"bansoko/internal/testutil/frozenpolicy"
 	"bansoko/internal/testutil/nativeinput"
 )
@@ -49,7 +48,7 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 	if !owner {
 		t.Fatal("acquisitionfixture requires an owner connection; runtime handles cannot arrange accepted work")
 	}
-	business, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	business, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,25 +99,21 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 		// RouteRoot is the delivery route root the accepted input freezes: the
 		// work's tree top, which is also what the notify projectors relativize
 		// an unrecognized file's path against.
-		RouteRoot   string          `json:"route_root"`
-		Sections    map[string]any  `json:"effective_sections"`
-		Vars        json.RawMessage `json:"vars"`
-		MediaValues map[string]any  `json:"fixture_media_values"`
-		RouteValues map[string]any  `json:"fixture_route_values"`
-		VarsSource  string          `json:"fixture_vars_source"`
-		// AnimeYear is the owner-edited year (anime_metadata.year) the frozen
-		// Vars input carries as facts.anime.year; nil leaves it unset.
+		RouteRoot   string         `json:"route_root"`
+		Sections    map[string]any `json:"effective_sections"`
+		MediaValues map[string]any `json:"fixture_media_values"`
+		RouteValues map[string]any `json:"fixture_route_values"`
+		// AnimeYear is the owner-edited year (anime_metadata.year) the input freezes in media.year; nil leaves it unset.
 		AnimeYear *int64 `json:"fixture_anime_year"`
-		// AnimeSeason is the owner-edited season (anime_metadata.season) the
-		// frozen Vars input carries as facts.anime.season; nil leaves it unset.
+		// AnimeSeason is the owner-edited season (anime_metadata.season) the input freezes in media.season; nil leaves it unset.
 		AnimeSeason *int64 `json:"fixture_anime_season"`
 		// ReplacementTarget is the accepted ReplacementV1 target for an
 		// overwrite delivery. persistOperationPlan refuses an overwrite
 		// operation unless the accepted input carries the binding naming the
 		// very path the planner renders, so a caller that wants the overwrite
 		// chain must supply it here: the binding has to exist before the accept
-		// function computes admission_digest and the vars evidence, because
-		// those bind the canonical bytes and cannot be rewritten afterwards.
+		// function computes admission_digest, because
+		// it binds the canonical bytes and cannot be rewritten afterwards.
 		ReplacementTarget string `json:"fixture_replacement_target"`
 		// ReplacementBinding is the FULL accepted ReplacementV1 frozen value
 		// (state/value/reason_code). When present it is injected verbatim,
@@ -168,65 +163,11 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 			}
 		}
 	}
-	if len(frozenPolicy.Vars) > 0 {
-		var v struct {
-			Program map[string]any `json:"program"`
-			Input   struct {
-				ReleaseTitle string `json:"release_title"`
-				Files        []any  `json:"files"`
-			} `json:"input"`
-			Output     map[string]any `json:"output"`
-			Status     string         `json:"status"`
-			Diagnostic string         `json:"diagnostic"`
-		}
-		if err := json.Unmarshal(frozenPolicy.Vars, &v); err != nil {
-			t.Fatal(err)
-		}
-		if v.Status == "ok" {
-			files := v.Input.Files
-			if files == nil {
-				files = []any{}
-			}
-			output := v.Output
-			if output == nil {
-				output = map[string]any{}
-			}
-			var sourceJSON []byte
-			if err := db.QueryRowContext(ctx, `SELECT content FROM naming_vars_versions WHERE fingerprint=$1`, fmt.Sprint(v.Program["digest"])).Scan(&sourceJSON); err != nil {
-				// The complete policy fixture owns its source, not a published active program.
-				fixtureSource := `vars.fixture = {title: input.release_title};`
-				if frozenPolicy.VarsSource != "" {
-					fixtureSource = frozenPolicy.VarsSource
-				}
-				fp, _ := namingvars.SourceFingerprint(fixtureSource)
-				if fmt.Sprint(v.Program["digest"]) != fp {
-					t.Fatalf("exact fixture Vars source unavailable: %v", err)
-				}
-				if _, err := frozenpolicy.SeedBusiness(ctx, db, fixtureSource); err != nil {
-					t.Fatal(err)
-				}
-				sourceJSON, _ = json.Marshal(fixtureSource)
-			}
-			var programSource string
-			if err := json.Unmarshal(sourceJSON, &programSource); err != nil {
-				t.Fatal(err)
-			}
-			runtime, _ := namingvars.RuntimeOf(namingvars.ProgramRef{Digest: fmt.Sprint(v.Program["digest"]), Version: fmt.Sprint(v.Program["version"])})
-			v.Program = map[string]any{"schema_version": 1, "source": programSource, "digest": v.Program["digest"], "version": v.Program["version"], "runtime_version": runtime, "timeout_ms": 50, "max_input_bytes": 262144, "max_output_bytes": 8192, "max_collection_len": 256, "max_string_bytes": 8192}
-			body["delivery"].(map[string]any)["naming"].(map[string]any)["vars_choice"] = "frozen"
-			// VarsInputV1 freezes the fact object the program read, so the fixture
-			// builds it from the same release evidence the real evaluation uses.
-			fileBytes, err := json.Marshal(files)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var namingFiles []namingvars.File
-			if err := json.Unmarshal(fileBytes, &namingFiles); err != nil {
-				t.Fatal(err)
-			}
-			facts := namingvars.BuildInput(namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: frozenPolicy.AnimeYear, AnimeSeason: frozenPolicy.AnimeSeason}, ReleaseTitle: v.Input.ReleaseTitle, Files: namingFiles}).Facts
-			known := map[string]any{"release_title": map[string]any{"state": "known", "value": v.Input.ReleaseTitle, "reason_code": nil}, "files": files, "facts": facts}
-			body["config"].(map[string]any)["vars"] = map[string]any{"mode": "frozen", "program": v.Program, "known_inputs": known, "output": output, "status": v.Status, "reason_code": nil}
+	for key, value := range map[string]*int64{"year": frozenPolicy.AnimeYear, "season": frozenPolicy.AnimeSeason} {
+		if value != nil {
+			body["media"].(map[string]any)[key] = known(*value)
+		} else {
+			body["media"].(map[string]any)[key] = map[string]any{"state": "absent", "value": nil, "reason_code": nil}
 		}
 	}
 	// Owner-arranged test inputs must be frozen before acceptance, never patched later.
@@ -310,7 +251,7 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 		"config":      map[string]any{"kind": "submitted", "request_hash": d, "config_digest": businessDigest},
 		"management":  map[string]any{"kind": "instance", "managed_anime_ref": animeID, "subscription_ref": subscription, "expected_subscription_version": subscriptionVersion, "expected_lifecycle_version": lifecycleVersion, "expected_metadata_version": nil, "expected_parser_policy_version": nil, "expected_rules_owner_version": nil, "expected_subgroups_owner_version": nil, "subscription_policy": "manual_active_or_stopped"},
 		"source":      map[string]any{"kind": "release", "release_ref": release, "expected_version": releaseVersion, "source_ref": map[string]any{"ref": source, "version": sourceVersion}},
-		"observation": nil, "feed": nil, "programs": map[string]any{"vars_digest": business.Programs.Vars.Digest, "translation": nil}, "placement": map[string]any{"kind": "none"},
+		"observation": nil, "feed": nil, "placement": map[string]any{"kind": "none"},
 	})
 	defaults := map[string]json.RawMessage{}
 	for _, name := range anime.EffectiveSectionOrder {
@@ -342,54 +283,12 @@ func seedDownloadManifest(t *testing.T, db DownloadDB, root, task, release, anim
 			t.Fatalf("unsupported fixture entry kind %q", entryKind)
 		}
 	}
-	var evidenceProtocol bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='accept_acquisition_queued_with_vars')`).Scan(&evidenceProtocol); err != nil {
-		t.Fatal(err)
-	}
-	entry := "accept_acquisition_queued"
-	if evidenceProtocol {
-		entry = "accept_acquisition_queued_with_vars"
-	}
-	// A new-protocol frozen fixture records a completion through the production
-	// wrapper for the fixture's own expected output. The program is still
-	// checked (digest and compile), but the time-limited evaluator is not run,
-	// so a loaded host cannot fail the seed. Historical lanes never backfill a
-	// record or fabricate an earlier time.
-	if evidenceProtocol {
-		var record any
-		vars := value.Object["config"].Object["vars"]
-		if vars.Object["mode"].String == "frozen" {
-			p := vars.Object["program"].Object
-			if _, err := namingvars.NewProgram(namingvars.ProgramRef{Digest: p["digest"].String, Version: p["version"].String}, p["source"].String); err != nil {
-				t.Fatal(err)
-			}
-			var output namingvars.Vars
-			if err := json.Unmarshal(protocol.Canonical(vars.Object["output"]), &output); err != nil {
-				t.Fatal(err)
-			}
-			known := vars.Object["known_inputs"].Object
-			var files []namingvars.File
-			if err := json.Unmarshal(protocol.Canonical(known["files"]), &files); err != nil {
-				t.Fatal(err)
-			}
-			completion, err := varsevidence.Evaluate(ctx, fixedVarsOutput(output), namingvars.Input{ReleaseTitle: known["release_title"].Object["value"].String, Files: files}, varsevidence.ServerClock)
-			if err != nil {
-				t.Fatal(err)
-			}
-			original, err := completion.Record(vars, root, args[7].(string))
-			if err != nil {
-				t.Fatalf("fixture output differs from actual evaluation: %v", err)
-			}
-			record = original
-		}
-		args = append(args, record)
-	}
 	params := make([]string, len(args))
 	for i := range params {
 		params[i] = fmt.Sprintf("$%d", i+1)
 	}
 	var raw []byte
-	if err := db.QueryRowContext(ctx, "SELECT "+entry+"("+strings.Join(params, ",")+")", args...).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT public.accept_acquisition_queued("+strings.Join(params, ",")+")", args...).Scan(&raw); err != nil {
 		t.Fatalf("seed queued download: %v", err)
 	}
 	// Fixture-created submit is terminally owner-arranged so each test can create
@@ -430,12 +329,4 @@ func SeedObservedDownloadManifest(t *testing.T, db DownloadDB, root, task, relea
 	if _, err := db.ExecContext(ctx, `UPDATE download_tasks SET frozen_policy=$2::jsonb,state=$3,provider_correlation=NULLIF($4,'null')::jsonb WHERE id=$1`, task, policy, state, correlation); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// fixedVarsOutput is a varsevidence.Evaluator that returns the fixture's
-// expected output without running the time-limited program evaluator.
-type fixedVarsOutput namingvars.Vars
-
-func (f fixedVarsOutput) Evaluate(namingvars.Input, time.Duration) (namingvars.Vars, error) {
-	return namingvars.Vars(f), nil
 }

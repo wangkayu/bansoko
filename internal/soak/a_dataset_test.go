@@ -63,13 +63,7 @@ func doLoadDataset(t *testing.T) (*dataset, error) {
 	switch {
 	case err == nil:
 		t.Logf("dataset already loaded (%s): reusing", loaded)
-		if err := installRegistries(rt); err != nil {
-			return nil, err
-		}
 	case err == sql.ErrNoRows:
-		if err := installRegistries(rt); err != nil {
-			return nil, err
-		}
 		var existing int
 		if err := owner.QueryRowContext(ctx, `SELECT count(*) FROM managed_anime`).Scan(&existing); err != nil {
 			return nil, err

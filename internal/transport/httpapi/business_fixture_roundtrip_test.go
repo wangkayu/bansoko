@@ -3,7 +3,6 @@ package httpapi
 import (
 	domain "bansoko/internal/anime/domain"
 	transport "bansoko/internal/anime/transport"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/qualityprofile"
 	"bansoko/internal/transport/httpapi/generated"
 	"encoding/json"
@@ -25,8 +24,6 @@ func TestProviderFixtureBusinessDigestSurvivesExactTypedRequestRoundTrip(t *test
 		b.SectionSchemas[name] = domain.SectionSchemaVersions[name]
 	}
 	b.Replacement = domain.ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}
-	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	b.Programs.Vars = namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}
 	request := providerDraftPayload("80801", "678")
 	d := request["draft"].(map[string]any)
 	b.Sections["subgroups"], _ = json.Marshal(d["subgroups"])

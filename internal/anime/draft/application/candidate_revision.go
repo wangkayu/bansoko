@@ -60,11 +60,6 @@ func (s *Service) appendCandidateRevisionTx(ctx context.Context, tx *sql.Tx, can
 	if err != nil {
 		return CandidateRevision{}, err
 	}
-	if business != nil {
-		if err := verifyBusinessProgramsTx(ctx, tx, *business); err != nil {
-			return CandidateRevision{}, err
-		}
-	}
 	businessRaw, err := businessJSON(business)
 	if err != nil {
 		return CandidateRevision{}, err

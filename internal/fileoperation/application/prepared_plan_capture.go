@@ -13,8 +13,8 @@ type preparedCaptureQuery interface {
 
 // capturePreparedPlan reads only persisted inputs. Its single statement sees
 // one MVCC snapshot without holding any transaction across naming/filesystem I/O.
-// Keep complete frozen policy (including Vars reference/input/output/status/diag)
-// and typed per-file/binding/target facts; never project through active globals.
+// Keep the complete frozen policy and typed per-file/binding/target facts;
+// never project through active globals.
 func capturePreparedPlan(ctx context.Context, q preparedCaptureQuery, planID string) (PreparedPlanCapture, error) {
 	var c PreparedPlanCapture
 	err := q.QueryRowContext(ctx, `SELECT p.id,p.version,p.input_digest,p.artifact_id,p.artifact_version,
@@ -60,7 +60,7 @@ func reloadPreparedPlanCaptureTx(ctx context.Context, scope txscope.Tx, old Prep
 }
 
 // preparedPlanConfig is intentionally lossless: the full frozen policy passes
-// to the existing effectiveConfig decoder, including failed Vars diagnostics.
+// to the existing effectiveConfig decoder.
 func preparedPlanConfig(c PreparedPlanCapture) (effectiveConfig, error) {
 	return effectiveConfigFromFrozenDownloadPolicy(json.RawMessage(c.Config))
 }

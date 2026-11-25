@@ -3,6 +3,7 @@ package application
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"bansoko/internal/postprocessing/naming"
@@ -18,7 +19,7 @@ import (
 // alignment. Neither snapshot carries a library anchor: the target the naming
 // render produced is already absolute.
 func TestMergeFrozenSnapshotKeepsBothContracts(t *testing.T) {
-	targetConfig := json.RawMessage(`{"parser":{},"operation":"move","collision_policy":"block"}`)
+	targetConfig := json.RawMessage(`{"parser":{},"operation":"move","collision_policy":"block","vars":{"output":{}}}`)
 	operationConfig, err := marshalConfigSnapshot(effectiveConfig{
 		naming:   naming.DefaultNamingRules(),
 		versions: map[string]int64{"naming_rules": 3},
@@ -50,7 +51,8 @@ func TestMergeFrozenSnapshotKeepsBothContracts(t *testing.T) {
 		t.Fatalf("the operation snapshot must win on its own keys, got rules_version=%d", decoded.Rules)
 	}
 
-	renderSnapshot, err := mergeFrozenSnapshot(map[string]any{"target": "/library/Show/Season 01/E01.mkv", "binding_facts": map[string]any{"season": 1}}, json.RawMessage(`{"renderer":"naming","target":"/library/Show/Season 01/E01.mkv"}`))
+	legacyRender := json.RawMessage(`{"renderer":"naming","target":"/library/Show/Season 01/E01.mkv","vars_digest":"retired"}`)
+	renderSnapshot, err := mergeFrozenSnapshot(map[string]any{"target": "/library/Show/Season 01/E01.mkv", "binding_facts": map[string]any{"season": 1}}, legacyRender)
 	if err != nil {
 		t.Fatalf("merge render snapshot: %v", err)
 	}
@@ -64,6 +66,12 @@ func TestMergeFrozenSnapshotKeepsBothContracts(t *testing.T) {
 	}
 	if render.BindingFacts == nil || render.Renderer != "naming" {
 		t.Fatalf("the merge lost a contract: %+v", render)
+	}
+	if strings.Contains(string(merged), `"vars"`) || strings.Contains(string(renderSnapshot), `"vars_digest"`) {
+		t.Fatal("new snapshots leaked retired evidence")
+	}
+	if !strings.Contains(string(targetConfig), `"vars"`) || !strings.Contains(string(legacyRender), `"vars_digest"`) {
+		t.Fatal("merge changed the sealed input snapshots")
 	}
 }
 

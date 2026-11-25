@@ -61,6 +61,8 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 		media[key] = frozenValue("absent", nil)
 	}
 	media["title"] = frozenValue("known", title)
+	media["year"] = frozenOwnerNumber(c.material.animeYear)
+	media["season"] = frozenOwnerNumber(c.material.animeSeason)
 	// The title override and the provider catalog title are frozen here, not
 	// derived later: the title chain reads them from the typed plan, and the
 	// override is a real chain member the user set at subscribe time.
@@ -162,7 +164,7 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 	if err != nil {
 		return acquisitionIntent{}, err
 	}
-	delivery := map[string]any{"operation": effect.Operation, "intent": intent, "collision": collision, "route": map[string]any{"mode": "unclassified", "root": root, "path_mapping": mapping}, "naming": map[string]any{"schema_version": "naming-rules-v1", "templates": json.RawMessage(protocol.Canonical(naming)), "vars_choice": "frozen", "runtime_version": "naming-v1"}, "source_cleanup": map[string]any{"mode": cleanup}, "replacements": replacements}
+	delivery := map[string]any{"operation": effect.Operation, "intent": intent, "collision": collision, "route": map[string]any{"mode": "unclassified", "root": root, "path_mapping": mapping}, "naming": map[string]any{"schema_version": "naming-rules-v1", "templates": json.RawMessage(protocol.Canonical(naming)), "runtime_version": "naming-v1"}, "source_cleanup": map[string]any{"mode": cleanup}, "replacements": replacements}
 	var files []int64
 	videos := 0
 	if seed, err := admissionSeed(c); err == nil && seed != nil {
@@ -193,6 +195,13 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 		return acquisitionIntent{}, err
 	}
 	return acquisitionIntent{entryMode: mode, title: title, media: mv, delivery: dv, limits: limits}, nil
+}
+
+func frozenOwnerNumber(value *int) map[string]any {
+	if value == nil {
+		return frozenValue("absent", nil)
+	}
+	return frozenValue("known", *value)
 }
 
 // fileStagePasses is how many times one file's bytes cross storage during a

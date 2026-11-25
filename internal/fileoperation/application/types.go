@@ -11,7 +11,6 @@ import (
 	"bansoko/internal/episodetitle/namingfacts"
 	"bansoko/internal/events"
 	"bansoko/internal/library/domain"
-	"bansoko/internal/namingvars"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	plugintargetport "bansoko/internal/plugintarget/port"
@@ -225,6 +224,10 @@ type artifactContext struct {
 	// when the media fact snapshot carries no frozen binding.
 	ownerMediaKind sql.NullString
 	tmdbSeason     sql.NullInt64
+	ownerYear      *int
+	ownerSeason    *int
+	// Only historical inputs with no owner season member use the frozen binding.
+	ownerSeasonPresent bool
 	// bindingTitles and torrent are the native work titles, provider years and
 	// the torrent metadata frozen in the accepted input (schema 6 / 4); empty for
 	// legacy plans and older inputs, which never froze them. A nil year is a work
@@ -233,7 +236,6 @@ type artifactContext struct {
 	torrent       naming.TorrentNamingFacts
 	correlationID sql.NullString
 	files         []artifactFileContext
-	acceptedFacts bool
 }
 
 // frozenBindingTitles are the bound works' native titles and provider years
@@ -264,7 +266,6 @@ type effectiveConfig struct {
 	effect            fileOperationEffectRules
 	fileFilter        fileOperationFileFilterRules
 	unclassifiedRoute string
-	vars              *namingvars.FrozenEvaluation
 	versions          map[string]int64
 }
 

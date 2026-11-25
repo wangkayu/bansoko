@@ -28,7 +28,7 @@ import (
 // The same decoupling still applies to a real render failure — see
 // TestAcquireSeedOnceProceedsWithUnresolvedNaming.
 func TestAcquireSeedOnceRefusesRelativeNamingTarget(t *testing.T) {
-	service, _, db, seed, refresh := humanOneShotFixture(t)
+	service, _, _, seed, refresh := humanOneShotFixture(t)
 	ctx := context.Background()
 
 	snapshot := refresh([]acquisitiondomain.FeedItem{seedFeedItem(seed)})
@@ -59,7 +59,7 @@ func TestAcquireSeedOnceRefusesRelativeNamingTarget(t *testing.T) {
 		return d
 	})
 	input.Seed = bindSeedIdentity(seed, snapshot)
-	business, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	business, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

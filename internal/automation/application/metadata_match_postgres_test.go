@@ -508,10 +508,10 @@ func TestMetadataMatchDisabledScheduleIsNotDue(t *testing.T) {
 	db := openDispatcherTestDB(t)
 	ctx := context.Background()
 	insertMetadataSubscriptionFixture(t, db, "anime-meta-disabled", "sub-meta-disabled", "Show")
+	// A cloned database template can already have other seeded schedules due.
 	if _, err := db.ExecContext(ctx, `
-UPDATE automation_schedules
-SET enabled = FALSE, next_run_at = NULL
-WHERE kind = 'metadata_match'`); err != nil {
+	UPDATE automation_schedules
+	SET enabled = FALSE, next_run_at = NULL`); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)

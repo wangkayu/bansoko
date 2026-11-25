@@ -206,9 +206,6 @@ func outputErrors(title, body string, titleSourceLen, bodySourceLen int) []Sourc
 	return errors
 }
 
-// varsWildcard marks a known set that admits every vars.<group>.<name>.
-const varsWildcard = "vars.*"
-
 // showIfFunction is the closed line-visibility directive. Written at the start
 // of a line, it shows the rest of that line when at least one argument has a
 // value and drops the whole line when every argument is empty. It renders no
@@ -225,7 +222,6 @@ func knownVariables(trigger string) (map[string]bool, bool) {
 	for _, variable := range variables {
 		known[variable.Name] = true
 	}
-	known[varsWildcard] = true
 	// Stored custom templates may still name anime.group for a trigger whose
 	// catalog no longer exposes a single-source group. Keeping the name
 	// resolvable lets an unrelated save proceed; an absent fact still renders
@@ -977,7 +973,7 @@ func renderStandaloneListLine(line string, facts map[string]any, known map[strin
 		return "", 0, false, nil
 	}
 	variable, ok := expression.(variableExpression)
-	if !ok || (!known[variable.name] && !(known[varsWildcard] && IsVarsPath(variable.name))) {
+	if !ok || (!known[variable.name]) {
 		return "", 0, false, nil
 	}
 	value, present := LookupFact(facts, variable.name)
@@ -1077,7 +1073,7 @@ func resolveLink(node callExpression, facts map[string]any) *Link {
 func validateExpression(expr templateExpression, known map[string]bool) error {
 	switch node := expr.(type) {
 	case variableExpression:
-		if !known[node.name] && !(known[varsWildcard] && IsVarsPath(node.name)) {
+		if !known[node.name] {
 			return fmt.Errorf("未知变量 %q", node.name)
 		}
 	case callExpression:

@@ -14,7 +14,7 @@ import {
 import { searchProviderLabel } from "../../lib/providers/registry";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { formatBytes } from "../../lib/labels";
-import { namingFactLabel, namingFailureDetail, namingPendingLabel, reasonLabel } from "../../lib/i18n/reasons";
+import { namingFactLabel, namingFailureDetail, reasonLabel } from "../../lib/i18n/reasons";
 import { joinList } from "../../lib/i18n/format";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
 import { TaskConfigPanel } from "../anime-forms/TaskConfigPanel";
@@ -129,8 +129,7 @@ function MissingFactsNote({ facts, onJump }: { facts: readonly string[]; onJump:
 
 /** One subtitle in the nested list: the target and filter outcome the server gives. */
 function subtitleItem(file: RSSListFile): BoundSubtitleItem {
-  const pending = file.render_error ? namingPendingLabel(file.reason_code) : undefined;
-  const failure = file.render_error && !pending ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined;
+  const failure = file.render_error ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined;
   return {
     key: file.file_ref,
     path: file.source_path,
@@ -140,15 +139,14 @@ function subtitleItem(file: RSSListFile): BoundSubtitleItem {
     included: file.included,
     reasonCode: file.reason_code,
     target: file.rendered_target,
-    targetProblem: pending ?? failure,
+    targetProblem: failure,
   };
 }
 
 /** Step two's file row: target and filter outcome. The target path is this step's verdict, one font step above the source.
  *  Beneath the video row sit the external subtitles the server bound to it: format badges, details collapsed by default. */
 function FileRow({ file, subtitles, onJump }: { file: RSSListFile; subtitles: RSSListFile[]; onJump: (field: FactField) => void }) {
-  const pending = file.render_error ? namingPendingLabel(file.reason_code) : undefined;
-  const failure = file.render_error && !pending ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined;
+  const failure = file.render_error ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined;
   const emptyFacts = file.included ? (file.empty_facts ?? []) : [];
   return (
     <li className="tw:grid tw:gap-0.5 tw:rounded-md tw:bg-muted/15 tw:px-2.5 tw:py-2">
@@ -157,7 +155,7 @@ function FileRow({ file, subtitles, onJump }: { file: RSSListFile; subtitles: RS
         {file.size_bytes !== undefined && <span> · {formatBytes(file.size_bytes)}</span>}
       </p>
       <p className="break-anywhere tw:m-0 tw:text-sm" title={file.rendered_target ?? undefined}>
-        {file.rendered_target ?? <span className="text-muted text-caption">{pending ?? failure ?? t("oneshot.targetMissing")}</span>}
+        {file.rendered_target ?? <span className="text-muted text-caption">{failure ?? t("oneshot.targetMissing")}</span>}
       </p>
       {emptyFacts.length > 0 && <MissingFactsNote facts={emptyFacts} onJump={onJump} />}
       {(file.in_library === true || (!file.included && file.reason_code)) && (
@@ -910,7 +908,7 @@ export function OneShotDialog({
       target = t("oneshot.summaryNoFiles");
     } else {
       const failed = files[0]!;
-      target = namingPendingLabel(failed.reason_code) ?? namingFailureDetail(failed.reason_code, failed.empty_facts) ?? t("oneshot.targetMissing");
+      target = namingFailureDetail(failed.reason_code, failed.empty_facts) ?? t("oneshot.targetMissing");
     }
     return { text: t("oneshot.summary", { n: selectedRows.length, target }), facts };
   }, [selectedRows, source.pending, awaitingTitle]);

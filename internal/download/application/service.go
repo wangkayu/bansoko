@@ -936,10 +936,10 @@ func torrentTreeText(payload []byte) any {
 
 // downloadSubmittedFacts builds the download_submitted payload. The shared
 // catalog facts come from the frozen acquisition input snapshot, ep.*
-// from the release's frozen episode identity, vars/rt/anibt from the frozen
-// Vars output and source facts, download.client from the connection the
-// task was submitted to. The group is the input snapshot's (anime.group);
-// there is no parsed-title fallback. release.episodes labels the accepted
+// from the release's frozen episode identity, rt/anibt from the frozen source
+// facts, and download.client from the connection the task was submitted to.
+// The group is the input snapshot's (anime.group); there is no parsed-title
+// fallback. release.episodes labels the accepted
 // plan's episodes ("01-04", "01, 03, 07"); a batch has no single episode, so
 // ep.* are empty for it. torrent.tree is rendered here, from the retained
 // bencode payload, so no render ever re-parses it.
@@ -974,9 +974,9 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 			facts[key] = nil
 		}
 	}
-	// Vars and native release tags both come from the accepted input.
+	// Native release tags come from the accepted input.
 	providerText := func(value string) any { return nullableFact(bounded(value, maxProviderText)) }
-	for key, value := range notification.ValueFacts(notification.InputVarsOutput(row.inputSnapshot), notification.InputSourceTags(row.inputSnapshot), providerText) {
+	for key, value := range notification.ValueFacts(notification.InputSourceTags(row.inputSnapshot), providerText) {
 		facts[key] = value
 	}
 	for key, value := range notification.TitleFacts(row.inputSnapshot, providerText) {

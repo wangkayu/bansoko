@@ -42,7 +42,7 @@ func successfulFileNotificationPayload(input json.RawMessage, file artifactFileC
 	for key, value := range notification.MediaFileEpisodeFacts(fileIdentity, releaseIdentity) {
 		fields.frozen[key] = value
 	}
-	for key, value := range notification.ValueFacts(notification.InputVarsOutput(protocol.Canonical(accepted)), sourceFacts, notificationText) {
+	for key, value := range notification.ValueFacts(sourceFacts, notificationText) {
 		fields.frozen[key] = value
 	}
 	for key, value := range notification.TitleFacts(protocol.Canonical(accepted), notificationText) {

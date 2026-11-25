@@ -19,7 +19,6 @@ func TestClassifyMatchRender(t *testing.T) {
 	}{
 		"missing facts keep their paths": {&missingFactsError{facts: []string{"media.resolution", "anime.group"}}, MatchRenderFactsMissing, []string{"media.resolution", "anime.group"}},
 		"engine missing facts":           {&naming.Error{Code: naming.ErrCodeNamingFactMissing, Missing: []string{"media.resolution"}}, MatchRenderFactsMissing, []string{"media.resolution"}},
-		"unknown vars":                   {&naming.Error{Code: naming.ErrCodeNamingVarsUnknown, Message: "vars"}, MatchRenderFactsMissing, nil},
 		"unavailable evidence":           {renderFactsUnavailable("frozen source facts are invalid"), MatchRenderFactsMissing, nil},
 		"anything else":                  {errors.New("template exploded"), MatchRenderTemplateInvalid, nil},
 	} {

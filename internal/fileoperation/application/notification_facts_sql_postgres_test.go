@@ -126,12 +126,10 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 	}
 	for _, value := range values {
 		var got []byte
-		if err := db.QueryRow(`SELECT public.notification_value_facts($1::jsonb,$2::jsonb)`, value.vars, value.sourceFacts).Scan(&got); err != nil {
+		if err := db.QueryRow(`SELECT public.notification_value_facts($1::jsonb)`, value.sourceFacts).Scan(&got); err != nil {
 			t.Fatal(err)
 		}
-		var vars map[string]any
-		_ = json.Unmarshal([]byte(value.vars), &vars)
-		assertSameFacts(t, value.vars+" "+value.sourceFacts, got, notification.ValueFacts(vars, []byte(value.sourceFacts), notificationText))
+		assertSameFacts(t, value.sourceFacts, got, notification.ValueFacts([]byte(value.sourceFacts), notificationText))
 	}
 	// Native work titles (285, overview 047): input schema 5
 	// media.bgm_titles/tmdb_titles; the optional overview member reads null

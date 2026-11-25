@@ -64,7 +64,6 @@ INSERT INTO acquisitions(id, execution_branch, entry_kind, access_scope, request
                          detail_retention_seconds, receipt_after_accept_seconds, receipt_after_terminal_seconds, detail_until,
                          state, terminal_at, terminal_schema, terminal_receipt, record_state, version,
                          preparation_mode, preparation_digest, facts_revision, checked_revision, settlement_error_count,
-                         vars_evidence_version, vars_evidence_digest,
                          input_canonical_utf8, payload_digest, manifest_digest, manifest_item_count, manifest_sealed_at)
 SELECT id, 'download', entry_kind, 'deployment_owner_v1',
        CASE entry_kind WHEN 'automatic' THEN 'auto_acquire_v1' ELSE 'manual_acquire_v1' END,
@@ -93,16 +92,10 @@ SELECT id, 'download', entry_kind, 'deployment_owner_v1',
               'effect_summary', jsonb_build_object('complete', true, 'has_confirmed', false, 'has_unknown', false),
               'settled_at', to_char(terminal_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
        END,
-       'full', 1, 'none', NULL, 0, 0, 0, 1, soak_ext.dg('soak-vars-evidence', id),
+       'full', 1, 'none', NULL, 0, 0, 0,
        input_text, soak_ext.dg('soak-payload', id), soak_ext.dg('soak-manifest', id), 2, accepted_at
 FROM soak_ext.acq`)
 
-	// The frozen input, its digest and the early-sealed manifest live on the root
-	// row (PRUNE-046 S4); only the optional vars-evaluation record is separate.
-	g.exec("acquisitions: vars evaluation", `
-UPDATE acquisitions a SET vars_evaluation_canonical_utf8=q.t, vars_evidence_digest=soak_ext.dg('acquisition-vars-evaluation:v1', q.t)
-FROM (SELECT id, jsonb_build_object('schema_version', 1, 'status', 'ok', 'output', jsonb_build_object('actual', jsonb_build_object('title', title)))::text AS t
-      FROM soak_ext.acq) q WHERE a.id=q.id`)
 	g.exec("acquisition_files", `
 INSERT INTO acquisition_files(acquisition_id, file_ref, ordinal, relative_path, exact_size, media_kind, identity_evidence)
 SELECT a.id, 'file-' || f.i, f.i, CASE f.i WHEN 0 THEN a.f0 ELSE a.f1 END, a.size_bytes, 'video', '{}'::jsonb

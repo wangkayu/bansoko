@@ -63,7 +63,7 @@ func (r *NamingTargetRenderer) compileTitleTemplates(rules naming.NamingRules, f
 	if err != nil {
 		return nil, renderFactsUnavailable(err.Error())
 	}
-	compiled, err := engine.CompileRulesWithVars(rules, facts.Vars)
+	compiled, err := engine.CompileRules(rules)
 	if err != nil {
 		return nil, maintenanceCompileError(err)
 	}
@@ -74,13 +74,8 @@ func (r *NamingTargetRenderer) compileTitleTemplates(rules naming.NamingRules, f
 	return []naming.CompiledTemplate{variant.Directory, variant.VideoFilename}, nil
 }
 
-// maintenanceCompileError keeps an absent frozen Vars output in the typed
-// facts-unavailable class instead of degrading it to a generic template error.
+// maintenanceCompileError wraps a current-rule compilation failure.
 func maintenanceCompileError(err error) error {
-	var named *naming.Error
-	if errors.As(err, &named) && named.Code == naming.ErrCodeNamingVarsUnknown {
-		return renderFactsUnavailable("frozen Vars output is unavailable")
-	}
 	return fmt.Errorf("compile naming rules: %w", err)
 }
 
@@ -209,7 +204,7 @@ func renderResolvedTarget(base string, rules naming.NamingRules, facts naming.Na
 	if err != nil {
 		return "", renderFactsUnavailable(err.Error())
 	}
-	compiled, err := engine.CompileRulesWithVars(rules, facts.Vars)
+	compiled, err := engine.CompileRules(rules)
 	if err != nil {
 		return "", maintenanceCompileError(err)
 	}
@@ -278,9 +273,9 @@ WHERE id = $1`, animeID).Scan(&title, &titleOverride, &providerTitle)
 // alignment, the per-anime files dialog shows that target, and offset
 // migration renders with the same rules. Only the rules come from the current
 // owner value, as do the title, the owner season, year and media kind and the
-// metadata binding (currentAnimeConfig); every release-level fact (Vars output,
-// rt/anibt values, release title, group, probed media facts, frozen episode
-// identity and torrent facts) still comes from the placement's lineage.
+// metadata binding (currentAnimeConfig); every release-level fact (rt/anibt
+// values, release title, group, probed media facts, frozen episode identity
+// and torrent facts) still comes from the placement's lineage.
 // An anime without a current rules owner (or an unwired source) fails closed
 // as render-facts-unavailable; the frozen rules are never a fallback.
 func (r *NamingTargetRenderer) renderRules(ctx context.Context, animeID string) (naming.NamingRules, error) {

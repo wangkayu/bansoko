@@ -210,18 +210,12 @@ func mapNamingTemplateCatalog(catalog templatecatalogapplication.NamingTemplateC
 			Ref:         sample.Ref,
 		})
 	}
-	// vars_keys is a required, non-nullable array in the schema: normalize an
-	// empty key set to [] rather than dropping the field into a null JSON value.
-	varsKeys := make([]string, 0, len(catalog.VarsKeys))
-	varsKeys = append(varsKeys, catalog.VarsKeys...)
 	return generated.NamingTemplateCatalog{
-		Language:     generated.NamingTemplateCatalogLanguage(catalog.Language),
-		Fields:       fields,
-		Functions:    functions,
-		Shorthands:   shorthands,
-		Samples:      samples,
-		VarsKeys:     varsKeys,
-		VarsLoadedAt: cloneTime(catalog.VarsLoadedAt),
+		Language:   generated.NamingTemplateCatalogLanguage(catalog.Language),
+		Fields:     fields,
+		Functions:  functions,
+		Shorthands: shorthands,
+		Samples:    samples,
 	}
 }
 

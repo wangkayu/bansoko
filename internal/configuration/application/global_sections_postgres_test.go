@@ -153,7 +153,6 @@ func TestGlobalDownloadCompletionSection(t *testing.T) {
 	// download_completion Global row is not part of it.
 	// (The preset reads the active Vars and attr-rule programs a server publishes
 	// at startup; the Global write above does not depend on them.)
-	seedActivePrograms(t, ctx, svc)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

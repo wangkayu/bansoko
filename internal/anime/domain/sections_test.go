@@ -2,10 +2,8 @@ package domain
 
 import (
 	"encoding/json"
-	"errors"
 	"testing"
 
-	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -155,44 +153,6 @@ func TestValidateSectionValueRejectsUnsupportedNamingLanguage(t *testing.T) {
 	}
 }
 
-// A template that reads a naming variable the deployment has not loaded cannot
-// be saved: the snapshot-carrying validator is the form the save paths use.
-func TestValidateSectionValueRefusesUnknownNamingVarsAtSave(t *testing.T) {
-	snapshot := map[string]map[string]string{"anime": {"loaded": "yes"}}
-	rules := generated.NamingRules{
-		Language: generated.NamingRulesLanguage(naming.Language),
-		Tv:       generated.NamingVariant{DirectoryTemplate: "${'vars.anime.missing'}", VideoFilenameTemplate: "${vars.anime.missing}"},
-		Movie:    generated.NamingVariant{DirectoryTemplate: "movie", VideoFilenameTemplate: "file.mkv"},
-	}
-	raw, err := json.Marshal(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = ValidateSectionValueWithVars(SectionNamingRules, raw, snapshot)
-	var namingErr *naming.Error
-	if !errors.As(err, &namingErr) || namingErr.Code != naming.ErrCodeNamingVarsUnknown {
-		t.Fatalf("save validation error = %v, want typed %s", err, naming.ErrCodeNamingVarsUnknown)
-	}
-	// Without a snapshot the same section is structure-valid: read-back of stored
-	// configuration does not re-judge variables that were verified at save time.
-	if err := ValidateSectionValue(SectionNamingRules, raw); err != nil {
-		t.Fatalf("snapshot-free validation of a stored value rejected it: %v", err)
-	}
-	// A loaded key is accepted, so the refusal tracks the snapshot rather than
-	// any `${vars...}` reference.
-	rules.Tv.VideoFilenameTemplate = "${vars.anime.loaded}"
-	raw, err = json.Marshal(rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateSectionValueWithVars(SectionNamingRules, raw, snapshot); err != nil {
-		t.Fatalf("loaded var refused at save: %v", err)
-	}
-	// Nothing loaded means every reference is unknown, not that none are checked.
-	if err := ValidateSectionValueWithVars(SectionNamingRules, raw, map[string]map[string]string{}); err == nil {
-		t.Fatal("an empty snapshot must refuse every vars reference")
-	}
-}
 func TestValidateSectionValueValidatesProviderDefaults(t *testing.T) {
 	// The entries are the providers' own group keys (AniBT slugs, Mikan numeric
 	// ids), never display names: the policy build parses them as GroupRefs.

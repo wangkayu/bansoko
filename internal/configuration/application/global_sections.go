@@ -11,7 +11,6 @@ import (
 	"bansoko/internal/apperrors"
 	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/events"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 	selectionapp "bansoko/internal/selection/application"
 )
@@ -94,22 +93,6 @@ func globalOnlySectionView(saved map[string]configurationdomain.GlobalSectionVie
 	return configurationdomain.GlobalSectionView{SectionName: name, SchemaVersion: animedomain.SectionSchemaVersions[name], Value: parsed, Version: 1}, nil
 }
 
-// namingVarsSnapshot reads the loaded naming-vars snapshot for save-time
-// template validation. The snapshot follows the active program version (set at
-// start and on every activation), so a process without one is misconfigured:
-// the save fails closed with the
-// typed refusal rather than storing a template nobody can confirm.
-func namingVarsSnapshot(field string) (map[string]map[string]string, error) {
-	vars, _, err := namingvars.Current()
-	if err != nil {
-		return nil, &apperrors.Validation{
-			Code:    naming.ErrCodeNamingVarsUnknown,
-			Details: []apperrors.FieldViolation{{Field: stringPtr("value"), Code: naming.ErrCodeNamingVarsUnknown, Message: "naming vars are not loaded; check the naming variable program for section " + field}},
-		}
-	}
-	return vars, nil
-}
-
 // PutGlobalSection saves one validated global section with expected-version CAS.
 func (s *Service) PutGlobalSection(ctx context.Context, name string, expected int64, input configurationdomain.GlobalSectionInput) (configurationdomain.GlobalSectionView, error) {
 	schema, ok := animedomain.SectionSchemaVersions[name]
@@ -123,20 +106,9 @@ func (s *Service) PutGlobalSection(ctx context.Context, name string, expected in
 	if err != nil {
 		return configurationdomain.GlobalSectionView{}, err
 	}
-	// A naming-rules save validates `${vars.group.key}` references against the
-	// loaded snapshot, and an unloaded snapshot is a misconfiguration rather than
-	// a reason to skip the check.
-	var vars map[string]map[string]string
-	if name == animedomain.SectionNamingRules {
-		loaded, err := namingVarsSnapshot(name)
-		if err != nil {
-			return configurationdomain.GlobalSectionView{}, err
-		}
-		vars = loaded
-	}
-	err = animedomain.ValidateSectionValueWithVars(name, raw, vars)
+	err = animedomain.ValidateSectionValue(name, raw)
 	if err == nil && name == animedomain.SectionNamingRules {
-		err = animedomain.ValidateNamingSectionForSave(raw, vars)
+		err = animedomain.ValidateNamingSectionForSave(raw)
 	}
 	if err != nil {
 		var namingErr *naming.Error

@@ -260,9 +260,7 @@ func TestQBManagementResumeUnreachableProbeKeepsQBSemanticsPostgres(t *testing.T
 // delete (with or without files) is refused with a typed 409 before qB is
 // called; once the acquisition is terminal the same delete goes through.
 func TestQBManagementDeleteProtectedWhileAcquisitionRunsPostgres(t *testing.T) {
-	animetest.InstallRegistries()
 	db := openConnectionTestDB(t)
-	animetest.PublishRegistries(t, db)
 	ctx := context.Background()
 	owner := disposabledb.Owner(t)
 	const hash = "1111111111111111111111111111111111111111"
@@ -369,9 +367,7 @@ VALUES ('release-qb-protect', 'source-qb-protect', 'guid:qb-protect', '{"title":
 // submit attached (the infohash is recorded once the download is observed), so
 // the owner tag and the delete refusal must also match the task's qB tags.
 func TestQBManagementTagOwnedTorrentProtectedWhileSubmittedPostgres(t *testing.T) {
-	animetest.InstallRegistries()
 	db := openConnectionTestDB(t)
-	animetest.PublishRegistries(t, db)
 	ctx := context.Background()
 	owner := disposabledb.Owner(t)
 	const hash = "3333333333333333333333333333333333333333"

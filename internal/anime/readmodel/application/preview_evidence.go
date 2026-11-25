@@ -15,7 +15,6 @@ import (
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 	providerdomain "bansoko/internal/provider/domain"
 )
@@ -86,30 +85,15 @@ func (s *Service) evaluateFeedItemsWithSelection(
 	effective animedomain.EffectiveConfig,
 	hold animedomain.MetadataHold,
 	animeTitle string,
-	anime namingvars.AnimeEvidence,
+	anime naming.AnimeNamingFacts,
 	items []acquisitiondomain.FeedItem,
 	manifests map[string]*animecatalogdomain.TorrentManifest,
 	business ...*animedomain.BusinessSnapshot,
 ) error {
 	evalInput := animedomain.SourceEvaluationInput{Index: sourceIndex, Kind: sourceKind, GroupName: groupName, Group: group, Offset: selection.Offset, Span: selection.Span}
-	// The Vars program is pinned by digest and identical for every release of
-	// this call, so it is loaded once, on the first release.
-	var (
-		loaded  bool
-		program namingvars.Program
-	)
 	return eachDistinctPreviewItem(items, func(item acquisitiondomain.FeedItem, stableKey string) error {
 		if len(business) == 0 || business[0] == nil {
-			// Preview evaluates only the draft's own complete business; the
-			// server never substitutes current Global for a missing one.
 			return &apperrors.Business{Status: 422, Code: "BUSINESS_SNAPSHOT_REQUIRED", Message: "Preview requires the draft's complete business snapshot; load the Global configuration into the draft first."}
-		}
-		if !loaded {
-			var err error
-			if program, err = s.loadPreviewVarsProgram(ctx, business[0].Programs.Vars); err != nil {
-				return err
-			}
-			loaded = true
 		}
 		evidence, err := acquisitiontarget.ResolveParserEvidence(ctx, selection, item.Title)
 		if err != nil {
@@ -122,14 +106,11 @@ func (s *Service) evaluateFeedItemsWithSelection(
 		if err := previewBatchPlan(ctx, &release, item, manifests[stableKey], evidence, effective, business[0].UnclassifiedRoute, fileSelection, overrides); err != nil {
 			return previewNumberingError(err)
 		}
-		// Feed items are not persisted releases: no release id, the item's
-		// own tag sets and hashes.
-		varsEvidence, err := s.previewVarsEvidence(ctx, anime, "", item, naming.VarsEpisode(evidence.NamingFacts()))
-		if err != nil {
-			return err
+		release.NamingAnime = anime
+		if manifest := manifests[stableKey]; manifest != nil && len(manifest.Files) > 0 {
+			count, size := int64(len(manifest.Files)), manifest.TotalSizeBytes
+			release.NamingTorrent = naming.TorrentNamingFacts{Size: &size, FileCount: &count, HashV1: manifest.InfoHashV1, HashV2: manifest.InfoHashV2}
 		}
-		frozen := freezeVarsWithProgram(program, varsEvidence, manifests[stableKey])
-		release.FrozenVars = &frozen
 		result.Releases = append(result.Releases, release)
 		files, err := previewFilesForItem(ctx, item, stableKey, release, manifests[stableKey], evalInput, effective, animeTitle, evidence, business[0].UnclassifiedRoute, fileSelection, overrides)
 		if err != nil {

@@ -112,7 +112,6 @@ FROM anime_business_configs WHERE managed_anime_id = $1 FOR UPDATE`, managedAnim
 		ReplacementVersion: retentionVersion.Int64,
 		UnclassifiedRoute:  unclassifiedRoute.String,
 		FileEffectVersion:  fileEffectVersion.Int64,
-		Programs:           previous.Programs,
 	}
 	digest, err := next.Digest()
 	if err != nil {

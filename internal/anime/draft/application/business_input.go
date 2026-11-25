@@ -47,7 +47,7 @@ func (s *Service) resolveCandidateInputTx(ctx context.Context, tx *sql.Tx, draft
 	}
 	// The draft's own section values are what it shows and previews; the
 	// snapshot must carry exactly those values, or the save fails closed.
-	drafted, err := animedomain.ResolveDraftSectionsFromBusiness(draft, nil)
+	drafted, err := animedomain.ResolveDraftSectionsFromBusiness(draft)
 	if err != nil {
 		return animedomain.ResolvedSections{}, animedomain.ParserPolicyEnvelope{}, sectionResolutionError(err)
 	}

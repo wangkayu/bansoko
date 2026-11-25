@@ -286,10 +286,9 @@ func TestPluginDeliverHandler_BuildWebhookRequest(t *testing.T) {
 		t.Errorf("unexpected message: %v", msg)
 	}
 	// The document carries the frozen facts under the unified paths, nested;
-	// legacy names and bookkeeping keys are dropped, frozen vars are kept.
+	// Bookkeeping keys and retired Vars are not part of the outbound payload.
 	want := map[string]any{
 		"anime": map[string]any{"title": "Frozen", "group": "SampleGroup"},
-		"vars":  map[string]any{"custom": map[string]any{"tag": "x"}},
 	}
 	if !reflect.DeepEqual(payload["payload"], want) {
 		t.Errorf("submitted payload = %v, want %v", payload["payload"], want)

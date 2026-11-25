@@ -19,6 +19,7 @@ import (
 	"bansoko/internal/apperrors"
 	catalogapplication "bansoko/internal/catalog/application"
 	"bansoko/internal/parser"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	provider "bansoko/internal/provider/domain"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/frozenpolicy"
@@ -118,7 +119,7 @@ func oneShotAdmissionFixture(t *testing.T) (*oneShotTestServices, string, int64,
 	setOneShotOwnerYear(&draft)
 	season := 1
 	draft.Metadata.Season = &season
-	business, businessErr := frozenpolicy.SeedBusiness(context.Background(), db, `vars.test = {marker: input.release_title};`)
+	business, businessErr := frozenpolicy.Business()
 	if businessErr != nil {
 		t.Fatal(businessErr)
 	}
@@ -152,8 +153,7 @@ func oneShotAdmissionFixture(t *testing.T) (*oneShotTestServices, string, int64,
 	}
 
 	// Learn the canonical target from the same shared planner the admission
-	// runs, with the same anime evidence: the probe writes the temporary owner
-	// rows the admission writes and freezes Vars with them.
+	// runs, with typed naming facts loaded from the temporary owner rows.
 	effective, err := animedomain.ResolveDraftEffective(draft)
 	if err != nil {
 		t.Fatalf("resolve draft effective config: %v", err)
@@ -167,11 +167,12 @@ func oneShotAdmissionFixture(t *testing.T) (*oneShotTestServices, string, int64,
 		t.Fatal(err)
 	}
 	animeID := probeAnimeEvidenceTx(t, service, tx, draft)
-	frozen, err := freezeBusinessVarsTx(context.Background(), tx, business, item, animeID, "", nil)
+	animeFacts, err := namingpersistence.LoadAnimeFacts(context.Background(), tx, animeID)
 	tx.Rollback()
 	if err != nil {
 		t.Fatal(err)
 	}
+	preview := animedomain.PreviewReleaseResult{StableItemKey: "probe", Verdict: animedomain.ReleaseVerdict("accepted_pending_download"), NamingAnime: animeFacts, NamingTorrent: animedomain.TorrentFactsForItem(item)}
 	plan := planOneShotTargets(context.Background(), acquisitiontarget.FilesystemProbe{}, oneShotTargetRequest(
 		"release-adoption-probe",
 		draft,
@@ -181,7 +182,7 @@ func oneShotAdmissionFixture(t *testing.T) (*oneShotTestServices, string, int64,
 		string(parser.ParserRegex),
 		effective,
 		item,
-		animedomain.PreviewReleaseResult{StableItemKey: "probe", Verdict: animedomain.ReleaseVerdict("accepted_pending_download"), FrozenVars: &frozen},
+		preview,
 		nil,
 
 		"skip",

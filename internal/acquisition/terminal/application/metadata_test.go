@@ -21,7 +21,6 @@ func TestMetadataHoldEntryAndBindingMatrix(t *testing.T) {
 						m.config.candidateID = ""
 						m.config.revision = 0
 					}
-					m.programs.varsSource = "vars.actual = {title: input.release_title};"
 					m.catalog.feed.Seeds[0].Title = "[Group] Show - 01 [1080p]"
 					m.bgm = &anime.BGMBinding{WorkId: "123"}
 					m.tmdb = &anime.TMDBBinding{WorkId: "456", MediaKind: "tv", Season: 1}
@@ -77,7 +76,6 @@ func TestMetadataHoldIsReleasedByTheGlobalSwitch(t *testing.T) {
 	for _, mode := range []string{"automatic_source", "subscription_direct"} {
 		t.Run(mode, func(t *testing.T) {
 			m := qualificationFixture(t, mode)
-			m.programs.varsSource = "vars.actual = {title: input.release_title};"
 			m.catalog.feed.Seeds[0].Title = "[Group] Show - 01 [1080p]"
 			m.bgm = nil
 			m.tmdb = nil

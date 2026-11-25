@@ -125,7 +125,7 @@ async function mockReads(page: Page) {
   await page.route("**/api/v1/config/connections", (route) => getOnly(route, []));
   await page.route("**/api/v1/config/naming-templates", (route) => getOnly(route, library));
   await page.route("**/api/v1/template-catalogs/naming", (route) =>
-    getOnly(route, { language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [], vars_keys: [], vars_loaded_at: null }),
+    getOnly(route, { language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [] }),
   );
   await page.route("**/api/v1/parser-catalog", (route) =>
     getOnly(route, [

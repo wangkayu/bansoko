@@ -14,7 +14,7 @@ import (
 func seedRSSBusiness(t *testing.T, db *sql.DB, animeID string) {
 	t.Helper()
 	ctx := context.Background()
-	b, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

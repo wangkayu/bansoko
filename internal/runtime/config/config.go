@@ -58,14 +58,9 @@ type Config struct {
 	SecretEncryptionKey string
 	FrontendDir         string
 	// ConfigDir is the deployment's configuration workspace (BANSOKO_CONFIG_DIR).
-	// It holds the operator copy of naming vars and the one writable location
-	// for a separately installed reltitle binary (<ConfigDir>/rt/reltitle).
+	// It holds the one writable location for a separately installed reltitle
+	// binary (<ConfigDir>/rt/reltitle).
 	ConfigDir string
-	// The naming Vars seed lives at a fixed location: the deployment config
-	// workspace (BANSOKO_CONFIG_DIR) holds the operator copy, and the image ships
-	// the default under deployment/defaults relative to /app.
-	NamingVarsConfigPath   string
-	NamingVarsDefaultsPath string
 	// TestFixtureHosts is an explicit development/test-only host→IP mapping for
 	// local HTTP fixtures. It is never accepted in production and is converted
 	// to the shared SSRF allowlist/resolver at the composition root.
@@ -110,20 +105,18 @@ func FromFlags(args []string) (Config, error) {
 		listenAddr = DefaultListenAddress
 	}
 	cfg := Config{
-		ListenAddress:          listenAddr,
-		DatabaseURL:            servingDatabaseURL(os.Getenv),
-		Environment:            envOr("BANSOKO_ENVIRONMENT", "development"),
-		SkipAuth:               os.Getenv("BANSOKO_SKIP_AUTH") == "true",
-		SchemaDir:              envOr("BANSOKO_SCHEMA_DIR", "db/migrations"),
-		SessionSecret:          os.Getenv("BANSOKO_SESSION_SECRET"),
-		SecretEncryptionKey:    os.Getenv("BANSOKO_SECRET_ENCRYPTION_KEY"),
-		FrontendDir:            envOr("BANSOKO_FRONTEND_DIR", "frontend/dist"),
-		ConfigDir:              envOr("BANSOKO_CONFIG_DIR", "/config"),
-		NamingVarsConfigPath:   envOr("BANSOKO_CONFIG_DIR", "/config") + "/naming-vars.js",
-		NamingVarsDefaultsPath: "deployment/defaults/naming-vars.js",
-		WorkerDisabled:         os.Getenv("BANSOKO_WORKER_DISABLED") == "true",
-		UpdateMode:             UpdateModeFromEnv(os.Getenv),
-		updateModeExplicit:     strings.TrimSpace(os.Getenv("BANSOKO_UPDATE_MODE")) != "",
+		ListenAddress:       listenAddr,
+		DatabaseURL:         servingDatabaseURL(os.Getenv),
+		Environment:         envOr("BANSOKO_ENVIRONMENT", "development"),
+		SkipAuth:            os.Getenv("BANSOKO_SKIP_AUTH") == "true",
+		SchemaDir:           envOr("BANSOKO_SCHEMA_DIR", "db/migrations"),
+		SessionSecret:       os.Getenv("BANSOKO_SESSION_SECRET"),
+		SecretEncryptionKey: os.Getenv("BANSOKO_SECRET_ENCRYPTION_KEY"),
+		FrontendDir:         envOr("BANSOKO_FRONTEND_DIR", "frontend/dist"),
+		ConfigDir:           envOr("BANSOKO_CONFIG_DIR", "/config"),
+		WorkerDisabled:      os.Getenv("BANSOKO_WORKER_DISABLED") == "true",
+		UpdateMode:          UpdateModeFromEnv(os.Getenv),
+		updateModeExplicit:  strings.TrimSpace(os.Getenv("BANSOKO_UPDATE_MODE")) != "",
 	}
 	fixtureHosts, err := parseFixtureHosts(os.Getenv("BANSOKO_TEST_FIXTURE_HOSTS"))
 	if err != nil {

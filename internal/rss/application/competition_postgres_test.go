@@ -43,7 +43,6 @@ type competitionFixture struct {
 
 func newCompetitionFixture(t *testing.T, mode string) *competitionFixture {
 	t.Helper()
-	initTestNamingVars(t)
 	db := openRSSDatabase(t)
 	sourceID, subscriptionID := seedRSSOwner(t, db, false, true)
 	if _, err := db.Exec(`

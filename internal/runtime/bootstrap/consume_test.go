@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/runtime/migrations/varspreflight"
 	embeddedupdate "bansoko/internal/update/journal"
 )
 
@@ -67,6 +68,7 @@ type fxRecorder struct {
 
 	verifyBackupErr error
 	treeErrors      map[string]error
+	checkMigration  func() error
 	migrateErr      error
 	restoreErr      error
 	launchErr       error
@@ -106,6 +108,12 @@ func (r *fxRecorder) fx() *consumeFX {
 			r.calls = append(r.calls, "verify_tree:"+releaseID)
 			if r.treeErrors != nil {
 				return r.treeErrors[releaseID]
+			}
+			return nil
+		},
+		CheckMigration: func(releaseID string) error {
+			if r.checkMigration != nil {
+				return r.checkMigration()
 			}
 			return nil
 		},
@@ -517,6 +525,35 @@ func TestConsumePendingMigrationHappyPathSucceedsAndSettles(t *testing.T) {
 		filepath.Dir(filepath.Dir(recorder.launches[0])) != filepath.Join(releaseRoot(root)) ||
 		filepath.Base(filepath.Dir(recorder.launches[0])) != testTargetRelease {
 		t.Fatalf("launches %v, want exactly one target-server launch under releases/rel-b", recorder.launches)
+	}
+}
+
+func TestConsumePreflightBlockDoesNotMigrateOrRestore(t *testing.T) {
+	root := t.TempDir()
+	writeReleaseTree(t, root, testPrevRelease)
+	seedReleaseProvenance(t, root, testPrevRelease)
+	writeReleaseTree(t, root, testTargetRelease)
+	writePointer(t, root, testPrevRelease)
+	recorder := &fxRecorder{checkMigration: func() error {
+		return &varspreflight.Blocked{Hits: []varspreflight.Hit{{Location: "acquisitions:test", Field: "tv.directory_template"}}}
+	}}
+	record := seedConsumeJournal(t, root, "op-vars-blocked", nil,
+		embeddedupdate.StepAccepted, embeddedupdate.StepFetched, embeddedupdate.StepStaged,
+		embeddedupdate.StepMaintenanceEntered, embeddedupdate.StepBackupVerified,
+		embeddedupdate.StepPendingMigration)
+
+	outcome := drive(t, root, record, recorder)
+	if outcome.kind != outcomeExecFallback || pointerTokenForTest(t, root) != testPrevRelease {
+		t.Fatalf("outcome = %+v, want previous release fallback", outcome)
+	}
+	final := reloadRecordForTest(t, root)
+	if final.Step != embeddedupdate.StepFailed || final.Attempts.Migrate != 0 || recorder.released != 1 {
+		t.Fatalf("step=%s attempts=%d released=%d, want failed/0/1", final.Step, final.Attempts.Migrate, recorder.released)
+	}
+	for _, prefix := range []string{"migrate:", "restore:", "promote:"} {
+		if n := mustCount(recorder.calls, prefix); n != 0 {
+			t.Fatalf("%s calls=%d; preflight must stop before these effects", prefix, n)
+		}
 	}
 }
 

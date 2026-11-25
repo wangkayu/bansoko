@@ -10,12 +10,11 @@ import (
 	"bansoko/internal/anime/animeconfig"
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 )
 
 // ReadBusinessPreset reads the complete persisted preset in one repeatable-read
 // snapshot. It creates no candidate or instance and performs no script evaluation.
-// Missing policy/program rows fail closed: the HTTP contract must expose this
+// Missing required policy rows fail closed: the HTTP contract must expose this
 // operation before the UI may promise an atomic complete Global load.
 func (s *Service) ReadBusinessPreset(ctx context.Context) (animeconfig.BusinessSnapshot, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
@@ -140,19 +139,6 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	}
 	if err != nil {
 		return result, fmt.Errorf("read complete file effect preset: %w", err)
-	}
-	var varsContent []byte
-	err = tx.QueryRowContext(ctx, `SELECT fingerprint,content FROM naming_vars_versions WHERE active`).Scan(&result.Programs.Vars.Digest, &varsContent)
-	if err != nil {
-		return result, fmt.Errorf("read Vars program reference: %w", err)
-	}
-	result.Programs.Vars.Version = namingvars.ProfileVersion(result.Programs.Vars.Digest)
-	var source string
-	if err := json.Unmarshal(varsContent, &source); err != nil {
-		return result, err
-	}
-	if _, err := namingvars.NewProgram(result.Programs.Vars, source); err != nil {
-		return result, err
 	}
 	return result.Freeze()
 }

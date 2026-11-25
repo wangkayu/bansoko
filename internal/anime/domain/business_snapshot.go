@@ -5,17 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-
-	"bansoko/internal/namingvars"
 )
 
-// BusinessSnapshotSchemaVersion is the business snapshot shape: v2 removes
-// the retired title-attribute program; the selected parser and native tags
-// already carry their own immutable versions.
-const BusinessSnapshotSchemaVersion = "business-snapshot-v2"
+const BusinessSnapshotSchemaVersion = "business-snapshot-v3"
 
-// BusinessSnapshot is an internal complete value for the next candidate contract.
-// It is not embedded in the current HTTP draft: that contract cannot carry it.
+// BusinessSnapshot is the complete configuration copied into a draft or instance.
 // Identity, sources, manual group intent and runtime governance are excluded.
 type BusinessSnapshot struct {
 	SchemaVersion      string                     `json:"schema_version"`
@@ -27,14 +21,10 @@ type BusinessSnapshot struct {
 	ReplacementVersion int64                      `json:"replacement_version"`
 	UnclassifiedRoute  string                     `json:"unclassified_route"`
 	FileEffectVersion  int64                      `json:"file_effect_version"`
-	Programs           ProgramReferences          `json:"programs"`
 }
 type ReplacementValue struct {
 	AdmissionMode  string          `json:"admission_mode"`
 	QualityProfile json.RawMessage `json:"quality_profile"`
-}
-type ProgramReferences struct {
-	Vars namingvars.ProgramRef `json:"vars"`
 }
 
 // Freeze copies every map/JSON level through serialization and verifies the
@@ -63,9 +53,6 @@ func (s BusinessSnapshot) Freeze() (BusinessSnapshot, error) {
 	}
 	if s.UnclassifiedRoute != "skip" && s.UnclassifiedRoute != "route" {
 		return BusinessSnapshot{}, errors.New("invalid unclassified route")
-	}
-	if !validVarsRef(s.Programs.Vars) {
-		return BusinessSnapshot{}, errors.New("invalid immutable program references")
 	}
 	b, err := json.Marshal(s)
 	if err != nil {
@@ -107,11 +94,4 @@ func (s BusinessSnapshot) Digest() (string, error) {
 	}
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
-}
-
-// validVarsRef accepts a program published for either Vars input contract; a
-// business snapshot keeps the one it was frozen with.
-func validVarsRef(ref namingvars.ProgramRef) bool {
-	_, ok := namingvars.RuntimeOf(ref)
-	return ok
 }

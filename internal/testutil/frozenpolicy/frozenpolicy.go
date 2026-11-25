@@ -11,30 +11,13 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
 // CompleteMap returns the frozen-policy fixture as a mutable map so a test can
 // substitute one section (for example an invalid naming rule) before encoding.
 func CompleteMap() map[string]any {
-	source := `vars.fixture = {title: input.release_title};`
-	digest, _ := namingvars.SourceFingerprint(source)
-	program, err := namingvars.NewProgram(namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, source)
-	if err != nil {
-		panic(err)
-	}
-	// A literal admission record of `source` over the fixture input. Fixtures
-	// never run the time-limited evaluator, so a loaded host cannot turn the
-	// fixture into a frozen evaluation error.
-	frozen := namingvars.FrozenEvaluation{
-		Program: program.Ref(),
-		Input:   namingvars.Input{ReleaseTitle: "fixture release", Files: []namingvars.File{{Name: "source.mkv", Path: "source.mkv", Size: 42}}},
-		Output:  namingvars.Vars{"fixture": {"title": "fixture release"}},
-		Status:  "ok",
-	}
 	return map[string]any{
-		"vars": frozen,
 		"config_identity": map[string]any{
 			"identity_kind":    "instance_materialized",
 			"managed_anime_id": "anime-file-test",

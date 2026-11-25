@@ -46,17 +46,17 @@ func TestEveryOperationDeclaresAScope(t *testing.T) {
 
 	// The admin scope guards the irreversible high-risk operations: destructive
 	// deletes, the API token lifecycle, update admission, event action writes,
-	// the naming-vars program writes and the file manager root changes. Adding
-	// or removing one is a reviewed contract change.
+	// and file manager root changes. Adding or removing one is a reviewed
+	// contract change.
 	sort.Strings(admins)
 	if want := []string{
-		"activateNamingVarsVersion", "addFileManagerRoot", "admitUpdate",
+		"addFileManagerRoot", "admitUpdate",
 		"cleanupAnimeLocalData", "createApiToken", "deleteAnimeConfigCandidate",
 		"deleteAnimeSubscription", "deletePlacement", "deletePluginTarget",
 		"deleteQBittorrentTorrent", "deleteSubgroupGroupDictionaryEntry",
-		"importNamingVars", "listFileManagerRootPickerEntries",
+		"listFileManagerRootPickerEntries",
 		"readEventActionScripts", "removeFileManagerRoot", "revokeApiToken",
-		"rotateApiToken", "saveEventAction", "saveNamingVarsVersion",
+		"rotateApiToken", "saveEventAction",
 		"updateAccount", "updateTitleParser",
 	}; !reflect.DeepEqual(admins, want) {
 		t.Fatalf("admin-scope operations = %q, want %q", admins, want)

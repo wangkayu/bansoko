@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"bansoko/internal/batchplan"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -325,7 +324,8 @@ type PreviewReleaseResult struct {
 	// so the rendered target agrees with grouping and replacement. It is
 	// process-local evidence and never part of the transport contract.
 	FrozenEpisode *naming.FrozenEpisodeNamingFacts `json:"-"`
-	FrozenVars    *namingvars.FrozenEvaluation     `json:"-"`
+	NamingAnime   naming.AnimeNamingFacts          `json:"-"`
+	NamingTorrent naming.TorrentNamingFacts        `json:"-"`
 	// FrozenMediaKind is the naming branch selector derived from the frozen
 	// identity: "movie" when the resolved identity is the canonical movie:0
 	// identity, empty for the TV default. It lets the pre-download target

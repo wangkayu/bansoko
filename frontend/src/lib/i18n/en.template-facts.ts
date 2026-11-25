@@ -68,7 +68,6 @@ export const enTemplateFactsCopy = {
     download: "Download",
     rt: "reltitle values",
     anibt: "AniBT tags",
-    vars: "Custom variables",
     mikan: "Mikan source group",
     media: "Media",
     release_title: "Release title",

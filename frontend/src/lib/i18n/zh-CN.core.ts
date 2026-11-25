@@ -159,7 +159,6 @@ export const settingsCopy = {
     policy: "订阅数量与对齐",
     hidden: "隐藏的番剧",
     rules: "默认规则",
-    vars: "命名变量",
     unclassified: "未识别集数",
     replacement: "同集多版本",
     automation: "自动任务",

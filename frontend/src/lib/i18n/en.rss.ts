@@ -212,8 +212,6 @@ export const enNamingCopy = {
   shorthandPair: "{token} → {example}",
   exampleTitle: "Example: {value}",
   helpTitle: "Naming Template Syntax and Variables",
-  // helpBody covers custom variables (vars.*), hidden in this version; the help dialog uses helpSyntax.
-  helpBody: "Write variables as ${variable.path}, e.g. ${vars.group.name}. Custom variables come from the variable program in Settings and take effect as soon as it is saved. Current custom variables: {keys}. Only the fields and functions below are available.",
   helpSyntax: "Write variables as ${variable.path}. Only the fields and functions below are available.",
   none: "None",
   fields: "Available fields",

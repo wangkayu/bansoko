@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -15,7 +14,10 @@ func completeAnimeConfig() currentAnimeConfig {
 		bgmWorkID: "bgm-1", tmdbWorkID: "tmdb-1", tmdbBindingKind: "tv",
 		tmdbSeason: sql.NullInt64{Int64: 2, Valid: true}, ownerSeason: sql.NullInt64{Int64: 3, Valid: true},
 		ownerYear: sql.NullInt64{Int64: 2021, Valid: true},
-		titles:    namingvars.AnimeEvidence{BgmTitle: "bgm title", TmdbTitleCN: "tmdb 标题"},
+		titles: naming.AnimeNamingFacts{
+			BGM:  naming.BGMNamingFacts{Title: "bgm title"},
+			TMDB: naming.TMDBNamingFacts{TitleCN: "tmdb 标题"},
+		},
 	}
 }
 
@@ -80,11 +82,7 @@ func TestCurrentAnimeConfigEmptyOwnerValuesRenderEmpty(t *testing.T) {
 		Release: naming.ReleaseNamingFacts{FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: "1", Number: "1", Display: "1", Source: "file"}},
 	}
 	config.apply(&facts.Anime)
-	vars, err := naming.WithVars(facts, map[string]map[string]string{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: vars})
+	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: facts})
 	got, err := renderResolvedTarget("a.mkv", rules, resolved.Context, nil, naming.CurrentConfigRenderer(""))
 	if err != nil {
 		t.Fatal(err)
@@ -105,12 +103,8 @@ func TestRenderResolvedTargetUndefinedVariableIsConfigIncomplete(t *testing.T) {
 		Release: naming.ReleaseNamingFacts{FrozenEpisode: &naming.FrozenEpisodeNamingFacts{Raw: "1", Number: "1", Display: "1", Source: "file"}},
 	}
 	completeAnimeConfig().apply(&facts.Anime)
-	facts, err := naming.WithVars(facts, map[string]map[string]string{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: facts})
-	_, err = renderResolvedTarget("a.mkv", rules, resolved.Context, nil, naming.CurrentConfigRenderer(""))
+	_, err := renderResolvedTarget("a.mkv", rules, resolved.Context, nil, naming.CurrentConfigRenderer(""))
 	var incomplete *ConfigIncompleteError
 	if !errors.As(err, &incomplete) {
 		t.Fatalf("error = %v, want ConfigIncompleteError", err)

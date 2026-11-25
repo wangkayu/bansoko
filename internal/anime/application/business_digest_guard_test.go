@@ -8,7 +8,6 @@ import (
 
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	"bansoko/internal/namingvars"
 )
 
 // A submitted draft may carry a complete business snapshot plus the digest it
@@ -18,7 +17,6 @@ import (
 
 func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string) {
 	t.Helper()
-	digest := "sha256:" + strings.Repeat("a", 64)
 	b := animedomain.BusinessSnapshot{
 		SchemaVersion:   animedomain.BusinessSnapshotSchemaVersion,
 		Sections:        map[string]json.RawMessage{},
@@ -37,9 +35,6 @@ func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string
 		ReplacementVersion: 13,
 		FileEffectVersion:  17,
 		UnclassifiedRoute:  "route",
-		Programs: animedomain.ProgramReferences{
-			Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)},
-		},
 	}
 	for _, name := range animedomain.EffectiveSectionOrder {
 		value, err := animedomain.DefaultSectionValue(name)

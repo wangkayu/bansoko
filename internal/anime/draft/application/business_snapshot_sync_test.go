@@ -27,7 +27,6 @@ func TestInstanceReplacementSaveKeepsFrozenBusinessConsistent(t *testing.T) {
 	b := frozenBusinessFixture(t)
 	draft.Business = b.Business
 	draft.BusinessDigest = b.BusinessDigest
-	seedBusinessPrograms(t, db, &draft)
 	original, err := service.SaveAnimeConfigCandidate(ctx, CandidateDraftInput{Draft: draft})
 	if err != nil {
 		t.Fatal(err)

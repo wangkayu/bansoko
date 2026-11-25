@@ -20,7 +20,6 @@ func TestBusinessRevisionActivationNeverCopiesChangedGlobal(t *testing.T) {
 	frozen := frozenBusinessFixture(t)
 	draft.Business = frozen.Business
 	draft.BusinessDigest = frozen.BusinessDigest
-	seedBusinessPrograms(t, db, &draft)
 	candidate, err := service.SaveAnimeConfigCandidate(ctx, CandidateDraftInput{Draft: draft})
 	if err != nil {
 		t.Fatal(err)
@@ -61,18 +60,15 @@ func TestBusinessRevisionActivationNeverCopiesChangedGlobal(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT business_snapshot,business_digest FROM anime_business_configs WHERE managed_anime_id=$1`, result.ManagedAnime.ID).Scan(&raw, &digest); err != nil {
 		t.Fatal(err)
 	}
-	var stored struct {
-		Programs struct {
-			Vars struct {
-				Digest string `json:"digest"`
-			} `json:"vars"`
-		} `json:"programs"`
-	}
+	var stored animedomain.BusinessSnapshot
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		t.Fatal(err)
 	}
-	if digest != *draft.BusinessDigest || stored.Programs.Vars.Digest != draft.Business.Programs.Vars.Digest {
-		t.Fatal("instance did not freeze exact revision programs")
+	if _, err := stored.Freeze(); err != nil {
+		t.Fatalf("stored business snapshot is not a valid v3 snapshot: %v", err)
+	}
+	if digest != *draft.BusinessDigest || stored.SchemaVersion != animedomain.BusinessSnapshotSchemaVersion {
+		t.Fatal("instance did not freeze exact revision business snapshot")
 	}
 	for _, mutation := range []string{
 		`UPDATE anime_business_configs SET business_snapshot=jsonb_set(business_snapshot,'{unclassified_route}','"skip"'), business_version=business_version+1 WHERE managed_anime_id=$1`,
@@ -108,7 +104,6 @@ func TestBusinessRevisionActivationStoresOneTimeSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	draft.Business, draft.BusinessDigest = &business, &digest
-	seedBusinessPrograms(t, db, &draft)
 	candidate, err := service.SaveAnimeConfigCandidate(ctx, CandidateDraftInput{Draft: draft})
 	if err != nil {
 		t.Fatal(err)

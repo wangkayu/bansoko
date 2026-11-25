@@ -85,14 +85,9 @@ type releaseReadOptions struct {
 	perSourceLimit int
 	// targets, when not nil, supplies each release's target set.
 	targets map[string]releaseTargetSet
-	// vars additionally reads what the Vars evidence of a persisted release needs
-	// (its frozen source facts and torrent input hashes), so the list view builds
-	// it without two more queries per release.
-	vars bool
-	// fileIdentity additionally reads each release's torrent payload digest, the
-	// binding every file_ref is derived from. The RSS list view rebuilds an owner
-	// release's manifest and needs it; a reader that renders no file identity
-	// does not pay for the join.
+	// fileIdentity additionally reads each release's torrent payload digest and
+	// input hashes. The payload digest binds every derived file_ref; the RSS list
+	// view also uses the hashes as torrent naming facts.
 	fileIdentity bool
 }
 
@@ -101,22 +96,19 @@ func (s *Service) readReleasesApplication(ctx context.Context, subscriptionID st
 	perSourceLimit, targets := options.perSourceLimit, options.targets
 	// An owner release's manifest is rebuilt from its frozen file facts, and
 	// every file_ref is derived from the payload digest of the torrent those
-	// facts were parsed from. The RSS list view asks for that digest
-	// (fileIdentity); a reader that never projects file identities — the full
-	// workspace — skips the join. The info hashes are Vars evidence and are read
-	// only when asked.
+	// facts were parsed from. The RSS list view asks for that digest and the
+	// torrent input hashes; a reader that never projects file identities skips
+	// the join.
 	digestColumn := `''`
 	hashColumns := `'', ''`
 	hashJoin := ``
-	if options.fileIdentity || options.vars {
+	if options.fileIdentity {
 		digestColumn = `COALESCE(rti.payload_digest, '')`
+		hashColumns = `COALESCE(rti.info_hash_v1, ''), COALESCE(rti.info_hash_v2, '')`
 		hashJoin = `
 LEFT JOIN LATERAL (
     SELECT payload_digest, info_hash_v1, info_hash_v2 FROM release_torrent_inputs WHERE release_id = r.id LIMIT 1
 ) AS rti ON true`
-	}
-	if options.vars {
-		hashColumns = `COALESCE(rti.info_hash_v1, ''), COALESCE(rti.info_hash_v2, '')`
 	}
 	from := `
 FROM releases r
@@ -173,9 +165,6 @@ WHERE src.subscription_id = $1
 			&release.Verdict, &release.ReasonCode, &reasonDetail, &evaluationVersion, &evaluatedRulesVersion, &downloadTaskID, &release.Version, &item.snapshotID, &snapshotParserKind, &item.parserConfig, &item.batchPlanRaw, &acquisitionID,
 			&release.currentTaskState, &release.currentAcquisitionState, &release.placementMissing, &release.placementReleased, &release.payloadDigest, &release.inputHashV1, &release.inputHashV2); err != nil {
 			return nil, fmt.Errorf("scan release: %w", err)
-		}
-		if options.vars {
-			release.rawSourceFacts = append([]byte(nil), sourceFacts...)
 		}
 		item.parserKind = snapshotParserKind.String
 		release.InternalFacts = append([]byte(nil), internalFacts...)

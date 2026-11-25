@@ -42,7 +42,7 @@ type ownershipTestServices struct {
 
 func (services *ownershipTestServices) SubscribeAnime(ctx context.Context, input generated.SubscribeAnimeInput, idempotencyKey string) (generated.SubscribeResult, error) {
 	if input.Draft.Business == nil {
-		business, err := frozenpolicy.SeedBusiness(ctx, services.Service.db, `vars.test = {marker: input.release_title};`)
+		business, err := frozenpolicy.Business()
 		if err != nil {
 			return generated.SubscribeResult{}, err
 		}

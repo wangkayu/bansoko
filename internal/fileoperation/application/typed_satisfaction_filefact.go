@@ -45,7 +45,7 @@ func observedSatisfactionFileFact(b *artifactPreparedBatch, file artifactFileCon
 		replay[key] = unknown()
 	}
 	provenance := map[string]any{"mode": "native", "acquisition_ref": frozenKnown(capture.Artifact.Root), "operation_ref": map[string]any{"state": "absent", "value": nil, "reason_code": nil}, "artifact_ref": frozenKnown(b.capture.ArtifactID), "artifact_file_ref": frozenKnown(file.id), "media_snapshot": unknown(), "delivery_digest": frozenKnown(evidence["digest"]), "exact_selection": unknown(), "missing_paths": []string{}}
-	groups := map[string]any{"locator": map[string]any{"final_object": frozenKnown(evidence["final_object"]), "source_cleanup": "not_required"}, "content_source": source, "identity_coverage": map[string]any{"identity": unknown(), "coverage_schema": episodeidentity.ResolverVersion, "coverage_keys": []string{}}, "quality": unknown(), "render_inputs": map[string]any{"replay": replay, "binding": unknown(), "vars": unknown(), "naming_schema": unknown(), "naming_digest": unknown(), "render_program_version": unknown()}, "episode_offset": map[string]any{"offset": unknown(), "media_kind": unknown(), "season": unknown(), "season_bound": unknown(), "video_count": unknown()}, "provenance": provenance, "schema_version": 2}
+	groups := map[string]any{"locator": map[string]any{"final_object": frozenKnown(evidence["final_object"]), "source_cleanup": "not_required"}, "content_source": source, "identity_coverage": map[string]any{"identity": unknown(), "coverage_schema": episodeidentity.ResolverVersion, "coverage_keys": []string{}}, "quality": unknown(), "render_inputs": map[string]any{"replay": replay, "binding": unknown(), "naming_schema": unknown(), "naming_digest": unknown(), "render_program_version": unknown()}, "episode_offset": map[string]any{"offset": unknown(), "media_kind": unknown(), "season": unknown(), "season_bound": unknown(), "video_count": unknown()}, "provenance": provenance, "schema_version": 2}
 	if capture.Witness != nil {
 		if capture.Witness.Root != capture.Artifact.Root {
 			return "", fmt.Errorf("PLAN_HANDOFF_INVALID")
@@ -142,11 +142,6 @@ func observedSatisfactionFileFact(b *artifactPreparedBatch, file artifactFileCon
 		}
 	}
 	renderInputs := groups["render_inputs"].(map[string]any)
-	vars, err := capturedVarsResult(b)
-	if err != nil {
-		return "", err
-	}
-	renderInputs["vars"] = vars
 	if kind, ok := render.Binding["media_kind"].(string); ok && (kind == "tv" || kind == "movie") {
 		binding := map[string]any{"media_kind": kind, "season": render.Binding["season"], "season_bound": render.Binding["season_bound"], "bgm_work_id": unknown(), "tmdb_work_id": unknown(), "effective_title": unknown(), "extension": unknown()}
 		for key, sourceKey := range map[string]string{"bgm_work_id": "bgm_work_id", "tmdb_work_id": "tmdb_work_id", "effective_title": "effective_title", "extension": "extension"} {

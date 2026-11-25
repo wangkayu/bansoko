@@ -20,7 +20,7 @@ import (
 
 // These tests prove that the owner-held qualification recheck locks
 // and compares only the fixed QualificationV1 claims, returns the post-lock DB
-// verdict time, and never creates rows. Placement/translation/seed proofs that
+// verdict time, and never creates rows. Placement and seed proofs that
 // SQL cannot represent fail closed instead of being downgraded.
 
 type qualificationFixture struct {
@@ -32,7 +32,6 @@ type qualificationFixture struct {
 	groupVersion                     int64
 	feed                             catalogdomain.ProviderFeedSnapshot
 	payloadDigest, projectionDigest  string
-	varsDigest                       string
 }
 
 func seedQualification(t *testing.T, db *sql.DB, tag string) qualificationFixture {
@@ -44,9 +43,8 @@ func seedQualification(t *testing.T, db *sql.DB, tag string) qualificationFixtur
 	}
 	f := qualificationFixture{animeID: "anime-" + tag, subID: "sub-" + tag, srcID: "src-" + tag, relID: "rel-" + tag}
 
-	// Real saved revision and instance business through the draft owner; the
-	// programs are inactive exact versions, so non-active old content is used.
-	b, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	// Real saved revision and instance business through the draft owner.
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +69,6 @@ func seedQualification(t *testing.T, db *sql.DB, tag string) qualificationFixtur
 		t.Fatal(err)
 	}
 	f.candidateID, f.revision = candidate.Id, *candidate.CurrentRevision
-	f.varsDigest = b.Programs.Vars.Digest
 	if err := db.QueryRowContext(ctx, `SELECT version,current_revision_digest FROM anime_config_candidates WHERE id=$1`, f.candidateID).Scan(&f.candidateVersion, &f.revisionDigest); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +131,6 @@ func (f qualificationFixture) qualification(mutate func(map[string]any)) string 
 		"feed": map[string]any{"snapshot_ref": f.feed.ID, "snapshot_version": f.feed.Version, "scope": scope(), "group_ref": "10",
 			"content_hash": f.feed.ContentHash, "hash_schema": "provider-feed-snapshot-v2", "projection_schema": "torrent-manifest-v1",
 			"stable_seed_key": "seed", "payload_digest": f.payloadDigest, "manifest_digest": f.projectionDigest},
-		"programs":  map[string]any{"vars_digest": f.varsDigest, "translation": nil},
 		"placement": map[string]any{"kind": "none"},
 	}
 	if mutate != nil {
@@ -203,8 +199,7 @@ func TestAcquisitionQualificationRecheckClaimsAndFailClosedProofs(t *testing.T) 
 			q["config"] = map[string]any{"kind": "submitted", "request_hash": request, "config_digest": acqDigest("7")}
 			member(q, "management")["expected_metadata_version"] = nil
 		}, acqDigest("7")},
-		{"no vars claim no observation", func(q map[string]any) {
-			member(q, "programs")["vars_digest"] = nil
+		{"no observation", func(q map[string]any) {
 			q["observation"] = nil
 		}, f.businessDigest},
 	} {
@@ -242,8 +237,8 @@ func TestAcquisitionQualificationRecheckClaimsAndFailClosedProofs(t *testing.T) 
 		{"existing placement", "ACQ_QUALIFICATION_PROOF_UNSUPPORTED", func(q map[string]any) {
 			q["placement"] = map[string]any{"kind": "existing", "placement_ref": "p", "expected_revision": 1, "file_fact_digest": acqDigest("8")}
 		}, "", ""},
-		{"translation identity", "ACQ_QUALIFICATION_PROOF_UNSUPPORTED", func(q map[string]any) {
-			member(q, "programs")["translation"] = map[string]any{"schema_version": "v1", "data_version": "v1", "content_digest": acqDigest("9")}
+		{"retired programs member", "ACQ_QUALIFICATION_INVALID", func(q map[string]any) {
+			q["programs"] = map[string]any{"vars_digest": acqDigest("9"), "translation": nil}
 		}, "", ""},
 		{"seed payload identity", "ACQ_QUALIFICATION_PROOF_UNSUPPORTED", func(q map[string]any) {
 			q["source"] = map[string]any{"kind": "seed", "seed_identity_digest": acqDigest("a")}
@@ -265,7 +260,6 @@ func TestAcquisitionQualificationRecheckClaimsAndFailClosedProofs(t *testing.T) 
 			q["config"] = map[string]any{"kind": "saved_revision", "candidate_ref": f.candidateID, "candidate_version": f.candidateVersion + 1, "revision": f.revision, "revision_digest": f.revisionDigest}
 			member(q, "management")["expected_metadata_version"] = nil
 		}, f.revisionBusiness, ""},
-		{"vars program", "ACQ_QUALIFICATION_PROGRAM_CHANGED", func(q map[string]any) { member(q, "programs")["vars_digest"] = acqDigest("d") }, "", ""},
 		{"source version", "ACQ_QUALIFICATION_SOURCE_CHANGED", func(q map[string]any) { member(member(q, "source"), "source_ref")["version"] = 2 }, "", ""},
 		{"release version", "ACQ_QUALIFICATION_SOURCE_CHANGED", func(q map[string]any) { member(q, "source")["expected_version"] = 2 }, "", ""},
 		{"release of other source", "ACQ_QUALIFICATION_SOURCE_CHANGED", func(q map[string]any) { member(q, "source")["release_ref"] = "rel-absent" }, "", ""},
@@ -389,10 +383,8 @@ func TestAcquisitionFeedExpiryAfterLockWaitIsRejected(t *testing.T) {
 	expectQualificationError(t, <-done, "ACQ_QUALIFICATION_FEED_EXPIRED")
 }
 
-// The recheck's parent FOR SHARE locks keep the exact feed/group/program rows
-// stable for the rest of the accepting transaction: GC deletes and active
-// program publication wait until it ends.
-func TestAcquisitionRecheckLocksBlockGCAndPublication(t *testing.T) {
+// The recheck holds feed and group rows until the accepting transaction ends.
+func TestAcquisitionRecheckLocksBlockGC(t *testing.T) {
 	owner, runtime := setupQualification(t)
 	ctx := context.Background()
 	for i, tc := range []struct {
@@ -401,7 +393,6 @@ func TestAcquisitionRecheckLocksBlockGCAndPublication(t *testing.T) {
 	}{
 		{"feed GC", `DELETE FROM provider_feed_snapshots WHERE id=$1`, func(f qualificationFixture) any { return f.feed.ID }},
 		{"group GC", `DELETE FROM provider_group_snapshots WHERE id=$1`, func(f qualificationFixture) any { return f.groupID }},
-		{"vars publication", `UPDATE naming_vars_versions SET active=active WHERE fingerprint=$1`, func(f qualificationFixture) any { return f.varsDigest }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := seedQualification(t, owner, "lock"+string(rune('a'+i)))

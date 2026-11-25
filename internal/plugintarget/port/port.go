@@ -283,7 +283,7 @@ func ReplacementAppliedRequest(decisionID string, version int64, managedAnimeID,
 		facts["replaced.new.file"] = name
 	}
 	facts["replaced.old_versions"] = originals
-	for key, value := range notification.ValueFacts(nil, source.ReleaseTags, notification.Text) {
+	for key, value := range notification.ValueFacts(source.ReleaseTags, notification.Text) {
 		facts[key] = value
 	}
 	payload, err := json.Marshal(facts)

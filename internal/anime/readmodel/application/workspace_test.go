@@ -83,7 +83,6 @@ func TestReleaseFilesFromInternalProjectsTargetProjection(t *testing.T) {
 }
 
 func TestReleaseFilesFromInternalProjectsDisplayBadges(t *testing.T) {
-	animetest.InstallRegistries()
 	size := int64(1024)
 	service := &Service{}
 	files := service.releaseFilesFromInternalApplication([]releaseInternalFile{

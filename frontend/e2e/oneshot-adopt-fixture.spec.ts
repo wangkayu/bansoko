@@ -129,7 +129,7 @@ async function mockShellReads(page: Page) {
     ] satisfies GlobalSectionView[]),
   );
   await page.route("**/api/v1/template-catalogs/naming", (route) =>
-    ok(route, 200, { language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [], vars_keys: [], vars_loaded_at: null } satisfies NamingTemplateCatalog),
+    ok(route, 200, { language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [] } satisfies NamingTemplateCatalog),
   );
   await page.route("**/api/v1/config/naming-templates", (route) =>
     ok(route, 200, { default_key: "default", templates: [{ key: "default", name: "Default", rules: { language: "js-naming-1", tv: { directory_template: "{title}", video_filename_template: "{title}" }, movie: { directory_template: "{title}", video_filename_template: "{title}" }, unknown: { directory_template: "{title}", video_filename_template: "{title}" }, subtitle_suffix_template: "" } }], version: 1 } satisfies NamingTemplateLibraryView),

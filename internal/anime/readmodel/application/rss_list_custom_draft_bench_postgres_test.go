@@ -25,7 +25,7 @@ func TestPGCustomDraftBenchReadsTheSavedPresetSnapshot(t *testing.T) {
 	ctx := context.Background()
 	view, services := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
 	input := readmodelCandidateInput(t, db, readmodelTestDraft(t))
-	business, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
+	business, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

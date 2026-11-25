@@ -44,7 +44,6 @@ func serviceIntentFixture(t *testing.T, c admissionCapture) acquisitionIntent {
 }
 func TestAcceptPrepareCompleteInputAndIsolation(t *testing.T) {
 	m := qualificationFixture(t, "subscription_direct")
-	m.programs.varsSource = "vars.actual = {title: input.release_title};"
 	m.catalog.feed.Seeds[0].Title = "[Group] Show - 01 [1080p]"
 	m.bgm = &anime.BGMBinding{WorkId: "123"}
 	m.tmdb = &anime.TMDBBinding{WorkId: "456", MediaKind: "tv", Season: 1}
@@ -88,18 +87,11 @@ func TestAcceptPrepareCompleteInputAndIsolation(t *testing.T) {
 	if p.args.InputCanonicalUtf8.String != original || p.args.PreparationWitness.String == "" || p.args.Payload == nil {
 		t.Fatal("incomplete prepared")
 	}
-	if result.input.Object["config"].Object["vars"].Object["mode"].String != "frozen" {
-		t.Fatal("Vars silently disabled")
+	if _, ok := result.input.Object["config"].Object["vars"]; ok {
+		t.Fatal("new input contains retired config vars")
 	}
-	record, err := protocol.ParseStrict([]byte(p.varsRecord))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := protocol.ValidateVarsEvaluation(record, result.input.Object["config"].Object["vars"], p.args.AcquisitionID.String, result.inputDigest); err != nil {
-		t.Fatal(err)
-	}
-	if record.Object["evaluated_at"].String != result.varsCompletion.evaluatedAt || record.Object["evaluation_id"].String != result.varsCompletion.evaluationID {
-		t.Fatal("Prepared changed the actual evaluation identity/time")
+	if _, ok := result.input.Object["delivery"].Object["naming"].Object["vars_choice"]; ok {
+		t.Fatal("new input contains retired vars choice")
 	}
 	tampered := result
 	tampered.inputDigest = c.payloadDigest
@@ -113,7 +105,6 @@ func TestAcceptPrepareCompleteInputAndIsolation(t *testing.T) {
 
 func TestAcceptEvaluateDoesNotBypassMetadataHold(t *testing.T) {
 	m := qualificationFixture(t, "automatic_source")
-	m.programs.varsSource = "vars.actual = {title: input.release_title};"
 	m.catalog.feed.Seeds[0].Title = "[Group] Show - 01 [1080p]"
 	var err error
 	m.catalog.feed.ContentHash, err = catalog.CanonicalFeedSnapshotContentHash(m.catalog.feed.Seeds)

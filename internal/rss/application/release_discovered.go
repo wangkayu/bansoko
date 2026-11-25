@@ -213,7 +213,7 @@ func releaseDiscoveredFacts(snapshot releaseSnapshot, item acquisitiondomain.Fee
 	if size := releaseSize(item); size != nil {
 		facts["torrent.size"] = *size
 	}
-	for key, value := range notification.ValueFacts(nil, snapshot.sourceFacts, text) {
+	for key, value := range notification.ValueFacts(snapshot.sourceFacts, text) {
 		facts[key] = value
 	}
 	return facts

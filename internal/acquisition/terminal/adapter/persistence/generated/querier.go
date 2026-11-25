@@ -12,7 +12,7 @@ import (
 type Querier interface {
 	//AcceptQualifiedQueued
 	//
-	//  SELECT public.accept_acquisition_queued_with_vars(
+	//  SELECT public.accept_acquisition_queued(
 	//      $1::text,
 	//      $2::text,
 	//      $3::text,
@@ -54,8 +54,7 @@ type Querier interface {
 	//      $39::text,
 	//      $40::text,
 	//      $41::text,
-	//      $42::jsonb,
-	//      $43::text
+	//      $42::jsonb
 	//  )::jsonb AS result
 	AcceptQualifiedQueued(ctx context.Context, arg AcceptQualifiedQueuedParams) (json.RawMessage, error)
 }

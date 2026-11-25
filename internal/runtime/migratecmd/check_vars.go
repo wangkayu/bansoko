@@ -9,8 +9,8 @@ import (
 	"io"
 	"strings"
 
-	"bansoko/internal/namingvars/preflight"
 	"bansoko/internal/runtime/database"
+	preflight "bansoko/internal/runtime/migrations/varspreflight"
 )
 
 type checkVarsReport struct {
@@ -49,7 +49,7 @@ func runCheckVars(ctx context.Context, args []string, getenv func(string) string
 	}
 	defer db.Close()
 
-	hits, err := preflight.ScanEditableTemplates(ctx, db)
+	hits, err := preflight.Scan(ctx, db)
 	if err != nil {
 		fmt.Fprintf(stderr, "check-vars: scan failed (%s)\n", safeMigrationErrorClass(err))
 		return 2
@@ -81,10 +81,10 @@ func writeCheckVarsReport(hits []preflight.Hit, asJSON bool, stdout, stderr io.W
 		return 0
 	}
 	if len(hits) == 0 {
-		fmt.Fprintln(stdout, "check-vars: ok (no editable templates reference naming Vars)")
+		fmt.Fprintln(stdout, "check-vars: ok (no scanned templates reference naming Vars)")
 		return 0
 	}
-	fmt.Fprintf(stderr, "check-vars: found %d editable template reference(s) to naming Vars; replace them before upgrading to 0.3:\n", len(hits))
+	fmt.Fprintf(stderr, "check-vars: found %d template reference(s) to naming Vars; replace editable templates or drain affected acquisitions before upgrading to 0.3:\n", len(hits))
 	for _, hit := range hits {
 		fmt.Fprintf(stderr, "  - %s\n", hit.String())
 	}

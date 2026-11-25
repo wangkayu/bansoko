@@ -8,7 +8,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -730,29 +729,6 @@ func assertFunctions(t *testing.T, functions []TemplateFunction) {
 	}
 	for name := range want {
 		t.Errorf("missing function %q from allowlist", name)
-	}
-}
-
-// The preview must render the same context a real naming operation would: a
-// template that reads ${vars...} would otherwise compile (the compiler sees the
-// active snapshot) and then fail only in the preview.
-func TestPreviewNamingInjectsTheActiveVarsSnapshot(t *testing.T) {
-	if err := namingvars.SetActive(namingvars.Vars{"anime": {"group": "S01E07"}}, "sha256:preview-test"); err != nil {
-		t.Fatal(err)
-	}
-	service := NewService()
-	preview, err := service.PreviewNaming(context.Background(), namingPreviewInput(
-		NamingTemplatePreviewInputTemplateKindVideoFilename,
-		"${vars.anime.group}.${file.ext}",
-	))
-	if err != nil {
-		t.Fatalf("PreviewNaming returned error: %v", err)
-	}
-	if !preview.Valid {
-		t.Fatalf("expected a valid preview for a declared naming variable, got %+v", preview.Errors)
-	}
-	if preview.Rendered == "" || !strings.Contains(preview.Rendered, "S01E07") {
-		t.Fatalf("rendered = %q, want the injected variable value", preview.Rendered)
 	}
 }
 

@@ -20,17 +20,14 @@ import (
 	"bansoko/internal/acquisition/torrent"
 	animeapplication "bansoko/internal/anime/application"
 	librarydomain "bansoko/internal/library/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
 // PostgreSQL coverage of the frozen record's size for batch one-shots. The
-// release-level naming vars input is frozen once (download_tasks.frozen_policy)
-// and every target names it by digest; the target set is stored once, one
-// acquisition_targets row per target, and the one-shot snapshot and the
-// download task's frozen input name it by set digest and count. Nothing frozen
-// grows with targets × files.
+// target set is stored once, one acquisition_targets row per target, and the
+// one-shot snapshot and the task's frozen input name it by digest and count.
+// Nothing frozen grows with targets × files.
 
 // batchTorrentFile is one entry of a synthetic v1 multi-file torrent.
 type batchTorrentFile struct {
@@ -215,9 +212,6 @@ FROM download_tasks WHERE release_id = $1`, result.ReleaseID))
 	record(measureJSONB(t, db, "download_tasks.frozen_policy", 1048576, `
 SELECT frozen_policy::text, pg_column_size(frozen_policy::text::jsonb), pg_column_size(frozen_policy)
 FROM download_tasks WHERE release_id = $1`, result.ReleaseID))
-	record(measureJSONB(t, db, "download_tasks.frozen_policy.vars.input", 262144, `
-SELECT (frozen_policy->'vars'->'input')::text, pg_column_size((frozen_policy->'vars'->'input')::text::jsonb), pg_column_size(frozen_policy->'vars'->'input')
-FROM download_tasks WHERE release_id = $1`, result.ReleaseID))
 	record(measureJSONB(t, db, "work_items.input_snapshot", 1048576, `
 SELECT w.input_snapshot::text, pg_column_size(w.input_snapshot::text::jsonb), pg_column_size(w.input_snapshot)
 FROM work_items w JOIN download_tasks d ON d.id = w.owner_id WHERE d.release_id = $1`, result.ReleaseID))
@@ -320,9 +314,9 @@ func assertTargetSetReference(t *testing.T, carrier string, raw json.RawMessage,
 	}
 }
 
-// assertBatchFrozenRecord checks the admitted record: the stored set, the
-// reference form of both carriers and the vars reference of every target.
-func assertBatchFrozenRecord(t *testing.T, service *oneShotTestServices, db *sql.DB, result OneShotAdmissionResult, wantTargets int) {
+// assertBatchFrozenRecord checks the stored target set and its references,
+// and verifies that the task and targets no longer carry Vars.
+func assertBatchFrozenRecord(t *testing.T, service *oneShotTestServices, db *sql.DB, result OneShotAdmissionResult, wantTargets, wantFiles int) {
 	t.Helper()
 	ctx := context.Background()
 	if result.State != string(OneShotAcquisitionStateRunning) || result.DownloadTaskID == nil {
@@ -340,44 +334,33 @@ func assertBatchFrozenRecord(t *testing.T, service *oneShotTestServices, db *sql
 		t.Fatal("one-shot view has no input snapshot")
 	}
 	assertTargetSetReference(t, "one-shot snapshot", view.InputSnapshot.TargetFacts, digest, count)
-	var frozenInput, varsDigestSQL string
-	var frozenPolicy []byte
+	var frozenInput string
 	if err := db.QueryRowContext(ctx, `
-SELECT frozen_input->'target_facts', frozen_policy,
-       'sha256:' || encode(digest(convert_to(anime_config_candidate_canonical_json(frozen_policy->'vars'), 'UTF8'), 'sha256'), 'hex')
-FROM download_tasks WHERE release_id = $1`, result.ReleaseID).Scan(&frozenInput, &frozenPolicy, &varsDigestSQL); err != nil {
+SELECT frozen_input->'target_facts'
+FROM download_tasks WHERE release_id = $1`, result.ReleaseID).Scan(&frozenInput); err != nil {
 		t.Fatalf("read frozen task: %v", err)
 	}
 	assertTargetSetReference(t, "download task frozen input", json.RawMessage(frozenInput), digest, count)
-	var copiesFacts bool
-	if err := db.QueryRowContext(ctx, `SELECT COALESCE(frozen_input->'selected_release' ? 'internal_facts', false) FROM download_tasks WHERE release_id = $1`, result.ReleaseID).Scan(&copiesFacts); err != nil {
+	var copiesFacts, policyHasVars bool
+	var fileCount int
+	if err := db.QueryRowContext(ctx, `
+SELECT COALESCE(frozen_input->'selected_release' ? 'internal_facts', false),
+       frozen_policy ? 'vars', COALESCE(jsonb_array_length(frozen_input->'release_files'), 0)
+FROM download_tasks WHERE release_id = $1`, result.ReleaseID).Scan(&copiesFacts, &policyHasVars, &fileCount); err != nil {
 		t.Fatal(err)
 	}
-	if copiesFacts {
-		t.Fatal("the frozen input's selected release still copies the release's internal facts")
+	if copiesFacts || policyHasVars || fileCount != wantFiles {
+		t.Fatalf("frozen task: copied internal facts=%t, retired Vars=%t, file count=%d (want %d)", copiesFacts, policyHasVars, fileCount, wantFiles)
 	}
-	var policy struct {
-		Vars *namingvars.FrozenEvaluation `json:"vars"`
-	}
-	if err := json.Unmarshal(frozenPolicy, &policy); err != nil || policy.Vars == nil {
-		t.Fatalf("frozen policy vars: %v", err)
-	}
-	varsDigest, err := acquisitiontarget.VarsDigest(policy.Vars)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if varsDigest != varsDigestSQL {
-		t.Fatalf("vars digest %s differs from the SQL canonical digest %s", varsDigest, varsDigestSQL)
-	}
-	var withVars, withoutDigest int
+	var withVars, withDigest int
 	if err := db.QueryRowContext(ctx, `
 SELECT COUNT(*) FILTER (WHERE render_snapshot ? 'vars'),
-       COUNT(*) FILTER (WHERE render_snapshot->>'vars_digest' IS DISTINCT FROM $2)
-FROM acquisition_targets WHERE release_id = $1`, result.ReleaseID, varsDigest).Scan(&withVars, &withoutDigest); err != nil {
+       COUNT(*) FILTER (WHERE render_snapshot ? 'vars_digest')
+FROM acquisition_targets WHERE release_id = $1`, result.ReleaseID).Scan(&withVars, &withDigest); err != nil {
 		t.Fatal(err)
 	}
-	if withVars != 0 || withoutDigest != 0 {
-		t.Fatalf("render snapshots: %d still embed vars, %d do not name the frozen vars digest", withVars, withoutDigest)
+	if withVars != 0 || withDigest != 0 {
+		t.Fatalf("render snapshots still carry Vars: %d outputs, %d digests", withVars, withDigest)
 	}
 }
 
@@ -396,7 +379,7 @@ func TestAcquireSeedOnceAdmitsEpisodeBatchesWithAFrozenRecordLinearInFiles(t *te
 		if err != nil {
 			t.Fatalf("admit a %d-episode batch: %v", episodes, err)
 		}
-		assertBatchFrozenRecord(t, service, db, result, episodes)
+		assertBatchFrozenRecord(t, service, db, result, episodes, episodes+2)
 		return admitted{files: episodes + 2, targets: episodes, sizes: measureOneShotBlobs(t, db, result)}
 	}
 	var small, large admitted
@@ -411,8 +394,7 @@ func TestAcquireSeedOnceAdmitsEpisodeBatchesWithAFrozenRecordLinearInFiles(t *te
 	if snapshotGrowth < -64 || snapshotGrowth > 64 {
 		t.Fatalf("one-shot snapshot grew by %d bytes from 24 to 100 targets", snapshotGrowth)
 	}
-	// Every other frozen term is per file (release_files, the vars inventory),
-	// never per target × file.
+	// Task and work item records grow at most linearly with the file list.
 	addedFiles := large.files - small.files
 	for _, name := range []string{"download_tasks.frozen_input", "download_tasks.frozen_policy", "work_items.input_snapshot"} {
 		perFile := (large.sizes[name].raw - small.sizes[name].raw) / addedFiles
@@ -427,8 +409,7 @@ func TestAcquireSeedOnceAdmitsEpisodeBatchesWithAFrozenRecordLinearInFiles(t *te
 }
 
 // A Blu-ray box set of 619 files (seven directories deep) with its 131 videos
-// selected by hand is admitted. Its file inventory is frozen once, in the
-// vars input of the frozen policy.
+// selected by hand is admitted. Its file inventory remains in the task input.
 func TestAcquireSeedOnceAdmitsALargeBoxSetWithAManualSelection(t *testing.T) {
 	const root = "[Group] Detective Conan [Ma10p_1080p]"
 	files, videos := boxSetFiles(root)
@@ -440,11 +421,8 @@ func TestAcquireSeedOnceAdmitsALargeBoxSetWithAManualSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admit the box set: %v", err)
 	}
-	assertBatchFrozenRecord(t, service, db, result, len(videos))
-	sizes := measureOneShotBlobs(t, db, result)
-	if inventory := sizes["download_tasks.frozen_policy.vars.input"].raw; inventory < 140000 {
-		t.Fatalf("the fixture's vars input is %d bytes, want a box-set sized inventory", inventory)
-	}
+	assertBatchFrozenRecord(t, service, db, result, len(videos), len(files))
+	measureOneShotBlobs(t, db, result)
 }
 
 // A torrent listing 20,000 files (the manifest maximum) is refused with the
@@ -532,10 +510,10 @@ SELECT jsonb_build_object(
         'id', t.id, 'release_id', t.release_id, 'target_ref', t.target_ref, 'source_path', t.source_path,
         'media_kind', t.media_kind, 'target_path', t.target_path, 'expected_size_bytes', t.expected_size_bytes,
         'intent', t.intent, 'collision_policy', t.collision_policy,
-        'render_snapshot', (t.render_snapshot - 'vars_digest') || jsonb_build_object('vars', d.frozen_policy->'vars'),
+        'render_snapshot', t.render_snapshot || '{"vars":{"output":{"fixture":"legacy"}}}'::jsonb,
         'config_snapshot', t.config_snapshot, 'spec_digest', t.spec_digest) ORDER BY t.target_ref),
     'observations', jsonb_agg(jsonb_build_object('target_id', t.id, 'state', 'missing', 'observed_at', '2026-10-28T00:00:00Z') ORDER BY t.target_ref))::text
-FROM acquisition_targets t JOIN download_tasks d ON d.release_id = t.release_id
+FROM acquisition_targets t
 WHERE t.release_id = $1`, result.ReleaseID).Scan(&embedded); err != nil {
 		t.Fatalf("build the pre-upgrade target facts: %v", err)
 	}
@@ -577,7 +555,7 @@ WHERE r.id = d.release_id AND d.release_id = $1`, result.ReleaseID); err != nil 
 	if err != nil || replay.OneShotID != result.OneShotID {
 		t.Fatalf("replay after migration 101 = %v, %v; want the original handle %s", replay.OneShotID, err, result.OneShotID)
 	}
-	assertBatchFrozenRecord(t, service, db, result, 24)
+	assertBatchFrozenRecord(t, service, db, result, 24, 26)
 }
 
 // The column CHECKs measure the jsonb datum the row is written with, before

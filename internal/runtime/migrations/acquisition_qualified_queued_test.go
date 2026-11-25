@@ -9,42 +9,16 @@ import (
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
-	"bansoko/internal/qualityprofile"
 	"bansoko/internal/testutil/frozenpolicy"
 )
 
-// The queued fixtures freeze a genuine submitted business value
-// with exact retained programs; no active fallback or invented empty claim.
 func queuedBusiness(t *testing.T) anime.BusinessSnapshot {
 	t.Helper()
-	b := anime.BusinessSnapshot{SchemaVersion: anime.BusinessSnapshotSchemaVersion, Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: anime.ParserPolicyEnvelope{SchemaVersion: anime.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", Provenance: "global", PolicyVersion: 1, ProfileVersion: 1, RulesOwnerVersion: 1}, ReplacementVersion: 1, FileEffectVersion: 1, UnclassifiedRoute: "skip"}
-	for _, name := range anime.EffectiveSectionOrder {
-		value, err := anime.DefaultSectionValue(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		raw, err := json.Marshal(value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b.Sections[name] = raw
-		b.SectionVersions[name] = 1
-		b.SectionSchemas[name] = anime.SectionSchemaVersions[name]
-	}
-	b.Replacement = anime.ReplacementValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}
-	vars, err := namingvars.SourceFingerprint(`vars.actual = {title: input.release_title};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.Programs = anime.ProgramReferences{Vars: namingvars.ProgramRef{Digest: vars, Version: namingvars.ProfileVersion(vars)}}
 	return b
-}
-func seedQueuedPrograms(t *testing.T, db *sql.DB) {
-	t.Helper()
-	if _, err := frozenpolicy.SeedBusiness(context.Background(), db, `vars.actual = {title: input.release_title};`); err != nil {
-		t.Fatal(err)
-	}
 }
 func submittedQualification(t *testing.T, tag string, b anime.BusinessSnapshot) string {
 	t.Helper()
@@ -56,42 +30,51 @@ func submittedQualification(t *testing.T, tag string, b anime.BusinessSnapshot) 
 		"config":      map[string]any{"kind": "submitted", "request_hash": acqDigest("6"), "config_digest": digest},
 		"management":  map[string]any{"kind": "instance", "managed_anime_ref": "anime-" + tag, "subscription_ref": "sub-" + tag, "expected_subscription_version": 1, "expected_lifecycle_version": 1, "expected_metadata_version": nil, "expected_parser_policy_version": nil, "expected_rules_owner_version": nil, "expected_subgroups_owner_version": nil, "subscription_policy": "manual_active_or_stopped"},
 		"source":      map[string]any{"kind": "release", "release_ref": "rel-" + tag, "expected_version": 1, "source_ref": map[string]any{"ref": "src-" + tag, "version": 1}},
-		"observation": nil, "feed": nil, "programs": map[string]any{"vars_digest": b.Programs.Vars.Digest, "translation": nil}, "placement": map[string]any{"kind": "none"},
+		"observation": nil, "feed": nil, "placement": map[string]any{"kind": "none"},
 	})
 }
-func validQueuedForSchema(t *testing.T, db *sql.DB, id, key, tag string) queuedParams {
+
+// historicalBusinessSnapshot constructs a valid v2 snapshot for an upgrade seed.
+// The retained program is needed by the old SQL even with evaluation disabled.
+func historicalBusinessSnapshot(t *testing.T, db *sql.DB, business map[string]any) string {
 	t.Helper()
-	var converged bool
-	if err := db.QueryRowContext(context.Background(), `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version='142_fact_source_convergence.sql')`).Scan(&converged); err != nil {
-		t.Fatal(err)
+	const source = `vars.actual = {title: input.release_title};`
+	digest := adoptSHA256([]byte(source))
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO naming_vars_versions(fingerprint,content,active) VALUES($1,$2::jsonb,FALSE) ON CONFLICT(fingerprint) DO NOTHING`, digest, adoptJSON(t, source)); err != nil {
+		t.Fatalf("seed historical Vars program: %v", err)
 	}
-	if converged {
-		return validQueued(t, id, key, tag)
-	}
-	return validHistoricalQueued(t, db, id, key, tag)
+	business["schema_version"] = "business-snapshot-v2"
+	business["programs"] = map[string]any{"vars": map[string]any{"version": "naming-vars-v1@" + digest, "digest": digest}}
+	return digest
 }
 
-// validHistoricalQueued constructs the attr-qualified graph that migrations
-// before 142 actually accepted. It exists only to seed an old schema for its
-// own upgrade test; current fixtures never carry this duplicate authority.
+// validHistoricalQueued seeds a pre-163 queued admission. Schemas before 142
+// additionally qualify the retained attribute program and use a v1 snapshot.
 func validHistoricalQueued(t *testing.T, db *sql.DB, id, key, tag string) queuedParams {
 	t.Helper()
 	p := validQueued(t, id, key, tag)
-	// Attr's historical canonical form follows the old Go struct field order,
-	// not acquisition JSON's sorted-key order.
-	attrJSON := `{"version":1,"resolution":["1080p","720p"],"quality":["web"],"language":["jpn"],"special_markers":["special"],"group_brackets":["[","]"]}`
-	attrDigest := adoptSHA256([]byte(attrJSON))
-	if _, err := db.ExecContext(context.Background(), `INSERT INTO attr_rule_versions(fingerprint,content,active) VALUES($1,$2::jsonb,FALSE) ON CONFLICT(fingerprint) DO NOTHING`, attrDigest, attrJSON); err != nil {
-		t.Fatalf("seed historical attr program: %v", err)
-	}
-
 	var business map[string]any
 	if err := json.Unmarshal([]byte(p.BusinessSnapshot), &business); err != nil {
 		t.Fatal(err)
 	}
-	business["schema_version"] = "business-snapshot-v1"
-	business["replacement"].(map[string]any)["quality_profile"] = json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)
-	business["programs"].(map[string]any)["attrrules"] = map[string]any{"version": "release-facts-v1@" + attrDigest, "digest": attrDigest}
+	varsDigest := historicalBusinessSnapshot(t, db, business)
+	programClaims := map[string]any{"vars_digest": varsDigest, "translation": nil}
+	var converged bool
+	if err := db.QueryRowContext(context.Background(), `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version='142_fact_source_convergence.sql')`).Scan(&converged); err != nil {
+		t.Fatal(err)
+	}
+	if !converged {
+		// Attr's historical canonical form follows the old Go struct field order.
+		attrJSON := `{"version":1,"resolution":["1080p","720p"],"quality":["web"],"language":["jpn"],"special_markers":["special"],"group_brackets":["[","]"]}`
+		attrDigest := adoptSHA256([]byte(attrJSON))
+		if _, err := db.ExecContext(context.Background(), `INSERT INTO attr_rule_versions(fingerprint,content,active) VALUES($1,$2::jsonb,FALSE) ON CONFLICT(fingerprint) DO NOTHING`, attrDigest, attrJSON); err != nil {
+			t.Fatalf("seed historical attr program: %v", err)
+		}
+		business["schema_version"] = "business-snapshot-v1"
+		business["replacement"].(map[string]any)["quality_profile"] = json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)
+		member(business, "programs")["attrrules"] = map[string]any{"version": "release-facts-v1@" + attrDigest, "digest": attrDigest}
+		programClaims["attr_fingerprint"] = attrDigest
+	}
 	p.BusinessSnapshot = canonicalJSON(t, business)
 	var businessDigest string
 	if err := db.QueryRowContext(context.Background(), `SELECT 'sha256:' || encode(digest(convert_to(anime_config_candidate_canonical_json($1::jsonb),'UTF8'),'sha256'),'hex')`, p.BusinessSnapshot).Scan(&businessDigest); err != nil {
@@ -103,14 +86,19 @@ func validHistoricalQueued(t *testing.T, db *sql.DB, id, key, tag string) queued
 		t.Fatal(err)
 	}
 	qualification["config"].(map[string]any)["config_digest"] = businessDigest
-	qualification["programs"].(map[string]any)["attr_fingerprint"] = attrDigest
+	qualification["programs"] = programClaims
 	p.Qualification = canonicalJSON(t, qualification)
 
 	var input map[string]any
 	if err := json.Unmarshal([]byte(p.InputCanonical), &input); err != nil {
 		t.Fatal(err)
 	}
-	input["config"].(map[string]any)["effective_digest"] = businessDigest
+	config := member(input, "config")
+	config["effective_digest"] = businessDigest
+	config["vars"] = map[string]any{"mode": "disabled", "runtime_version": "naming-vars-v1"}
+	member(member(input, "delivery"), "naming")["vars_choice"] = "disabled"
+	delete(member(input, "media"), "year")
+	delete(member(input, "media"), "season")
 	p.InputCanonical = canonicalJSON(t, input)
 	p.AdmissionDigest = acqDomainDigest("acquisition-input:v1", []byte(p.InputCanonical))
 	return p
@@ -266,9 +254,11 @@ func TestAcquisitionQualifiedQueuedRejectsChangedClaimsAndWitness(t *testing.T) 
 		{"feed", func(p *queuedParams) {
 			mutateQualification(t, p, func(q map[string]any) { member(q, "feed")["snapshot_version"] = 99 })
 		}, "ACQ_QUALIFICATION_FEED_CHANGED"},
-		{"program", func(p *queuedParams) {
-			mutateQualification(t, p, func(q map[string]any) { member(q, "programs")["vars_digest"] = acqDigest("f") })
-		}, "ACQ_QUALIFICATION_PROGRAM_CHANGED"},
+		{"retired programs member", func(p *queuedParams) {
+			mutateQualification(t, p, func(q map[string]any) {
+				q["programs"] = map[string]any{"vars_digest": acqDigest("f"), "translation": nil}
+			})
+		}, "ACQ_QUALIFICATION_INVALID"},
 		{"placement", func(p *queuedParams) {
 			mutateQualification(t, p, func(q map[string]any) {
 				q["placement"] = map[string]any{"kind": "existing", "placement_ref": "p", "expected_revision": 1, "file_fact_digest": acqDigest("f")}
@@ -316,11 +306,11 @@ func TestAcquisitionQualifiedQueuedRejectsChangedClaimsAndWitness(t *testing.T) 
 		t.Fatalf("replay rechecked: %v %v", again, err)
 	}
 	var overloads int
-	if err := owner.QueryRowContext(context.Background(), `SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='accept_acquisition_queued_with_vars'`).Scan(&overloads); err != nil || overloads != 1 {
+	if err := owner.QueryRowContext(context.Background(), `SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='accept_acquisition_queued' AND pronargs=42`).Scan(&overloads); err != nil || overloads != 1 {
 		t.Fatalf("unexpected accept overloads: %d %v", overloads, err)
 	}
 	var bypass int
-	if err := owner.QueryRowContext(context.Background(), `SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND (proname='accept_acquisition_queued' OR (proname='accept_acquisition_queued_without_vars' AND has_function_privilege('bansoko_runtime',oid,'EXECUTE')))`).Scan(&bypass); err != nil || bypass != 0 {
+	if err := owner.QueryRowContext(context.Background(), `SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('accept_acquisition_queued_with_vars','accept_acquisition_queued_without_vars')`).Scan(&bypass); err != nil || bypass != 0 {
 		t.Fatalf("queued writer bypass: %d %v", bypass, err)
 	}
 }
@@ -365,7 +355,7 @@ func TestAcquisitionQualifiedQueuedWaitsThenRejectsExpiredFeed(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		var raw []byte
-		call, args := queuedCallSQL(), queuedCallArgs(p.args())
+		call, args := queuedCallSQL(), p.args()
 		err := conn.QueryRowContext(ctx, call, args...).Scan(&raw)
 		done <- err
 	}()

@@ -15,7 +15,6 @@ func TestAlignmentAndPreviewUseMigratedPlacementCoverage(t *testing.T) {
 		ReleaseTitle: "[Group] Show - 01", PlacedPath: "/library/Drift/03.mkv",
 		DownloadName: "01.mkv", Rules: rendererRules(), FrozenEpisode: "1",
 	})
-	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	// Admission identity remains 1; an offset change re-keyed the coverage.
 	if _, err := db.Exec(`UPDATE placement_coverage SET observation_key='tv:e3' WHERE placement_id=$1`, chain.PlacementID); err != nil {
 		t.Fatal(err)

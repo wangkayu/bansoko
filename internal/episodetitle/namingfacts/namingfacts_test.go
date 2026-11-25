@@ -58,7 +58,7 @@ func compileRules(t *testing.T, videoTemplate string) naming.CompiledNamingRules
 			VideoFilenameTemplate: "${sanitize(anime.title)}.${file.ext}",
 		},
 	}
-	compiled, err := engine.CompileRulesWithVars(rules, map[string]map[string]string{})
+	compiled, err := engine.CompileRules(rules)
 	if err != nil {
 		t.Fatalf("compile rules: %v", err)
 	}

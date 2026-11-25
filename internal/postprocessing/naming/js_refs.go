@@ -15,16 +15,14 @@ import (
 // like template references, and its generated shape hid which text the template
 // actually wrote.
 //
-// The analyser answers four questions, and nothing else:
+// The analyser answers three questions, and nothing else:
 //
 //  1. does every reference into a context root name a field the catalog
 //     advertises (full path, not just the first segment);
-//  2. does every `vars` reference name a group/key present in the injected
-//     snapshot;
-//  3. does every identifier name something that can exist — a context root, a
+//  2. does every identifier name something that can exist — a context root, a
 //     registered helper, a documented JS global, or a name the template itself
 //     declares;
-//  4. does a string-literal regex-helper argument satisfy the same pattern
+//  3. does a string-literal regex-helper argument satisfy the same pattern
 //     syntax and size limits used at render time? This check lives in the
 //     expression walk because this is where the parsed call AST is available.
 //
@@ -71,31 +69,27 @@ func validateTemplateLimits(source string, kind TemplateKind) error {
 	return nil
 }
 
-// validateNamingExpression analyses one template expression. `vars` is the
-// loaded naming-vars snapshot; nil means no snapshot was supplied and vars
-// references are not checked, while a non-nil empty snapshot means "nothing is
-// loaded", so every vars reference is refused.
-//
+// validateNamingExpression analyses one template expression.
 // It returns the catalog fact paths the expression reads outside any
 // conditional: those are the facts a render may not silently leave empty.
-func validateNamingExpression(expression string, kind TemplateKind, vars map[string]map[string]string) (map[string]bool, error) {
-	a, err := analyzeNamingExpression(languageProfileOf(), expression, kind, vars)
+func validateNamingExpression(expression string, kind TemplateKind) (map[string]bool, error) {
+	a, err := analyzeNamingExpression(languageProfileOf(), expression, kind)
 	if err != nil {
 		return nil, err
 	}
 	return a.required, nil
 }
 
-func analyzeNamingExpression(profile *languageProfile, expression string, kind TemplateKind, vars map[string]map[string]string) (*expressionAnalyzer, error) {
-	analyzer := newExpressionAnalyzer(profile, kind, vars)
+func analyzeNamingExpression(profile *languageProfile, expression string, kind TemplateKind) (*expressionAnalyzer, error) {
+	analyzer := newExpressionAnalyzer(profile, kind)
 	if err := analyzer.analyze(expression); err != nil {
 		return nil, err
 	}
 	return analyzer, nil
 }
 
-func newExpressionAnalyzer(profile *languageProfile, kind TemplateKind, vars map[string]map[string]string) *expressionAnalyzer {
-	return &expressionAnalyzer{profile: profile, kind: kind, vars: vars, index: profile.index, required: map[string]bool{}, optionalPaths: map[string]bool{}, referenced: map[string]bool{}}
+func newExpressionAnalyzer(profile *languageProfile, kind TemplateKind) *expressionAnalyzer {
+	return &expressionAnalyzer{profile: profile, kind: kind, index: profile.index, required: map[string]bool{}, optionalPaths: map[string]bool{}, referenced: map[string]bool{}}
 }
 
 // analyze parses and walks one template expression (or plain text). It is the
@@ -129,7 +123,6 @@ func (a *expressionAnalyzer) analyze(expression string) error {
 type expressionAnalyzer struct {
 	profile *languageProfile
 	kind    TemplateKind
-	vars    map[string]map[string]string
 	index   catalogFieldIndex
 	scopes  []map[string]bool
 	// Byte offsets in the parenthesized source for safe literal coercion.
@@ -170,15 +163,15 @@ func (a *expressionAnalyzer) declare(name string) {
 }
 
 // known reports whether an identifier may exist at this point: a context root,
-// a wrapper alias, a `vars` reference, a registered helper, a documented JS
-// global, or a name declared in an enclosing scope.
+// a wrapper alias, a registered helper, a documented JS global, or a name
+// declared in an enclosing scope.
 func (a *expressionAnalyzer) known(name string) bool {
 	if a.allowShorthands {
 		if _, ok := shorthandExpansions[name]; ok {
 			return true
 		}
 	}
-	if a.profile.isRoot(name) || name == "vars" || templateRootAliases[name] || templateGlobals[name] {
+	if a.profile.isRoot(name) || templateRootAliases[name] || templateGlobals[name] {
 		return true
 	}
 	for _, definition := range helperDefinitions {
@@ -204,10 +197,6 @@ func (a *expressionAnalyzer) unknownIdentifier(name string) error {
 
 func (a *expressionAnalyzer) dynamicAccess() error {
 	return &Error{Code: ErrCodeTemplateCompileError, Field: string(a.kind), Message: "dynamic context field access is not allowed"}
-}
-
-func (a *expressionAnalyzer) unknownVars(message string) error {
-	return unknownNamingVars(string(a.kind), message)
 }
 
 // ---------------------------------------------------------------------------
@@ -936,8 +925,6 @@ func (a *expressionAnalyzer) checkChain(chain memberChainResult) error {
 		return a.unknownIdentifier(chain.root)
 	}
 	switch {
-	case chain.root == "vars":
-		return a.checkVarsChain(chain)
 	case a.profile.isRoot(chain.root):
 		return a.checkFieldChain(canonicalRoot(chain.root), chain.segments, chain.dynamic)
 	case templateRootAliases[chain.root]:
@@ -945,9 +932,6 @@ func (a *expressionAnalyzer) checkChain(chain memberChainResult) error {
 			return nil
 		}
 		inner := chain.segments[0]
-		if inner == "Vars" || inner == "vars" {
-			return a.checkVarsChain(memberChainResult{root: "vars", segments: chain.segments[1:], dynamic: chain.dynamic})
-		}
 		if a.profile.isRoot(inner) {
 			return a.checkFieldChain(canonicalRoot(inner), chain.segments[1:], chain.dynamic)
 		}
@@ -957,23 +941,6 @@ func (a *expressionAnalyzer) checkChain(chain memberChainResult) error {
 		// is not the catalog's business.
 		return nil
 	}
-}
-
-func (a *expressionAnalyzer) checkVarsChain(chain memberChainResult) error {
-	if a.vars == nil {
-		// No snapshot was supplied: vars references are not checked here.
-		return nil
-	}
-	if chain.dynamic {
-		return a.unknownVars("dynamic or unsupported vars reference")
-	}
-	if len(chain.segments) < 2 {
-		return nil
-	}
-	if len(chain.segments) != 2 {
-		return a.unknownVars("dynamic or unsupported vars reference")
-	}
-	return validateNamingVarsPath(a.vars, chain.segments[0], chain.segments[1], string(a.kind))
 }
 
 // checkFieldChain enforces the catalog as the leaf whitelist: the chain may

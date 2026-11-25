@@ -146,7 +146,7 @@ func configGateFiles(b *artifactPreparedBatch) []naming.NamingContext {
 		if extras[video.fileRef] || (!movie && episode == nil) || planExclusion(frozen.plan, selection, video, drift) != "" {
 			continue
 		}
-		facts, err := namingContextFacts(artifact, video, episode, prep.config.vars)
+		facts, err := namingContextFacts(artifact, video, episode)
 		if err != nil {
 			// The plan fails this file itself.
 			continue

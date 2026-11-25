@@ -66,7 +66,6 @@ type queryRower interface {
 // material the queued accept's source qualification locks.
 func seedAcceptableRelease(t *testing.T, db *sql.DB, tag string) {
 	t.Helper()
-	seedQueuedPrograms(t, db)
 	for _, statement := range []string{
 		`INSERT INTO managed_anime(id, title) VALUES ('anime-` + tag + `', 'Show')`,
 		`
@@ -128,25 +127,32 @@ func (p queuedParams) args() []any {
 	}
 }
 
-// queuedCallSQL renders the accept call with the vars-evaluation parameter,
-// which tests leave disabled (no fabricated frozen evidence).
 func queuedCallSQL() string {
-	placeholders := make([]string, 43)
+	return queuedSQL("accept_acquisition_queued", 42)
+}
+
+func queuedSQL(function string, arity int) string {
+	placeholders := make([]string, arity)
 	for i := range placeholders {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 	}
-	return "SELECT accept_acquisition_queued_with_vars(" + strings.Join(placeholders, ",") + ")"
-}
-
-// queuedCallArgs appends the disabled vars-evaluation argument to the params.
-func queuedCallArgs(args []any) []any {
-	return append(args, nil)
+	return "SELECT public." + function + "(" + strings.Join(placeholders, ",") + ")"
 }
 
 func callQueuedAccept(t *testing.T, db queryRower, p queuedParams) (map[string]any, error) {
 	t.Helper()
+	return decodeQueuedAccept(t, db, queuedCallSQL(), p.args())
+}
+
+func callHistoricalQueuedAccept(t *testing.T, db queryRower, p queuedParams) (map[string]any, error) {
+	t.Helper()
+	return decodeQueuedAccept(t, db, queuedSQL("accept_acquisition_queued_with_vars", 43), append(p.args(), nil))
+}
+
+func decodeQueuedAccept(t *testing.T, db queryRower, call string, args []any) (map[string]any, error) {
+	t.Helper()
 	var raw []byte
-	err := db.QueryRowContext(context.Background(), queuedCallSQL(), queuedCallArgs(p.args())...).Scan(&raw)
+	err := db.QueryRowContext(context.Background(), call, args...).Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +450,7 @@ func TestAcquisitionQueuedAcceptPrivileges(t *testing.T) {
 SELECT has_function_privilege('bansoko_runtime', p.oid, 'EXECUTE'),
        has_function_privilege('public', p.oid, 'EXECUTE')
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public' AND p.proname = 'accept_acquisition_queued_with_vars'`).
+WHERE n.nspname = 'public' AND p.proname = 'accept_acquisition_queued'`).
 		Scan(&runtimeGranted, &publicGranted); err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +522,7 @@ WHERE id = $1`, params.AcquisitionID, terminal); err != nil {
 	args := params.args()
 	args[5] = nil
 	var raw []byte
-	if err := db.QueryRowContext(ctx, queuedCallSQL(), queuedCallArgs(args)...).Scan(&raw); err == nil || adoptAcceptPGMessage(err) != "IDEMPOTENCY_KEY_REUSED" {
+	if err := db.QueryRowContext(ctx, queuedCallSQL(), args...).Scan(&raw); err == nil || adoptAcceptPGMessage(err) != "IDEMPOTENCY_KEY_REUSED" {
 		t.Fatalf("NULL request hash must not fall through SQL three-valued logic: %v", err)
 	}
 	params.RequestHash = "" // A different hash must never replay the accepted anchor.
@@ -596,7 +602,7 @@ func TestAcquisitionQueuedConcurrentReplayCreatesOneGraph(t *testing.T) {
 	done := make(chan replayResult, 1)
 	go func() {
 		var raw []byte
-		call, args := queuedCallSQL(), queuedCallArgs(params.args())
+		call, args := queuedCallSQL(), params.args()
 		err := conn.QueryRowContext(callCtx, call, args...).Scan(&raw)
 		done <- replayResult{raw: raw, err: err}
 	}()

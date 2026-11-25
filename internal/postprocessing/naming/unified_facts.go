@@ -134,7 +134,6 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 		FileRt: fileRt,
 		Anibt:  anibt,
 		Mikan:  mikanGroup,
-		Vars:   ctx.Vars,
 	}
 }
 

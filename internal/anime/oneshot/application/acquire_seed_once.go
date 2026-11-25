@@ -25,10 +25,9 @@ import (
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/events"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/parser"
 	"bansoko/internal/persistence/txscope"
-	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	rssapplication "bansoko/internal/rss/application"
 	"bansoko/internal/workitems"
 )
@@ -330,8 +329,8 @@ func cloneStoredAniBTTags(stored *acquisitiondomain.StoredAniBTTags) *acquisitio
 // torrentTooLargeError is the typed refusal of an admission whose frozen
 // record would exceed a stored bound (terminal.TorrentTooLargeCode). No frozen
 // carrier grows with the target count; what remains bounded by the file
-// inventory (the release's file list and naming vars input, a large manual
-// file selection) is refused here rather than failing as an internal error.
+// inventory (the release's file list and a large manual file selection) is
+// refused here rather than failing as an internal error.
 func torrentTooLargeError() error {
 	return &apperrors.Business{Status: 422, Code: terminal.TorrentTooLargeCode, Message: "The torrent lists too many files to freeze its download record."}
 }
@@ -344,13 +343,6 @@ func oneShotSizeRefusal(err error) error {
 		return torrentTooLargeError()
 	}
 	return err
-}
-
-// isTorrentTooLargeRefusal reports the typed refusal torrentTooLargeError
-// builds.
-func isTorrentTooLargeRefusal(err error) bool {
-	var business *apperrors.Business
-	return errors.As(err, &business) && business.Code == terminal.TorrentTooLargeCode
 }
 
 // AcquireSeedInputSource discriminates the two mutually exclusive config input
@@ -891,15 +883,11 @@ FOR UPDATE`, input.CandidateID).Scan(&candidateCurrentRevision, &candidateCurren
 		if err := animeapplication.VerifySubmittedBusinessDigest(draft); err != nil {
 			return OneShotAdmissionResult{}, err
 		}
-		// Admitting a submitted draft persists its resolved configuration, so it
-		// validates naming vars exactly like a candidate save.
-		vars, err := animeapplication.NamingVarsSnapshot("rules." + animedomain.SectionNamingRules)
-		if err != nil {
-			return OneShotAdmissionResult{}, err
-		}
+		// Admitting a submitted draft persists its resolved configuration.
 		var (
 			sections animedomain.ResolvedSections
 			envelope animedomain.ParserPolicyEnvelope
+			err      error
 		)
 		// The draft resolves from its own complete section values and frozen
 		// parser envelope, exactly as saving and previewing it do, and reads no
@@ -907,7 +895,7 @@ FOR UPDATE`, input.CandidateID).Scan(&candidateCurrentRevision, &candidateCurren
 		if draft.Business == nil {
 			return OneShotAdmissionResult{}, &apperrors.Business{Status: 422, Code: "BUSINESS_SNAPSHOT_INVALID", Message: "draft must carry a complete business snapshot"}
 		}
-		sections, err = animedomain.ResolveDraftSectionsFromBusiness(draft, vars)
+		sections, err = animedomain.ResolveDraftSectionsFromBusiness(draft)
 		if err != nil {
 			return OneShotAdmissionResult{}, animeapplication.SectionResolutionError(err)
 		}
@@ -1098,18 +1086,10 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7, $8)`,
 	// a tracker key: the release stores the digested form, as RSS refresh does.
 	_, evaluation.StableItemKey = animedomain.PublicStableItemKey(item)
 	releaseID := uuid.NewString()
-	frozenVars, varsErr := freezeBusinessVarsTx(ctx, tx, *business, item, animeID, releaseID, naming.VarsEpisode(evidence.NamingFacts()))
-	if isTorrentTooLargeRefusal(varsErr) {
-		return OneShotAdmissionResult{}, varsErr
+	evaluation.NamingAnime, err = namingpersistence.LoadAnimeFacts(ctx, tx, animeID)
+	if err != nil {
+		return OneShotAdmissionResult{}, err
 	}
-	if varsErr != nil {
-		status := 422
-		if namingvars.IsInterrupted(varsErr) {
-			status = 503 // transient: nothing frozen, the command may be retried
-		}
-		return OneShotAdmissionResult{}, &apperrors.Business{Status: status, Code: "NAMING_VARS_UNAVAILABLE", Message: varsErr.Error()}
-	}
-	evaluation.FrozenVars = &frozenVars
 
 	// Shared pre-download target admission. The same planner, probe, root,
 	// collision and adoption rules ordinary RSS evaluation uses run before any
@@ -1445,7 +1425,6 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 			RulesVersion:      1,
 			MetadataVersion:   1,
 			EvaluatorVersion:  &evaluatorVersion,
-			Vars:              evaluation.FrozenVars,
 			Parser:            parserEvidence})
 		if err != nil {
 			return OneShotAdmissionResult{}, fmt.Errorf("encode one-shot frozen policy: %w", err)

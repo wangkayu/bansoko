@@ -8,9 +8,8 @@ import (
 	"strings"
 
 	"bansoko/internal/episodeidentity"
-	"bansoko/internal/namingvars"
-	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 )
 
 // File manager recognition: the naming rules one-shot step two renders with,
@@ -34,7 +33,7 @@ import (
 // Recognition render failure codes (RecognitionRenderError.Code).
 const (
 	// RecognitionRenderFactsMissing: the template reads a fact this render
-	// does not carry (no match for an anime fact, an unknown Vars name).
+	// does not carry, such as an anime fact without a match.
 	RecognitionRenderFactsMissing = "facts_missing"
 	// RecognitionRenderTemplateInvalid: the rules do not compile.
 	RecognitionRenderTemplateInvalid = "template_invalid"
@@ -205,31 +204,19 @@ func (r *NamingTargetRenderer) RenderRecognitionSuffix(ctx context.Context, in R
 }
 
 // compileRecognition assembles the file's naming context and compiles the
-// operation's rules over the current Vars snapshot.
+// operation's rules.
 func (r *NamingTargetRenderer) compileRecognition(ctx context.Context, in RecognitionRenderInput) (naming.CompiledNamingRules, *naming.Engine, naming.NamingContext, error) {
 	fileName := path.Base(strings.ReplaceAll(strings.TrimSpace(in.FileName), "\\", "/"))
 	if fileName == "" || fileName == "." || fileName == ".." || fileName == "/" {
 		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, errors.New("recognition render requires a file name")
 	}
 
-	// Presentation Vars belong to the deployment, not to the file: a
-	// recognition render uses the current snapshot like a template preview.
-	// An uninitialized snapshot leaves an empty Vars object, so a template
-	// reading vars.* reports it unknown while every other template renders.
-	vars := map[string]map[string]string{}
-	if current, _, err := namingvars.Current(); err == nil {
-		vars = current
-	}
 	namingContext, err := r.recognitionContext(ctx, in, fileName)
 	if err != nil {
 		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, err
 	}
-	namingContext, err = naming.WithVars(namingContext, vars)
-	if err != nil {
-		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, &RecognitionRenderError{Code: RecognitionRenderFactsMissing, cause: err}
-	}
 	engine := naming.NewEngine()
-	compiled, err := engine.CompileRulesWithVars(in.Rules, vars)
+	compiled, err := engine.CompileRules(in.Rules)
 	if err != nil {
 		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, classifyRecognitionRender(err)
 	}
@@ -304,26 +291,12 @@ func (r *NamingTargetRenderer) recognitionContext(ctx context.Context, in Recogn
 // draft stands on its own, with the bound works' titles filled from the
 // metadata cache when one is wired. No anime row is read or written.
 func (r *NamingTargetRenderer) recognitionDraftFacts(ctx context.Context, draft *RecognitionAnimeDraft, season *int) (naming.AnimeNamingFacts, error) {
-	var evidence namingvars.AnimeEvidence
-	applyRecognitionAnimeDraft(&evidence, draft)
+	facts := naming.AnimeNamingFacts{}
+	applyRecognitionAnimeDraft(&facts, draft)
 	if r != nil && r.db != nil {
-		if err := namingvarspersistence.FillWorkTitles(ctx, r.db, &evidence); err != nil {
+		if err := namingpersistence.FillWorkTitles(ctx, r.db, &facts); err != nil {
 			return naming.AnimeNamingFacts{}, err
 		}
-	}
-	facts := naming.AnimeNamingFacts{
-		Title:         evidence.AnimeTitle,
-		TitleOverride: evidence.AnimeTitleOverride,
-		Year:          ownerYearValue(evidence.AnimeYear),
-		BGM: naming.BGMNamingFacts{
-			WorkID: evidence.BgmID, Title: evidence.BgmTitle, TitleCN: evidence.BgmTitleCN,
-			Year: providerYear(evidence.BgmYear),
-		},
-		TMDB: naming.TMDBNamingFacts{
-			WorkID: evidence.TmdbID, MediaKind: draft.MediaKind,
-			TitleCN: evidence.TmdbTitleCN, OriginalTitle: evidence.TmdbOriginalTitle,
-			Year: providerYear(evidence.TmdbYear),
-		},
 	}
 	if season != nil {
 		chosen := *season
@@ -343,32 +316,15 @@ func (r *NamingTargetRenderer) recognitionAnimeFacts(ctx context.Context, animeI
 	if r == nil || r.db == nil {
 		return naming.AnimeNamingFacts{}, errors.New("recognition render requires a database for a matched anime")
 	}
-	evidence, err := namingvarspersistence.LoadAnimeEvidence(ctx, r.db, animeID)
+	facts, err := namingpersistence.LoadAnimeFacts(ctx, r.db, animeID)
 	if err != nil {
 		return naming.AnimeNamingFacts{}, err
 	}
 	if draft != nil {
-		applyRecognitionAnimeDraft(&evidence, draft)
-		if err := namingvarspersistence.FillWorkTitles(ctx, r.db, &evidence); err != nil {
+		applyRecognitionAnimeDraft(&facts, draft)
+		if err := namingpersistence.FillWorkTitles(ctx, r.db, &facts); err != nil {
 			return naming.AnimeNamingFacts{}, err
 		}
-	}
-	facts := naming.AnimeNamingFacts{
-		ID:            animeID,
-		Title:         evidence.AnimeTitle,
-		TitleOverride: evidence.AnimeTitleOverride,
-		ProviderTitle: evidence.AnimeProviderTitle,
-		Year:          ownerYearValue(evidence.AnimeYear),
-		Season:        ownerSeasonValue(evidence.AnimeSeason),
-		BGM: naming.BGMNamingFacts{
-			WorkID: evidence.BgmID, Title: evidence.BgmTitle, TitleCN: evidence.BgmTitleCN,
-			Year: providerYear(evidence.BgmYear),
-		},
-		TMDB: naming.TMDBNamingFacts{
-			WorkID: evidence.TmdbID, MediaKind: evidence.TmdbKind,
-			TitleCN: evidence.TmdbTitleCN, OriginalTitle: evidence.TmdbOriginalTitle,
-			Year: providerYear(evidence.TmdbYear),
-		},
 	}
 	// The draft's kind is the kind this render resolves with (anime.kind).
 	if draft != nil {
@@ -384,9 +340,7 @@ func (r *NamingTargetRenderer) recognitionAnimeFacts(ctx context.Context, animeI
 			facts.TMDB.Season, facts.TMDB.SeasonPresent = chosen, true
 		}
 	}
-	if draft == nil && evidence.TmdbSeason != nil {
-		facts.TMDB.Season, facts.TMDB.SeasonPresent = int(*evidence.TmdbSeason), true
-	} else if draft != nil && draft.TMDB {
+	if draft != nil && draft.TMDB {
 		facts.TMDB.Season, facts.TMDB.SeasonPresent = draft.TMDBSeason, true
 	}
 	return facts, nil
@@ -395,44 +349,25 @@ func (r *NamingTargetRenderer) recognitionAnimeFacts(ctx context.Context, animeI
 // applyRecognitionAnimeDraft replaces the stored anime facts with the
 // operation's own copy: a value the draft leaves empty stays empty, never
 // falling back to the stored row.
-func applyRecognitionAnimeDraft(evidence *namingvars.AnimeEvidence, draft *RecognitionAnimeDraft) {
-	evidence.AnimeTitle = draft.Title
+func applyRecognitionAnimeDraft(facts *naming.AnimeNamingFacts, draft *RecognitionAnimeDraft) {
+	facts.Title = draft.Title
 	// The draft title is the effective title, which outranks every other
 	// source exactly as an edited subscription title does.
-	evidence.AnimeTitleOverride = draft.Title
-	evidence.AnimeYear = nil
+	facts.TitleOverride = draft.Title
+	facts.Year = nil
 	if draft.Year != nil {
-		year := int64(*draft.Year)
-		evidence.AnimeYear = &year
+		year := *draft.Year
+		facts.Year = &year
 	}
-	evidence.BgmID = ""
+	facts.BGM = naming.BGMNamingFacts{}
 	if draft.BGM {
-		evidence.BgmID = draft.BGMWorkID
+		facts.BGM.WorkID = draft.BGMWorkID
 	}
-	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "", "", nil
+	facts.TMDB = naming.TMDBNamingFacts{}
 	if draft.TMDB {
-		tmdbSeason := int64(draft.TMDBSeason)
-		evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = draft.TMDBWorkID, draft.TMDBMediaKind, &tmdbSeason
+		facts.TMDB.WorkID, facts.TMDB.MediaKind = draft.TMDBWorkID, draft.TMDBMediaKind
+		facts.TMDB.Season, facts.TMDB.SeasonPresent = draft.TMDBSeason, true
 	}
-}
-
-// ownerYearValue is the owner-edited year as naming reads it (nil when unset).
-func ownerYearValue(value *int64) *int {
-	if value == nil {
-		return nil
-	}
-	year := int(*value)
-	return &year
-}
-
-// ownerSeasonValue is the owner-edited season column as naming reads it (nil
-// when unset).
-func ownerSeasonValue(value *int64) *int {
-	if value == nil {
-		return nil
-	}
-	season := int(*value)
-	return &season
 }
 
 // classifyRecognitionRender maps a naming engine failure to its typed
@@ -443,8 +378,6 @@ func classifyRecognitionRender(err error) error {
 		switch {
 		case len(named.Missing) > 0 && naming.IsFactError(named.Code):
 			return &RecognitionRenderError{Code: RecognitionRenderFactsMissing, Facts: append([]string(nil), named.Missing...), cause: err}
-		case named.Code == naming.ErrCodeNamingVarsUnknown:
-			return &RecognitionRenderError{Code: RecognitionRenderFactsMissing, cause: err}
 		case named.Code == naming.ErrCodeNamingTargetInvalid,
 			named.Code == naming.ErrCodeNamingTargetNotAbsolute,
 			named.Code == naming.ErrCodeSubtitleSuffixInvalid:

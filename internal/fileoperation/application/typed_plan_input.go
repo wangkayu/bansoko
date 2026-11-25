@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	protocol "bansoko/internal/acquisition/terminal/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
+	"bansoko/internal/templatefacts"
 )
 
 // loadTypedPlanInput copies the acquisition's accepted input. Neither today's
@@ -35,6 +37,8 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 			Title         frozenPlanValue `json:"title"`
 			TitleOverride frozenPlanValue `json:"title_override"`
 			ProviderTitle frozenPlanValue `json:"provider_title"`
+			Year          json.RawMessage `json:"year"`
+			Season        json.RawMessage `json:"season"`
 			BGM           frozenPlanValue `json:"bgm"`
 			TMDB          frozenPlanValue `json:"tmdb"`
 			BGMTitles     frozenPlanValue `json:"bgm_titles"`
@@ -66,39 +70,7 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 		sections[s.Key] = s.Value
 		versions[s.Key] = s.Version
 	}
-	var vars struct {
-		Mode    string                `json:"mode"`
-		Program namingvars.ProgramRef `json:"program"`
-		Output  namingvars.Vars       `json:"output"`
-		Status  string                `json:"status"`
-		Reason  *string               `json:"reason_code"`
-		Known   struct {
-			Title frozenPlanValue   `json:"release_title"`
-			Files []namingvars.File `json:"files"`
-			Facts map[string]any    `json:"facts"`
-		} `json:"known_inputs"`
-	}
-	if err := json.Unmarshal(in.Config.Vars, &vars); err != nil {
-		return err
-	}
-	evaluation := namingvars.FrozenEvaluation{Program: vars.Program, Output: vars.Output, Status: vars.Status}
-	if vars.Reason != nil {
-		evaluation.Diagnostic = *vars.Reason
-	}
-	if vars.Known.Title.State == "known" {
-		if err := json.Unmarshal(vars.Known.Title.Value, &evaluation.Input.ReleaseTitle); err != nil {
-			return err
-		}
-	}
-	evaluation.Input.Files = vars.Known.Files
-	evaluation.Input.Facts = vars.Known.Facts
-	if vars.Mode == "disabled" {
-		evaluation.Status = "ok"
-		evaluation.Output = namingvars.Vars{} // disabled wire has no output; engine requires an object
-	}
-	// Internal engine projection must preserve an empty Vars object; the accepted
-	// disabled wire remains mode/runtime_version only. Do not normalize error nil.
-	policy, err := typedPlanPolicy(sections, versions, evaluation)
+	policy, err := json.Marshal(map[string]any{"effective_sections": sections, "section_versions": versions})
 	if err != nil {
 		return err
 	}
@@ -112,7 +84,6 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 		config.effect.CollisionPolicy = fileOperationCollisionFail
 	}
 	b.artifact.frozenPolicy = policy
-	b.artifact.acceptedFacts = true
 	// Current release/source rows only locate owners. Their changing values
 	// must not supply evidence to an already accepted operation.
 	b.artifact.sourceFacts = nil
@@ -192,6 +163,34 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 		b.artifact.tmdbMediaKind = sql.NullString{String: value.Kind, Valid: true}
 		b.artifact.tmdbSeason = sql.NullInt64{Int64: value.Season, Valid: true}
 	}
+	if b.artifact.ownerYear, err = decodeFrozenOwnerNumber(in.Media.Year); err != nil {
+		return fmt.Errorf("accepted media.year: %w", err)
+	}
+	if b.artifact.ownerSeason, err = decodeFrozenOwnerNumber(in.Media.Season); err != nil {
+		return fmt.Errorf("accepted media.season: %w", err)
+	}
+	// Only a missing member predates the new fields. An explicitly absent
+	// owner season never inherits the TMDB binding.
+	b.artifact.ownerSeasonPresent = in.Media.Season != nil
+	if in.Media.Year == nil || in.Media.Season == nil {
+		legacy := legacyVarsKnownAnime(in.Config.Vars)
+		if in.Media.Year == nil {
+			var text string
+			if json.Unmarshal(legacy["year"], &text) == nil {
+				if year, err := strconv.Atoi(strings.TrimSpace(text)); err == nil && year >= templatefacts.MinYear && year <= templatefacts.MaxYear {
+					b.artifact.ownerYear = &year
+				}
+			}
+		}
+		if in.Media.Season == nil {
+			raw, present := legacy["season"]
+			b.artifact.ownerSeasonPresent = present
+			var season *int
+			if present && json.Unmarshal(raw, &season) == nil && season != nil && *season >= 0 {
+				b.artifact.ownerSeason = season
+			}
+		}
+	}
 	// The native work titles (schema 5) and the torrent metadata (schema 4)
 	// are read only from the accepted input; older inputs leave them unknown.
 	b.artifact.bindingTitles = frozenBindingTitles{}
@@ -249,13 +248,50 @@ func applyTypedPlanInput(raw []byte, b *artifactPreparedBatch) error {
 	return nil
 }
 
-func typedPlanPolicy(sections map[string]json.RawMessage, versions map[string]int64, evaluation namingvars.FrozenEvaluation) ([]byte, error) {
-	return json.Marshal(map[string]any{"effective_sections": sections, "section_versions": versions, "vars": map[string]any{"program": evaluation.Program, "input": evaluation.Input, "output": evaluation.Output, "status": evaluation.Status, "diagnostic": evaluation.Diagnostic}})
+// legacyVarsKnownAnime reads only the two built-in owner facts from pre-0.3
+// accepted inputs. No program, output or evaluation record is needed to plan.
+func legacyVarsKnownAnime(raw json.RawMessage) map[string]json.RawMessage {
+	var old struct {
+		Known struct {
+			Facts struct {
+				Anime map[string]json.RawMessage `json:"anime"`
+			} `json:"facts"`
+		} `json:"known_inputs"`
+	}
+	if json.Unmarshal(raw, &old) != nil {
+		return nil
+	}
+	return old.Known.Facts.Anime
 }
 
 type frozenPlanValue struct {
 	State string          `json:"state"`
 	Value json.RawMessage `json:"value"`
+}
+
+func decodeFrozenOwnerNumber(raw json.RawMessage) (*int, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	var value frozenPlanValue
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	switch value.State {
+	case "absent", "unavailable":
+		return nil, nil
+	case "known":
+		var number *int
+		if err := json.Unmarshal(value.Value, &number); err != nil {
+			return nil, err
+		}
+		if number != nil {
+			return number, nil
+		}
+		return nil, fmt.Errorf("known value has no number")
+	default:
+		return nil, fmt.Errorf("invalid frozen value state %q", value.State)
+	}
 }
 
 func derefString(value *string) string {

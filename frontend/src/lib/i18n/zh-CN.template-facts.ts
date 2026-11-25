@@ -64,7 +64,6 @@ export const templateFactsCopy = {
     download: "下载",
     rt: "reltitle 解析值",
     anibt: "AniBT 标签",
-    vars: "自定义变量",
     mikan: "Mikan 来源组",
     media: "媒体",
     release_title: "发布标题",

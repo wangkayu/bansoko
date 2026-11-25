@@ -2,6 +2,7 @@ package notification
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -57,4 +58,12 @@ func exprReferencesVars(expr templateExpression) bool {
 		}
 	}
 	return false
+}
+
+// varsPathPattern is a vars.<group>.<name> reference accepted by the upgrade
+// detector. It is not a runtime template capability.
+var varsPathPattern = regexp.MustCompile(`^vars\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
+
+func IsVarsPath(name string) bool {
+	return varsPathPattern.MatchString(name) && !strings.HasPrefix(name, "vars.input.")
 }

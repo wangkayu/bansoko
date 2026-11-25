@@ -8,7 +8,6 @@ import (
 
 	acquisition "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -27,7 +26,7 @@ func TestOwnerSeasonPreviewAndPlannerRenderTheSameTarget(t *testing.T) {
 	effective.Rules.Naming = animedomain.NamingRulesFromDomain(rules)
 	episode := &naming.FrozenEpisodeNamingFacts{Raw: "3", Number: "3", Display: "3"}
 	const title = "[Group] Show - 03 [1080p]"
-	year := int64(2025)
+	year := 2025
 	owner := func(value int64) *int64 { return &value }
 
 	for _, tc := range []struct {
@@ -47,34 +46,32 @@ func TestOwnerSeasonPreviewAndPlannerRenderTheSameTarget(t *testing.T) {
 		{name: "legacy input, preserved season 0", tmdb: true, season: 0, seasonBound: true, legacyInput: true, wantSeason: "/Specials/"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			evidence := namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: &year, AnimeSeason: tc.owner}, ReleaseTitle: title}
+			anime := naming.AnimeNamingFacts{Title: "Show", Year: &year}
+			if tc.owner != nil {
+				season := int(*tc.owner)
+				anime.Season = &season
+			}
 			if tc.tmdb {
-				season := int64(tc.season)
-				evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "tmdb-1", "tv", &season
+				anime.TMDB = naming.TMDBNamingFacts{WorkID: "tmdb-1", MediaKind: "tv", Season: tc.season, SeasonPresent: true, SeasonBound: tc.seasonBound}
 			}
-			facts := namingvars.BuildInput(evidence).Facts
-			if tc.legacyInput {
-				delete(facts["anime"].(map[string]any), "season")
+
+			var preview animedomain.ManifestFileResult
+			if !tc.legacyInput {
+				// Current previews carry the explicit owner season. A historical
+				// input's TMDB fallback belongs only to the planner read boundary.
+				release := animedomain.PreviewReleaseResult{NamingAnime: anime, FrozenEpisode: episode}
+				preview = animedomain.PreviewExactFile(acquisition.FeedItem{Title: title}, release, animedomain.ManifestFileInput{SourcePath: "Show - 03.mkv", MediaKind: "video", SizeBytes: 17}, effective, "Show", animedomain.SourceEvaluationInput{})
 			}
-			frozen := namingvars.FrozenEvaluation{Input: namingvars.Input{ReleaseTitle: title, Facts: facts}, Output: namingvars.Vars{}, Status: "ok"}
 
-			// Preview path.
-			release := animedomain.PreviewReleaseResult{FrozenVars: &frozen, FrozenEpisode: episode}
-			preview := animedomain.PreviewExactFile(acquisition.FeedItem{Title: title}, release, animedomain.ManifestFileInput{SourcePath: "Show - 03.mkv", MediaKind: "video", SizeBytes: 17}, effective, "Show", animedomain.SourceEvaluationInput{})
-
-			// Planner path: the artifact's season column comes from the same
-			// frozen binding through the prepare projection.
 			rawFacts, _ := json.Marshal(map[string]string{"title": title})
-			artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, acceptedFacts: true}
+			artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, ownerYear: &year, ownerSeason: anime.Season, ownerSeasonPresent: !tc.legacyInput}
 			if tc.tmdb {
 				artifact.tmdbWorkID.String, artifact.tmdbWorkID.Valid = "tmdb-1", true
 				artifact.tmdbMediaKind.String, artifact.tmdbMediaKind.Valid = "tv", true
 				artifact.tmdbSeason = frozenSeasonColumn(tc.season, tc.seasonBound)
 			}
-			planned, planErr := planSeasonTarget(artifact, rules, episode, &frozen)
+			planned, planErr := planSeasonTarget(artifact, rules, episode)
 			if tc.wantSeason == "" {
-				// An unset owner season refuses on both paths, naming the
-				// empty season folder of the default directory.
 				if preview.RenderedTarget != nil || strings.Join(preview.EmptyFacts, ",") != "anime.season_folder" {
 					t.Fatalf("unset season must refuse the preview, got %+v", preview)
 				}
@@ -84,42 +81,31 @@ func TestOwnerSeasonPreviewAndPlannerRenderTheSameTarget(t *testing.T) {
 				}
 				return
 			}
-			if tc.seasonBound {
-				// A preserved season 0 is frozen only by explicit continuous-SP
-				// recognition; the preview's automatic binding never carries
-				// it, so the preview refuses while the planner still names
-				// the preserved season its input carried.
-				if preview.RenderedTarget != nil || strings.Join(preview.EmptyFacts, ",") != "anime.season_folder" {
-					t.Fatalf("a preserved season 0 must refuse the preview, got %+v", preview)
-				}
-				if planErr != nil || !strings.Contains(planned, tc.wantSeason) {
-					t.Fatalf("planner target %q %v, want %s", planned, planErr, tc.wantSeason)
-				}
-				return
-			}
-			if preview.RenderedTarget == nil {
-				t.Fatalf("preview render failed: %+v", preview)
-			}
 			if planErr != nil {
 				t.Fatalf("planner render failed: %q %v", planned, planErr)
 			}
-			if planned != *preview.RenderedTarget {
-				t.Fatalf("planner target %q != preview target %q", planned, *preview.RenderedTarget)
-			}
 			if !strings.Contains(planned, tc.wantSeason) {
 				t.Fatalf("target %q, want %s", planned, tc.wantSeason)
+			}
+			if !tc.legacyInput {
+				if preview.RenderedTarget == nil {
+					t.Fatalf("preview render failed: %+v", preview)
+				}
+				if planned != *preview.RenderedTarget {
+					t.Fatalf("planner target %q != preview target %q", planned, *preview.RenderedTarget)
+				}
 			}
 		})
 	}
 }
 
-func planSeasonTarget(artifact artifactContext, rules naming.NamingRules, episode *naming.FrozenEpisodeNamingFacts, frozen *namingvars.FrozenEvaluation) (string, error) {
-	resolved, err := buildNamingContext(artifact, artifactFileContext{relativePath: "Show - 03.mkv", sourcePath: "Show - 03.mkv", mediaKind: "video", sizeBytes: 17}, episode, frozen)
+func planSeasonTarget(artifact artifactContext, rules naming.NamingRules, episode *naming.FrozenEpisodeNamingFacts) (string, error) {
+	resolved, err := buildNamingContext(artifact, artifactFileContext{relativePath: "Show - 03.mkv", sourcePath: "Show - 03.mkv", mediaKind: "video", sizeBytes: 17}, episode)
 	if err != nil {
 		return "", err
 	}
 	engine := naming.NewEngine()
-	compiled, err := engine.CompileRulesWithVars(rules, frozen.Output)
+	compiled, err := engine.CompileRules(rules)
 	if err != nil {
 		return "", err
 	}
@@ -141,16 +127,14 @@ func TestPlannerKeepsADotDirectoryInTheLibraryRoot(t *testing.T) {
 	const title = "[Group] Show - 01 [1080p]"
 	year := int64(2025)
 	season := int64(1)
-	evidence := namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: &year, AnimeSeason: &season}, ReleaseTitle: title}
-	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "tmdb-1", "tv", &season
-	frozen := namingvars.FrozenEvaluation{Input: namingvars.Input{ReleaseTitle: title, Facts: namingvars.BuildInput(evidence).Facts}, Output: namingvars.Vars{}, Status: "ok"}
 	rawFacts, _ := json.Marshal(map[string]string{"title": title})
-	artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, acceptedFacts: true}
+	ownerYear, ownerSeason := int(year), int(season)
+	artifact := artifactContext{animeTitle: "Show", rawFacts: rawFacts, ownerYear: &ownerYear, ownerSeason: &ownerSeason, ownerSeasonPresent: true}
 	artifact.tmdbWorkID.String, artifact.tmdbWorkID.Valid = "tmdb-1", true
 	artifact.tmdbMediaKind.String, artifact.tmdbMediaKind.Valid = "tv", true
 	artifact.tmdbSeason = frozenSeasonColumn(1, false)
 
-	video, err := planSeasonTarget(artifact, rules, episode, &frozen)
+	video, err := planSeasonTarget(artifact, rules, episode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,17 +150,12 @@ func TestPlannerKeepsADotDirectoryInTheLibraryRoot(t *testing.T) {
 }
 
 func TestPerFileNamingSeasonOverridesMainAndSubtitleInherits(t *testing.T) {
-	const title = "[Group] Show - 01 [1080p]"
-	year, mainSeason := int64(2025), int64(1)
-	evidence := namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: &year, AnimeSeason: &mainSeason}, ReleaseTitle: title}
-	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "tmdb-1", "tv", &mainSeason
-	frozen := namingvars.FrozenEvaluation{Input: namingvars.Input{ReleaseTitle: title, Facts: namingvars.BuildInput(evidence).Facts}, Output: namingvars.Vars{}, Status: "ok"}
-	artifact := artifactContext{animeTitle: "Show", acceptedFacts: true}
+	artifact := artifactContext{animeTitle: "Show"}
 	artifact.tmdbSeason = frozenSeasonColumn(1, false)
 	zero := 0
 	episode := &naming.FrozenEpisodeNamingFacts{Raw: "1", Number: "7", Display: "7"}
 	for _, kind := range []string{"video", "subtitle"} {
-		resolved, err := buildNamingContext(artifact, artifactFileContext{sourcePath: "Show - 01.mkv", mediaKind: kind, namingSeason: &zero}, episode, &frozen)
+		resolved, err := buildNamingContext(artifact, artifactFileContext{sourcePath: "Show - 01.mkv", mediaKind: kind, namingSeason: &zero}, episode)
 		if err != nil {
 			t.Fatal(err)
 		}

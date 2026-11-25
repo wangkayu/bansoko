@@ -557,12 +557,6 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	}
 	preview := input.Preview
 	preview.FrozenEpisode = evidence.NamingFacts()
-	// The release-level vars evaluation is frozen once on the carrier's policy;
-	// each target names it by digest (see VarsDigest).
-	varsDigest, err := VarsDigest(preview.FrozenVars)
-	if err != nil {
-		return fail("naming_vars_unavailable", strings.TrimSpace(err.Error()))
-	}
 	collision := collisionPolicyForTarget(fileEffectCollisionPolicy(input.Effective))
 	operation := fileEffectOperation(input.Effective)
 	animeTitle := strings.TrimSpace(input.AnimeTitle)
@@ -654,9 +648,6 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			"naming_renderer": naming.RendererVersion,
 			"target":          targetPath,
 			"source":          sourcePath,
-		}
-		if varsDigest != "" {
-			render["vars_digest"] = varsDigest
 		}
 		renderSnapshot, _ := json.Marshal(render)
 		configSnapshot, _ := json.Marshal(map[string]any{

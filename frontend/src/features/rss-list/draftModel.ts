@@ -5,7 +5,7 @@ import { Pencil } from "lucide-react";
 import { Button } from "../../ui";
 import type { StatePillTone } from "../../ui";
 import { t } from "../../lib/i18n";
-import { emptyFactsNote, knownReasonLabel, namingFailureDetail, namingPendingLabel, reasonLabel } from "../../lib/i18n/reasons";
+import { emptyFactsNote, knownReasonLabel, namingFailureDetail, reasonLabel } from "../../lib/i18n/reasons";
 import { evaluationReasonCode, isReasonImpliedByVerdict, releaseVerdictLabel, releaseVerdictLabelWithHold, releaseVerdictTone } from "../../lib/labels";
 import { ReasonText } from "../../ui/ReasonText";
 import { TagBadges } from "./TagBadges";
@@ -126,8 +126,7 @@ function draftItem(item: RSSListItem, options: DraftItemOptions = {}): RssItemMo
       reason: file.reason_code ? createElement(ReasonText, { code: file.reason_code }) : undefined,
       target: file.rendered_target,
       targetNote: file.rendered_target ? emptyFactsNote(file.empty_facts) : undefined,
-      targetError: file.render_error && !namingPendingLabel(file.reason_code) ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined,
-      targetPending: file.render_error ? namingPendingLabel(file.reason_code) : undefined,
+      targetError: file.render_error ? namingFailureDetail(file.reason_code, file.empty_facts) ?? file.render_error : undefined,
     })),
   };
 }

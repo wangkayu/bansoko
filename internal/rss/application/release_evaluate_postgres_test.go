@@ -124,7 +124,6 @@ WHERE managed_anime_id = 'anime-rss-test' AND section_name = 'release_rules'`, f
 // A release whose manifest has no video with a recognizable episode places
 // nothing: it is skipped (no_placeable_files) and never reaches a download.
 func TestReleaseEvaluateWithoutPlaceableFileIsFilteredWithoutDownloadTask(t *testing.T) {
-	initTestNamingVars(t)
 	db := openRSSDatabase(t)
 	sourceID, _ := seedRSSOwner(t, db, false, true)
 	insertReleaseForEvaluation(t, db, sourceID, "release-unplaceable", "[Group] Test Show 1080p", "https://downloads.example.test/show.torrent")

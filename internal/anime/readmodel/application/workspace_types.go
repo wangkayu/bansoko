@@ -126,16 +126,13 @@ type Release struct {
 	// frozenPlan is the batch plan of the latest media fact snapshot; nil
 	// without one.
 	frozenPlan *batchplan.Plan
-	// rawSourceFacts, inputHashV1 and inputHashV2 are the stored source facts and
-	// the torrent input's info hashes, read only for the RSS list view's Vars
-	// evidence (releaseReadOptions.vars).
-	rawSourceFacts           []byte
+	// inputHashV1 and inputHashV2 are the torrent input hashes used as naming
+	// facts by the RSS list view.
 	inputHashV1, inputHashV2 string
 	// payloadDigest is the digest of the exact torrent bytes this release was
 	// parsed from (release_torrent_inputs.payload_digest). It is the payload
-	// binding every file_ref is derived from, so a reader that rebuilds a
-	// release's manifest needs it even when it is not reading Vars evidence.
-	// Empty when the release has no stored torrent input.
+	// binding every file_ref is derived from. Empty when the release has no
+	// stored torrent input.
 	payloadDigest string
 }
 

@@ -216,11 +216,6 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: string(result.Verdict), ReasonCode: result.ReasonCode}, s.releaseOwnerWriter(claim, snapshot, item, result, nil, &evidence)), nil
 	}
 	acquisition := s.preflightTargetAcquisition(ctx, snapshot, item, result, &evidence)
-	if acquisition != nil && acquisition.varsInterrupted != nil {
-		// A time-limit interrupt says nothing about the program: freeze
-		// nothing and evaluate the release again.
-		return worker.Retry("naming_vars_interrupted", safeReason(acquisition.varsInterrupted.Error()), s.retryAfter, s.releaseAdmissionRetryWriter(claim, snapshot)), nil
-	}
 	if acquisition != nil && acquisition.downloaderError != nil {
 		reason := safeReason(acquisition.downloaderError.Error())
 		if reason == "" {
@@ -1192,14 +1187,6 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 		return "", "", fmt.Errorf("encode frozen download input: %w", err)
 	}
 	policyJSON, err := encodeFrozenReleasePolicy(snapshot, evidence)
-	if err == nil && len(acquisitions) > 0 && acquisitions[0] != nil && acquisitions[0].vars != nil {
-		var policy frozenPolicySnapshot
-		if decodeErr := json.Unmarshal(policyJSON, &policy); decodeErr != nil {
-			return "", "", decodeErr
-		}
-		policy.Vars = acquisitions[0].vars
-		policyJSON, err = json.Marshal(policy)
-	}
 	if err != nil {
 		return "", "", err
 	}

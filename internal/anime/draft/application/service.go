@@ -203,10 +203,6 @@ func draftInvalidError(violations []animedomain.FieldViolation) error {
 
 func sectionResolutionError(err error) error { return animeapplication.SectionResolutionError(err) }
 
-func namingVarsSnapshot(field string) (map[string]map[string]string, error) {
-	return animeapplication.NamingVarsSnapshot(field)
-}
-
 func validateIdempotencyKey(key string) error { return animeapplication.ValidateIdempotencyKey(key) }
 
 func candidateDigestMismatchError() error { return animeapplication.CandidateDigestMismatchError() }
@@ -352,13 +348,8 @@ func (s *Service) SubscribeAnimeApplication(ctx context.Context, input Subscribe
 	if err := rejectOneShotOnlyOrigin(input.Draft); err != nil {
 		return SubscribeResult{}, err
 	}
-	// Subscribe persists the submitted draft's owner set, so it validates naming
-	// vars exactly like a candidate save. Every section must carry its value.
-	vars, err := namingVarsSnapshot("rules." + animedomain.SectionNamingRules)
-	if err != nil {
-		return SubscribeResult{}, err
-	}
-	if _, err := animedomain.ResolveDraftEffectiveWithVars(input.Draft, vars); err != nil {
+	// Subscribe persists the submitted draft's owner set. Every section must carry its value.
+	if _, err := animedomain.ResolveDraftEffectiveSections(input.Draft); err != nil {
 		return SubscribeResult{}, sectionResolutionError(err)
 	}
 	initialState := subscriptiondomain.SubscriptionPending
@@ -366,6 +357,7 @@ func (s *Service) SubscribeAnimeApplication(ctx context.Context, input Subscribe
 		initialState = subscriptiondomain.SubscriptionActive
 	}
 	requestHash := input.RequestHash
+	var err error
 	if requestHash == "" {
 		// A started subscribe is a different request than a pending one for
 		// the same draft; the pending hash stays the plain draft hash.
@@ -664,9 +656,6 @@ VALUES ($1, $2, $3, $4, $5)`, animeID, title, fixedTitle, nullableOptionalText(p
 	metadata.InitialTitlePending = initialTitlePending
 	metadata.TitleOverride = cloneString(fixedTitle)
 	if frozenBusinessRevision != nil {
-		if err := verifyBusinessProgramsTx(ctx, tx, *frozenBusinessRevision.Business); err != nil {
-			return SubscribeResult{}, err
-		}
 		if err := s.provisioner.ProvisionFrozenBusinessTx(ctx, tx, animeID, *frozenBusinessRevision); err != nil {
 			return SubscribeResult{}, err
 		}
@@ -684,9 +673,6 @@ VALUES ($1, $2, $3, $4, $5)`, animeID, title, fixedTitle, nullableOptionalText(p
 			return SubscribeResult{}, businessInputError("draft must carry a complete business snapshot")
 		}
 		if err := animeapplication.VerifySubmittedBusinessDigest(draft); err != nil {
-			return SubscribeResult{}, err
-		}
-		if err := verifyBusinessProgramsTx(ctx, tx, *draft.Business); err != nil {
 			return SubscribeResult{}, err
 		}
 		if _, err := s.provisioner.ProvisionBusinessAxesTx(ctx, tx, animeID, *draft.Business); err != nil {

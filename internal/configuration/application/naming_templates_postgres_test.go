@@ -9,7 +9,6 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
 	configurationdomain "bansoko/internal/configuration/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -20,7 +19,6 @@ import (
 func TestNamingTemplateLibraryDefaultIsTheGlobalNaming(t *testing.T) {
 	db := openConnectionTestDB(t)
 	ctx := context.Background()
-	activateNamingVars(t, namingvars.Vars{})
 	svc := NewService(db, newConnectionTestSecretStore(t, db))
 
 	seed, err := svc.GetNamingTemplateLibrary(ctx)

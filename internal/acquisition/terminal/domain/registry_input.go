@@ -123,15 +123,7 @@ func init() {
 		F("delivery", Ref("DeliveryV1")),
 		F("limits", Ref("LimitsV1")),
 		F("placement", Ref("PlacementV1")),
-	).Check(func(r reader, m map[string]Value) error {
-		// The naming section the delivery froze must use the Vars mode the config froze.
-		configVars, _ := peekString(m["config"].Object["vars"], "mode")
-		naming := m["delivery"].Object["naming"]
-		if choice, _ := peekString(naming, "vars_choice"); choice != configVars {
-			return r.at("delivery").at("naming").at("vars_choice").fail(CodeConstraintViolated)
-		}
-		return nil
-	}))
+	))
 }
 
 // --- ConfigV1 --------------------------------------------------------------------
@@ -265,7 +257,6 @@ func registerConfig() {
 		F("selection", FVOf(Ref("ParserSelectionV1"))), F("provenance", FVOf(Ref("ParserProvenanceV1"))),
 		F("runtime_version", Text(1, 128)),
 	))
-	registerVars()
 	register("ConfigV1", Obj(
 		F("identity", Ref("ConfigIdentityV1")), F("effective_digest", DigestOf),
 		F("sections", Array(Ref("SectionEntryV1"), 6, 6).Ordered(func(r reader, items []Value) error {
@@ -276,7 +267,7 @@ func registerConfig() {
 			}
 			return nil
 		})),
-		F("parser", Ref("ParserEnvelopeV1")), F("vars", Ref("VarsChoiceV1")), F("rules_version", FVOf(Int(1, maxI64))),
+		F("parser", Ref("ParserEnvelopeV1")), F("rules_version", FVOf(Int(1, maxI64))),
 	).Check(func(r reader, m map[string]Value) error {
 		// rules_version is known exactly when the parser resolved a rule owner; an
 		// unavailable one is not a missing one.
@@ -299,98 +290,6 @@ func registerConfig() {
 		return nil
 	}))
 }
-
-const varsRuntime = "naming-vars-v1"
-
-func varsRuntimeVersion(v string) bool { return v == varsRuntime }
-
-func registerVars() {
-	register("VarsProgramV1", Obj(
-		F("schema_version", Int(1, 1)), F("source", Text(0, 64*1024)), F("digest", DigestOf), F("version", Text(1, 256)),
-		F("runtime_version", Text(1, 128)), F("timeout_ms", Int(1, 10000)), F("max_input_bytes", Int(1, 256*1024)),
-		F("max_output_bytes", Int(1, 8192)), F("max_collection_len", Int(1, 256)), F("max_string_bytes", Int(1, 8192)),
-	).Check(func(r reader, m map[string]Value) error {
-		if !varsRuntimeVersion(m["runtime_version"].String) {
-			return constraint(r, "runtime_version")
-		}
-		if m["version"].String != m["runtime_version"].String+"@"+m["digest"].String {
-			return constraint(r, "version")
-		}
-		return nil
-	}))
-	register("VarsFileV1", Obj(F("name", Text(0, 4096)), F("path", Text(0, 4096)), F("size", Size)))
-	registerVarsFacts()
-	// VarsMap is the one object with dynamic keys: two levels of string -> string.
-	level := Custom(func(r reader, v Value) error {
-		if v.Kind != KindObject {
-			return r.fail(CodeTypeInvalid)
-		}
-		if len(v.Object) > 256 {
-			return r.fail(CodeConstraintViolated)
-		}
-		for _, k := range sortedKeys(v.Object) {
-			if k == "" || len(k) > 128 {
-				return r.at(k).fail(CodeTypeInvalid)
-			}
-			if v.Object[k].Kind != KindString {
-				return r.at(k).fail(CodeTypeInvalid)
-			}
-			if len(v.Object[k].String) > 8192 {
-				return r.at(k).fail(CodeConstraintViolated)
-			}
-		}
-		return nil
-	})
-	register("VarsMapV1", Custom(func(r reader, v Value) error {
-		if v.Kind != KindObject {
-			return r.fail(CodeTypeInvalid)
-		}
-		if len(v.Object) > 256 {
-			return r.fail(CodeConstraintViolated)
-		}
-		for _, k := range sortedKeys(v.Object) {
-			if k == "" || len(k) > 128 {
-				return r.at(k).fail(CodeTypeInvalid)
-			}
-			if err := level.validate(r.at(k), v.Object[k]); err != nil {
-				return err
-			}
-		}
-		return nil
-	}))
-	disabled := Obj(F("runtime_version", Text(1, 128)))
-	frozen := Obj(
-		F("program", Ref("VarsProgramV1")), F("known_inputs", Ref("VarsInputV1")), F("output", Nullable(Ref("VarsMapV1"))),
-		F("status", Enum("ok", "error")), F("reason_code", Nullable(ReasonOf)),
-	).Check(func(r reader, m map[string]Value) error {
-		if m["status"].String == "ok" {
-			if m["output"].Kind == KindNull {
-				return r.at("output").fail(CodeNullNotAllowed)
-			}
-			if m["reason_code"].Kind != KindNull {
-				return constraint(r, "reason_code")
-			}
-		} else {
-			if m["output"].Kind != KindNull {
-				return constraint(r, "output")
-			}
-			if m["reason_code"].Kind == KindNull {
-				return r.at("reason_code").fail(CodeNullNotAllowed)
-			}
-		}
-		return nil
-	})
-	union := Union("mode", map[string]*objectSchema{"disabled": disabled, "frozen": frozen})
-	register("VarsChoiceV1", Custom(func(r reader, v Value) error {
-		if mode, _ := peekString(v, "mode"); mode == "late_file" {
-			// Late Vars (file facts observed after acceptance) is a future design.
-			return r.at("mode").fail(CodeInputSchemaUnsupported)
-		}
-		return union.validate(r, v)
-	}))
-}
-
-// --- MediaV1 ---------------------------------------------------------------------
 
 func qualityField(value Schema) Schema {
 	return Obj(
@@ -502,11 +401,15 @@ func registerMedia() {
 	// so inputs frozen before it existed keep their exact canonical form and
 	// digest.
 	register("TMDBTitlesV1", Obj(F("title_cn", title), F("original_title", title), F("overview", Nullable(Text(1, 2048))), F("year", year)).Optional("overview"))
+	// This input segment freezes work and episode metadata for anime.*, bgm.*
+	// and tmdb.*. Template media.* instead comes from probing the downloaded file.
 	register("MediaV1", Obj(
 		F("title", FVOf(Display)), F("title_override", FVOf(Display)), F("provider_title", FVOf(Display)),
 		F("bgm", FVOf(Ref("RefVersion"))),
 		F("tmdb", FVOf(Ref("MetadataV1"))), F("group", FVOf(Display)),
 		F("identity", FVOf(Ref("IdentityV1"))), F("quality", FVOf(Ref("QualityV1"))),
+		// Owner-edited naming facts, independent of the provider years and binding season.
+		F("year", FVOf(Int(1900, 2100))), F("season", FVOf(Int(0, maxI64))),
 		// The bound works' recorded native titles and provider year, frozen at
 		// accept with the other binding facts: media.bgm_titles
 		// {title, title_cn, year} and media.tmdb_titles
@@ -518,7 +421,7 @@ func registerMedia() {
 		F("bgm_titles", FVOf(Ref("BGMTitlesV1"))), F("tmdb_titles", FVOf(Ref("TMDBTitlesV1"))),
 	// quality is decode-only historical evidence. New acceptance no longer
 	// manufactures a second set of release attributes beside the source tags.
-	).Optional("quality"))
+	).Optional("quality", "year", "season"))
 }
 
 // --- DeliveryV1 -------------------------------------------------------------------
@@ -546,7 +449,7 @@ func registerDelivery() {
 	}))
 	register("NamingV1", Obj(
 		F("schema_version", Enum("naming-rules-v1")), F("templates", Ref("NamingSectionV1")),
-		F("vars_choice", Enum("disabled", "frozen", "late_file")), F("runtime_version", Text(1, 128)),
+		F("runtime_version", Text(1, 128)),
 	))
 	register("SourceCleanupV1", Union("mode", map[string]*objectSchema{"none": Obj(), "remove_source_after_publish": Obj()}))
 	registerObjects()

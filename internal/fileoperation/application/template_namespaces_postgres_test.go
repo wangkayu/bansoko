@@ -6,24 +6,8 @@ import (
 	"testing"
 
 	domain "bansoko/internal/anime/domain"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/postprocessing/naming"
 )
-
-// literalFrozenVars is the complete-policy fixture's Vars evaluation written as
-// a literal: the program reference names the fixture source, and no evaluator
-// runs.
-func literalFrozenVars(policy map[string]any) {
-	source := `vars.fixture = {title: input.release_title};`
-	digest, _ := namingvars.SourceFingerprint(source)
-	policy["vars"] = namingvars.FrozenEvaluation{
-		Program: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)},
-		Input:   namingvars.Input{ReleaseTitle: "fixture release", Files: []namingvars.File{}},
-		Output:  namingvars.Vars{"fixture": {"title": "fixture release"}},
-		Status:  "ok",
-	}
-	policy["fixture_vars_source"] = source
-}
 
 // The Rt and AniBTTags namespaces a file plan renders are the Release's
 // frozen source facts: values that differ from any re-parse of the release
@@ -58,7 +42,6 @@ func TestFilePlanRendersFrozenTemplateNamespaces(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, fixture := openFileOperationDBWithPolicy(t, func(policy map[string]any) {
-				literalFrozenVars(policy)
 				policy["fixture_source_facts"] = json.RawMessage(tc.sourceFacts)
 				rules := naming.DefaultNamingRules()
 				rules.TV.VideoFilenameTemplate = tc.template

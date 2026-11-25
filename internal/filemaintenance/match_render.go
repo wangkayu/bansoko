@@ -3,7 +3,6 @@ package filemaintenance
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -13,9 +12,8 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/episodeidentity"
-	"bansoko/internal/namingvars"
-	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/templatefacts"
 )
@@ -29,10 +27,10 @@ import (
 //     and ep.source reads "manual";
 //   - the anime facts are read now, from the persisted anime rows and its
 //     current metadata binding, with the chosen season;
-//   - the release-level facts (the Vars output and the rt / anibt value
-//     namespaces, the release title, the source group and the probed media
-//     facts) come from the file's own lineage when it has one — the placement
-//     it came from, or, for a file that was never placed, the completed
+//   - the release-level facts (the rt / anibt value namespaces, the release
+//     title, the source group and the probed media facts) come from the file's
+//     own lineage when it has one — the placement it came from, or, for a file
+//     that was never placed, the completed
 //     operation that published it or its artifact file record at the path —
 //     frozen then, and are absent otherwise, so a template that needs them
 //     reports them missing instead of guessing.
@@ -211,21 +209,6 @@ func (l matchLineage) fileTitleTags(file naming.FileNamingFacts) (*acquisitiondo
 	return naming.ParseFileTitleTags(file), nil
 }
 
-// frozenVarsOutput is the Vars output the file's acquisition froze, when it
-// evaluated ok; otherwise none.
-func (l matchLineage) frozenVarsOutput() map[string]map[string]string {
-	if !l.found {
-		return nil
-	}
-	var config struct {
-		Vars *namingvars.FrozenEvaluation `json:"vars"`
-	}
-	if json.Unmarshal(l.frozenConfig, &config) != nil || config.Vars == nil || config.Vars.Status != "ok" {
-		return nil
-	}
-	return config.Vars.Output
-}
-
 // RenderMatch renders the target of a detached video as one episode of one
 // anime. It reads persisted rows and, when the template reads a provider
 // episode title, looks the title up again; it writes nothing.
@@ -241,7 +224,7 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 	if err != nil {
 		return MatchRender{}, err
 	}
-	evidence := namingvars.AnimeEvidence{AnimeID: animeID}
+	animeFacts := naming.AnimeNamingFacts{ID: animeID}
 	var bgm, tmdb, kind sql.NullString
 	var year sql.NullInt64
 	err = r.db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, year FROM anime_metadata WHERE managed_anime_id=$1`, animeID).Scan(&bgm, &tmdb, &kind, &year)
@@ -249,14 +232,14 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 		return MatchRender{}, fmt.Errorf("read match metadata binding: %w", err)
 	}
 	if id := strings.TrimSpace(bgm.String); id != "" {
-		evidence.BgmID = id
+		animeFacts.BGM.WorkID = id
 	}
 	// A match is a TV match: a TMDB work bound as a movie names no season of a
 	// show, so its id and titles stay out of the render.
 	if id := strings.TrimSpace(tmdb.String); id != "" && kind.String == "tv" {
-		evidence.TmdbID, evidence.TmdbKind = id, "tv"
+		animeFacts.TMDB.WorkID, animeFacts.TMDB.MediaKind = id, "tv"
 	}
-	if err := namingvarspersistence.FillWorkTitles(ctx, r.db, &evidence); err != nil {
+	if err := namingpersistence.FillWorkTitles(ctx, r.db, &animeFacts); err != nil {
 		return MatchRender{}, err
 	}
 	// A placement is authoritative when the file has one: it names the
@@ -296,10 +279,10 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 			// The season chosen for this file is the season it is named
 			// with (it is also the TMDB season its episode is looked up in).
 			Season: &season,
-			BGM:    naming.BGMNamingFacts{WorkID: evidence.BgmID, Title: evidence.BgmTitle, TitleCN: evidence.BgmTitleCN, Year: providerYear(evidence.BgmYear)},
+			BGM:    animeFacts.BGM,
 			TMDB: naming.TMDBNamingFacts{
-				WorkID: evidence.TmdbID, MediaKind: "tv", Season: in.Season, SeasonPresent: true,
-				TitleCN: evidence.TmdbTitleCN, OriginalTitle: evidence.TmdbOriginalTitle, Year: providerYear(evidence.TmdbYear),
+				WorkID: animeFacts.TMDB.WorkID, MediaKind: "tv", Season: in.Season, SeasonPresent: true,
+				TitleCN: animeFacts.TMDB.TitleCN, OriginalTitle: animeFacts.TMDB.OriginalTitle, Year: animeFacts.TMDB.Year,
 			},
 		},
 		Source: naming.SourceNamingFacts{Kind: lineage.sourceKind, GroupName: strings.TrimSpace(lineage.groupName), Group: providerdomain.GroupRefOrZero(providerdomain.Kind(lineage.sourceProvider), lineage.sourceGroupRef)},
@@ -332,16 +315,6 @@ func (r *NamingTargetRenderer) RenderMatch(ctx context.Context, in MatchRenderIn
 			return MatchRender{}, &MatchRenderError{Code: MatchRenderFactsMissing, cause: renderFactsUnavailable("frozen source facts are invalid")}
 		}
 		facts = naming.WithTemplateFacts(facts, namespaces)
-	}
-	// Without a usable frozen Vars output the render has an empty Vars object
-	// (never null): a template reading vars.* then reports it missing.
-	vars := lineage.frozenVarsOutput()
-	if vars == nil {
-		vars = map[string]map[string]string{}
-	}
-	facts, err = naming.WithVars(facts, vars)
-	if err != nil {
-		return MatchRender{}, &MatchRenderError{Code: MatchRenderTemplateInvalid, cause: err}
 	}
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: facts})
 
@@ -378,11 +351,6 @@ func classifyMatchRender(err error) error {
 	var named *naming.Error
 	if errors.As(err, &named) && naming.IsFactError(named.Code) {
 		return &MatchRenderError{Code: MatchRenderFactsMissing, Facts: named.Missing, cause: err}
-	}
-	if errors.As(err, &named) && named.Code == naming.ErrCodeNamingVarsUnknown {
-		// The template reads a Vars value this file's evidence does not carry
-		// (a file with no acquisition has no Vars output).
-		return &MatchRenderError{Code: MatchRenderFactsMissing, cause: err}
 	}
 	if errors.Is(err, naming.ErrRenderFactsUnavailable) {
 		return &MatchRenderError{Code: MatchRenderFactsMissing, cause: err}

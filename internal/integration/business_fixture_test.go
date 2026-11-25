@@ -32,7 +32,7 @@ var draftRuleSections = map[string]string{
 // active-sample fallback.
 func seedDraftBusiness(t *testing.T, db *sql.DB, draft any) (generated.BusinessSnapshot, string) {
 	t.Helper()
-	b, err := frozenpolicy.SeedBusiness(context.Background(), db, `vars.actual = {title: input.release_title};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

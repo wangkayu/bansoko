@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"bansoko/internal/runtime/migrations/varspreflight"
 )
 
 var (
@@ -108,7 +110,6 @@ var knownRelations = map[string]string{
 	"provider_image_cache":             "r",
 	"metadata_work_titles":             "r",
 	"naming_template_library":          "r",
-	"naming_vars_versions":             "r",
 	"network_routes":                   "r",
 	"event_action_attempts":            "r",
 	"event_action_bindings":            "r",
@@ -155,7 +156,6 @@ var knownRelations = map[string]string{
 	"work_item_history":                "v",
 	"work_item_outcomes":               "r",
 	"attr_rule_versions_id_seq":        "S",
-	"naming_vars_versions_id_seq":      "S",
 }
 
 // requiredColumns are the columns the runtime depends on by name; a database
@@ -208,7 +208,6 @@ var requiredColumns = map[string][]string{
 	"reconciliation_files":             {"managed_anime_id", "generation", "file_path", "derived_missing", "batch_index", "fingerprint", "size_bytes", "facts", "observed_at", "disposition", "coverage", "resolution", "revision", "source", "language", "group", "parser_version", "facts_fingerprint", "version", "created_at", "updated_at"},
 	"release_candidate_facts":          {"release_id", "release_version", "parser_version", "input_fingerprint", "raw_evidence", "facts", "coverage_keys", "resolution", "revision", "source", "language", "group", "size_bytes", "created_at", "compare_values"},
 	"attr_rule_versions":               {"id", "fingerprint", "content", "active", "created_at"},
-	"naming_vars_versions":             {"id", "fingerprint", "content", "active", "created_at"},
 	"filemaintenance_policies":         {"scope_key", "enabled", "scan_interval_seconds", "alignment_enabled", "safety", "version", "updated_at"},
 	"alignment_operations":             {"id", "idempotency_key", "managed_anime_id", "scan_generation", "observation_ref", "candidate_ref", "policy_version", "metadata_version", "rules_version", "naming_version", "source_path", "source_fingerprint", "target_path", "target_contract", "dry_run_result", "state", "attempt", "failure_code", "reason", "version", "created_at", "completed_at", "updated_at", "overwrite_recovery"},
 	"placements":                       {"id", "physical_path", "managed_anime_id", "source_evidence_type", "source_owner_ref", "source_fingerprint", "target_fingerprint", "quality_facts_ref", "facts_version", "snapshot_generation", "verification_state", "state", "displaced_cause", "displaced_by_placement_id", "displaced_by_anime_id", "redownload_requested_at", "version", "created_at", "updated_at"},
@@ -228,7 +227,7 @@ var requiredColumns = map[string][]string{
 	"artifacts":                        {"acquisition_id", "activity_logged_at"},
 	"download_tasks":                   {"activity_submit_logged_at", "activity_terminal_logged_at", "submit_permit_id", "submit_dispatch_state", "submit_effect_class", "submit_retry_safe", "submit_attempt", "cancel_cause"},
 	"artifact_files":                   {"acquisition_id"},
-	"acquisitions":                     {"id", "execution_branch", "entry_kind", "access_scope", "request_namespace", "request_key", "request_hash", "admission_digest", "accepted_at", "retention_anchor_at", "detail_until", "state", "record_state", "preparation_mode", "version", "facts_revision", "checked_revision", "settlement_error_count", "display_title", "compacted_at", "compact_trigger", "completion_open", "compact_pinned", "activity_logged_at", "input_canonical_utf8", "input", "payload_digest", "preparation_witness_canonical_utf8", "preparation_witness", "manifest_digest", "manifest_item_count", "manifest_sealed_at", "requirements_manifest_digest", "requirements_selection_digest", "requirements_evidence_digest", "requirements_digest", "requirements_item_count", "requirements_required_count", "requirements_sealed_at", "target_requirements_digest", "target_digest", "target_sealed_at", "vars_evaluation_canonical_utf8", "vars_evaluation"},
+	"acquisitions":                     {"id", "execution_branch", "entry_kind", "access_scope", "request_namespace", "request_key", "request_hash", "admission_digest", "accepted_at", "retention_anchor_at", "detail_until", "state", "record_state", "preparation_mode", "version", "facts_revision", "checked_revision", "settlement_error_count", "display_title", "compacted_at", "compact_trigger", "completion_open", "compact_pinned", "activity_logged_at", "input_canonical_utf8", "input", "payload_digest", "preparation_witness_canonical_utf8", "preparation_witness", "manifest_digest", "manifest_item_count", "manifest_sealed_at", "requirements_manifest_digest", "requirements_selection_digest", "requirements_evidence_digest", "requirements_digest", "requirements_item_count", "requirements_required_count", "requirements_sealed_at", "target_requirements_digest", "target_digest", "target_sealed_at"},
 	"acquisition_files":                {"acquisition_id", "file_ref", "ordinal", "relative_path", "exact_size", "media_kind", "identity_evidence", "requirement", "requirement_reason_code", "selection_evidence", "spec_digest", "intent", "operation", "canonical_path", "collision", "target_source_cleanup", "render_snapshot", "plan_kind", "plan_target_file_ref", "plan_operation_ref", "plan_evidence", "plan_reason_code", "plan_diagnostic", "delivery_schema_version", "outcome", "completion_mode", "effect_class", "final_object", "delivery_source_cleanup", "delivery_reason_code", "evidence_digest", "operation_id", "receipt", "delivered_at", "activity_logged_at"},
 }
 
@@ -291,6 +290,11 @@ CREATE TABLE schema_migrations (
 	for _, item := range migrations[applied:] {
 		if err := settleMigrationTriggerEvents(ctx, tx); err != nil {
 			return fmt.Errorf("settle migration trigger events before %s: %w", item.version, err)
+		}
+		if item.version == varspreflight.Migration {
+			if err := varspreflight.CheckBeforeMigration(ctx, tx); err != nil {
+				return &MigrationApplyError{Operation: "preflight", Version: item.version, Err: err}
+			}
 		}
 		if _, err := tx.ExecContext(ctx, string(item.contents)); err != nil {
 			return fmt.Errorf("migration apply failed: %w", &MigrationApplyError{Operation: "apply", Version: item.version, Err: err})

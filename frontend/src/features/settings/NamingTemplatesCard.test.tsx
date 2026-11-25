@@ -41,7 +41,7 @@ function stubFetch() {
       return jsonResponse(library);
     }
     if (url.includes("/template-catalogs/naming")) {
-      return jsonResponse({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [{ ref: "sample-tv", label: "剧集样例" }], vars_keys: [], vars_loaded_at: null });
+      return jsonResponse({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [{ ref: "sample-tv", label: "剧集样例" }] });
     }
     if (url.includes("/template-previews/naming")) {
       // The preview is a debounced request that can fire before the assertion on a slow machine, so a valid preview shape is needed.

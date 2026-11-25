@@ -16,11 +16,10 @@ func TestMapAnimeDraftKeepsBusinessSnapshot(t *testing.T) {
 		"metadata": {}, "rss_sources": [],
 		"subgroups": {"max_rss": 3, "entries": []},
 		"rules": {"sections": {}},
-		"business": {"schema_version": "business-snapshot-v2", "sections": {}, "section_versions": {}, "section_schemas": {},
+		"business": {"schema_version": "business-snapshot-v3", "sections": {}, "section_versions": {}, "section_schemas": {},
 			"parser": {"schema_version": "parser-policy-envelope-v1", "kind": "regex", "policy_version": 1, "profile_version": 1, "rules_owner_version": 1, "source_owner": "global", "provenance": "global"},
 			"replacement": {"admission_mode": "all", "quality_profile": {"version": "profile-v2", "items": []}},
-			"replacement_version": 1, "unclassified_route": "skip", "file_effect_version": 1,
-			"programs": {"vars": {"digest": "sha256:v", "version": "naming-vars-v1@sha256:v"}}},
+			"replacement_version": 1, "unclassified_route": "skip", "file_effect_version": 1},
 		"business_digest": "sha256:d"
 	}`), &draft); err != nil {
 		t.Fatal(err)
@@ -35,8 +34,8 @@ func TestMapAnimeDraftKeepsBusinessSnapshot(t *testing.T) {
 		if mapped.Draft == nil || mapped.Draft.Business == nil || mapped.Draft.BusinessDigest == nil || *mapped.Draft.BusinessDigest != "sha256:d" {
 			t.Fatalf("%s dropped the business snapshot: %+v", name, mapped.Draft)
 		}
-		if mapped.Draft.Business.Programs.Vars.Digest != "sha256:v" {
-			t.Fatalf("%s lost the exact Vars program reference: %+v", name, mapped.Draft.Business.Programs)
+		if mapped.Draft.Business.SchemaVersion != "business-snapshot-v3" {
+			t.Fatalf("%s lost the business schema version: %+v", name, mapped.Draft.Business)
 		}
 	}
 	direct, err := mapAnimeDraft(draft)

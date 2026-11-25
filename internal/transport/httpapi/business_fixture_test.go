@@ -4,7 +4,6 @@ import (
 	domain "bansoko/internal/anime/domain"
 	"bansoko/internal/testutil/frozenpolicy"
 	"bansoko/internal/transport/httpapi/generated"
-	"context"
 	"encoding/json"
 	"testing"
 )
@@ -44,7 +43,7 @@ func (r *testRig) seedBusinessBody(t *testing.T, body any) {
 	if _, ok := d["business"]; ok {
 		return
 	}
-	b, err := frozenpolicy.SeedBusiness(context.Background(), r.db, `vars.actual = {title: input.release_title};`)
+	b, err := frozenpolicy.Business()
 	if err != nil {
 		t.Fatal(err)
 	}

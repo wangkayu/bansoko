@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"bansoko/internal/notifypresent"
 	templatecatalogapplication "bansoko/internal/templatecatalog/application"
@@ -203,31 +202,6 @@ func TestMapNamingTemplateCatalogCarriesShorthands(t *testing.T) {
 	}
 	if !strings.Contains(string(emptyBody), `"shorthands":[]`) {
 		t.Fatalf("empty shorthand wire shape = %s, want an empty array", emptyBody)
-	}
-}
-
-func TestMapNamingTemplateCatalogKeepsRequiredVarsKeysArray(t *testing.T) {
-	// Regression: the mapper dropped vars_keys entirely, so the required array
-	// serialized as null and the naming rules tab crashed on catalog.vars_keys.join.
-	loadedAt := time.Date(2026, 9, 24, 1, 2, 3, 4, time.UTC)
-	mapped := mapNamingTemplateCatalog(templatecatalogapplication.NamingTemplateCatalog{VarsLoadedAt: &loadedAt})
-	if mapped.VarsKeys == nil {
-		t.Fatal("empty var key set mapped to nil; schema requires a non-nullable array")
-	}
-	body, err := json.Marshal(mapped)
-	if err != nil {
-		t.Fatalf("marshal mapped naming catalog: %v", err)
-	}
-	if !strings.Contains(string(body), `"vars_keys":[]`) {
-		t.Fatalf("vars_keys wire shape = %s, want an empty array", body)
-	}
-	if mapped.VarsLoadedAt == nil || !mapped.VarsLoadedAt.Equal(loadedAt) {
-		t.Fatalf("vars_loaded_at = %v, want %v", mapped.VarsLoadedAt, loadedAt)
-	}
-
-	populated := mapNamingTemplateCatalog(templatecatalogapplication.NamingTemplateCatalog{VarsKeys: []string{"group", "season"}})
-	if len(populated.VarsKeys) != 2 || populated.VarsKeys[0] != "group" || populated.VarsKeys[1] != "season" {
-		t.Fatalf("var keys = %#v, want the loaded keys in order", populated.VarsKeys)
 	}
 }
 

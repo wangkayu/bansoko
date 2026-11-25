@@ -1,8 +1,6 @@
 package application
 
 import (
-	"time"
-
 	"bansoko/internal/notifypresent"
 	"bansoko/internal/templatecatalog/notification"
 )
@@ -239,13 +237,11 @@ type NamingResolvedValue struct {
 	Value    *string
 }
 type NamingTemplateCatalog struct {
-	Language     string
-	Fields       []NamingCatalogField
-	Functions    []NamingCatalogFunction
-	Shorthands   []NamingCatalogShorthand
-	Samples      []NamingCatalogSample
-	VarsKeys     []string
-	VarsLoadedAt *time.Time
+	Language   string
+	Fields     []NamingCatalogField
+	Functions  []NamingCatalogFunction
+	Shorthands []NamingCatalogShorthand
+	Samples    []NamingCatalogSample
 }
 
 type NamingTemplatePreview struct {

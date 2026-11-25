@@ -21,7 +21,7 @@ func TestPendingTargetKeepsIdentityAndDownloads(t *testing.T) {
 		t.Run([]string{"optional media", "shorthand media", "list media"}[index], func(t *testing.T) {
 			s := newParityScenario(t, animedomain.CollisionPolicyFail, animedomain.FileEffectRulesOperationCopy)
 			s.effective.Rules.Naming.Tv.VideoFilenameTemplate = template
-			if _, err := naming.NewEngine().CompileRulesWithVars(animedomain.NamingRulesToDomain(s.effective.Rules.Naming), s.preview.FrozenVars.Output); err != nil {
+			if _, err := naming.NewEngine().CompileRules(animedomain.NamingRulesToDomain(s.effective.Rules.Naming)); err != nil {
 				t.Fatal(err)
 			}
 			a, b := assertParity(t, s, "")

@@ -418,7 +418,6 @@ export const enReasonCopy = {
   provider_parser_schema_mismatch: "The site's content format has changed",
   replacement_trigger_failed: "Version replacement check failed",
   retention_sweep_failed: "Record retention sweep failed",
-  naming_vars_unavailable: "Naming information is not ready yet. It appears after subscribing.",
   naming_target_not_absolute: "Output directory is not an absolute path",
   // naming_fact_missing: a value the template used is empty this time and left the path invalid (see enNamingFactCopy).
   naming_fact_missing: "Naming failed: empty {fact} left the path invalid",

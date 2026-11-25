@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
+	"math"
 	"net/url"
 	"path"
 	"sort"
@@ -95,6 +95,7 @@ func EvaluateFeedItemWithIdentity(item acquisitiondomain.FeedItem, source Source
 			Title: item.Title,
 		},
 	}
+	result.NamingTorrent = TorrentFactsForItem(item)
 	if !item.Published.IsZero() {
 		published := item.Published.UTC()
 		result.RawFacts.PublishedAt = &published
@@ -148,6 +149,25 @@ func EvaluateFeedItemWithIdentity(item acquisitiondomain.FeedItem, source Source
 	result.Verdict = ReleaseVerdict("accepted_pending_download")
 	result.ReasonCode = "accepted"
 	return result
+}
+
+// TorrentFactsForItem projects totals and hashes from the exact inventory.
+func TorrentFactsForItem(item acquisitiondomain.FeedItem) naming.TorrentNamingFacts {
+	facts := naming.TorrentNamingFacts{HashV1: item.TorrentInfoHashV1, HashV2: item.TorrentInfoHashV2}
+	if len(item.ReleaseFiles) == 0 {
+		return facts
+	}
+	count := int64(len(item.ReleaseFiles))
+	facts.FileCount = &count
+	var total int64
+	for _, file := range item.ReleaseFiles {
+		if file.SizeBytes == nil || *file.SizeBytes < 0 || *file.SizeBytes > math.MaxInt64-total {
+			return facts
+		}
+		total += *file.SizeBytes
+	}
+	facts.Size = &total
+	return facts
 }
 
 // frozenEpisodeNamingFacts projects a resolved identity into the naming
@@ -634,7 +654,8 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 	extension := strings.TrimPrefix(strings.ToLower(path.Ext(filename)), ".")
 
 	ctx := naming.NamingContext{
-		Anime:   naming.AnimeNamingFacts{Title: animeTitle},
+		Anime:   release.NamingAnime,
+		Torrent: release.NamingTorrent,
 		Release: naming.ReleaseNamingFacts{OriginalTitle: item.Title, FrozenEpisode: episode},
 		File: naming.FileNamingFacts{
 			OriginalName: filename,
@@ -654,34 +675,15 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 	// media facts, so media.* stays empty rather than borrowing the release
 	// title's resolution.
 	ctx.FileTitleTags = naming.ParseFileTitleTags(ctx.File)
-	// The frozen movie identity (canonical movie:0) selects the movie naming
-	// branch exactly like the artifact render does; an empty value keeps the
-	// TV default. It is derived from the one frozen identity, never parsed
-	// out of the title.
-	ctx.Anime.TMDB.MediaKind = release.FrozenMediaKind
-	var varsErr error
-	if release.FrozenVars != nil {
-		if release.FrozenVars.Status != "ok" {
-			varsErr = fmt.Errorf("frozen Vars evaluation failed: %s", release.FrozenVars.Diagnostic)
-		} else {
-			ctx, varsErr = naming.WithVars(ctx, release.FrozenVars.Output)
-		}
-		// The binding and torrent facts come from the same frozen release
-		// evidence the Vars input was built from.
-		ctx = naming.WithFrozenReleaseFacts(ctx, release.FrozenVars.Input.Facts)
-	} else {
-		varsErr = fmt.Errorf("exact frozen Vars evaluation is required")
+	if ctx.Anime.Title == "" {
+		ctx.Anime.Title = animeTitle
+	}
+	// The canonical movie identity selects the movie branch even without a binding.
+	if release.FrozenMediaKind != "" {
+		ctx.Anime.TMDB.MediaKind = release.FrozenMediaKind
 	}
 	if season != nil {
-		value := *season
-		ctx.Anime.Season = &value
-	}
-	if varsErr != nil {
-		outcome.Safety = PreviewFileResultSafety("invalid")
-		reason := "naming_vars_unavailable"
-		outcome.ReasonCode = &reason
-		outcome.RenderError = boundedRenderError(varsErr)
-		return outcome
+		ctx.Anime.Season = season
 	}
 	// The frozen typed identity is the only episode authority; a render
 	// without one has a null parsed.episode.
@@ -693,7 +695,7 @@ func renderPreviewFileForNameAndSeason(item acquisitiondomain.FeedItem, release 
 	if preview {
 		engine = engine.Preview()
 	}
-	compiled, err := engine.CompileRulesWithVars(NamingRulesToDomain(effective.Rules.Naming), ctx.Vars)
+	compiled, err := engine.CompileRules(NamingRulesToDomain(effective.Rules.Naming))
 	if err != nil {
 		outcome.Safety = PreviewFileResultSafety("invalid")
 		reason := "naming_template_invalid"

@@ -9,12 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	"bansoko/internal/apperrors"
-	"bansoko/internal/namingvars"
 	"bansoko/internal/notifypresent"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/templatecatalog/notification"
@@ -123,20 +120,7 @@ func (s *Service) GetNamingCatalog(_ context.Context, language string) (NamingTe
 			Ref:         sample.Ref,
 		})
 	}
-	vars, _, loadedAt, varsErr := namingvars.CurrentMetadata()
-	varsKeys := make([]string, 0, len(vars))
-	if varsErr == nil {
-		for key := range vars {
-			varsKeys = append(varsKeys, key)
-		}
-		sort.Strings(varsKeys)
-	}
-	var loadedAtValue *time.Time
-	if varsErr == nil {
-		utc := loadedAt.UTC()
-		loadedAtValue = &utc
-	}
-	return NamingTemplateCatalog{Language: doc.Language, Fields: fields, Functions: functions, Shorthands: shorthands, Samples: samples, VarsKeys: varsKeys, VarsLoadedAt: loadedAtValue}, nil
+	return NamingTemplateCatalog{Language: doc.Language, Fields: fields, Functions: functions, Shorthands: shorthands, Samples: samples}, nil
 }
 
 // PreviewNotification renders the supplied title/body templates against the
@@ -156,15 +140,6 @@ func (s *Service) PreviewNotification(_ context.Context, input NotificationTempl
 	}
 	trigger := string(input.TriggerKind)
 	sample := notification.Sample(trigger)
-	// vars.<group>.<name> preview with the active Vars snapshot, the same
-	// values the naming preview renders with.
-	if vars, _, err := namingvars.Current(); err == nil {
-		for group, values := range vars {
-			for name, value := range values {
-				sample["vars."+group+"."+name] = value
-			}
-		}
-	}
 	message, _ := notification.RenderMessage(trigger, input.TitleTemplate, input.BodyTemplate, sample)
 	// The unified render already produced the semantic attachments for the
 	// same facts; building a presentation from the message never scans the
@@ -262,15 +237,6 @@ func (s *Service) PreviewNaming(_ context.Context, input NamingTemplatePreviewIn
 	// flow into the preview response.
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: sampleContext})
 	sampleContext = resolved.Context
-	// Execution injects the initialized Vars snapshot on every naming render path.
-	// The preview must render the same context a real operation would, or a
-	// template referencing ${vars...} would compile and then fail only here. When
-	// the channel is not initialized the snapshot stays empty, and such a template
-	// already fails at compile with the same error execution would report.
-	if withVars, varsErr := naming.WithCurrentVars(sampleContext); varsErr == nil {
-		sampleContext = withVars
-	}
-
 	resolvedValues := make([]NamingResolvedValue, 0, len(resolved.Results))
 	for _, result := range resolved.Results {
 		var source *string
