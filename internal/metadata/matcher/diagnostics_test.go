@@ -105,7 +105,7 @@ func TestMatcherCallsCarryFactsOnlyForActionableStatuses(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
 		bgm := &BGMMatcher{Client: server.Client()}
 		var target map[string]any
-		err := bgm.getJSON(context.Background(), server.Client(), server.URL, &target)
+		err := bgm.requestJSON(context.Background(), server.Client(), http.MethodGet, server.URL, nil, &target)
 		server.Close()
 		if err == nil {
 			t.Fatalf("status %d: no error", status)

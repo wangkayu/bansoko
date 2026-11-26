@@ -97,28 +97,44 @@ func (m *TMDBMatcher) Match(ctx context.Context, title string) (*TMDBMatchResult
 // MatchWithTargetDate searches for a work and then resolves its season using
 // the original title and the BGM air date. Trimming never erases those clues.
 func (m *TMDBMatcher) MatchWithTargetDate(ctx context.Context, title, targetAirDate string) (*TMDBMatchResult, error) {
-	if strings.TrimSpace(title) == "" {
+	return m.matchTitles(ctx, title, []string{title}, parseProviderClue(targetAirDate, "target"))
+}
+
+const tmdbMatchBudget = 15 * time.Second
+
+var errAmbiguousTMDB = errors.New("ambiguous TMDB work")
+
+func (m *TMDBMatcher) matchTitles(ctx context.Context, original string, titles []string, target dateClue) (*TMDBMatchResult, error) {
+	if strings.TrimSpace(firstNonEmpty(titles...)) == "" {
 		return nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, tmdbMatchBudget)
+	defer cancel()
 	client, endpoint, apiKey, err := m.resolveAccess(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result, err := m.searchAndScore(ctx, client, endpoint, apiKey, title, "tv", targetAirDate)
-	if err != nil {
-		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb tv search: %w", err)}
-	}
-	if result != nil && result.Confidence >= tmdbMinConfidence {
-		result.Method = "tv"
-		return result, nil
-	}
-	movieResult, err := m.searchAndScore(ctx, client, endpoint, apiKey, title, "movie", targetAirDate)
-	if err != nil {
-		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb movie search: %w", err)}
-	}
-	if movieResult != nil && movieResult.Confidence >= tmdbMinConfidence {
-		movieResult.Method = "movie"
-		return movieResult, nil
+	requested := m.trimmer().ExtractSeasonNumber(original)
+	seen := make(map[string]bool)
+	for _, title := range titles {
+		if key := bgmTitleKey(title); key == "" || seen[key] {
+			continue
+		} else {
+			seen[key] = true
+		}
+		for _, kind := range []string{"tv", "movie"} {
+			result, err := m.searchAndScore(ctx, client, endpoint, apiKey, strings.TrimSpace(title), kind, target, requested)
+			if errors.Is(err, errAmbiguousTMDB) {
+				break
+			}
+			if err != nil {
+				return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb %s search: %w", kind, err)}
+			}
+			if result != nil {
+				result.Method = kind
+				return result, nil
+			}
+		}
 	}
 	return nil, nil
 }
@@ -126,6 +142,10 @@ func (m *TMDBMatcher) MatchWithTargetDate(ctx context.Context, title, targetAirD
 // MatchReference resolves the exact work supplied by bangumi-data or an
 // existing binding. It never searches for and combines a different work.
 func (m *TMDBMatcher) MatchReference(ctx context.Context, title, mediaKind, workID string, mappedSeason *int, targetAirDate string) (*TMDBMatchResult, error) {
+	return m.matchReference(ctx, title, mediaKind, workID, mappedSeason, parseProviderClue(targetAirDate, "target"))
+}
+
+func (m *TMDBMatcher) matchReference(ctx context.Context, title, mediaKind, workID string, mappedSeason *int, targetAirDate dateClue) (*TMDBMatchResult, error) {
 	if mediaKind != "tv" && mediaKind != "movie" || !numericID(workID) {
 		return nil, nil
 	}
@@ -197,8 +217,7 @@ func (m *TMDBMatcher) resolveAccess(ctx context.Context) (*http.Client, string, 
 	return client, stripConfigurationSuffix(conn.Endpoint), apiKey, nil
 }
 
-func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind, targetAirDate string) (*TMDBMatchResult, error) {
-	requestedSeason := m.trimmer().ExtractSeasonNumber(query)
+func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, targetAirDate dateClue, requestedSeason *int) (*TMDBMatchResult, error) {
 	// Try original title first.
 	result, err := m.trySearch(ctx, client, endpoint, apiKey, query, mediaKind, nil, requestedSeason, targetAirDate)
 	if err != nil {
@@ -277,7 +296,7 @@ type tmdbDetailsResponse struct {
 	Seasons       []tmdbSeason `json:"seasons"`
 }
 
-func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, year *int, requestedSeason *int, targetAirDate string) (*TMDBMatchResult, error) {
+func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, year *int, requestedSeason *int, targetAirDate dateClue) (*TMDBMatchResult, error) {
 	searchURL, err := buildTMDBSearchURL(endpoint, apiKey, query, mediaKind, year)
 	if err != nil {
 		return nil, err
@@ -291,25 +310,27 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 		return nil, nil
 	}
 
-	// Filter to animation genre (genre_id=16) only.
-	var animated []tmdbSearchResult
-	for _, item := range resp.Results {
-		if hasAnimationGenre(item.GenreIDs) {
-			animated = append(animated, item)
-		}
-	}
-	if len(animated) == 0 {
-		return nil, nil
-	}
-
 	var best *tmdbSearchResult
 	var bestConf float64
-	for i := range animated {
-		conf := m.calculateConfidence(query, &animated[i], year)
-		if conf > bestConf {
-			bestConf = conf
-			best = &animated[i]
+	ambiguous := false
+	for i := range resp.Results {
+		item := &resp.Results[i]
+		if item.ID <= 0 || !hasAnimationGenre(item.GenreIDs) {
+			continue
 		}
+		conf := m.calculateConfidence(query, item, year)
+		if conf < tmdbMinConfidence {
+			continue
+		}
+		switch {
+		case conf > bestConf:
+			best, bestConf, ambiguous = item, conf, false
+		case conf == bestConf && best.ID != item.ID:
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return nil, errAmbiguousTMDB
 	}
 	if best == nil {
 		return nil, nil
@@ -437,13 +458,16 @@ func (m *TMDBMatcher) titleSimilarity(query, title, originalTitle string) float6
 	title = strings.ToLower(strings.TrimSpace(title))
 	originalTitle = strings.ToLower(strings.TrimSpace(originalTitle))
 
+	if query == "" {
+		return 0
+	}
 	if query == title || query == originalTitle {
 		return 1.0
 	}
 	if strings.Contains(title, query) || strings.Contains(originalTitle, query) {
 		return 0.9
 	}
-	if strings.Contains(query, title) || strings.Contains(query, originalTitle) {
+	if (title != "" && strings.Contains(query, title)) || (originalTitle != "" && strings.Contains(query, originalTitle)) {
 		return 0.8
 	}
 	titleSim := levenshteinSimilarity(query, title)
@@ -528,7 +552,7 @@ func tmdbResultOriginalTitle(r *tmdbSearchResult) string {
 // selectSeason uses explicit references and the original title first, then
 // season and episode air dates. A known conflict never falls through to the
 // unique/recent-season heuristic. Episode matches never produce an EP offset.
-func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, endpoint, apiKey string, workID int, seasons []tmdbSeason, requested, mapped *int, targetAirDate string) (int, bool, error) {
+func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, endpoint, apiKey string, workID int, seasons []tmdbSeason, requested, mapped *int, targetAirDate dateClue) (int, bool, error) {
 	for _, explicit := range []*int{mapped, requested} {
 		if explicit == nil {
 			continue
@@ -544,8 +568,11 @@ func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, end
 		return 0, false, nil
 	}
 
-	target, hasTarget := providerDate(targetAirDate)
-	if hasTarget {
+	if targetAirDate.conflict {
+		return 0, false, nil
+	}
+	if targetAirDate.precision == dateDay {
+		target := targetAirDate.start
 		best, ok := closestSeasonByAirDate(regular, target)
 		if ok {
 			return best, true, nil

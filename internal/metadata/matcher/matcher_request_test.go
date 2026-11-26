@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -58,8 +59,8 @@ func TestMatchRequestInteractivePreviewLoadsExistingTMDBDetails(t *testing.T) {
 func TestMatchRequestLooksUpBangumiDataAfterBGMTitleSearch(t *testing.T) {
 	bgmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/search/subject/Show":
-			_, _ = fmt.Fprint(w, `{"results":1,"list":[{"id":123,"name":"Show","name_cn":"节目"}]}`)
+		case "/v0/search/subjects":
+			_, _ = fmt.Fprint(w, `{"data":[{"id":123,"name":"Show","name_cn":"节目"}]}`)
 		case "/v0/subjects/123":
 			_, _ = fmt.Fprint(w, `{"id":123,"name":"Show","name_cn":"节目","date":"2024-04-01","eps":12}`)
 		default:
@@ -129,4 +130,77 @@ func TestMatcherPublishesIndexAtomically(t *testing.T) {
 		matched.ReplaceBangumiDataIndex(NewBangumiDataIndex([]DataItem{{BgmID: fmt.Sprint(n), Titles: []string{"Show"}}}))
 	}
 	wg.Wait()
+}
+
+func TestMatchRequestRelaysOnlyTrustedBangumiTitles(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		request     MatchRequest
+		bgmSearch   string
+		firstStatus int
+		wantQueries []string
+		wantSeason  int
+	}{
+		{"unique alias", MatchRequest{Title: "Fool Night"}, foolNightBGM + otherFoolSubjects, 0, []string{"tv:フールナイト", "movie:フールナイト", "tv:愚者之夜"}, 1},
+		{"confirmed ID uses request season", MatchRequest{Title: "Fool Night S2", BgmID: "661692"}, "", 0, []string{"tv:フールナイト", "movie:フールナイト", "tv:愚者之夜"}, 2},
+		{"fuzzy does not relay", MatchRequest{Title: "Fools"}, `{"id":661692,"name":"Fools Night"}`, 0, []string{"tv:Fools", "movie:Fools"}, 0},
+		{"rate limit stops relay", MatchRequest{Title: "Fool Night"}, foolNightBGM, http.StatusTooManyRequests, []string{"tv:フールナイト"}, 0},
+		{"authorization failure stops relay", MatchRequest{Title: "Fool Night"}, foolNightBGM, http.StatusUnauthorized, []string{"tv:フールナイト"}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bgm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v0/search/subjects":
+					if tc.request.BgmID != "" {
+						t.Errorf("existing ID unexpectedly searched")
+					}
+					fmt.Fprint(w, `{"data":[`+tc.bgmSearch+`]}`)
+				case "/v0/subjects/661692":
+					fmt.Fprint(w, foolNightBGM)
+				default:
+					t.Errorf("unexpected BGM request: %s", r.URL)
+					http.NotFound(w, r)
+				}
+			}))
+			defer bgm.Close()
+			var queries []string
+			tmdb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("language") != "zh-CN" {
+					t.Errorf("unexpected locale: %s", r.URL)
+				}
+				switch r.URL.Path {
+				case "/3/search/tv", "/3/search/movie":
+					q := r.URL.Query().Get("query")
+					queries = append(queries, r.URL.Path[len("/3/search/"):]+":"+q)
+					if tc.firstStatus != 0 {
+						w.WriteHeader(tc.firstStatus)
+						return
+					}
+					if q == "愚者之夜" {
+						fmt.Fprint(w, `{"results":[{"id":42,"name":"愚者之夜","original_name":"フールナイト","overview":"中文简介","genre_ids":[16],"first_air_date":"2026-11-26","original_language":"ja"}]}`)
+						return
+					}
+					fmt.Fprint(w, `{"results":[]}`)
+				case "/3/tv/42":
+					fmt.Fprint(w, `{"seasons":[{"season_number":1,"air_date":"2026-11-26"},{"season_number":2,"air_date":"2027-04-01"}]}`)
+				default:
+					t.Errorf("unexpected TMDB request: %s", r.URL)
+					http.NotFound(w, r)
+				}
+			}))
+			defer tmdb.Close()
+			matcher := NewMatcher(nil, &BGMMatcher{Endpoint: bgm.URL, Client: bgm.Client()}, newReferenceTMDBMatcher(tmdb), nil)
+			got, err := matcher.MatchRequest(t.Context(), tc.request)
+			if (err != nil) != (tc.firstStatus != 0) || got.BgmID == nil || *got.BgmID != "661692" || got.BgmTitleCN != "愚者之夜" || !slices.Equal(queries, tc.wantQueries) {
+				t.Fatalf("result = %+v, error = %v, queries = %v", got, err, queries)
+			}
+			if tc.wantSeason == 0 {
+				if got.TmdbWorkID != nil {
+					t.Fatalf("unexpected TMDB binding: %+v", got)
+				}
+			} else if !got.IsComplete() || *got.TmdbSeason != tc.wantSeason || got.TmdbTitleCN != "愚者之夜" || got.TmdbOverview != "中文简介" {
+				t.Fatalf("unexpected localized match: %+v", got)
+			}
+		})
+	}
 }

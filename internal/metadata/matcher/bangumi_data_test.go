@@ -29,3 +29,14 @@ func TestParseBangumiDataRejectsEmptyOrMalformedPayload(t *testing.T) {
 		}
 	}
 }
+
+func TestBangumiDataTitleConflictsDoNotHideProviderIDs(t *testing.T) {
+	index := NewBangumiDataIndex([]DataItem{
+		{BgmID: "1", MikanID: "10", Titles: []string{"Show", "Unique"}},
+		{BgmID: "2", MikanID: "20", Titles: []string{" show "}},
+		{BgmID: "1", MikanID: "10", Titles: []string{"SHOW", "Unique"}},
+	})
+	if index.LookupByTitle("Show") != nil || index.LookupByTitle("Unique") == nil || index.LookupByBgmID("1") == nil || index.LookupByMikanID("20") == nil {
+		t.Fatal("only the conflicting title should become ambiguous")
+	}
+}

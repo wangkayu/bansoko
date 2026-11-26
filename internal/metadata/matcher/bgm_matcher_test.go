@@ -63,7 +63,7 @@ func TestBGMMatcherUsesConfiguredConnectionEndpointAndRoutedClient(t *testing.T)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"results":0,"list":[]}`)
+		_, _ = fmt.Fprint(w, `{"data":[]}`)
 	}))
 	defer server.Close()
 
@@ -121,8 +121,8 @@ func (failingClientResolver) ClientForConnection(context.Context, configurationd
 func TestBGMMatcherDecodesTotalEpisodesFromSubjectDetail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/search/subject/Ongoing" {
-			_, _ = fmt.Fprint(w, `{"results":1,"list":[{"id":777,"name":"Ongoing","name_cn":"连载中"}]}`)
+		if r.URL.Path == "/v0/search/subjects" && r.Method == http.MethodPost {
+			_, _ = fmt.Fprint(w, `{"data":[{"id":777,"name":"Ongoing","name_cn":"连载中"}]}`)
 			return
 		}
 		if r.URL.Path == "/v0/subjects/777" {

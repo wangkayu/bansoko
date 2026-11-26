@@ -77,7 +77,8 @@ type MatchResult struct {
 	// bangumi-data static index supplied the id). They are provider facts for
 	// the accepted binding, never inferred from the title.
 	BgmYear, TmdbYear *int
-	bgmAirDate        string
+	bgmTrusted        bool
+	bgmAirDate        dateClue
 }
 
 // WorkTitles returns the native names this result carries for the works it
@@ -228,21 +229,19 @@ func (m *Matcher) MatchRequest(ctx context.Context, request MatchRequest) (*Matc
 			m.logf(ctx, observabilityport.RuntimeEvent{Message: "bgm api search failed", Operation: "bgm_search", ReasonCode: "bgm_search_failed", ErrorClass: "bgm"})
 		} else if bgmResult != nil {
 			applyBGMResult(result, bgmResult)
-			if item == nil && index != nil {
+			if bgmResult.trusted && item == nil && index != nil {
 				item = index.LookupByBgmID(bgmResult.BgmID)
 				applyDataItem(item, result)
 			}
 		}
 	}
 
-	targetAirDate := ""
-	if result.BgmID != nil && m.bgmMatcher != nil {
-		// applyBGMResult does not retain the full subject in the public result;
-		// the season matcher receives the date through this private lookup below.
-		targetAirDate = result.bgmAirDate
-	}
-	if targetAirDate == "" && item != nil {
-		targetAirDate = item.Begin
+	targetAirDate := result.bgmAirDate
+	if targetAirDate.precision == dateUnknown && item != nil {
+		targetAirDate = parseProviderClue(item.Begin, "bangumi-data.begin")
+		if targetAirDate.precision != dateDay {
+			targetAirDate = dateClue{}
+		}
 	}
 
 	tmdbIncomplete := result.TmdbWorkID == nil || result.TmdbKind == nil || result.TmdbSeason == nil
@@ -257,9 +256,13 @@ func (m *Matcher) MatchRequest(ctx context.Context, request MatchRequest) (*Matc
 					mappedSeason = refSeason
 				}
 			}
-			tmdbResult, err = m.tmdbMatcher.MatchReference(ctx, request.Title, *result.TmdbKind, *result.TmdbWorkID, mappedSeason, targetAirDate)
+			tmdbResult, err = m.tmdbMatcher.matchReference(ctx, request.Title, *result.TmdbKind, *result.TmdbWorkID, mappedSeason, targetAirDate)
 		} else {
-			tmdbResult, err = m.tmdbMatcher.MatchWithTargetDate(ctx, request.Title, targetAirDate)
+			titles := []string{request.Title}
+			if result.bgmTrusted {
+				titles = []string{result.BgmTitle, result.BgmTitleCN, request.Title}
+			}
+			tmdbResult, err = m.tmdbMatcher.matchTitles(ctx, request.Title, titles, targetAirDate)
 		}
 		m.observe(ctx, sourceTMDB, err)
 		if err != nil {
@@ -341,7 +344,10 @@ func applyBGMResult(result *MatchResult, bgmResult *BGMMatchResult) {
 		result.BgmTitle = strings.TrimSpace(bgmResult.Subject.Name)
 		result.BgmTitleCN = strings.TrimSpace(bgmResult.Subject.NameCN)
 		result.BgmPosterURL = strings.TrimSpace(bgmResult.Subject.Images.Common)
-		result.bgmAirDate = strings.TrimSpace(bgmResult.Subject.AirDate)
+		if bgmResult.trusted {
+			result.bgmTrusted = true
+			result.bgmAirDate = bgmResult.airing
+		}
 	}
 	result.BgmYear = bgmResult.Year
 	if result.TotalEpisodes == nil && bgmResult.TotalEpisodes != nil {

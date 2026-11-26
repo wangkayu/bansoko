@@ -137,3 +137,29 @@ func TestTMDBSearchKeepsOriginalTitleSeasonAfterTrimming(t *testing.T) {
 		t.Fatalf("trimming the search query must not erase the original season: result=%+v err=%v", result, err)
 	}
 }
+
+func TestTMDBSearchDoesNotLoadWeakOrAmbiguousCandidates(t *testing.T) {
+	for name, results := range map[string]string{
+		"weak title with missing original": `[{"id":1,"name":"Different","genre_ids":[16],"popularity":100,"original_language":"zh"}]`,
+		"equal scores on distinct works":   `[{"id":1,"name":"Show","genre_ids":[16]},{"id":2,"name":"Show","genre_ids":[16]}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/3/search/tv":
+					fmt.Fprint(w, `{"results":`+results+`}`)
+				case "/3/search/movie":
+					fmt.Fprint(w, `{"results":[]}`)
+				default:
+					t.Errorf("untrusted candidate triggered request %s", r.URL)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			got, err := newReferenceTMDBMatcher(server).Match(t.Context(), "Show")
+			if err != nil || got != nil {
+				t.Fatalf("result = %+v, error = %v", got, err)
+			}
+		})
+	}
+}

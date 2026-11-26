@@ -47,9 +47,13 @@ func NewBangumiDataIndex(items []DataItem) *BangumiDataIndex {
 		for _, title := range item.Titles {
 			key := normalizeLookupKey(title)
 			if key != "" {
-				// Keep the existing deterministic first-write-wins title policy.
-				if _, exists := idx.byTitle[key]; !exists {
+				if previous, exists := idx.byTitle[key]; !exists {
 					idx.byTitle[key] = item
+				} else if previous != nil && previous != item &&
+					(previous.BgmID != item.BgmID || previous.TmdbID != item.TmdbID || previous.Begin != item.Begin ||
+						(previous.BgmID == "" && previous.TmdbID == "")) {
+					// A nil entry remembers the conflict so later rows cannot restore the key.
+					idx.byTitle[key] = nil
 				}
 			}
 		}
