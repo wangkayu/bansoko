@@ -1369,30 +1369,25 @@ func runAcquisitionSettlement(ctx context.Context, service *acquisitionsettlemen
 func runOneShotReclaimMaintenance(ctx context.Context, service *workitems.OneShotReclaimService, drainDue <-chan struct{}, hub *events.Hub, logger observabilityport.RuntimeLogger) {
 	run := func() {
 		result, err := service.RunPass(ctx)
-		if result.Drained > 0 || result.Blocked > 0 || result.Reclaimed > 0 || result.Rechecked > 0 || result.Revived > 0 {
+		if result.Changed() {
 			hub.Publish(events.Event{Target: events.TargetRecords})
-		}
-		if err != nil {
-			if ctx.Err() == nil {
-				logger.Error(ctx, observabilityport.RuntimeEvent{
-					Message:    "one-shot reclaim pass failed",
-					Component:  "retention",
-					Operation:  "oneshot_reclaim",
-					Outcome:    "failure",
-					ReasonCode: "oneshot_reclaim_failed",
-					ErrorClass: "retention",
-				})
-			}
-			return
-		}
-		if result.Drained > 0 || result.Reclaimed > 0 || result.Rechecked > 0 || result.Revived > 0 || result.Purged > 0 {
 			logger.Info(ctx, observabilityport.RuntimeEvent{
-				Message: fmt.Sprintf("one-shot reclaim pass completed (drained=%d reclaimed=%d rechecked=%d resumed=%d blocked=%d purged=%d)",
-					result.Drained, result.Reclaimed, result.Rechecked, result.Revived, result.Blocked, result.Purged),
+				Message: fmt.Sprintf("one-shot reclaim pass committed changes (drained=%d reclaimed=%d rechecked=%d extended=%d resumed=%d blocked=%d purged=%d)",
+					result.Drained, result.Reclaimed, result.Rechecked, result.Extended, result.Revived, result.Blocked, result.Purged),
 				Component:  "retention",
 				Operation:  "oneshot_reclaim",
 				Outcome:    "success",
 				ReasonCode: "oneshot_reclaim_completed",
+			})
+		}
+		if err != nil && ctx.Err() == nil {
+			logger.Error(ctx, observabilityport.RuntimeEvent{
+				Message:    "one-shot reclaim pass failed",
+				Component:  "retention",
+				Operation:  "oneshot_reclaim",
+				Outcome:    "failure",
+				ReasonCode: "oneshot_reclaim_failed",
+				ErrorClass: "retention",
 			})
 		}
 	}

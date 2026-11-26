@@ -169,11 +169,20 @@ ORDER BY retention_until NULLS LAST, id
 LIMIT sqlc.arg(batch_size);
 
 -- name: ListDueReclaimPendingOneShotMarkers :many
-SELECT id
-FROM one_shot_acquisitions
-WHERE state = 'reclaim_pending'
-  AND retention_until <= CURRENT_TIMESTAMP
-ORDER BY retention_until NULLS LAST, id
+SELECT marker.id
+FROM one_shot_acquisitions marker
+WHERE marker.state = 'reclaim_pending'
+  AND marker.retention_until <= CURRENT_TIMESTAMP
+  AND NOT EXISTS (
+      SELECT 1
+      FROM acquisitions root
+      WHERE root.record_state = 'full'
+        AND (root.state = 'running' OR root.detail_until > CURRENT_TIMESTAMP)
+        AND (root.origin_managed_anime_ref = marker.managed_anime_id OR root.id = (
+            SELECT task.acquisition_id FROM download_tasks task WHERE task.id = marker.download_task_id
+        ))
+  )
+ORDER BY marker.retention_until NULLS LAST, marker.id
 LIMIT sqlc.arg(batch_size);
 
 -- name: ListDueCleanupBlockedOneShotMarkers :many
@@ -264,31 +273,38 @@ SET state = 'cleanup_blocked',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(marker_id);
 
--- name: GetOneShotReclaimUntil :one
-SELECT retention_until
+-- name: IsOneShotMarkerDue :one
+SELECT COALESCE(retention_until <= CURRENT_TIMESTAMP, false)::boolean AS due
 FROM one_shot_acquisitions
 WHERE id = sqlc.arg(marker_id);
 
 -- name: UnblockOneShotMarker :execresult
 UPDATE one_shot_acquisitions
 SET state = 'reclaim_pending',
-    retention_until = GREATEST(retention_until, sqlc.arg(retention_until)),
+    retention_until = LEAST(
+        GREATEST(retention_until, sqlc.arg(retention_until)::timestamptz),
+        terminal_at + (sqlc.arg(max_retention_days)::int * INTERVAL '1 day')
+    ),
     version = version + 1,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(marker_id);
 
 -- name: ExtendOneShotCleanupBlocked :execresult
-UPDATE one_shot_acquisitions
-SET retention_until = GREATEST(
-        retention_until,
-        LEAST(
-            CURRENT_TIMESTAMP + (sqlc.arg(retention_days)::int * INTERVAL '1 day'),
-            COALESCE(terminal_at, CURRENT_TIMESTAMP) + (sqlc.arg(max_retention_days)::int * INTERVAL '1 day')
-        )
-    ),
-    version = version + 1,
+WITH proposed AS (
+    SELECT blocked.id, LEAST(
+        CURRENT_TIMESTAMP + (sqlc.arg(retention_days)::int * INTERVAL '1 day'),
+        COALESCE(blocked.terminal_at, CURRENT_TIMESTAMP) + (sqlc.arg(max_retention_days)::int * INTERVAL '1 day')
+    ) AS deadline
+    FROM one_shot_acquisitions blocked
+    WHERE blocked.id = sqlc.arg(marker_id)
+)
+UPDATE one_shot_acquisitions marker
+SET retention_until = proposed.deadline,
+    version = marker.version + 1,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = sqlc.arg(marker_id);
+FROM proposed
+WHERE marker.id = proposed.id
+  AND (marker.retention_until IS NULL OR marker.retention_until < proposed.deadline);
 
 -- name: ResolveOneShotAnchors :one
 -- The download task anchor is optional: an exact-target-adopting one-shot

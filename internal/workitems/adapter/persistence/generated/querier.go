@@ -185,17 +185,21 @@ type Querier interface {
 	EnterOneShotReclaiming(ctx context.Context, markerID string) (sql.Result, error)
 	//ExtendOneShotCleanupBlocked
 	//
-	//  UPDATE one_shot_acquisitions
-	//  SET retention_until = GREATEST(
-	//          retention_until,
-	//          LEAST(
-	//              CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'),
-	//              COALESCE(terminal_at, CURRENT_TIMESTAMP) + ($2::int * INTERVAL '1 day')
-	//          )
-	//      ),
-	//      version = version + 1,
+	//  WITH proposed AS (
+	//      SELECT blocked.id, LEAST(
+	//          CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'),
+	//          COALESCE(blocked.terminal_at, CURRENT_TIMESTAMP) + ($2::int * INTERVAL '1 day')
+	//      ) AS deadline
+	//      FROM one_shot_acquisitions blocked
+	//      WHERE blocked.id = $3
+	//  )
+	//  UPDATE one_shot_acquisitions marker
+	//  SET retention_until = proposed.deadline,
+	//      version = marker.version + 1,
 	//      updated_at = CURRENT_TIMESTAMP
-	//  WHERE id = $3
+	//  FROM proposed
+	//  WHERE marker.id = proposed.id
+	//    AND (marker.retention_until IS NULL OR marker.retention_until < proposed.deadline)
 	ExtendOneShotCleanupBlocked(ctx context.Context, arg ExtendOneShotCleanupBlockedParams) (sql.Result, error)
 	//FailWorkItemAtAttemptBudget
 	//
@@ -234,12 +238,6 @@ type Querier interface {
 	//    AND idempotency_key = $3
 	//  FOR UPDATE
 	GetManualRetryIdempotency(ctx context.Context, arg GetManualRetryIdempotencyParams) (GetManualRetryIdempotencyRow, error)
-	//GetOneShotReclaimUntil
-	//
-	//  SELECT retention_until
-	//  FROM one_shot_acquisitions
-	//  WHERE id = $1
-	GetOneShotReclaimUntil(ctx context.Context, markerID string) (sql.NullTime, error)
 	//HasLiveFileMaintenanceWorkItems
 	//
 	//  SELECT EXISTS (
@@ -289,6 +287,12 @@ type Querier interface {
 	//        )
 	//  )
 	HasLiveOneShotWorkItems(ctx context.Context, arg HasLiveOneShotWorkItemsParams) (bool, error)
+	//IsOneShotMarkerDue
+	//
+	//  SELECT COALESCE(retention_until <= CURRENT_TIMESTAMP, false)::boolean AS due
+	//  FROM one_shot_acquisitions
+	//  WHERE id = $1
+	IsOneShotMarkerDue(ctx context.Context, markerID string) (bool, error)
 	//ListAnchoredArtifactStates
 	//
 	//  SELECT id, state
@@ -359,11 +363,20 @@ type Querier interface {
 	ListDueOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error)
 	//ListDueReclaimPendingOneShotMarkers
 	//
-	//  SELECT id
-	//  FROM one_shot_acquisitions
-	//  WHERE state = 'reclaim_pending'
-	//    AND retention_until <= CURRENT_TIMESTAMP
-	//  ORDER BY retention_until NULLS LAST, id
+	//  SELECT marker.id
+	//  FROM one_shot_acquisitions marker
+	//  WHERE marker.state = 'reclaim_pending'
+	//    AND marker.retention_until <= CURRENT_TIMESTAMP
+	//    AND NOT EXISTS (
+	//        SELECT 1
+	//        FROM acquisitions root
+	//        WHERE root.record_state = 'full'
+	//          AND (root.state = 'running' OR root.detail_until > CURRENT_TIMESTAMP)
+	//          AND (root.origin_managed_anime_ref = marker.managed_anime_id OR root.id = (
+	//              SELECT task.acquisition_id FROM download_tasks task WHERE task.id = marker.download_task_id
+	//          ))
+	//    )
+	//  ORDER BY marker.retention_until NULLS LAST, marker.id
 	//  LIMIT $1
 	ListDueReclaimPendingOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error)
 	//ListRunningOneShotMarkers
@@ -523,10 +536,13 @@ type Querier interface {
 	//
 	//  UPDATE one_shot_acquisitions
 	//  SET state = 'reclaim_pending',
-	//      retention_until = GREATEST(retention_until, $1),
+	//      retention_until = LEAST(
+	//          GREATEST(retention_until, $1::timestamptz),
+	//          terminal_at + ($2::int * INTERVAL '1 day')
+	//      ),
 	//      version = version + 1,
 	//      updated_at = CURRENT_TIMESTAMP
-	//  WHERE id = $2
+	//  WHERE id = $3
 	UnblockOneShotMarker(ctx context.Context, arg UnblockOneShotMarkerParams) (sql.Result, error)
 	//WriteOneShotAdmissionLedger
 	//

@@ -27,7 +27,7 @@ func TestPlanRetentionPreservesAnchoredGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	reclaimed, err := service.reclaimOne(context.Background(), marker)
-	if err != nil || reclaimed {
+	if err != nil || reclaimed != reclaimWaiting {
 		t.Fatalf("reclaimed=%v err=%v", reclaimed, err)
 	}
 	var state, code, after string

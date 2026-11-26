@@ -39,7 +39,7 @@ func TestAcquisitionReclaimMarkerLockOrders(t *testing.T) {
 			if first == "marker" {
 				go func() {
 					got, e := service.reclaimOne(context.Background(), marker)
-					if e == nil && got {
+					if e == nil && got != reclaimWaiting {
 						e = ErrInvalidSpec
 					}
 					done <- e
@@ -84,7 +84,7 @@ func TestAcquisitionReclaimMarkerLockOrders(t *testing.T) {
 			}
 			if first == "reclaim" {
 				got, e := service.reclaimOne(context.Background(), marker)
-				if e != nil || got {
+				if e != nil || got != reclaimWaiting {
 					t.Fatalf("reclaim=%v err=%v", got, e)
 				}
 			}

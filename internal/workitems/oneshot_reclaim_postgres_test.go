@@ -613,7 +613,7 @@ func TestReclaimDeletesTemporaryGraphAndPreservesMediaAndDownloadData(t *testing
 	before := acquisitionfixture.Snapshot(t, disposabledb.Owner(t))
 	for attempt := 0; attempt < 2; attempt++ {
 		reclaimed, err := service.reclaimOne(ctx, markerID)
-		if err != nil || reclaimed {
+		if err != nil || reclaimed != reclaimWaiting {
 			t.Fatalf("retained root reclaim=%v err=%v", reclaimed, err)
 		}
 		if acquisitionfixture.Snapshot(t, disposabledb.Owner(t)) != before {
@@ -627,8 +627,8 @@ func TestReclaimDeletesTemporaryGraphAndPreservesMediaAndDownloadData(t *testing
 	if err != nil {
 		t.Fatalf("reclaimOne: %v", err)
 	}
-	if !reclaimed {
-		t.Fatal("a complete terminal chain must reclaim once its detail retention ended")
+	if reclaimed != reclaimCleaned {
+		t.Fatalf("reclaim status = %q, want cleaned after root detail expiry", reclaimed)
 	}
 	if state, _, _ := oneShotMarkerTerminalState(t, db, markerID); state != OneShotStateCleaned {
 		t.Fatalf("marker state = %s, want cleaned", state)
@@ -919,8 +919,8 @@ WHERE id = $1`, markerID, OneShotStateReclaimPending); err != nil {
 			if err != nil {
 				t.Fatalf("reclaimOne: %v", err)
 			}
-			if reclaimed {
-				t.Fatal("reclamation must not proceed while an anchored owner is non-terminal")
+			if reclaimed != reclaimWaiting {
+				t.Fatalf("reclaim status = %q, want waiting for the running root", reclaimed)
 			}
 			// Root detail retention precedes the owner-terminal proof, so this
 			// running-root shape remains pending without even a marker write.
@@ -983,8 +983,8 @@ func TestReclaimOneKeepsLiveChainPending(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reclaimOne with live work: %v", err)
 			}
-			if reclaimed {
-				t.Fatal("live chain was reclaimed")
+			if reclaimed != reclaimWaiting {
+				t.Fatalf("reclaim status = %q, want waiting for live chain work", reclaimed)
 			}
 			if after := acquisitionfixture.Snapshot(t, disposabledb.Owner(t)); after != before {
 				t.Fatal("live-chain reclamation guard mutated the graph")

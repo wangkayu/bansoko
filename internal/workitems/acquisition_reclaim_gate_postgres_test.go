@@ -33,7 +33,7 @@ func TestReclaimRetainsRunningAcquisitionWithoutSealedPlan(t *testing.T) {
 			}
 			for n := 0; n < 2; n++ {
 				got, err := service.reclaimOne(context.Background(), marker)
-				if err != nil || got {
+				if err != nil || got != reclaimWaiting {
 					t.Fatalf("reclaim=%v err=%v", got, err)
 				}
 				if before != acquisitionfixture.Snapshot(t, owner) {

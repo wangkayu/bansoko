@@ -58,11 +58,17 @@ var errOneShotChainRunning = errors.New("the acquisition root is still running")
 // OneShotReclaimResult summarizes one bounded RunPass pass.
 type OneShotReclaimResult struct {
 	Drained   int // running -> reclaim_pending
-	Blocked   int // proof failures -> cleanup_blocked (or deadline extended)
+	Blocked   int // newly transitioned to cleanup_blocked
 	Reclaimed int // reclaim_pending -> reclaiming -> cleaned
-	Rechecked int // cleanup_blocked rechecks evaluated
-	Revived   int // cleanup_blocked markers whose chain was still open -> running
+	Rechecked int // cleanup_blocked -> reclaim_pending
+	Extended  int // cleanup_blocked deadlines advanced
+	Revived   int // cleanup_blocked -> running
 	Purged    int // cleaned markers physically deleted after retention
+}
+
+// Changed reports whether the pass committed any visible changes.
+func (r OneShotReclaimResult) Changed() bool {
+	return r.Drained > 0 || r.Blocked > 0 || r.Reclaimed > 0 || r.Rechecked > 0 || r.Extended > 0 || r.Revived > 0 || r.Purged > 0
 }
 
 // OneShotReclaimService processes finite one-shot markers in bounded
@@ -190,33 +196,26 @@ func NewOneShotReclaimService(db *sql.DB, logger observabilityport.RuntimeLogger
 func (s *OneShotReclaimService) RunPass(ctx context.Context) (OneShotReclaimResult, error) {
 	var result OneShotReclaimResult
 	drained, blocked, err := s.drainCandidates(ctx)
+	result.Drained = drained
+	result.Blocked = blocked
 	if err != nil {
 		return result, err
 	}
-	result.Drained = drained
-	result.Blocked += blocked
 
 	reclaimed, blocked, err := s.reclaimDue(ctx)
-	if err != nil {
-		return result, err
-	}
 	result.Reclaimed = reclaimed
 	result.Blocked += blocked
-
-	rechecked, extended, revived, err := s.recheckBlocked(ctx)
 	if err != nil {
 		return result, err
 	}
-	result.Rechecked = rechecked
-	result.Blocked += extended
-	result.Revived = revived
 
-	purged, err := s.purgeCleaned(ctx)
+	result.Rechecked, result.Extended, result.Revived, err = s.recheckBlocked(ctx)
 	if err != nil {
 		return result, err
 	}
-	result.Purged = purged
-	return result, nil
+
+	result.Purged, err = s.purgeCleaned(ctx)
+	return result, err
 }
 
 func (s *OneShotReclaimService) logEvent(ctx context.Context, operation, reasonCode, message string) {
@@ -378,167 +377,130 @@ func (s *OneShotReclaimService) reclaimDue(ctx context.Context) (reclaimed, bloc
 		return 0, 0, err
 	}
 	for _, id := range ids {
-		done, blockErr := s.reclaimOne(ctx, id)
-		if blockErr != nil {
-			return reclaimed, blocked, blockErr
+		status, err := s.reclaimOne(ctx, id)
+		if err != nil {
+			return reclaimed, blocked, err
 		}
-		if done {
+		switch status {
+		case reclaimCleaned:
 			reclaimed++
-		} else {
+		case reclaimBlocked:
 			blocked++
 		}
 	}
 	return reclaimed, blocked, nil
 }
 
-func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string) (bool, error) {
+type oneShotReclaimStatus string
+
+const (
+	reclaimCleaned         oneShotReclaimStatus = "cleaned"
+	reclaimWaiting         oneShotReclaimStatus = "waiting"
+	reclaimContended       oneShotReclaimStatus = "contended"
+	reclaimBlocked         oneShotReclaimStatus = "blocked"
+	reclaimCompactRetained oneShotReclaimStatus = "compact_retained"
+)
+
+func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string) (oneShotReclaimStatus, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("begin one-shot reclamation: %w", err)
+		return "", fmt.Errorf("begin one-shot reclamation: %w", err)
 	}
 	defer tx.Rollback()
 	row, err := lockOneShotMarkerForUpdateTx(ctx, tx, markerID)
 	if errors.Is(err, ErrOneShotMarkerMissing) {
-		return false, nil
+		return reclaimContended, nil
 	}
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if row.State != OneShotStateReclaimPending {
-		return false, nil
+		return reclaimContended, nil
 	}
-	// Marker expiration never grants deletion of independent acquisition details:
-	// a running root, or a settled one whose detail_until has not passed, keeps
-	// the marker retained with nothing written. This read takes no
-	// management/root locks; the marker is the stable prefix.
+	due, err := persistence.New(tx).IsOneShotMarkerDue(ctx, markerID)
+	if err != nil {
+		return "", fmt.Errorf("read one-shot reclaim deadline: %w", err)
+	}
+	if !due {
+		return reclaimWaiting, nil
+	}
+	// Marker expiration never grants deletion of independent acquisition details.
+	// This read takes no management/root locks; the marker is the stable prefix.
+	now := s.evaluationNow()
 	var retained bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM acquisitions r WHERE r.id IN (`+oneShotRootsQuery+`) AND r.record_state='full' AND (r.state='running' OR r.detail_until>COALESCE($2::timestamptz,CURRENT_TIMESTAMP)))`, markerID, s.evaluationNow()).Scan(&retained); err != nil {
-		return false, fmt.Errorf("observe retained acquisition details: %w", err)
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM acquisitions r WHERE r.id IN (`+oneShotRootsQuery+`) AND r.record_state='full' AND (r.state='running' OR r.detail_until>COALESCE($2::timestamptz,CURRENT_TIMESTAMP)))`, markerID, now).Scan(&retained); err != nil {
+		return "", fmt.Errorf("observe retained acquisition details: %w", err)
 	}
 	if retained {
-		return false, nil
+		return reclaimWaiting, nil
 	}
 	graph, graphErr := s.loadAnchorsTx(ctx, tx, markerID)
 	if graphErr != nil {
-		if _, updateErr := s.blockMarkerTx(ctx, tx, markerID, "anchor_validation_failed", boundedText(graphErr.Error(), maxOneShotReason)); updateErr != nil {
-			return false, updateErr
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			return false, fmt.Errorf("commit one-shot cleanup_blocked: %w", commitErr)
-		}
-		s.logEvent(ctx, "oneshot_reclaim", "cleanup_blocked", "reclamation blocked: anchor validation failed")
-		return false, nil
+		return s.commitReclaimBlock(ctx, tx, markerID, oneShotCleanupBlock{"anchor_validation_failed", graphErr.Error()})
 	}
-	// The temporary owner row is now the serialization point shared with every
-	// effect entry (the lifecycle lives on managed_anime). Lock it before any
-	// child delete so reclamation keeps the marker -> owner -> child order and
-	// cannot invert against a concurrent acceptance that holds the owner row.
+	// Keep marker -> owner -> child order. The owner row serializes with
+	// effect entry before we prove eligibility and delete any child.
 	if graph.animeID != "" {
 		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM managed_anime WHERE id = $1 FOR UPDATE`, graph.animeID); err != nil {
-			return false, fmt.Errorf("lock temporary owner for reclamation: %w", err)
+			return "", fmt.Errorf("lock temporary owner for reclamation: %w", err)
 		}
 	}
-	if _, outcomeErr := s.evaluateChainTx(ctx, tx, graph); outcomeErr != nil {
-		if !errors.Is(outcomeErr, errOneShotChainRunning) {
-			live, liveErr := s.chainLiveTx(ctx, tx, graph)
-			if liveErr != nil {
-				return false, liveErr
-			}
-			if live {
-				return false, nil
-			}
-		} else {
-			return false, nil
-		}
-		if _, updateErr := s.blockMarkerTx(ctx, tx, markerID, "chain_unsettled", boundedText(outcomeErr.Error(), maxOneShotReason)); updateErr != nil {
-			return false, updateErr
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			return false, fmt.Errorf("commit one-shot cleanup_blocked: %w", commitErr)
-		}
-		s.logEvent(ctx, "oneshot_reclaim", "cleanup_blocked", "reclamation blocked: "+boundedText(outcomeErr.Error(), 160))
-		return false, nil
+	live, blocked, err := s.proveOneShotCleanupTx(ctx, tx, graph, row)
+	if err != nil {
+		return "", err
 	}
-	if live, liveErr := s.chainLiveTx(ctx, tx, graph); liveErr != nil {
-		return false, liveErr
-	} else if live {
-		return false, nil
+	if live {
+		return reclaimWaiting, nil
 	}
-	if len(row.Leases) > 0 {
-		if _, updateErr := s.blockMarkerTx(ctx, tx, markerID, "admission_ledger_not_drained", "the admission ledger must be empty before reclamation"); updateErr != nil {
-			return false, updateErr
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			return false, fmt.Errorf("commit one-shot cleanup_blocked: %w", commitErr)
-		}
-		return false, nil
-	}
-	if outcomeErr := s.proveQuiescentTx(ctx, tx, graph); outcomeErr != nil {
-		live, liveErr := s.chainLiveTx(ctx, tx, graph)
-		if liveErr != nil {
-			return false, liveErr
-		}
-		if live {
-			return false, nil
-		}
-		if _, updateErr := s.blockMarkerTx(ctx, tx, markerID, "quiescence_unproven", boundedText(outcomeErr.Error(), maxOneShotReason)); updateErr != nil {
-			return false, updateErr
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			return false, fmt.Errorf("commit one-shot cleanup_blocked: %w", commitErr)
-		}
-		s.logEvent(ctx, "oneshot_reclaim", "cleanup_blocked", "reclamation blocked: "+boundedText(outcomeErr.Error(), 160))
-		return false, nil
-	}
-	if table, err := unclassifiedOwnerDependentTx(ctx, tx, graph.animeID); err != nil {
-		return false, err
-	} else if table != "" {
-		if _, err := s.blockMarkerTx(ctx, tx, markerID, "unclassified_dependent", "the temporary owner still has rows in "+table); err != nil {
-			return false, err
-		}
-		if err := tx.Commit(); err != nil {
-			return false, fmt.Errorf("commit one-shot cleanup_blocked: %w", err)
-		}
-		s.logEvent(ctx, "oneshot_reclaim", "cleanup_blocked", "reclamation blocked: unclassified dependent in "+table)
-		return false, nil
+	if blocked != nil {
+		return s.commitReclaimBlock(ctx, tx, markerID, *blocked)
 	}
 	// Fenced drain phase: raise the epoch so any late worker's gate rejects
 	// with ONE_SHOT_RECLAIMING before it can start an external effect.
 	result, err := persistence.New(tx).EnterOneShotReclaiming(ctx, markerID)
 	if err != nil {
-		return false, fmt.Errorf("enter one-shot reclaiming: %w", err)
+		return "", fmt.Errorf("enter one-shot reclaiming: %w", err)
 	}
 	if affected, err := result.RowsAffected(); err != nil {
-		return false, fmt.Errorf("read one-shot reclaiming result: %w", err)
+		return "", fmt.Errorf("read one-shot reclaiming result: %w", err)
 	} else if affected != 1 {
-		return false, ErrOneShotMarkerMissing
+		return "", ErrOneShotMarkerMissing
 	}
-	// T20 compact of the marker's settled roots, evaluated with the same
-	// instant as the retained check above. The pins the temporary owner holds on
-	// root rows go first. Anything but a compacted root rolls the whole reclaim
-	// back unchanged.
-	if compacted, err := s.compactOneShotRootsTx(ctx, tx, markerID, graph); err != nil {
-		return false, err
+	// Compact with the same evaluation instant as the retained-root check.
+	// A refusal rolls back the marker's new epoch and any preceding deletes.
+	if compacted, err := s.compactOneShotRootsTx(ctx, tx, markerID, graph, now); err != nil {
+		return "", err
 	} else if !compacted {
-		return false, nil
+		return reclaimCompactRetained, nil
 	}
 	if err := deleteTemporaryOwnerGraphTx(ctx, tx, graph); err != nil {
-		return false, err
+		return "", err
 	}
 	result, err = persistence.New(tx).MarkOneShotCleaned(ctx, markerID)
 	if err != nil {
-		return false, fmt.Errorf("mark one-shot cleaned: %w", err)
+		return "", fmt.Errorf("mark one-shot cleaned: %w", err)
 	}
 	if affected, err := result.RowsAffected(); err != nil {
-		return false, fmt.Errorf("read one-shot cleaned result: %w", err)
+		return "", fmt.Errorf("read one-shot cleaned result: %w", err)
 	} else if affected != 1 {
-		return false, ErrOneShotMarkerMissing
+		return "", ErrOneShotMarkerMissing
 	}
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("commit one-shot reclamation: %w", err)
+		return "", fmt.Errorf("commit one-shot reclamation: %w", err)
 	}
 	s.logEvent(ctx, "oneshot_reclaim", "cleaned", "one-shot temporary owner graph reclaimed leaf-first")
-	return true, nil
+	return reclaimCleaned, nil
+}
+
+func (s *OneShotReclaimService) commitReclaimBlock(ctx context.Context, tx *sql.Tx, markerID string, block oneShotCleanupBlock) (oneShotReclaimStatus, error) {
+	if _, err := s.blockMarkerTx(ctx, tx, markerID, block.code, block.reason); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit one-shot cleanup_blocked: %w", err)
+	}
+	s.logEvent(ctx, "oneshot_reclaim", "cleanup_blocked", "reclamation blocked: "+boundedText(block.reason, 160))
+	return reclaimBlocked, nil
 }
 
 // recheckBlocked processes selected cleanup_blocked markers. A marker whose
@@ -562,7 +524,6 @@ func (s *OneShotReclaimService) recheckBlocked(ctx context.Context) (rechecked, 
 		case "passed":
 			rechecked++
 		case "extended":
-			rechecked++
 			extended++
 		}
 	}
@@ -603,27 +564,27 @@ func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string)
 			return "revived", nil
 		}
 	}
-	var due bool
-	if err := tx.QueryRowContext(ctx, `SELECT retention_until <= CURRENT_TIMESTAMP FROM one_shot_acquisitions WHERE id=$1`, markerID).Scan(&due); err != nil {
+	due, err := persistence.New(tx).IsOneShotMarkerDue(ctx, markerID)
+	if err != nil {
 		return "", fmt.Errorf("read one-shot recheck deadline: %w", err)
 	}
 	if !due {
 		return "", nil // selected as open but cannot resume: recheck when due
 	}
 	if graphErr == nil {
-		// A marker may have become cleanup_blocked because an owner was still
-		// settling. Rechecking the ledger and live WorkItems alone is not enough:
-		// prove the complete terminal chain again before returning to
-		// reclaim_pending.
-		_, evaluateErr := s.evaluateChainTx(ctx, tx, graph)
-		if evaluateErr == nil && len(row.Leases) == 0 && s.proveQuiescentTx(ctx, tx, graph) == nil {
+		live, blocked, err := s.proveOneShotCleanupTx(ctx, tx, graph, row)
+		if err != nil {
+			return "", err
+		}
+		if !live && blocked == nil {
 			deadline, err := s.reclaimDeadlineTx(ctx, tx)
 			if err != nil {
 				return "", err
 			}
 			result, err := persistence.New(tx).UnblockOneShotMarker(ctx, persistence.UnblockOneShotMarkerParams{
-				RetentionUntil: sql.NullTime{Time: deadline, Valid: true},
-				MarkerID:       markerID,
+				RetentionUntil:   deadline,
+				MaxRetentionDays: int32(MaxRetentionDays),
+				MarkerID:         markerID,
 			})
 			if err != nil {
 				return "", fmt.Errorf("unblock one-shot marker: %w", err)
@@ -651,6 +612,8 @@ func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string)
 	}
 	if affected, err := result.RowsAffected(); err != nil {
 		return "", fmt.Errorf("read one-shot deadline extension result: %w", err)
+	} else if affected == 0 {
+		return "", nil // deadline did not advance; leave the marker untouched
 	} else if affected != 1 {
 		return "", ErrOneShotMarkerMissing
 	}
@@ -974,18 +937,36 @@ func (s *OneShotReclaimService) assertOwnersSettledTx(ctx context.Context, tx *s
 	return nil
 }
 
-// proveQuiescentTx is the reclamation-time eligibility proof: no live
-// WorkItem for any anchored owner and no continuation obligation (there is no
-// autonomous one-shot dispatcher, so live items are the only obligations).
-func (s *OneShotReclaimService) proveQuiescentTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
-	live, err := s.hasLiveWorkItemsTx(ctx, tx, graph)
+type oneShotCleanupBlock struct {
+	code   string
+	reason string
+}
+
+// proveOneShotCleanupTx is shared by reclaim and recheck under the marker
+// lock. An open chain waits for its own work to settle. A settled chain
+// needs a drained ledger and no owner rows outside the deletion scope.
+func (s *OneShotReclaimService) proveOneShotCleanupTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph, row oneShotMarkerRow) (live bool, blocked *oneShotCleanupBlock, err error) {
+	_, outcomeErr := s.evaluateChainTx(ctx, tx, graph)
+	if errors.Is(outcomeErr, errOneShotChainRunning) {
+		return true, nil, nil
+	}
+	if live, err := s.chainLiveTx(ctx, tx, graph); err != nil || live {
+		return live, nil, err
+	}
+	if outcomeErr != nil {
+		return false, &oneShotCleanupBlock{"chain_unsettled", outcomeErr.Error()}, nil
+	}
+	if len(row.Leases) > 0 {
+		return false, &oneShotCleanupBlock{"admission_ledger_not_drained", "the admission ledger must be empty before reclamation"}, nil
+	}
+	table, err := unclassifiedOwnerDependentTx(ctx, tx, graph.animeID)
 	if err != nil {
-		return err
+		return false, nil, err
 	}
-	if live {
-		return errors.New("a related WorkItem is still available or leased")
+	if table != "" {
+		return false, &oneShotCleanupBlock{"unclassified_dependent", "the temporary owner still has rows in " + table}, nil
 	}
-	return nil
+	return false, nil, nil
 }
 
 // chainLiveTx reports live work anywhere in the marker's chain: the anchored
@@ -1168,7 +1149,7 @@ ORDER BY c.table_name`, pq.Array(oneShotClassifiedOwnerTables))
 // reclaiming in this transaction: compact accepts the temporary Release that
 // still names the root's task only because deleteTemporaryOwnerGraphTx deletes
 // that Release before commit (otherwise compact reports release_bound).
-func (s *OneShotReclaimService) compactOneShotRootsTx(ctx context.Context, tx *sql.Tx, markerID string, graph oneShotGraph) (bool, error) {
+func (s *OneShotReclaimService) compactOneShotRootsTx(ctx context.Context, tx *sql.Tx, markerID string, graph oneShotGraph, now sql.NullTime) (bool, error) {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM placement_obligations WHERE file_operation_id IN (SELECT o.id FROM file_operations o WHERE o.acquisition_id IN (`+oneShotRootsQuery+`))`, markerID); err != nil {
 		return false, fmt.Errorf("delete one-shot placement_obligations: %w", err)
 	}
@@ -1192,10 +1173,9 @@ func (s *OneShotReclaimService) compactOneShotRootsTx(ctx context.Context, tx *s
 	if err := rows.Err(); err != nil {
 		return false, err
 	}
-	now := s.evaluationNow()
 	for _, root := range roots {
 		var raw []byte
-		if err := tx.QueryRowContext(ctx, `SELECT acquisition_compact($1,'detail_expired',$2)`, root, now).Scan(&raw); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT acquisition_compact($1,'detail_expired',COALESCE($2::timestamptz,CURRENT_TIMESTAMP))`, root, now).Scan(&raw); err != nil {
 			return false, fmt.Errorf("compact one-shot root %s: %w", root, err)
 		}
 		var out struct {

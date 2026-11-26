@@ -631,17 +631,21 @@ func (q *Queries) EnterOneShotReclaiming(ctx context.Context, markerID string) (
 }
 
 const extendOneShotCleanupBlocked = `-- name: ExtendOneShotCleanupBlocked :execresult
-UPDATE one_shot_acquisitions
-SET retention_until = GREATEST(
-        retention_until,
-        LEAST(
-            CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'),
-            COALESCE(terminal_at, CURRENT_TIMESTAMP) + ($2::int * INTERVAL '1 day')
-        )
-    ),
-    version = version + 1,
+WITH proposed AS (
+    SELECT blocked.id, LEAST(
+        CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'),
+        COALESCE(blocked.terminal_at, CURRENT_TIMESTAMP) + ($2::int * INTERVAL '1 day')
+    ) AS deadline
+    FROM one_shot_acquisitions blocked
+    WHERE blocked.id = $3
+)
+UPDATE one_shot_acquisitions marker
+SET retention_until = proposed.deadline,
+    version = marker.version + 1,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $3
+FROM proposed
+WHERE marker.id = proposed.id
+  AND (marker.retention_until IS NULL OR marker.retention_until < proposed.deadline)
 `
 
 type ExtendOneShotCleanupBlockedParams struct {
@@ -652,17 +656,21 @@ type ExtendOneShotCleanupBlockedParams struct {
 
 // ExtendOneShotCleanupBlocked
 //
-//	UPDATE one_shot_acquisitions
-//	SET retention_until = GREATEST(
-//	        retention_until,
-//	        LEAST(
-//	            CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'),
-//	            COALESCE(terminal_at, CURRENT_TIMESTAMP) + ($2::int * INTERVAL '1 day')
-//	        )
-//	    ),
-//	    version = version + 1,
+//	WITH proposed AS (
+//	    SELECT blocked.id, LEAST(
+//	        CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'),
+//	        COALESCE(blocked.terminal_at, CURRENT_TIMESTAMP) + ($2::int * INTERVAL '1 day')
+//	    ) AS deadline
+//	    FROM one_shot_acquisitions blocked
+//	    WHERE blocked.id = $3
+//	)
+//	UPDATE one_shot_acquisitions marker
+//	SET retention_until = proposed.deadline,
+//	    version = marker.version + 1,
 //	    updated_at = CURRENT_TIMESTAMP
-//	WHERE id = $3
+//	FROM proposed
+//	WHERE marker.id = proposed.id
+//	  AND (marker.retention_until IS NULL OR marker.retention_until < proposed.deadline)
 func (q *Queries) ExtendOneShotCleanupBlocked(ctx context.Context, arg ExtendOneShotCleanupBlockedParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, extendOneShotCleanupBlocked, arg.RetentionDays, arg.MaxRetentionDays, arg.MarkerID)
 }
@@ -820,24 +828,6 @@ func (q *Queries) GetManualRetryIdempotency(ctx context.Context, arg GetManualRe
 	return i, err
 }
 
-const getOneShotReclaimUntil = `-- name: GetOneShotReclaimUntil :one
-SELECT retention_until
-FROM one_shot_acquisitions
-WHERE id = $1
-`
-
-// GetOneShotReclaimUntil
-//
-//	SELECT retention_until
-//	FROM one_shot_acquisitions
-//	WHERE id = $1
-func (q *Queries) GetOneShotReclaimUntil(ctx context.Context, markerID string) (sql.NullTime, error) {
-	row := q.db.QueryRowContext(ctx, getOneShotReclaimUntil, markerID)
-	var retention_until sql.NullTime
-	err := row.Scan(&retention_until)
-	return retention_until, err
-}
-
 const hasLiveFileMaintenanceWorkItems = `-- name: HasLiveFileMaintenanceWorkItems :one
 SELECT EXISTS (
     SELECT 1
@@ -958,6 +948,24 @@ func (q *Queries) HasLiveOneShotWorkItems(ctx context.Context, arg HasLiveOneSho
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const isOneShotMarkerDue = `-- name: IsOneShotMarkerDue :one
+SELECT COALESCE(retention_until <= CURRENT_TIMESTAMP, false)::boolean AS due
+FROM one_shot_acquisitions
+WHERE id = $1
+`
+
+// IsOneShotMarkerDue
+//
+//	SELECT COALESCE(retention_until <= CURRENT_TIMESTAMP, false)::boolean AS due
+//	FROM one_shot_acquisitions
+//	WHERE id = $1
+func (q *Queries) IsOneShotMarkerDue(ctx context.Context, markerID string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isOneShotMarkerDue, markerID)
+	var due bool
+	err := row.Scan(&due)
+	return due, err
 }
 
 const listAnchoredArtifactStates = `-- name: ListAnchoredArtifactStates :many
@@ -1259,21 +1267,39 @@ func (q *Queries) ListDueOneShotMarkers(ctx context.Context, batchSize int32) ([
 }
 
 const listDueReclaimPendingOneShotMarkers = `-- name: ListDueReclaimPendingOneShotMarkers :many
-SELECT id
-FROM one_shot_acquisitions
-WHERE state = 'reclaim_pending'
-  AND retention_until <= CURRENT_TIMESTAMP
-ORDER BY retention_until NULLS LAST, id
+SELECT marker.id
+FROM one_shot_acquisitions marker
+WHERE marker.state = 'reclaim_pending'
+  AND marker.retention_until <= CURRENT_TIMESTAMP
+  AND NOT EXISTS (
+      SELECT 1
+      FROM acquisitions root
+      WHERE root.record_state = 'full'
+        AND (root.state = 'running' OR root.detail_until > CURRENT_TIMESTAMP)
+        AND (root.origin_managed_anime_ref = marker.managed_anime_id OR root.id = (
+            SELECT task.acquisition_id FROM download_tasks task WHERE task.id = marker.download_task_id
+        ))
+  )
+ORDER BY marker.retention_until NULLS LAST, marker.id
 LIMIT $1
 `
 
 // ListDueReclaimPendingOneShotMarkers
 //
-//	SELECT id
-//	FROM one_shot_acquisitions
-//	WHERE state = 'reclaim_pending'
-//	  AND retention_until <= CURRENT_TIMESTAMP
-//	ORDER BY retention_until NULLS LAST, id
+//	SELECT marker.id
+//	FROM one_shot_acquisitions marker
+//	WHERE marker.state = 'reclaim_pending'
+//	  AND marker.retention_until <= CURRENT_TIMESTAMP
+//	  AND NOT EXISTS (
+//	      SELECT 1
+//	      FROM acquisitions root
+//	      WHERE root.record_state = 'full'
+//	        AND (root.state = 'running' OR root.detail_until > CURRENT_TIMESTAMP)
+//	        AND (root.origin_managed_anime_ref = marker.managed_anime_id OR root.id = (
+//	            SELECT task.acquisition_id FROM download_tasks task WHERE task.id = marker.download_task_id
+//	        ))
+//	  )
+//	ORDER BY marker.retention_until NULLS LAST, marker.id
 //	LIMIT $1
 func (q *Queries) ListDueReclaimPendingOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listDueReclaimPendingOneShotMarkers, batchSize)
@@ -1939,27 +1965,34 @@ func (q *Queries) SynchronizeWorkItemOwnerVersion(ctx context.Context, arg Synch
 const unblockOneShotMarker = `-- name: UnblockOneShotMarker :execresult
 UPDATE one_shot_acquisitions
 SET state = 'reclaim_pending',
-    retention_until = GREATEST(retention_until, $1),
+    retention_until = LEAST(
+        GREATEST(retention_until, $1::timestamptz),
+        terminal_at + ($2::int * INTERVAL '1 day')
+    ),
     version = version + 1,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $2
+WHERE id = $3
 `
 
 type UnblockOneShotMarkerParams struct {
-	RetentionUntil sql.NullTime
-	MarkerID       string
+	RetentionUntil   time.Time
+	MaxRetentionDays int32
+	MarkerID         string
 }
 
 // UnblockOneShotMarker
 //
 //	UPDATE one_shot_acquisitions
 //	SET state = 'reclaim_pending',
-//	    retention_until = GREATEST(retention_until, $1),
+//	    retention_until = LEAST(
+//	        GREATEST(retention_until, $1::timestamptz),
+//	        terminal_at + ($2::int * INTERVAL '1 day')
+//	    ),
 //	    version = version + 1,
 //	    updated_at = CURRENT_TIMESTAMP
-//	WHERE id = $2
+//	WHERE id = $3
 func (q *Queries) UnblockOneShotMarker(ctx context.Context, arg UnblockOneShotMarkerParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, unblockOneShotMarker, arg.RetentionUntil, arg.MarkerID)
+	return q.db.ExecContext(ctx, unblockOneShotMarker, arg.RetentionUntil, arg.MaxRetentionDays, arg.MarkerID)
 }
 
 const writeOneShotAdmissionLedger = `-- name: WriteOneShotAdmissionLedger :execresult
