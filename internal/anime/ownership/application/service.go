@@ -105,6 +105,11 @@ func (s *Service) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.Business
 	}
 }
 
+// BusinessDeliveryReady reports whether ownership notifications have a sink.
+func (s *Service) BusinessDeliveryReady() bool {
+	return s != nil && s.notifications != nil
+}
+
 // admitSubscriptionChangeTx admits one subscription_changed notice inside the
 // transition's transaction. version is the subscription version the
 // transition commits. Only a first start reads the work binding: the ids and

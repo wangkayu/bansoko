@@ -178,6 +178,11 @@ func NewInvalidator(hub *events.Hub) *Invalidator {
 	return &Invalidator{hub: hub}
 }
 
+// Configured reports whether the invalidator can publish events.
+func (i *Invalidator) Configured() bool {
+	return i != nil && i.hub != nil
+}
+
 func (i *Invalidator) Publish(targets ...string) {
 	if i == nil || i.hub == nil {
 		return

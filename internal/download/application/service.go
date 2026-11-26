@@ -133,6 +133,16 @@ func (s *Service) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.Business
 	}
 }
 
+// BusinessDeliveryReady reports whether download notifications have a sink.
+func (s *Service) BusinessDeliveryReady() bool {
+	return s != nil && s.downloadSubmittedSink != nil
+}
+
+// EventHubReady reports whether the service can publish invalidations.
+func (s *Service) EventHubReady() bool {
+	return s != nil && s.eventHub != nil
+}
+
 // Handle dispatches only the two qB owner kinds.
 func (s *Service) Handle(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
 	if s == nil || s.db == nil || s.workItems == nil || s.provider == nil || s.runtimeConfig == nil {

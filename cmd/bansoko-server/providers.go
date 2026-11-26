@@ -147,10 +147,8 @@ func providePluginRuntime(
 	deliverHandler.SetNotificationImageResolver(metadataadapter.NewNotificationImageResolver(db, posterConnections, posterClientResolver, metadataSecrets))
 	deliverHandler.SetDiagnosticRecorder(observabilityService, logger)
 	rssService.SetDiagnosticRecorder(observabilityService, logger)
-	rssService.SetBusinessDeliveryEnqueuer(targetService)
-	downloadService.SetBusinessDeliveryEnqueuer(targetService)
 	downloadService.SetDiagnosticRecorder(observabilityService, logger)
-	fileOperationService.SetBusinessDeliveryEnqueuer(targetService)
+	// Surface after-commit placement/index and replacement-trigger failures.
 	fileOperationService.SetDiagnosticRecorder(observabilityService, logger)
 	return &pluginRuntime{
 		targetService:  targetService,
@@ -498,10 +496,6 @@ func provideApplicationGraph(
 	alignmentOperations := fileMaintenanceGraph.alignmentOperations
 	alignmentOperations.SetActivityWriter(observabilityService)
 	replacementTrigger.SetDiagnostics(observabilityService, logger)
-	// The file-operation owner's after-commit diagnostics are the visible
-	// channel for the independent placement/index and replacement-trigger
-	// stages, including the stable failure reason for a bounded retry.
-	fileOperationService.SetDiagnosticRecorder(observabilityService, logger)
 
 	catalogReaders := map[string]catalogapplication.Reader{
 		catalogapplication.ProviderAniBT: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver},

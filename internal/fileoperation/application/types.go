@@ -13,7 +13,6 @@ import (
 	"bansoko/internal/library/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
-	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/postprocessing/naming"
 	facts "bansoko/internal/release/facts"
 	"bansoko/internal/workitems"
@@ -111,20 +110,19 @@ type PlacementSink interface {
 
 // Service owns file_operations and file_execute WorkItems.
 type Service struct {
-	db                   *sql.DB
-	workItems            *workitems.Store
-	executor             FileExecutor
-	observer             FileObserver
-	parentAuthorizer     ParentIdentityAuthorizer
-	now                  func() time.Time
-	businessDeliverySink plugintargetport.BusinessDeliveryEnqueuer
-	diagnostics          observabilityport.Recorder
-	activityWriter       observabilityport.ActivityWriter
-	logger               observabilityport.RuntimeLogger
-	eventHub             *events.Hub
-	placementSink        PlacementSink
-	placementRetryAfter  time.Duration
-	mediaFacts           facts.MediaRepository
+	db                  *sql.DB
+	workItems           *workitems.Store
+	executor            FileExecutor
+	observer            FileObserver
+	parentAuthorizer    ParentIdentityAuthorizer
+	now                 func() time.Time
+	diagnostics         observabilityport.Recorder
+	activityWriter      observabilityport.ActivityWriter
+	logger              observabilityport.RuntimeLogger
+	eventHub            *events.Hub
+	placementSink       PlacementSink
+	placementRetryAfter time.Duration
+	mediaFacts          facts.MediaRepository
 	// episodeTitles resolves the provider episode titles (bgm.ep_title /
 	// tmdb.ep_title) the rename render queries from the persistent cache.
 	// Nil means not wired and every lookup surfaces a transient error; the
@@ -181,6 +179,11 @@ func (s *Service) SetActivityWriter(writer observabilityport.ActivityWriter) {
 func (s *Service) SetDiagnosticRecorder(recorder observabilityport.Recorder, logger observabilityport.RuntimeLogger) {
 	s.diagnostics = recorder
 	s.logger = logger
+}
+
+// DiagnosticRecorderReady reports whether after-commit diagnostics have a recorder.
+func (s *Service) DiagnosticRecorderReady() bool {
+	return s != nil && s.diagnostics != nil
 }
 
 // SetEventHub wires the optional in-process read-model invalidation boundary.

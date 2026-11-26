@@ -137,6 +137,11 @@ func (s *ReplacementDecisionService) SetBusinessDeliveryEnqueuer(enqueuer plugin
 	}
 }
 
+// BusinessDeliveryReady reports whether replacement decisions have a notification sink.
+func (s *ReplacementDecisionService) BusinessDeliveryReady() bool {
+	return s != nil && s.notifications != nil
+}
+
 // SetCleanupHandoff wires the cleanup admission used by settlement.
 func (s *ReplacementDecisionService) SetCleanupHandoff(cleanup *CleanupService) {
 	if s != nil {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	plugintargetport "bansoko/internal/plugintarget/port"
 	facts "bansoko/internal/release/facts"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -43,14 +42,6 @@ func NewService(db *sql.DB, executor FileExecutor, observer FileObserver, clocks
 		mediaFacts: facts.NewStore(db),
 		now:        now,
 	}, nil
-}
-
-// SetBusinessDeliveryEnqueuer wires the optional clean-V2 file-operation
-// notification boundary. Notifications are admitted by the owner writer.
-func (s *Service) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.BusinessDeliveryEnqueuer) {
-	if s != nil {
-		s.businessDeliverySink = enqueuer
-	}
 }
 
 var _ worker.Handler = (*Service)(nil)

@@ -89,6 +89,11 @@ func (s *PlacementService) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport
 	}
 }
 
+// BusinessDeliveryReady reports whether placement notifications have a sink.
+func (s *PlacementService) BusinessDeliveryReady() bool {
+	return s != nil && s.notifications != nil
+}
+
 // displacedSinks groups the two sinks a displacement narrates to.
 func (s *PlacementService) displacedSinks() displacedSinks {
 	if s == nil {

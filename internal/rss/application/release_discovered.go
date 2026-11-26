@@ -26,6 +26,11 @@ func (s *Service) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.Business
 	s.notifications = enqueuer
 }
 
+// BusinessDeliveryReady reports whether release notifications have a sink.
+func (s *Service) BusinessDeliveryReady() bool {
+	return s != nil && s.notifications != nil
+}
+
 // sourceHasBaselineTx reports whether the source already completed a
 // successful refresh before this one. The first successful scan of a new
 // subscription or a newly linked source only records the baseline: items

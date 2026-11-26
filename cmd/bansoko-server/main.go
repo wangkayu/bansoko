@@ -389,20 +389,12 @@ func runServe(args []string) {
 	artifactService := coreGraph.artifactService
 	fileOperationService := coreGraph.fileOperationService
 	reconciliationService := coreGraph.reconciliationService
-	// The confirm journal is the same observability service the rest of the
-	// business history writes through; it is built early so the recovery
-	// confirm provider can receive it alongside the other owners.
-	observabilityService, err := observabilityapplication.NewService(db)
-	if err != nil {
-		fatalStartup(runtimeLogger, "observability service failed", "observability_service_failed")
-	}
 	// The 刷新元数据 re-pull (the single positive-cache bypass) is shared by the
 	// metadata binding surface and the 对齐（刷新元数据）alignment variant; the
 	// alignment lane reaches it through the ownership application. The port is
 	// planted on the graph before the file-maintenance service is built so the
 	// provider can hand it to the concrete service.
 	fileMaintenanceGraph.metadataRefresher = metadataRefresherOwnershipAdapter{ownership: ownershipService}
-	fileMaintenanceService := initializeFileMaintenanceService(db, fileMaintenanceGraph, reconciliationService, observabilityService, runtimeLogger)
 
 	// The provider episode titles (bgm.ep_title / tmdb.ep_title) share one
 	// cache-first Querier across the whitelisted naming renders and
@@ -451,7 +443,8 @@ func runServe(args []string) {
 	retryService := applicationGraph.retryService
 	catalogDBSource := applicationGraph.catalogDBSource
 	metadataSearcher := applicationGraph.metadataSearcher
-	observabilityService = applicationGraph.observabilityService
+	observabilityService := applicationGraph.observabilityService
+	fileMaintenanceService := initializeFileMaintenanceService(db, fileMaintenanceGraph, reconciliationService, observabilityService, runtimeLogger)
 	catalogService := applicationGraph.catalogService
 	retentionJanitor := applicationGraph.retentionJanitor
 	oneShotReclaim := applicationGraph.oneShotReclaim
@@ -500,12 +493,9 @@ func runServe(args []string) {
 		fatalStartup(runtimeLogger, "plugin runtime build failed", "plugin_runtime_build_failed")
 	}
 	admissionResolver := pluginRuntime.admissionRunner
-	draftService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
-	ownershipService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
-	cleanupService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
-	replacementDecisions.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
-	placementService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
-	fileMaintenanceGraph.alignmentOperations.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
+	if err := wireProductionBusinessPublishers(coreGraph, fileMaintenanceGraph, draftService, ownershipService, pluginRuntime.targetService, eventHub, observabilityService); err != nil {
+		fatalStartup(runtimeLogger, "business publisher wiring is incomplete: "+err.Error(), "business_publisher_wiring_failed")
+	}
 
 	// The maintenance gate is the single runtime write gate for Web/CLI/MCP.
 	// It is created BEFORE any background producer or worker exists: a boot in

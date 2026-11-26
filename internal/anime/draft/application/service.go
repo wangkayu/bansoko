@@ -96,6 +96,11 @@ func (s *Service) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.Business
 	}
 }
 
+// BusinessDeliveryReady reports whether subscription notifications have a sink.
+func (s *Service) BusinessDeliveryReady() bool {
+	return s != nil && s.notifications != nil
+}
+
 // NewService validates and creates the draft application service.
 func NewService(db *sql.DB, deps Dependencies) (*Service, error) {
 	if db == nil {
@@ -155,6 +160,16 @@ func (s *Service) SetEventHub(hub *events.Hub) {
 	if s != nil {
 		s.invalidator = animeapplication.NewInvalidator(hub)
 	}
+}
+
+// EventHubReady reports whether the service can publish invalidations.
+func (s *Service) EventHubReady() bool {
+	return s != nil && s.invalidator.Configured()
+}
+
+// ObservabilityRecorderReady reports whether draft diagnostics have a recorder.
+func (s *Service) ObservabilityRecorderReady() bool {
+	return s != nil && s.observability != nil
 }
 
 // SetGroupDiscoveryProvider wires the per-anime group discovery backend the

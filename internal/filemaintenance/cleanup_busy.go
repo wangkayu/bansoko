@@ -364,3 +364,8 @@ func (s *CleanupService) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.B
 		s.notifications = enqueuer
 	}
 }
+
+// BusinessDeliveryReady reports whether cleanup notifications have a sink.
+func (s *CleanupService) BusinessDeliveryReady() bool {
+	return s != nil && s.notifications != nil
+}
