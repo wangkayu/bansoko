@@ -1432,7 +1432,7 @@ function MetadataMatchDialog({
         )}
 
         {selected && retainedWorkId && (
-          <p role="status" className="metadata-match-season-status">
+          <p role="status" className="metadata-match-retain-notice">
             {t("forms.retainUnverifiedBinding", {
               provider: PROVIDER_DIALOG_LABELS[provider],
               otherProvider: PROVIDER_DIALOG_LABELS[otherProvider],

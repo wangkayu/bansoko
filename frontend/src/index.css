@@ -2348,6 +2348,8 @@ h1, h2, h3, h4, h5, h6 {
 .metadata-match-spinner { animation: spin 1s linear infinite; }
 .metadata-match-error,
 .metadata-match-validation-error { margin: 0; color: hsl(var(--status-offline)); font-size: 0.75rem; line-height: 1.5; }
+.metadata-match-season-status { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.75rem; line-height: 1.5; }
+.metadata-match-retain-notice { margin: 0; border: 1px solid hsl(var(--status-warning) / 0.35); border-radius: var(--radius); background: hsl(var(--status-warning) / 0.08); padding: 0.5rem 0.75rem; color: hsl(var(--foreground)); font-size: 0.75rem; line-height: 1.5; }
 .metadata-match-empty { margin: 0; border: 1px dashed hsl(var(--border)); border-radius: 0.375rem; padding: 0.75rem; color: hsl(var(--muted-foreground)); font-size: 0.75rem; line-height: 1.5; text-align: center; }
 .metadata-match-option { display: flex; gap: 0.75rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); padding: 0.5rem; text-align: left; }
 .metadata-match-option:hover { background: hsl(var(--muted) / 0.4); }
