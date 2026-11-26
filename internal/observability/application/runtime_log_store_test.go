@@ -395,7 +395,14 @@ func TestRuntimeLogStoreEvictsOldestClosedVolumesAtTheTotalBound(t *testing.T) {
 	if len(volumes) == 0 || volumes[0].Name() == "2026-11-18-001.log" {
 		t.Fatalf("oldest volume was not evicted: %v", volumeNames(volumes))
 	}
-	logger := NewPersistentRuntimeLogger(io.Discard, dir)
+	// Reopen with the fixture clock as well: wall time would eventually age the
+	// fixed-date volumes past the retention window and erase what this reads.
+	restarted := NewRuntimeLogStore(RuntimeLogStoreOptions{
+		Dir: dir, MaxVolumeBytes: volumeBudget, MaxTotalBytes: volumeBudget * 2,
+		Retention: time.Hour, Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = restarted.Close() })
+	logger := NewTeedRuntimeLoggerWithStore(io.Discard, restarted)
 	t.Cleanup(func() { _ = logger.Close() })
 	page := readRuntimeLogTestPage(t, logger, RuntimeLogQuery{Level: RuntimeLogAll, Limit: 100})
 	if len(page.Entries) == 0 {
