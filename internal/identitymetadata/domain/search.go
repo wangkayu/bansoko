@@ -114,8 +114,14 @@ type SearchSnapshot struct {
 // Section is "main" or "special" for providers that distinguish them (Bangumi);
 // TMDB season lists leave it empty because a season is one section.
 type CandidateEpisode struct {
-	Number  int    `json:"episode"`
-	Title   string `json:"title,omitempty"`
-	AirDate string `json:"air_date,omitempty"`
-	Section string `json:"section,omitempty"`
+	Number         int    `json:"episode"`
+	Title          string `json:"title,omitempty"`
+	OriginalTitle  string `json:"original_title,omitempty"`
+	AirDate        string `json:"air_date,omitempty"`
+	Section        string `json:"section,omitempty"`
+	Duration       string `json:"duration,omitempty"`
+	RuntimeMinutes *int   `json:"runtime_minutes,omitempty"`
+	// StillURL is the provider's episode still address, never emitted as is.
+	StillURL string `json:"-"`
+	Overview string `json:"overview,omitempty"`
 }

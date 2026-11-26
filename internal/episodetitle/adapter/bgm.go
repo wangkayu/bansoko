@@ -77,13 +77,7 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 	query.Set("type", strconv.Itoa(bgmEpisodeTypeMain))
 	parsed.RawQuery = query.Encode()
 	var payload struct {
-		Data []struct {
-			Type    int             `json:"type"`
-			Name    string          `json:"name"`
-			NameCN  string          `json:"name_cn"`
-			Airdate string          `json:"airdate"`
-			Ep      json.RawMessage `json:"ep"`
-		} `json:"data"`
+		Data []bgmEpisode `json:"data"`
 	}
 	if err := getJSON(ctx, client, parsed, "", &payload); err != nil {
 		return episodetitle.List{}, fmt.Errorf("request BGM subject episodes: %w", err)
@@ -101,11 +95,10 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 			// decimal ep numbers like 1.5) are not tracked regular episodes.
 			continue
 		}
-		title := strings.TrimSpace(item.NameCN)
-		if title == "" {
-			title = strings.TrimSpace(item.Name)
-		}
-		episodes = append(episodes, episodetitle.Episode{Number: number, Title: title, AirDate: strings.TrimSpace(item.Airdate)})
+		episodes = append(episodes, episodetitle.Episode{
+			Number: number, Title: item.title(), OriginalTitle: strings.TrimSpace(item.Name),
+			AirDate: strings.TrimSpace(item.Airdate), Duration: item.Duration,
+		})
 	}
 	return episodetitle.List{Episodes: episodes}, nil
 }
@@ -142,14 +135,22 @@ const (
 	bgmEpisodeTypeSpecial = 1
 )
 
-// bgmSectionedEpisode is one item of the v0 subject episode payload. ep has
-// been observed as both a JSON number and a string, so it stays raw here.
-type bgmSectionedEpisode struct {
-	Type    int             `json:"type"`
-	Name    string          `json:"name"`
-	NameCN  string          `json:"name_cn"`
-	Airdate string          `json:"airdate"`
-	Ep      json.RawMessage `json:"ep"`
+// bgmEpisode is one item of the v0 subject episode payload. ep has been
+// observed as both a JSON number and a string, so it stays raw here.
+type bgmEpisode struct {
+	Type     int             `json:"type"`
+	Name     string          `json:"name"`
+	NameCN   string          `json:"name_cn"`
+	Airdate  string          `json:"airdate"`
+	Duration string          `json:"duration"`
+	Ep       json.RawMessage `json:"ep"`
+}
+
+func (item bgmEpisode) title() string {
+	if title := strings.TrimSpace(item.NameCN); title != "" {
+		return title
+	}
+	return strings.TrimSpace(item.Name)
 }
 
 // SectionedEpisodes implements episodetitle.SectionedClient. The whole subject
@@ -175,8 +176,8 @@ func (c BGMClient) SectionedEpisodes(ctx context.Context, key episodetitle.Key) 
 		query.Set("offset", strconv.Itoa(offset))
 		page.RawQuery = query.Encode()
 		var payload struct {
-			Data  []bgmSectionedEpisode `json:"data"`
-			Total int                   `json:"total"`
+			Data  []bgmEpisode `json:"data"`
+			Total int          `json:"total"`
 		}
 		if err := getJSON(ctx, client, &page, "", &payload); err != nil {
 			return episodetitle.SectionedList{}, fmt.Errorf("request BGM subject episodes: %w", err)
@@ -191,12 +192,9 @@ func (c BGMClient) SectionedEpisodes(ctx context.Context, key episodetitle.Key) 
 			if !ok || number == 0 {
 				number = ordinals[section]
 			}
-			title := strings.TrimSpace(item.NameCN)
-			if title == "" {
-				title = strings.TrimSpace(item.Name)
-			}
 			episodes = append(episodes, episodetitle.SectionedEpisode{
-				Number: number, Title: title, AirDate: strings.TrimSpace(item.Airdate), Section: section,
+				Number: number, Title: item.title(), OriginalTitle: strings.TrimSpace(item.Name),
+				AirDate: strings.TrimSpace(item.Airdate), Duration: item.Duration, Section: section,
 			})
 		}
 		if len(payload.Data) < bgmEpisodePageSize || (payload.Total > 0 && offset+bgmEpisodePageSize >= payload.Total) {

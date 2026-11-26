@@ -20,11 +20,15 @@ type Source string
 
 const SourceTMDB Source = "tmdb"
 
+const DefaultTMDBLanguage = "zh-CN"
+
 // Key identifies one cached episode list. Season is the TMDB season number.
+// An empty Language uses the provider default.
 type Key struct {
-	Source Source
-	WorkID string
-	Season int
+	Source   Source
+	WorkID   string
+	Season   int
+	Language string
 }
 
 // List is the provider's ordered episode list of one season with air dates;
@@ -35,9 +39,17 @@ type List struct {
 
 // Episode is one entry of a provider season list.
 type Episode struct {
-	Number  int
-	Title   string
-	AirDate string
+	Number         int
+	Title          string
+	OriginalTitle  string
+	AirDate        string
+	Duration       string
+	RuntimeMinutes *int
+	// StillURL is the provider's own episode still address. Callers must
+	// never emit it: it is registered with the cover proxy and replaced by a
+	// same-origin path.
+	StillURL string
+	Overview string
 }
 
 // Section classifies one entry of a provider's episode list. Candidate
@@ -53,10 +65,12 @@ const (
 // is the provider's integer episode number when it has one, else the entry's
 // ordinal within its section.
 type SectionedEpisode struct {
-	Number  int
-	Title   string
-	AirDate string
-	Section Section
+	Number        int
+	Title         string
+	AirDate       string
+	OriginalTitle string
+	Duration      string
+	Section       Section
 }
 
 // SectionedList is a provider's whole episode list of one work, main episodes
@@ -217,6 +231,10 @@ func New(o Options) *Lookup {
 // an empty list. Within the cache lifetime (TTL) the stored list is reused; bypassCache forces one fresh client call. A
 // transient failure returns an error wrapping ErrTransient and is not cached.
 func (l *Lookup) Season(ctx context.Context, key Key, bypassCache bool) (List, error) {
+	// Keep explicit and implicit Chinese requests on the same cache entry.
+	if key.Source == SourceTMDB && key.Language == DefaultTMDBLanguage {
+		key.Language = ""
+	}
 	if err := ctx.Err(); err != nil {
 		return List{}, transient(err)
 	}
@@ -235,7 +253,7 @@ func (l *Lookup) Season(ctx context.Context, key Key, bypassCache bool) (List, e
 // fetchShared runs one client call shared by concurrent callers of the same
 // key, waiting for it only as long as ctx allows.
 func (l *Lookup) fetchShared(ctx context.Context, client Client, key Key, bypassCache bool) (List, error) {
-	flightKey := fmt.Sprintf("%s\x00%s\x00%d", key.Source, key.WorkID, key.Season)
+	flightKey := fmt.Sprintf("%s\x00%s\x00%d\x00%s", key.Source, key.WorkID, key.Season, key.Language)
 	if bypassCache {
 		flightKey += "\x00bypass"
 	}

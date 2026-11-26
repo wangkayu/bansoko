@@ -336,7 +336,7 @@ func (s *Server) listAnimeTMDBSeasonEpisodes(ctx context.Context, managedAnimeID
 	}
 	result := generated.TMDBSeasonEpisodeList{Season: season, Episodes: make([]generated.TMDBEpisode, 0, len(episodes))}
 	for _, episode := range episodes {
-		mapped := generated.TMDBEpisode{Episode: episode.Number}
+		mapped := generated.TMDBEpisode{Episode: episode.Number, RuntimeMinutes: episode.RuntimeMinutes}
 		if episode.Title != "" {
 			title := episode.Title
 			mapped.Title = &title

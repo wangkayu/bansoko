@@ -80,7 +80,7 @@ func (c TMDBClient) prepare(ctx context.Context) (tmdbRequest, error) {
 	return tmdbRequest{client: client, apiKey: apiKey, endpoint: connection.Endpoint}, nil
 }
 
-func (r tmdbRequest) get(ctx context.Context, suffix string, target any) error {
+func (r tmdbRequest) get(ctx context.Context, suffix, language string, target any) error {
 	endpoint, err := appendEndpointPath(r.endpoint, suffix)
 	if err != nil {
 		return fmt.Errorf("resolve TMDB endpoint: %w", err)
@@ -89,7 +89,10 @@ func (r tmdbRequest) get(ctx context.Context, suffix string, target any) error {
 	if !isBearerToken(r.apiKey) {
 		params.Set("api_key", r.apiKey)
 	}
-	params.Set("language", "zh-CN")
+	if language == "" {
+		language = episodetitle.DefaultTMDBLanguage
+	}
+	params.Set("language", language)
 	endpoint.RawQuery = params.Encode()
 	return getJSON(ctx, r.client, endpoint, r.apiKey, target)
 }
@@ -109,9 +112,12 @@ func (c TMDBClient) Episodes(ctx context.Context, key episodetitle.Key) (episode
 			EpisodeNumber int    `json:"episode_number"`
 			Name          string `json:"name"`
 			AirDate       string `json:"air_date"`
+			Runtime       *int   `json:"runtime"`
+			StillPath     string `json:"still_path"`
+			Overview      string `json:"overview"`
 		} `json:"episodes"`
 	}
-	if err := request.get(ctx, "/tv/"+workID+"/season/"+strconv.Itoa(key.Season), &payload); err != nil {
+	if err := request.get(ctx, "/tv/"+workID+"/season/"+strconv.Itoa(key.Season), key.Language, &payload); err != nil {
 		return episodetitle.List{}, fmt.Errorf("request TMDB season episodes: %w", err)
 	}
 	episodes := make([]episodetitle.Episode, 0, len(payload.Episodes))
@@ -119,7 +125,15 @@ func (c TMDBClient) Episodes(ctx context.Context, key episodetitle.Key) (episode
 		if episode.EpisodeNumber < 0 {
 			continue
 		}
-		episodes = append(episodes, episodetitle.Episode{Number: episode.EpisodeNumber, Title: strings.TrimSpace(episode.Name), AirDate: strings.TrimSpace(episode.AirDate)})
+		runtime := episode.Runtime
+		if runtime != nil && *runtime < 0 {
+			runtime = nil
+		}
+		episodes = append(episodes, episodetitle.Episode{
+			Number: episode.EpisodeNumber, Title: strings.TrimSpace(episode.Name),
+			AirDate: strings.TrimSpace(episode.AirDate), RuntimeMinutes: runtime,
+			StillURL: tmdbStillURL(episode.StillPath), Overview: strings.TrimSpace(episode.Overview),
+		})
 	}
 	return episodetitle.List{Episodes: episodes}, nil
 }
@@ -145,7 +159,7 @@ func (c TMDBClient) Seasons(ctx context.Context, workID string) ([]episodetitle.
 			AirDate      string `json:"air_date"`
 		} `json:"seasons"`
 	}
-	if err := request.get(ctx, "/tv/"+workID, &payload); err != nil {
+	if err := request.get(ctx, "/tv/"+workID, "", &payload); err != nil {
 		return nil, fmt.Errorf("request TMDB seasons: %w", err)
 	}
 	seasons := make([]episodetitle.Season, 0, len(payload.Seasons))
@@ -220,6 +234,20 @@ func appendEndpointPath(raw, suffix string) (*url.URL, error) {
 	base := strings.TrimSuffix(strings.TrimRight(parsed.Path, "/"), "/configuration")
 	parsed.Path = strings.TrimRight(base, "/") + "/" + strings.TrimLeft(suffix, "/")
 	return parsed, nil
+}
+
+// tmdbStillBaseURL is the CDN rendition of one episode still. The cover proxy
+// registers the resulting URL and serves the bytes from the API origin.
+const tmdbStillBaseURL = "https://image.tmdb.org/t/p/w780"
+
+// tmdbStillURL expands a provider still path into the address the cover proxy
+// registers. An empty path is no still at all.
+func tmdbStillURL(path string) string {
+	path = strings.TrimLeft(strings.TrimSpace(path), "/")
+	if path == "" {
+		return ""
+	}
+	return tmdbStillBaseURL + "/" + path
 }
 
 func isDigits(s string) bool {

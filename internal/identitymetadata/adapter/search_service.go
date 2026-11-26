@@ -116,12 +116,12 @@ func (s *SearchService) TMDBWorkSeasons(ctx context.Context, workID string) ([]i
 
 // TMDBCandidateEpisodes lists one season of an arbitrary TMDB TV work. It is
 // independent of any anime binding and read-only; an unknown season is empty.
-func (s *SearchService) TMDBCandidateEpisodes(ctx context.Context, workID string, season int) ([]identitymetadatadomain.CandidateEpisode, error) {
+func (s *SearchService) TMDBCandidateEpisodes(ctx context.Context, workID string, season int, language string) ([]identitymetadatadomain.CandidateEpisode, error) {
 	if s.episodes == nil {
 		return nil, errors.New("candidate episode lookup is not configured")
 	}
 	list, err := s.episodes.Season(ctx, episodetitle.Key{
-		Source: episodetitle.SourceTMDB, WorkID: strings.TrimSpace(workID), Season: season,
+		Source: episodetitle.SourceTMDB, WorkID: strings.TrimSpace(workID), Season: season, Language: language,
 	}, false)
 	if err != nil {
 		return nil, err
@@ -129,7 +129,8 @@ func (s *SearchService) TMDBCandidateEpisodes(ctx context.Context, workID string
 	episodes := make([]identitymetadatadomain.CandidateEpisode, 0, len(list.Episodes))
 	for _, episode := range list.Episodes {
 		episodes = append(episodes, identitymetadatadomain.CandidateEpisode{
-			Number: episode.Number, Title: episode.Title, AirDate: episode.AirDate,
+			Number: episode.Number, Title: episode.Title, AirDate: episode.AirDate, RuntimeMinutes: episode.RuntimeMinutes,
+			StillURL: episode.StillURL, Overview: episode.Overview,
 		})
 	}
 	return episodes, nil
@@ -150,7 +151,8 @@ func (s *SearchService) BGMCandidateEpisodes(ctx context.Context, workID string)
 	episodes := make([]identitymetadatadomain.CandidateEpisode, 0, len(list.Episodes))
 	for _, episode := range list.Episodes {
 		episodes = append(episodes, identitymetadatadomain.CandidateEpisode{
-			Number: episode.Number, Title: episode.Title, AirDate: episode.AirDate, Section: string(episode.Section),
+			Number: episode.Number, Title: episode.Title, OriginalTitle: episode.OriginalTitle,
+			AirDate: episode.AirDate, Section: string(episode.Section), Duration: episode.Duration,
 		})
 	}
 	return episodes, nil

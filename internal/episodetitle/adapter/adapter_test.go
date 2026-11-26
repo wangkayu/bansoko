@@ -66,6 +66,56 @@ func TestTMDBParsesSeasonWithAPIKeyAndBearer(t *testing.T) {
 	}
 }
 
+func TestTMDBEpisodeRuntimeAndLanguageCache(t *testing.T) {
+	requests := make(chan string, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		language := r.URL.Query().Get("language")
+		requests <- language
+		_, _ = fmt.Fprintf(w, `{"episodes":[
+			{"episode_number":1,"name":%q,"runtime":24,"still_path":"/still.jpg","overview":%q},
+			{"episode_number":2,"runtime":null,"still_path":"","overview":""},
+			{"episode_number":3,"runtime":0,"still_path":"/three.jpg"},
+			{"episode_number":4,"runtime":-1}]}`, language, "第1話 "+language)
+	}))
+	defer server.Close()
+	lookup := episodetitle.New(episodetitle.Options{Clients: map[episodetitle.Source]episodetitle.Client{
+		episodetitle.SourceTMDB: tmdbClient(server.URL, "v3secret"),
+	}})
+	for _, sample := range []struct{ language, title string }{
+		{"", "zh-CN"}, {"ja-JP", "ja-JP"}, {"en-US", "en-US"},
+		{"ja-JP", "ja-JP"}, {"zh-CN", "zh-CN"}, {"en-US", "en-US"},
+	} {
+		key := tmdbKey
+		key.Language = sample.language
+		list, err := lookup.Season(context.Background(), key, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list.Episodes) != 4 || list.Episodes[0].Title != sample.title ||
+			list.Episodes[0].RuntimeMinutes == nil || *list.Episodes[0].RuntimeMinutes != 24 ||
+			list.Episodes[1].RuntimeMinutes != nil || list.Episodes[3].RuntimeMinutes != nil ||
+			list.Episodes[2].RuntimeMinutes == nil || *list.Episodes[2].RuntimeMinutes != 0 {
+			t.Fatalf("%q: unexpected episodes %+v", sample.language, list.Episodes)
+		}
+		// A still path becomes the provider address the cover proxy registers;
+		// the overview is whatever the requested language returned.
+		if list.Episodes[0].StillURL != "https://image.tmdb.org/t/p/w780/still.jpg" ||
+			list.Episodes[0].Overview != "第1話 "+sample.title ||
+			list.Episodes[1].StillURL != "" || list.Episodes[1].Overview != "" ||
+			list.Episodes[2].StillURL != "https://image.tmdb.org/t/p/w780/three.jpg" {
+			t.Fatalf("%q: unexpected stills/overviews %+v", sample.language, list.Episodes)
+		}
+	}
+	if len(requests) != 3 {
+		t.Fatalf("provider requests = %d, want 1 per language", len(requests))
+	}
+	for _, want := range []string{"zh-CN", "ja-JP", "en-US"} {
+		if got := <-requests; got != want {
+			t.Fatalf("request language = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestStatusMapping(t *testing.T) {
 	for _, status := range []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -131,11 +181,11 @@ func TestBGMSectionedEpisodesKeepMainAndSpecials(t *testing.T) {
 			t.Errorf("unexpected paging %s", r.URL.RawQuery)
 		}
 		_, _ = fmt.Fprint(w, `{"data":[
-			{"type":0,"ep":1,"name":"第一话","name_cn":"第一话","airdate":"2025-01-04"},
+			{"type":0,"ep":1,"name":" はじまり ","name_cn":" 第一话 ","airdate":"2025-01-04","duration":"00:24:00"},
 			{"type":2,"ep":1,"name":"OP"},
-			{"type":1,"ep":0,"name":"SP1"},
-			{"type":0,"ep":"2","name":"第二话","airdate":"2025-01-11"},
-			{"type":1,"ep":null,"name":"SP2"}
+			{"type":1,"ep":0,"name":"SP1","duration":"24m"},
+			{"type":0,"ep":"2","name":"第二话","airdate":"2025-01-11","duration":"23:40"},
+			{"type":1,"ep":null,"name":"SP2","duration":""}
 		],"total":5}`)
 	}))
 	defer server.Close()
@@ -145,10 +195,10 @@ func TestBGMSectionedEpisodesKeepMainAndSpecials(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []episodetitle.SectionedEpisode{
-		{Number: 1, Title: "第一话", AirDate: "2025-01-04", Section: episodetitle.SectionMain},
-		{Number: 1, Title: "SP1", Section: episodetitle.SectionSpecial},
-		{Number: 2, Title: "第二话", AirDate: "2025-01-11", Section: episodetitle.SectionMain},
-		{Number: 2, Title: "SP2", Section: episodetitle.SectionSpecial},
+		{Number: 1, Title: "第一话", OriginalTitle: "はじまり", AirDate: "2025-01-04", Duration: "00:24:00", Section: episodetitle.SectionMain},
+		{Number: 1, Title: "SP1", OriginalTitle: "SP1", Duration: "24m", Section: episodetitle.SectionSpecial},
+		{Number: 2, Title: "第二话", OriginalTitle: "第二话", AirDate: "2025-01-11", Duration: "23:40", Section: episodetitle.SectionMain},
+		{Number: 2, Title: "SP2", OriginalTitle: "SP2", Section: episodetitle.SectionSpecial},
 	}
 	if fmt.Sprint(list.Episodes) != fmt.Sprint(want) {
 		t.Fatalf("episodes = %v, want %v", list.Episodes, want)
@@ -208,8 +258,8 @@ func TestBGMEpisodesUsesSubjectScopedEndpointAndMainType(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []episodetitle.Episode{
-		{Number: 1, Title: "第一话", AirDate: "2025-04-07"},
-		{Number: 2, Title: "第二话", AirDate: "2025-04-14"},
+		{Number: 1, Title: "第一话", OriginalTitle: "第一话", AirDate: "2025-04-07"},
+		{Number: 2, Title: "第二话", OriginalTitle: "第二话", AirDate: "2025-04-14"},
 	}
 	if fmt.Sprint(list.Episodes) != fmt.Sprint(want) {
 		t.Fatalf("episodes = %v, want %v", list.Episodes, want)

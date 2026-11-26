@@ -2809,6 +2809,13 @@ const (
 	SearchMetadataParamsProviderTmdb SearchMetadataParamsProvider = "tmdb"
 )
 
+// Defines values for ListTMDBCandidateEpisodesParamsLanguage.
+const (
+	ListTMDBCandidateEpisodesParamsLanguageEnUS ListTMDBCandidateEpisodesParamsLanguage = "en-US"
+	ListTMDBCandidateEpisodesParamsLanguageJaJP ListTMDBCandidateEpisodesParamsLanguage = "ja-JP"
+	ListTMDBCandidateEpisodesParamsLanguageZhCN ListTMDBCandidateEpisodesParamsLanguage = "zh-CN"
+)
+
 // Defines values for ListObservabilityDiagnosticsParamsState.
 const (
 	ListObservabilityDiagnosticsParamsStateOpen      ListObservabilityDiagnosticsParamsState = "open"
@@ -4077,8 +4084,10 @@ type BGMConnectionInputKind string
 
 // BGMEpisode defines model for BGMEpisode.
 type BGMEpisode struct {
-	AirDate *string `json:"air_date,omitempty"`
-	Episode int     `json:"episode"`
+	AirDate       *string `json:"air_date,omitempty"`
+	Duration      *string `json:"duration,omitempty"`
+	Episode       int     `json:"episode"`
+	OriginalTitle *string `json:"original_title,omitempty"`
 
 	// Section Bangumi's item-level section: a regular episode (main) or a special (special). OP/ED, trailers and other item types stay out.
 	Section BGMEpisodeSection `json:"section"`
@@ -9783,9 +9792,14 @@ type TMDBConnectionInputKind string
 
 // TMDBEpisode defines model for TMDBEpisode.
 type TMDBEpisode struct {
-	AirDate *string `json:"air_date,omitempty"`
-	Episode int     `json:"episode"`
-	Title   *string `json:"title,omitempty"`
+	AirDate        *string `json:"air_date,omitempty"`
+	Episode        int     `json:"episode"`
+	Overview       *string `json:"overview,omitempty"`
+	RuntimeMinutes *int    `json:"runtime_minutes,omitempty"`
+
+	// StillUrl Same-origin proxy path of the episode still. The upstream address is never exposed; the bytes are fetched on demand.
+	StillUrl *string `json:"still_url,omitempty"`
+	Title    *string `json:"title,omitempty"`
 }
 
 // TMDBMediaKind defines model for TMDBMediaKind.
@@ -10610,6 +10624,14 @@ type SearchMetadataParams struct {
 
 // SearchMetadataParamsProvider defines parameters for SearchMetadata.
 type SearchMetadataParamsProvider string
+
+// ListTMDBCandidateEpisodesParams defines parameters for ListTMDBCandidateEpisodes.
+type ListTMDBCandidateEpisodesParams struct {
+	Language *ListTMDBCandidateEpisodesParamsLanguage `form:"language,omitempty" json:"language,omitempty"`
+}
+
+// ListTMDBCandidateEpisodesParamsLanguage defines parameters for ListTMDBCandidateEpisodes.
+type ListTMDBCandidateEpisodesParamsLanguage string
 
 // ListObservabilityDiagnosticsParams defines parameters for ListObservabilityDiagnostics.
 type ListObservabilityDiagnosticsParams struct {
@@ -13356,7 +13378,7 @@ type ServerInterface interface {
 	ListTMDBWorkSeasons(w http.ResponseWriter, r *http.Request, workId string)
 
 	// (GET /metadata/tmdb/works/{work_id}/seasons/{season}/episodes)
-	ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workId string, season int)
+	ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workId string, season int, params ListTMDBCandidateEpisodesParams)
 
 	// (GET /observability/diagnostics)
 	ListObservabilityDiagnostics(w http.ResponseWriter, r *http.Request, params ListObservabilityDiagnosticsParams)
@@ -18896,8 +18918,19 @@ func (siw *ServerInterfaceWrapper) ListTMDBCandidateEpisodes(w http.ResponseWrit
 
 	r = r.WithContext(ctx)
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTMDBCandidateEpisodesParams
+
+	// ------------- Optional query parameter "language" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "language", r.URL.Query(), &params.Language)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "language", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTMDBCandidateEpisodes(w, r, workId, season)
+		siw.Handler.ListTMDBCandidateEpisodes(w, r, workId, season, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

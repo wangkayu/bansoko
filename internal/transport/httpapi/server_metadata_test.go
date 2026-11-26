@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	identitymetadataadapter "bansoko/internal/identitymetadata/adapter"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -38,7 +39,7 @@ func (s *metadataSearchSpy) TMDBWorkSeasons(context.Context, string) ([]identity
 	return nil, nil
 }
 
-func (s *metadataSearchSpy) TMDBCandidateEpisodes(context.Context, string, int) ([]identitymetadatadomain.CandidateEpisode, error) {
+func (s *metadataSearchSpy) TMDBCandidateEpisodes(context.Context, string, int, string) ([]identitymetadatadomain.CandidateEpisode, error) {
 	return []identitymetadatadomain.CandidateEpisode{}, nil
 }
 
@@ -276,6 +277,7 @@ type candidateEpisodeSearch struct {
 	err       error
 	workID    string
 	season    int
+	language  string
 }
 
 func (s *candidateEpisodeSearch) SearchMetadata(context.Context, string, string, int) ([]identitymetadatadomain.SearchCandidate, error) {
@@ -291,8 +293,8 @@ func (s *candidateEpisodeSearch) TMDBWorkSeasons(_ context.Context, workID strin
 	return s.seasons, s.err
 }
 
-func (s *candidateEpisodeSearch) TMDBCandidateEpisodes(_ context.Context, workID string, season int) ([]identitymetadatadomain.CandidateEpisode, error) {
-	s.workID, s.season = workID, season
+func (s *candidateEpisodeSearch) TMDBCandidateEpisodes(_ context.Context, workID string, season int, language string) ([]identitymetadatadomain.CandidateEpisode, error) {
+	s.workID, s.season, s.language = workID, season, language
 	return s.tmdb, s.err
 }
 
@@ -334,31 +336,80 @@ func TestTMDBWorkSeasons(t *testing.T) {
 }
 
 func TestTMDBCandidateEpisodesMapTheSeasonAndRejectBadWorkIDs(t *testing.T) {
-	service := &candidateEpisodeSearch{tmdb: []identitymetadatadomain.CandidateEpisode{{Number: 1, Title: "第一话", AirDate: "2024-01-01"}}}
-	server := &Server{deps: Dependencies{MetadataSearch: service}}
-	recorder := httptest.NewRecorder()
-	server.ListTMDBCandidateEpisodes(recorder, httptest.NewRequest(http.MethodGet, "/metadata/tmdb/works/265010/seasons/2/episodes", nil), "265010", 2)
-	if recorder.Code != http.StatusOK || service.workID != "265010" || service.season != 2 {
-		t.Fatalf("status %d, query %q/%d", recorder.Code, service.workID, service.season)
-	}
-	var body generated.TMDBSeasonEpisodeList
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if body.Season != 2 || len(body.Episodes) != 1 || body.Episodes[0].Title == nil || *body.Episodes[0].Title != "第一话" {
-		t.Fatalf("body = %+v", body)
+	runtime := 24
+	service := &candidateEpisodeSearch{tmdb: []identitymetadatadomain.CandidateEpisode{
+		{Number: 1, Title: "第一话", AirDate: "2024-01-01", RuntimeMinutes: &runtime,
+			StillURL: "https://image.tmdb.org/t/p/w780/one.jpg", Overview: "第一话简介"},
+		{Number: 2, StillURL: "https://foreign.example/still.jpg"},
+	}}
+	covers := &fakeCoverService{allowed: map[string]string{"tmdb": "https://image.tmdb.org/t/p/"}}
+	server := &Server{deps: Dependencies{MetadataSearch: service, ImageCovers: covers}}
+	handler := generated.Handler(server)
+	read := func(workID, query string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metadata/tmdb/works/"+workID+"/seasons/2/episodes"+query, nil))
+		return recorder
 	}
 
-	recorder = httptest.NewRecorder()
-	server.ListTMDBCandidateEpisodes(recorder, httptest.NewRequest(http.MethodGet, "/metadata/tmdb/works/0265010/seasons/2/episodes", nil), "0265010", 2)
-	if recorder.Code != http.StatusUnprocessableEntity {
+	for _, sample := range []struct {
+		query, language string
+	}{
+		{"", "zh-CN"},
+		{"?language=zh-CN", "zh-CN"},
+		{"?language=ja-JP", "ja-JP"},
+		{"?language=en-US", "en-US"},
+	} {
+		t.Run(sample.language+sample.query, func(t *testing.T) {
+			service.language = ""
+			recorder := read("265010", sample.query)
+			if recorder.Code != http.StatusOK || service.workID != "265010" || service.season != 2 || service.language != sample.language {
+				t.Fatalf("status %d, query %q/%d language %q", recorder.Code, service.workID, service.season, service.language)
+			}
+			var body generated.TMDBSeasonEpisodeList
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Season != 2 || len(body.Episodes) != 2 || body.Episodes[0].Title == nil || *body.Episodes[0].Title != "第一话" ||
+				body.Episodes[0].RuntimeMinutes == nil || *body.Episodes[0].RuntimeMinutes != 24 || body.Episodes[1].RuntimeMinutes != nil {
+				t.Fatalf("body = %s", recorder.Body.String())
+			}
+			// The still is only ever a same-origin proxy path: the provider host
+			// appears nowhere in the response, and an unregisterable URL is dropped.
+			if still := body.Episodes[0].StillUrl; still == nil || !strings.HasPrefix(*still, identitymetadataadapter.CoverPathPrefix) {
+				t.Fatalf("still_url = %v", body.Episodes[0].StillUrl)
+			}
+			if body.Episodes[1].StillUrl != nil {
+				t.Fatalf("foreign still_url leaked: %q", *body.Episodes[1].StillUrl)
+			}
+			if body.Episodes[0].Overview == nil || *body.Episodes[0].Overview != "第一话简介" || body.Episodes[1].Overview != nil {
+				t.Fatalf("overview = %v", body.Episodes[0].Overview)
+			}
+			if strings.Contains(recorder.Body.String(), "image.tmdb.org") || strings.Contains(recorder.Body.String(), "foreign.example") {
+				t.Fatalf("provider image host leaked: %s", recorder.Body.String())
+			}
+		})
+	}
+	for _, query := range []string{"?language=fr-FR", "?language="} {
+		service.language = ""
+		if recorder := read("265010", query); recorder.Code != http.StatusBadRequest || service.language != "" {
+			t.Fatalf("%q: status %d, provider language %q", query, recorder.Code, service.language)
+		}
+	}
+	if recorder := read("0265010", ""); recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("leading zero work id: status %d", recorder.Code)
+	}
+	if len(covers.calls) != 0 {
+		t.Fatalf("preview metadata fetched images: %v", covers.calls)
+	}
+	server.deps.ImageCovers = nil
+	if recorder := read("265010", ""); recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "still_url") {
+		t.Fatalf("a still URL was exposed without a proxy: %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 
 func TestBGMCandidateEpisodesKeepSectionsAndMapUnavailable(t *testing.T) {
 	service := &candidateEpisodeSearch{bgm: []identitymetadatadomain.CandidateEpisode{
-		{Number: 1, Title: "第一话", Section: "main"},
+		{Number: 1, Title: "第一话", OriginalTitle: "はじまり", Duration: "00:24:00", Section: "main"},
 		{Number: 1, Title: "SP", Section: "special"},
 	}}
 	server := &Server{deps: Dependencies{MetadataSearch: service}}
@@ -373,6 +424,12 @@ func TestBGMCandidateEpisodesKeepSectionsAndMapUnavailable(t *testing.T) {
 	}
 	if len(body.Episodes) != 2 || body.Episodes[0].Section != generated.BGMEpisodeSectionMain || body.Episodes[1].Section != generated.BGMEpisodeSectionSpecial {
 		t.Fatalf("body = %+v", body)
+	}
+	if episode := body.Episodes[0]; episode.OriginalTitle == nil || *episode.OriginalTitle != "はじまり" || episode.Duration == nil || *episode.Duration != "00:24:00" {
+		t.Fatalf("missing Bangumi details: %s", recorder.Body.String())
+	}
+	if episode := body.Episodes[1]; episode.OriginalTitle != nil || episode.Duration != nil {
+		t.Fatalf("empty Bangumi details must be omitted: %s", recorder.Body.String())
 	}
 
 	service.err = errors.New("provider down")

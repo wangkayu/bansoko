@@ -1891,6 +1891,13 @@ paths:
             type: integer
             minimum: 0
             maximum: 9999
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [zh-CN, ja-JP, en-US]
+            default: zh-CN
       responses:
         '200':
           description: The candidate season's episodes.
@@ -1898,6 +1905,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TMDBSeasonEpisodeList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
@@ -16898,6 +16907,18 @@ components:
         air_date:
           type: string
           maxLength: 32
+        runtime_minutes:
+          type: integer
+          minimum: 0
+        still_url:
+          type: string
+          maxLength: 256
+          description: >-
+            Same-origin proxy path of the episode still. The upstream address is
+            never exposed; the bytes are fetched on demand.
+        overview:
+          type: string
+          maxLength: 4096
     TMDBSeasonEpisodeList:
       type: object
       additionalProperties: false
@@ -16922,6 +16943,12 @@ components:
         title:
           type: string
           maxLength: 1024
+        original_title:
+          type: string
+          maxLength: 1024
+        duration:
+          type: string
+          maxLength: 128
         air_date:
           type: string
           maxLength: 32

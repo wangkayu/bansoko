@@ -630,9 +630,10 @@ type TMDBSeason struct {
 
 // TMDBEpisode is one episode of a TMDB season.
 type TMDBEpisode struct {
-	Number  int
-	Title   string
-	AirDate string
+	Number         int
+	Title          string
+	AirDate        string
+	RuntimeMinutes *int
 }
 
 // tmdbShow resolves the TMDB TV show an anime is bound to.
@@ -695,7 +696,7 @@ func (s *Service) TMDBSeasonEpisodes(ctx context.Context, managedAnimeID string,
 	}
 	result := make([]TMDBEpisode, 0, len(list.Episodes))
 	for _, episode := range list.Episodes {
-		result = append(result, TMDBEpisode{Number: episode.Number, Title: episode.Title, AirDate: episode.AirDate})
+		result = append(result, TMDBEpisode{Number: episode.Number, Title: episode.Title, AirDate: episode.AirDate, RuntimeMinutes: episode.RuntimeMinutes})
 	}
 	return result, nil
 }

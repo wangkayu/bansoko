@@ -147,7 +147,17 @@ func (s *Server) ListTMDBWorkSeasons(w http.ResponseWriter, r *http.Request, wor
 
 // ListTMDBCandidateEpisodes lists one season of an arbitrary TMDB TV work
 // returned by metadata search. Read-only and independent of any anime binding.
-func (s *Server) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workID string, season int) {
+func (s *Server) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workID string, season int, params generated.ListTMDBCandidateEpisodesParams) {
+	language := generated.ListTMDBCandidateEpisodesParamsLanguageZhCN
+	if params.Language != nil {
+		language = *params.Language
+	}
+	switch language {
+	case generated.ListTMDBCandidateEpisodesParamsLanguageZhCN, generated.ListTMDBCandidateEpisodesParamsLanguageJaJP, generated.ListTMDBCandidateEpisodesParamsLanguageEnUS:
+	default:
+		writeError(w, r, badRequest("LANGUAGE_INVALID", "language must be zh-CN, ja-JP, or en-US."))
+		return
+	}
 	service := s.metadataService(w, r)
 	if service == nil {
 		return
@@ -164,14 +174,14 @@ func (s *Server) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Reques
 		}))
 		return
 	}
-	episodes, err := service.TMDBCandidateEpisodes(r.Context(), workID, season)
+	episodes, err := service.TMDBCandidateEpisodes(r.Context(), workID, season, string(language))
 	if err != nil {
 		writeError(w, r, metadataUnavailable())
 		return
 	}
 	result := generated.TMDBSeasonEpisodeList{Season: season, Episodes: make([]generated.TMDBEpisode, 0, len(episodes))}
 	for _, episode := range episodes {
-		mapped := generated.TMDBEpisode{Episode: episode.Number}
+		mapped := generated.TMDBEpisode{Episode: episode.Number, RuntimeMinutes: episode.RuntimeMinutes}
 		if episode.Title != "" {
 			title := episode.Title
 			mapped.Title = &title
@@ -180,8 +190,24 @@ func (s *Server) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Reques
 			date := episode.AirDate
 			mapped.AirDate = &date
 		}
+		if episode.Overview != "" {
+			overview := episode.Overview
+			mapped.Overview = &overview
+		}
+		if episode.StillURL != "" {
+			still := episode.StillURL
+			mapped.StillUrl = &still
+		}
 		result.Episodes = append(result.Episodes, mapped)
 	}
+	// The still never leaves the API origin: registering it here only stores
+	// the address, and the browser fetches the bytes through the proxy. The
+	// list is complete, so every field pointer stays valid.
+	stillTargets := make([]coverTarget, 0, len(result.Episodes))
+	for index := range result.Episodes {
+		stillTargets = append(stillTargets, coverTarget{provider: "tmdb", field: &result.Episodes[index].StillUrl})
+	}
+	s.proxyCovers(r.Context(), stillTargets)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, r.Context(), http.StatusOK, result)
 }
@@ -212,6 +238,12 @@ func (s *Server) ListBGMCandidateEpisodes(w http.ResponseWriter, r *http.Request
 			mapped.Section = generated.BGMEpisodeSectionSpecial
 		default:
 			mapped.Section = generated.BGMEpisodeSectionMain
+		}
+		if episode.OriginalTitle != "" {
+			mapped.OriginalTitle = &episode.OriginalTitle
+		}
+		if episode.Duration != "" {
+			mapped.Duration = &episode.Duration
 		}
 		if episode.Title != "" {
 			title := episode.Title

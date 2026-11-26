@@ -325,7 +325,7 @@ func (s staticMetadataSearch) TMDBWorkSeasons(context.Context, string) ([]identi
 	return nil, nil
 }
 
-func (s staticMetadataSearch) TMDBCandidateEpisodes(context.Context, string, int) ([]identitymetadatadomain.CandidateEpisode, error) {
+func (s staticMetadataSearch) TMDBCandidateEpisodes(context.Context, string, int, string) ([]identitymetadatadomain.CandidateEpisode, error) {
 	return []identitymetadatadomain.CandidateEpisode{}, nil
 }
 

@@ -186,7 +186,7 @@ type MetadataSearchService interface {
 	SearchMetadataAutomatically(ctx context.Context, input identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error)
 	// These work-level reads never change a candidate or a binding.
 	TMDBWorkSeasons(ctx context.Context, workID string) ([]identitymetadatadomain.SearchSeason, error)
-	TMDBCandidateEpisodes(ctx context.Context, workID string, season int) ([]identitymetadatadomain.CandidateEpisode, error)
+	TMDBCandidateEpisodes(ctx context.Context, workID string, season int, language string) ([]identitymetadatadomain.CandidateEpisode, error)
 	BGMCandidateEpisodes(ctx context.Context, workID string) ([]identitymetadatadomain.CandidateEpisode, error)
 }
 

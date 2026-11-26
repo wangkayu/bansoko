@@ -6632,6 +6632,10 @@ export interface components {
             episode: number;
             title?: string;
             air_date?: string;
+            runtime_minutes?: number;
+            /** @description Same-origin proxy path of the episode still. The upstream address is never exposed; the bytes are fetched on demand. */
+            still_url?: string;
+            overview?: string;
         };
         TMDBSeasonEpisodeList: {
             season: number;
@@ -6640,6 +6644,8 @@ export interface components {
         BGMEpisode: {
             episode: number;
             title?: string;
+            original_title?: string;
+            duration?: string;
             air_date?: string;
             /**
              * @description Bangumi's item-level section: a regular episode (main) or a special (special). OP/ED, trailers and other item types stay out.
@@ -10310,7 +10316,9 @@ export interface operations {
     };
     listTMDBCandidateEpisodes: {
         parameters: {
-            query?: never;
+            query?: {
+                language?: "zh-CN" | "ja-JP" | "en-US";
+            };
             header?: never;
             path: {
                 work_id: string;
@@ -10329,6 +10337,7 @@ export interface operations {
                     "application/json": components["schemas"]["TMDBSeasonEpisodeList"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
             503: components["responses"]["Unavailable"];
