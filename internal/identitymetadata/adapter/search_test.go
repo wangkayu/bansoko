@@ -83,6 +83,71 @@ func TestConfiguredCandidateSearcherNormalizesTMDBResults(t *testing.T) {
 	}
 }
 
+func TestSearchTMDBPromotesAnimationBeforeLimiting(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+		limit   int
+		want    []string
+		details map[string]int
+	}{
+		{"Fool Night limited", foolNightMulti, 3, []string{"tv:4", "movie:1", "movie:2"}, map[string]int{"/3/tv/4": 1}},
+		{"Fool Night complete", foolNightMulti, 6, []string{"tv:4", "movie:1", "movie:2", "movie:3", "movie:5", "movie:6"}, map[string]int{"/3/tv/4": 1}},
+		{"mixed kinds and invalid ID", `{"results":[{"id":7,"media_type":"tv","name":"Live action"},{"id":0,"media_type":"tv"},{"id":7,"media_type":"movie","genre_ids":[16]},{"id":8,"media_type":"tv","genre_ids":[16]},{"id":8,"media_type":"tv","genre_ids":[16]},{"id":9,"media_type":"tv"}]}`, 3, []string{"movie:7", "tv:8", "tv:7"}, map[string]int{"/3/tv/8": 1, "/3/tv/7": 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			requests := map[string]int{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				requests[r.URL.Path]++
+				mu.Unlock()
+				if r.URL.Path == "/3/search/multi" {
+					if got := r.URL.Query().Get("query"); got != "Fool Night" {
+						t.Errorf("query = %q", got)
+					}
+					fmt.Fprint(w, tc.payload)
+					return
+				}
+				fmt.Fprint(w, `{"seasons":[]}`)
+			}))
+			defer server.Close()
+			s := ConfiguredCandidateSearcher{
+				Connections: testConnections{{ID: "tmdb", Kind: configurationdomain.ConnectionTMDB, Endpoint: server.URL + "/3", SecretRef: "tmdb", State: configurationdomain.ConnectionConfigured}},
+				Secrets:     testSecrets{"tmdb": "secret"},
+			}
+			got, err := s.Search(t.Context(), "tmdb", "Fool Night", tc.limit)
+			if err != nil || len(got) != len(tc.want) {
+				t.Fatalf("results = %+v, err = %v", got, err)
+			}
+			for i, c := range got {
+				if c.MediaKind+":"+c.ProviderWorkID != tc.want[i] || (i > 0 && c.Score >= got[i-1].Score) {
+					t.Fatalf("rank %d = %+v, want %v", i, c, tc.want)
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if requests["/3/search/multi"] != 1 || len(requests) != len(tc.details)+1 {
+				t.Fatalf("requests = %v", requests)
+			}
+			for path, count := range tc.details {
+				if requests[path] != count {
+					t.Errorf("requests = %v, want %d for %s", requests, count, path)
+				}
+			}
+		})
+	}
+}
+
+const foolNightMulti = `{"results":[
+  {"id":1,"media_type":"movie","title":"Live-action film 1"},
+  {"id":2,"media_type":"movie","title":"Live-action film 2"},
+  {"id":3,"media_type":"movie","title":"Live-action film 3"},
+  {"id":4,"media_type":"tv","name":"愚者之夜","original_name":"フールナイト","genre_ids":[16]},
+  {"id":5,"media_type":"movie","title":"Live-action film 5"},
+  {"id":6,"media_type":"movie","title":"Live-action film 6"}
+ ]}`
+
 func TestConfiguredCandidateSearcherDetailsStatusMatrixAndFailureIsolation(t *testing.T) {
 	requests := map[string]int{}
 	var requestsMu sync.Mutex

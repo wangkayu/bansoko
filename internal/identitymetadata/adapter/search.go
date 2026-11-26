@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,51 +144,71 @@ func (s ConfiguredCandidateSearcher) searchTMDB(ctx context.Context, query strin
 	if err := s.getJSON(ctx, client, endpoint, apiKey, &payload); err != nil {
 		return nil, fmt.Errorf("request TMDB candidates: %w", err)
 	}
-	result := make([]identitymetadatadomain.SearchCandidate, 0, minInt(limit, len(payload.Results)))
-	type detailsJob struct {
-		resultIndex int
-		tmdbID      int
-	}
-	jobs := make([]detailsJob, 0, minInt(limit, len(payload.Results)))
-	for index, item := range payload.Results {
-		if len(result) >= limit || item.ID <= 0 {
-			break
-		}
+	result := make([]identitymetadatadomain.SearchCandidate, 0, len(payload.Results))
+	seen := make(map[struct {
+		kind string
+		id   int
+	}]bool)
+	for _, item := range payload.Results {
 		kind := strings.ToLower(strings.TrimSpace(item.MediaType))
-		if kind != "tv" && kind != "movie" {
+		if item.ID <= 0 || (kind != "tv" && kind != "movie") {
 			continue
 		}
+		key := struct {
+			kind string
+			id   int
+		}{kind, item.ID}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		title := strings.TrimSpace(item.Name)
 		originalTitle := strings.TrimSpace(item.OriginalName)
+		date := item.FirstAirDate
 		if kind == "movie" {
 			title = strings.TrimSpace(item.Title)
 			originalTitle = strings.TrimSpace(item.OriginalTitle)
+			date = item.ReleaseDate
 		}
-		// titleCN is TMDB's title for the requested language (language=zh-CN);
-		// it stays the recorded fact even when the client-facing display title
-		// falls back to the original title below.
+		// Keep the requested locale as a fact, even when the display falls back.
 		titleCN := title
 		if title == "" {
 			title = originalTitle
 		}
-		year := parseYear(item.FirstAirDate)
-		if year == 0 {
-			year = parseYear(item.ReleaseDate)
-		}
-		detailsStatus := identitymetadatadomain.DetailsStatusNotApplicable
+		year := parseYear(date)
+		id := strconv.Itoa(item.ID)
 		poster := ""
-		if strings.TrimSpace(item.PosterPath) != "" {
-			poster = "https://image.tmdb.org/t/p/w342" + strings.TrimSpace(item.PosterPath)
+		if path := strings.TrimSpace(item.PosterPath); path != "" {
+			poster = "https://image.tmdb.org/t/p/w342" + path
 		}
 		result = append(result, identitymetadatadomain.SearchCandidate{
-			Provider: "tmdb", ProviderWorkID: strconv.Itoa(item.ID), Title: title,
+			Provider: "tmdb", ProviderWorkID: id, Title: title,
 			OriginalTitle: originalTitle, Overview: strings.TrimSpace(item.Overview),
-			PosterURL: poster, MediaKind: kind, DetailsStatus: detailsStatus,
-			GenreIDs: append([]int(nil), item.GenreIDs...), Year: candidateYear(year), Score: rankScore(index, len(payload.Results)),
-			Native: identitymetadatadomain.WorkTitles{Provider: "tmdb", MediaKind: kind, WorkID: strconv.Itoa(item.ID), TitleCN: titleCN, OriginalTitle: originalTitle, Overview: strings.TrimSpace(item.Overview), Year: recordedYear(year)},
+			PosterURL: poster, MediaKind: kind, DetailsStatus: identitymetadatadomain.DetailsStatusNotApplicable,
+			GenreIDs: append([]int(nil), item.GenreIDs...), Year: candidateYear(year),
+			Native: identitymetadatadomain.WorkTitles{Provider: "tmdb", MediaKind: kind, WorkID: id, TitleCN: titleCN, OriginalTitle: originalTitle, Overview: strings.TrimSpace(item.Overview), Year: recordedYear(year)},
 		})
-		if kind == "tv" {
-			jobs = append(jobs, detailsJob{resultIndex: len(result) - 1, tmdbID: item.ID})
+	}
+	slices.SortStableFunc(result, func(a, b identitymetadatadomain.SearchCandidate) int {
+		animatedA, animatedB := hasAnimationGenre(a.GenreIDs), hasAnimationGenre(b.GenreIDs)
+		if animatedA == animatedB {
+			return 0
+		}
+		if animatedA {
+			return -1
+		}
+		return 1
+	})
+	result = result[:min(limit, len(result))]
+	type detailsJob struct {
+		resultIndex int
+		tmdbID      string
+	}
+	jobs := make([]detailsJob, 0, len(result))
+	for i := range result {
+		result[i].Score = rankScore(i, len(result))
+		if result[i].MediaKind == "tv" {
+			jobs = append(jobs, detailsJob{resultIndex: i, tmdbID: result[i].ProviderWorkID})
 		}
 	}
 	if len(jobs) > 0 {
@@ -215,8 +236,8 @@ func (s ConfiguredCandidateSearcher) searchTMDB(ctx context.Context, query strin
 	return result, nil
 }
 
-func (s ConfiguredCandidateSearcher) loadTMDBSeasons(parent context.Context, client *http.Client, base, apiKey string, tmdbID int) ([]identitymetadatadomain.SearchSeason, *int, identitymetadatadomain.DetailsStatus) {
-	endpoint, err := appendEndpointPath(base, "/tv/"+strconv.Itoa(tmdbID))
+func (s ConfiguredCandidateSearcher) loadTMDBSeasons(parent context.Context, client *http.Client, base, apiKey, tmdbID string) ([]identitymetadatadomain.SearchSeason, *int, identitymetadatadomain.DetailsStatus) {
+	endpoint, err := appendEndpointPath(base, "/tv/"+tmdbID)
 	if err != nil {
 		return nil, nil, identitymetadatadomain.DetailsStatusError
 	}
@@ -432,6 +453,10 @@ func rankScore(index, total int) float64 {
 		return 0
 	}
 	return score
+}
+
+func hasAnimationGenre(genreIDs []int) bool {
+	return slices.Contains(genreIDs, 16)
 }
 
 func minInt(left, right int) int {
