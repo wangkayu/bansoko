@@ -5,6 +5,12 @@
 - Custom naming Vars is retired: naming and notification templates no longer support vars.*, plugin webhook envelopes no longer include vars.*, and the /api/v1/naming-vars* API and variable-program runtime have been removed.
 - Business snapshots now use business-snapshot-v3. Active subscriptions, working candidates, drafts and revisions are migrated during the upgrade; historical execution records keep their frozen input and digest bytes unchanged.
 - The reltitle title-parser component no longer loads manually placed or custom-compiled binaries: only the builtin parser and official update channel builds on the same major.minor line and strictly newer than the builtin are used. After upgrading bansoko-server, cached channel builds that are no longer ahead, or that sit on another version line, are silently ignored (never executed).
+- Details for unsubscribed titles show a single “Not subscribed” status and keep the Bangumi and TMDB links. On phones, swipe across the details tabs to reach more tabs. Full-screen dialogs leave room for system gestures, and iOS Safari no longer zooms in when you focus an input.
+
+## Fixed
+
+- Library scans recognize movies without episode numbers, and importing a movie uses the movie naming rules to build its file path.
+- Movie subscriptions show “Waiting for import” until the file enters the library. After import, they show 1/1 with a full progress bar and appear under “Completed” in bulk management.
 
 ## Important
 
