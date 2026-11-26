@@ -38,6 +38,12 @@ func TestExtractSeasonNumberBoundariesAndRange(t *testing.T) {
 	}
 }
 
+func TestExtractSeasonNumberRejectsInvalidChineseNumeral(t *testing.T) {
+	if got := NewTitleTrimmer().ExtractSeasonNumber("第十十季"); got != nil {
+		t.Fatalf("invalid Chinese season marker must be rejected: got %v", *got)
+	}
+}
+
 func TestMediaPreferenceUsesBoundedOriginalTitleMarkers(t *testing.T) {
 	trimmer := NewTitleTrimmer()
 	for _, tc := range []struct {

@@ -202,6 +202,14 @@ func TestTMDBSimilarityNormalizesDecorationsAndGuardsShortContains(t *testing.T)
 	}
 }
 
+func TestTMDBSimilarityChecksOnlyTheMatchingTitleForContainsRatio(t *testing.T) {
+	m := new(TMDBMatcher)
+	got := m.titleSimilarity("中文作品标题", "中文作品标题扩展", "这是一个非常非常长的日文原名タイトル")
+	if got != 0.9 {
+		t.Fatalf("a valid Chinese containment must ignore the unrelated long original title: got %v", got)
+	}
+}
+
 func TestTMDBSimilarityTieCannotUsePopularityToDisambiguate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, `{"results":[{"id":1,"name":"Show","original_name":"Show","genre_ids":[16],"popularity":100},{"id":2,"name":"Show","original_name":"Show","genre_ids":[16],"popularity":1}]}`)
@@ -211,5 +219,25 @@ func TestTMDBSimilarityTieCannotUsePopularityToDisambiguate(t *testing.T) {
 	_, err := m.trySearch(context.Background(), server.Client(), server.URL, "key", "Show", "tv", tmdbSeasonClues{})
 	if !errors.Is(err, errAmbiguousTMDB) {
 		t.Fatalf("same-similarity candidates must remain ambiguous: %v", err)
+	}
+}
+
+func TestTMDBSimilarityPrefersExactTitleOverPopularSubstring(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/3/search/tv":
+			_, _ = fmt.Fprint(w, `{"results":[{"id":1,"name":"Show","original_name":"Show","genre_ids":[16],"popularity":1,"original_language":"ja"},{"id":2,"name":"Show Extended","original_name":"Show Extended","genre_ids":[16],"popularity":100,"original_language":"ja"}]}`)
+		case "/3/tv/1":
+			_, _ = fmt.Fprint(w, `{"seasons":[{"season_number":1,"air_date":"2024-01-01"}]}`)
+		default:
+			t.Fatalf("unexpected TMDB request path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	result, err := newReferenceTMDBMatcher(server).trySearch(context.Background(), server.Client(), server.URL+"/3", "key", "Show", "tv", tmdbSeasonClues{})
+	if err != nil || result == nil || result.WorkID != "1" {
+		t.Fatalf("exact title must beat a more popular substring: result=%+v err=%v", result, err)
 	}
 }

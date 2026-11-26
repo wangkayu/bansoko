@@ -74,7 +74,10 @@ func seasonNumber(match []string) *int {
 				return 2
 			}
 			if len([]rune(s)) == 1 {
-				return strings.Index("一二三四五六七八九", s)/len("一") + 1
+				if idx := strings.Index("一二三四五六七八九", s); idx >= 0 {
+					return idx/len("一") + 1
+				}
+				return -1
 			}
 			return -1
 		}

@@ -350,8 +350,6 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 		return nil, nil
 	}
 
-	var best *tmdbSearchResult
-	var bestConf float64
 	type scoredCandidate struct {
 		item            *tmdbSearchResult
 		confidence      float64
@@ -370,13 +368,17 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 		}
 		candidates = append(candidates, scoredCandidate{item: item, confidence: conf, titleSimilarity: similarity})
 	}
-	var highestSimilarity float64 = -1
-	sameTitleIDs := make(map[int]bool)
+	highestSimilarity := -1.0
 	for _, candidate := range candidates {
 		if candidate.titleSimilarity > highestSimilarity {
 			highestSimilarity = candidate.titleSimilarity
-			clear(sameTitleIDs)
 		}
+	}
+	if highestSimilarity < 0 {
+		return nil, nil
+	}
+	sameTitleIDs := make(map[int]bool)
+	for _, candidate := range candidates {
 		if candidate.titleSimilarity == highestSimilarity {
 			sameTitleIDs[candidate.item.ID] = true
 		}
@@ -384,8 +386,13 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 	if len(sameTitleIDs) > 1 {
 		return nil, errAmbiguousTMDB
 	}
+	var best *tmdbSearchResult
+	var bestConf float64
 	ambiguous := false
 	for _, candidate := range candidates {
+		if candidate.titleSimilarity != highestSimilarity {
+			continue
+		}
 		if candidate.confidence > bestConf {
 			best, bestConf, ambiguous = candidate.item, candidate.confidence, false
 		} else if candidate.confidence == bestConf && best != nil && best.ID != candidate.item.ID {
@@ -555,24 +562,27 @@ func containsScoreAllowed(compactQuery, compactTitle, compactOriginal string, cl
 	if compactQuery == "" {
 		return false
 	}
-	if clues.date.precision == dateUnknown && clues.weakYear == nil {
-		if isShortTMDBQuery(compactQuery) {
-			return false
+	if clues.date.precision != dateUnknown || clues.weakYear != nil {
+		return true
+	}
+	if isShortTMDBQuery(compactQuery) {
+		return false
+	}
+	hasContainment := false
+	for _, title := range []string{compactTitle, compactOriginal} {
+		if title == "" || (!strings.Contains(title, compactQuery) && !strings.Contains(compactQuery, title)) {
+			continue
 		}
-		for _, title := range []string{compactTitle, compactOriginal} {
-			if title == "" {
-				continue
-			}
-			short, long := len([]rune(compactQuery)), len([]rune(title))
-			if short > long {
-				short, long = long, short
-			}
-			if long > 0 && float64(short)/float64(long) < 0.5 {
-				return false
-			}
+		hasContainment = true
+		short, long := len([]rune(compactQuery)), len([]rune(title))
+		if short > long {
+			short, long = long, short
+		}
+		if long > 0 && float64(short)/float64(long) >= 0.5 {
+			return true
 		}
 	}
-	return true
+	return !hasContainment
 }
 
 func isShortTMDBQuery(value string) bool {
