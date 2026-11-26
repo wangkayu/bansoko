@@ -6,6 +6,7 @@
 - Business snapshots now use business-snapshot-v3. Active subscriptions, working candidates, drafts and revisions are migrated during the upgrade; historical execution records keep their frozen input and digest bytes unchanged.
 - The reltitle title-parser component no longer loads manually placed or custom-compiled binaries: only the builtin parser and official update channel builds on the same major.minor line and strictly newer than the builtin are used. After upgrading bansoko-server, cached channel builds that are no longer ahead, or that sit on another version line, are silently ignored (never executed).
 - Details for unsubscribed titles show a single “Not subscribed” status and keep the Bangumi and TMDB links. On phones, swipe across the details tabs to reach more tabs. Full-screen dialogs leave room for system gestures, and iOS Safari no longer zooms in when you focus an input.
+- Episode list previews now show episode durations. Bangumi lists show both the primary and original titles and filter across both; TMDB lists add an on-demand language switcher for Simplified Chinese, Japanese, and English, plus a per-episode preview dialog that loads the still image and localized overview only when opened.
 
 ## Fixed
 
