@@ -10,6 +10,9 @@
 - Manual TMDB searches list animated works first without hiding live-action matches that fit within the result limit.
 - Automatic metadata matching uses Bangumi v0 search and recognizes exact aliases. A trusted Bangumi match can provide titles for TMDB search; ambiguous airing dates leave the TMDB season unset instead of guessing.
 
+- Automatic matching now distinguishes movie markers from ordinary words, treats explicit seasons as TV, and keeps meaningful subtitle text when trimming search titles. It stops guessing among multiple unproven seasons.
+- TMDB automatic matching remains animation-only and thresholded, rejects popularity-based ties and weak short-title containment, and keeps ambiguous failures isolated to their current media type.
+- Bangumi automatic binding accepts exact titles, normalized exact titles, and allowlisted infobox aliases only; fuzzy and substring matches no longer bind automatically.
 ## Fixed
 
 - Library scans recognize movies without episode numbers, and importing a movie uses the movie naming rules to build its file path.
