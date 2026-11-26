@@ -2377,7 +2377,7 @@ h1, h2, h3, h4, h5, h6 {
 .metadata-episode-browser { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .metadata-episode-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; border-bottom: 1px solid hsl(var(--border)); padding: 0.75rem 1.25rem; }
 .metadata-episode-season,
-.metadata-episode-language { display: flex; align-items: center; gap: 0.375rem; color: hsl(var(--muted-foreground)); font-size: 0.75rem; }
+.metadata-episode-language { display: flex; flex-shrink: 0; align-items: center; gap: 0.375rem; color: hsl(var(--muted-foreground)); font-size: 0.75rem; white-space: nowrap; }
 .metadata-episode-filter { min-width: 12rem; flex: 1; }
 .metadata-episode-count { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; white-space: nowrap; }
 .metadata-episode-hint { margin: 0; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted) / 0.16); padding: 0.5rem 1.25rem; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; }
@@ -2396,7 +2396,9 @@ h1, h2, h3, h4, h5, h6 {
 .metadata-episode-title-cell { display: flex; align-items: center; justify-content: space-between; gap: 0.25rem; min-width: 0; }
 .metadata-episode-title { min-width: 0; overflow-wrap: anywhere; font-size: 0.75rem; font-weight: 500; }
 .metadata-episode-original-title { display: block; margin-top: 0.125rem; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; font-weight: 400; }
-.metadata-episode-preview-button { flex: none; width: 2rem; padding-inline: 0; }
+.metadata-episode-preview-button { flex: none; width: 2rem; padding-inline: 0; color: hsl(var(--muted-foreground)); }
+.metadata-episode-preview-button:hover { color: hsl(var(--foreground)); }
+.metadata-episode-preview-button svg { width: 0.9375rem; height: 0.9375rem; }
 .metadata-episode-date,
 .metadata-episode-duration { color: hsl(var(--muted-foreground)); font-size: 0.6875rem; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .metadata-episode-preview-title,
@@ -2409,7 +2411,6 @@ h1, h2, h3, h4, h5, h6 {
 @media (width <= 600px) {
   .metadata-match-episodes-action { min-height: 2.75rem; padding-inline: 0.625rem; }
   .metadata-episode-tools { gap: 0.5rem; padding: 0.625rem 1rem; }
-  .metadata-episode-season { white-space: nowrap; }
   .metadata-episode-filter { min-width: 10rem; }
   .metadata-episode-hint { padding: 0.5rem 1rem; }
   .metadata-episode-head { padding: 0.5rem 1rem; }
