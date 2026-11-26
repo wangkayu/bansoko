@@ -19,9 +19,9 @@ import (
 // over the same facts a scan observation carries for the placement — its
 // coverage episode and the release's latest
 // candidate facts (resolution, language, group) — and the same companion
-// rule. Keys are placement ids and companion ids; a placement without an
-// episode identity or whose render fails is absent (never guessed), and so
-// are its companions. Paths are absolute.
+// rule. Keys are placement ids and companion ids; a placement without a
+// recognized coverage identity (a tv episode or a movie) or whose render fails
+// is absent (never guessed), and so are its companions. Paths are absolute.
 func (r *NamingTargetRenderer) RenderPlacementTargets(ctx context.Context, animeID string, placementIDs []string) (map[string]string, error) {
 	targets := map[string]string{}
 	if r == nil || r.db == nil {
@@ -66,8 +66,11 @@ ORDER BY p.id`, animeID, pq.Array(placementIDs))
 	}
 	rendered := []string{}
 	for _, p := range placements {
-		episode := episodeFromCoverage(p.coverage)
-		if episode == "" {
+		episode, resolved := coverageRenderEpisode(p.coverage)
+		if !resolved {
+			// A movie coverage renders the movie branch with the empty episode
+			// display; only a placement that names neither a tv episode nor a
+			// movie has no target identity and stays absent.
 			continue
 		}
 		target, err := r.RenderCalibratedTarget(ctx, animeID, p.path, p.size, CalibratedRenderFacts{

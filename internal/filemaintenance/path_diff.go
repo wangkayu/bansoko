@@ -82,10 +82,13 @@ func (s *PathDiffService) ListPathDiffs(ctx context.Context, animeID string, gen
 			SizeBytes:    sizeBytes,
 		}
 		coverage, _ := parseCoverageList(coverageRaw)
-		episode := episodeFromCoverage(coverage)
-		if episode == "" {
+		episode, resolved := coverageRenderEpisode(coverage)
+		if !resolved {
 			// Unrecognized content has no expected target: alignment never
-			// moves a file without an episode identity.
+			// moves a file without an episode identity. A movie coverage is
+			// resolved with the empty episode display its template renders
+			// with, so only a key list that names neither a tv episode nor a
+			// movie stays unresolved.
 			view.ExpectedPath = nil
 			view.TargetUnavailable = "coverage_unresolved"
 			views = append(views, withCompanionDiffs(view, companionsRaw))
@@ -220,6 +223,23 @@ func parseCoverageList(raw string) ([]string, error) {
 		return nil, err
 	}
 	return coverage, nil
+}
+
+// coverageRenderEpisode resolves the render episode of one frozen coverage key
+// list: a tv key yields its episode (tv:e5, or the v1 tv:s2:e5), a legitimate
+// movie coverage (movie:0) yields the empty display the movie template renders
+// with, and a list with neither is unresolved because the file then has no
+// target identity at all.
+func coverageRenderEpisode(coverage []string) (string, bool) {
+	if episode := episodeFromCoverage(coverage); episode != "" {
+		return episode, true
+	}
+	for _, key := range coverage {
+		if strings.HasPrefix(key, "movie:") {
+			return "", true
+		}
+	}
+	return "", false
 }
 
 // episodeFromCoverage extracts the canonical episode display from the first

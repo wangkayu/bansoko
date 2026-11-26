@@ -141,8 +141,14 @@ func (r *NamingTargetRenderer) RenderCalibratedTarget(ctx context.Context, anime
 	if err != nil {
 		return "", err
 	}
-	resolved.Context.Parsed.Episode.Display = facts.EpisodeDisplay
-	resolved.Context.Parsed.Episode.Raw = facts.EpisodeDisplay
+	// A movie coverage resolves to the empty episode display: writing it
+	// unconditionally would clear the parsed episode the frozen identity
+	// carries. Only a resolved tv episode overrides it (RenderTarget does the
+	// same for its observation).
+	if facts.EpisodeDisplay != "" {
+		resolved.Context.Parsed.Episode.Display = facts.EpisodeDisplay
+		resolved.Context.Parsed.Episode.Raw = facts.EpisodeDisplay
+	}
 	return renderResolvedTarget(base, rules, resolved.Context, lineage.renderFacts(), lineage.namingRenderer())
 }
 
