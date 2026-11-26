@@ -127,7 +127,7 @@ describe("MetadataFields 绑定事实行", () => {
     const browser = within(await screen.findByRole("dialog", { name: t("forms.boundEpisodeTitle") }));
     expect(await browser.findByText("冬日来信")).toBeInTheDocument();
     expect(episodeLoader).toHaveBeenCalledTimes(1);
-    expect(episodeLoader).toHaveBeenCalledWith(expect.objectContaining({ provider: "tmdb", workId: "265010" }), 0);
+    expect(episodeLoader).toHaveBeenCalledWith(expect.objectContaining({ provider: "tmdb", workId: "265010" }), 0, expect.objectContaining({ language: "zh-CN" }));
     expect(fetchMock.mock.calls[0]?.[0]).toContain("/metadata/tmdb/works/265010/seasons");
     expect(browser.getByRole("combobox", { name: t("forms.browseSeason") })).toHaveTextContent(t("forms.boundSeasonOption", { season: t("forms.seasonSpecials") }));
     expect(await browser.findByRole("status")).toHaveTextContent(t("forms.seasonCatalogueLoadFailed"));
@@ -152,7 +152,7 @@ describe("MetadataFields 绑定事实行", () => {
     expect(browser.getByRole("heading", { name: /SP/ })).toBeInTheDocument();
     expect(browser.queryByRole("combobox")).not.toBeInTheDocument();
     expect(episodeLoader).toHaveBeenCalledTimes(1);
-    expect(episodeLoader).toHaveBeenCalledWith(expect.objectContaining({ provider: "bgm", workId: "486109" }), undefined);
+    expect(episodeLoader).toHaveBeenCalledWith(expect.objectContaining({ provider: "bgm", workId: "486109" }), undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -263,7 +263,7 @@ describe("MetadataMatchDialog", () => {
     fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.browseCandidateEpisodes", { title: tmdbCandidate.title }) }));
     let episodeDialog = await screen.findByRole("dialog", { name: t("forms.episodeListTitle") });
     expect(await within(episodeDialog).findByText("第2季第一集")).toBeInTheDocument();
-    expect(episodeLoader).toHaveBeenCalledWith(tmdbCandidate, 2);
+    expect(episodeLoader).toHaveBeenCalledWith(tmdbCandidate, 2, expect.objectContaining({ language: "zh-CN" }));
     expect(candidate).toHaveAttribute("aria-selected", "false");
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(within(episodeDialog).getAllByRole("button", { name: t("ui.close") })[1]!);
@@ -301,7 +301,7 @@ describe("MetadataMatchDialog", () => {
     expect(within(episodeDialog).getByRole("heading", { name: /正片/ })).toBeInTheDocument();
     expect(within(episodeDialog).getByRole("heading", { name: /SP/ })).toBeInTheDocument();
     expect(within(episodeDialog).queryByRole("combobox", { name: t("forms.browseSeason") })).not.toBeInTheDocument();
-    expect(episodeLoader).toHaveBeenCalledWith(bgmCandidate, undefined);
+    expect(episodeLoader).toHaveBeenCalledWith(bgmCandidate, undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
 
     fireEvent.change(within(episodeDialog).getByLabelText(t("forms.episodeFilter")), { target: { value: "特别篇" } });
     expect(within(episodeDialog).queryByText("正片第一集")).not.toBeInTheDocument();

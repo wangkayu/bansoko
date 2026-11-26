@@ -1647,14 +1647,24 @@ export function listTMDBWorkSeasons(workID: string): Promise<TMDBSeasonList> {
   return request(`/metadata/tmdb/works/${encodePathSegment(workID)}/seasons`, { method: "GET" });
 }
 
-/** Read-only episodes of one season of a TMDB work. */
-export function listTMDBCandidateEpisodes(workID: string, season: number): Promise<TMDBSeasonEpisodeList> {
-  return request(`/metadata/tmdb/works/${encodePathSegment(workID)}/seasons/${season}/episodes`, { method: "GET" });
+export type TMDBEpisodeLanguage = NonNullable<NonNullable<operations["listTMDBCandidateEpisodes"]["parameters"]["query"]>["language"]>;
+
+/** Read-only episodes of one season of a TMDB work. `language` localizes titles and overviews. */
+export function listTMDBCandidateEpisodes(
+  workID: string,
+  season: number,
+  language?: TMDBEpisodeLanguage,
+  signal?: AbortSignal,
+): Promise<TMDBSeasonEpisodeList> {
+  return request(`/metadata/tmdb/works/${encodePathSegment(workID)}/seasons/${season}/episodes${queryString({ language })}`, {
+    method: "GET",
+    signal,
+  });
 }
 
 /** Read-only main episodes and specials of a Bangumi work returned by metadata search, before any binding. */
-export function listBGMCandidateEpisodes(workID: string): Promise<BGMEpisodeList> {
-  return request(`/metadata/bgm/works/${encodePathSegment(workID)}/episodes`, { method: "GET" });
+export function listBGMCandidateEpisodes(workID: string, signal?: AbortSignal): Promise<BGMEpisodeList> {
+  return request(`/metadata/bgm/works/${encodePathSegment(workID)}/episodes`, { method: "GET", signal });
 }
 
 export function locateFileManagerAnime(managedAnimeID: string): Promise<FileManagerLocation> {

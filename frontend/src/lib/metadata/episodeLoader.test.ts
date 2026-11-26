@@ -1,61 +1,64 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiMetadataEpisodeLoader } from "./episodeLoader";
-import type { MetadataCandidate } from "./types";
+import { apiMetadataEpisodeLoader, resetEpisodeCache } from "./episodeLoader";
 
-function response(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-const tmdbCandidate: MetadataCandidate = {
-  provider: "tmdb",
-  workId: "265010",
-  title: "星际邮差艾拉",
-  detailsStatus: "available",
-  mediaKind: "tv",
-  seasons: [{ seasonNumber: 2, name: "第二季", episodeCount: 2, airDate: "2025-01-03", isSpecial: false }],
-};
-
-const bgmCandidate: MetadataCandidate = {
-  provider: "bgm",
-  workId: "486109",
-  title: "沉默魔女的秘密",
-  detailsStatus: "not_applicable",
-};
+const tmdb = { provider: "tmdb", workId: "265010", title: "星际邮差艾拉" } as const;
+const bgm = { provider: "bgm", workId: "486109", title: "沉默魔女的秘密" } as const;
 
 describe("API candidate episode loader", () => {
   afterEach(() => {
+    resetEpisodeCache();
     vi.unstubAllGlobals();
   });
 
-  it("reads the browsed TMDB season and keeps no section", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response({
-      season: 2,
-      episodes: [{ episode: 1, title: "第一话", air_date: "2025-01-03" }, { episode: 2 }],
-    }));
+  it("requests only Chinese by default, and reuses each loaded work, season and language", async () => {
+    const still = "/api/v1/images/cover/" + "ab".repeat(32);
+    const fetchMock = vi.fn(async (path: string) => {
+      const url = new URL(path, "http://localhost");
+      const language = url.searchParams.get("language");
+      return Response.json({ season: 2, episodes: [{
+        episode: 1, title: language, air_date: "2025-01-03", runtime_minutes: 24, still_url: still, overview: `Overview: ${language}`,
+      }] });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(apiMetadataEpisodeLoader(tmdbCandidate, 2)).resolves.toEqual([
-      { episode: 1, title: "第一话", airDate: "2025-01-03" },
-      { episode: 2, title: undefined, airDate: undefined },
+    await expect(apiMetadataEpisodeLoader(tmdb, 2)).resolves.toEqual([
+      { episode: 1, title: "zh-CN", airDate: "2025-01-03", runtimeMinutes: 24, stillUrl: still, overview: "Overview: zh-CN" },
     ]);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain("/metadata/tmdb/works/265010/seasons/2/episodes");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/metadata/tmdb/works/265010/seasons/2/episodes?language=zh-CN");
+    await expect(apiMetadataEpisodeLoader(tmdb, 2, { language: "ja-JP" })).resolves.toMatchObject([{ overview: "Overview: ja-JP" }]);
+    await apiMetadataEpisodeLoader(tmdb, 2);
+    await apiMetadataEpisodeLoader(tmdb, 2, { language: "ja-JP" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await apiMetadataEpisodeLoader(tmdb, 3);
+    await apiMetadataEpisodeLoader({ ...tmdb, workId: "1" }, 2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  it("reads a Bangumi subject's whole list with its sections", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response({
+  it("forwards cancellation and does not cache a late response from an abandoned browse", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => Response.json({ season: 2, episodes: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const first = apiMetadataEpisodeLoader(tmdb, 2, { signal: controller.signal });
+    controller.abort();
+    await first;
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    await apiMetadataEpisodeLoader(tmdb, 2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a Bangumi subject's whole list with titles, durations and sections", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({
       episodes: [
-        { episode: 1, title: "第一话", air_date: "2025-01-03", section: "main" },
-        { episode: 1, title: "特别篇", air_date: "2025-06-01", section: "special" },
+        { episode: 1, title: "第一话", original_title: "最初の夜", air_date: "2025-01-03", duration: "23:40", section: "main" },
+        { episode: 1, title: "特别篇", section: "special" },
       ],
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(apiMetadataEpisodeLoader(bgmCandidate)).resolves.toEqual([
-      { episode: 1, title: "第一话", airDate: "2025-01-03", section: "main" },
-      { episode: 1, title: "特别篇", airDate: "2025-06-01", section: "special" },
+    await expect(apiMetadataEpisodeLoader(bgm)).resolves.toEqual([
+      { episode: 1, title: "第一话", originalTitle: "最初の夜", airDate: "2025-01-03", duration: "23:40", section: "main" },
+      { episode: 1, title: "特别篇", section: "special" },
     ]);
     expect(fetchMock.mock.calls[0]?.[0]).toContain("/metadata/bgm/works/486109/episodes");
   });

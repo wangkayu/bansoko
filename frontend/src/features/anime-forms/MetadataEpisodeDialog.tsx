@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState, type RefObject } from "react";
-import { Search } from "lucide-react";
-import { listTMDBWorkSeasons, toUserMessage, type TMDBSeasonList } from "../../lib/api/client";
+import { FileText, Image as ImageIcon, Search } from "lucide-react";
+import { listTMDBWorkSeasons, toUserMessage, type TMDBEpisodeLanguage, type TMDBSeasonList } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
+import { formatEpisodeDuration } from "../../lib/metadata/duration";
+import { DEFAULT_EPISODE_LANGUAGE } from "../../lib/metadata/episodeLoader";
 import type { MetadataCandidate, MetadataEpisode, MetadataEpisodeLoader, MetadataEpisodeWork } from "../../lib/metadata/types";
+import { useAuthedImageState } from "../../lib/useAuthedImage";
 import { Button, Input, StateBlock } from "../../ui";
 import { Dialog, Select } from "../../ui/base";
 
@@ -16,6 +19,44 @@ type EpisodeDialogProps = {
   returnFocus?: RefObject<HTMLButtonElement | null>;
 } & ({ candidate: MetadataCandidate; binding?: never } | { binding: MetadataEpisodeBinding; candidate?: never });
 
+function episodeLanguageOptions(): { value: TMDBEpisodeLanguage; label: string }[] {
+  return [
+    { value: "zh-CN", label: t("forms.episodeLanguageChinese") },
+    { value: "ja-JP", label: t("forms.episodeLanguageJapanese") },
+    { value: "en-US", label: t("forms.episodeLanguageEnglish") },
+  ];
+}
+
+function EpisodePreview({ episode, onClose, language }: { episode: MetadataEpisode; onClose: () => void; language: TMDBEpisodeLanguage }) {
+  const { src, failed } = useAuthedImageState(episode.stillUrl);
+  const [decodeFailed, setDecodeFailed] = useState(false);
+  const number = t("forms.episodeNumber", { n: episode.episode });
+  const duration = formatEpisodeDuration(episode);
+  const detail = [episode.airDate, duration === "—" ? undefined : duration].filter(Boolean).join(" · ");
+
+  return (
+    <Dialog open tier="M" focusTitle
+      title={<span className="metadata-episode-preview-title">{number}{episode.title ? <> · <span lang={language}>{episode.title}</span></> : null}</span>}
+      description={detail || undefined}
+      onRequestClose={onClose}
+    >
+      <div className="metadata-episode-preview">
+        {episode.stillUrl && (
+          <div className="metadata-episode-still">
+            {failed || decodeFailed ? (
+              <span role="status">{t("forms.episodeStillFailed")}</span>
+            ) : src ? (
+              <img src={src} alt={t("forms.episodeStillAlt", { n: episode.episode })} onError={() => setDecodeFailed(true)} />
+            ) : (
+              <span role="status">{t("forms.episodeStillLoading")}</span>
+            )}
+          </div>
+        )}
+        {episode.overview && <p className="metadata-episode-overview" lang={language}>{episode.overview}</p>}
+      </div>
+    </Dialog>
+  );
+}
 // Browsing keeps the selected season and filter local, independent of matching and saved settings.
 export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, returnFocus }: EpisodeDialogProps) {
   const work = binding ?? candidate;
@@ -23,6 +64,8 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
   const boundTMDBWorkID = binding?.provider === "tmdb" ? binding.workId : undefined;
   const initialSeason = boundSeason ?? candidate?.suggestedSeason ?? candidate?.seasons?.[0]?.seasonNumber ?? 1;
   const [season, setSeason] = useState(String(initialSeason));
+  const [language, setLanguage] = useState<TMDBEpisodeLanguage>(DEFAULT_EPISODE_LANGUAGE);
+  const [preview, setPreview] = useState<MetadataEpisode>();
   const [filter, setFilter] = useState("");
   const [episodes, setEpisodes] = useState<MetadataEpisode[]>([]);
   const [pending, setPending] = useState(true);
@@ -56,29 +99,29 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
       });
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    const { signal } = controller;
     setPending(true);
     setEpisodes([]);
     setError(undefined);
-    loader(work, isTMDB ? Number(season) : undefined)
+    loader(work, isTMDB ? Number(season) : undefined, { language: isTMDB ? language : undefined, signal })
       .then((result) => {
-        if (active) setEpisodes(result);
+        if (!signal.aborted) setEpisodes(result);
       })
       .catch((cause: unknown) => {
-        if (active) setError(toUserMessage(cause, t(binding ? "forms.boundEpisodeLoadFailed" : "forms.episodeLoadFailed")));
+        if (!signal.aborted) setError(toUserMessage(cause, t(binding ? "forms.boundEpisodeLoadFailed" : "forms.episodeLoadFailed")));
       })
       .finally(() => {
-        if (active) setPending(false);
+        if (!signal.aborted) setPending(false);
       });
-    return () => {
-      active = false;
-    };
-  }, [binding, isTMDB, loader, reloadTick, season, work]);
+    return () => controller.abort();
+  }, [binding, isTMDB, language, loader, reloadTick, season, work]);
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     return episodes.filter((episode) =>
-      !needle || String(episode.episode).includes(needle) || (episode.title ?? "").toLowerCase().includes(needle),
+      !needle || String(episode.episode).includes(needle) ||
+      episode.title?.toLowerCase().includes(needle) || episode.originalTitle?.toLowerCase().includes(needle),
     );
   }, [episodes, filter]);
   const sections = [
@@ -87,11 +130,33 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
   ].filter((section) => section.items.length > 0);
 
   function renderEpisode(episode: MetadataEpisode) {
+    const number = t("forms.episodeNumber", { n: episode.episode });
+    const originalTitle = !isTMDB ? episode.originalTitle?.trim() : undefined;
+    const title = episode.title?.trim() || originalTitle || t("forms.unnamed");
+    const duration = formatEpisodeDuration(episode);
+    const previewLabel = t("forms.episodePreviewAction", { n: episode.episode });
+    const PreviewIcon = episode.stillUrl ? ImageIcon : FileText;
     return (
       <li className="metadata-episode-row" key={`${episode.section ?? "main"}:${episode.episode}`}>
-        <span className="metadata-episode-number">{t("forms.episodeNumber", { n: episode.episode })}</span>
-        <span className="metadata-episode-title">{episode.title || t("forms.unnamed")}</span>
-        <time className="metadata-episode-date">{episode.airDate || "—"}</time>
+        <span className="metadata-episode-number">{number}</span>
+        <div className="metadata-episode-title-cell">
+          <div className="metadata-episode-title">
+            <span lang={isTMDB ? language : undefined}>{title}</span>
+            {originalTitle && originalTitle !== title && (
+              <span className="metadata-episode-original-title">{originalTitle}</span>
+            )}
+          </div>
+          {isTMDB && (episode.stillUrl || episode.overview) && (
+            <Button type="button" variant="ghost" size="sm" className="metadata-episode-preview-button"
+              aria-label={previewLabel} title={previewLabel} aria-haspopup="dialog" onClick={() => setPreview(episode)}>
+              <PreviewIcon aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+        <span className="metadata-episode-duration">{duration}</span>
+        <div className="metadata-episode-date">
+          {episode.airDate ? <time>{episode.airDate}</time> : "—"}
+        </div>
       </li>
     );
   }
@@ -128,6 +193,12 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
               />
             </label>
           )}
+          {isTMDB && (
+            <label className="metadata-episode-language">
+              {t("forms.episodeLanguage")}
+              <Select label={t("forms.episodeLanguage")} value={language} onChange={setLanguage} options={episodeLanguageOptions()} size="sm" />
+            </label>
+          )}
           <Input
             aria-label={t(binding ? "forms.boundEpisodeFilter" : "forms.episodeFilter")}
             placeholder={t("forms.episodeFilterPlaceholder")}
@@ -153,7 +224,10 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
             : t(isTMDB ? "forms.episodeBrowseHint" : "forms.episodeBrowseHintBgm")}
         </p>
         <div className="metadata-episode-head" aria-hidden="true">
-          <span>{t("forms.episodeColumn")}</span><span>{t("forms.episodeTitleColumn")}</span><span>{t("forms.episodeDateColumn")}</span>
+          <span>{t("forms.episodeColumn")}</span>
+          <span>{t("forms.episodeTitleColumn")}</span>
+          <span className="metadata-episode-duration">{t("forms.episodeDurationColumn")}</span>
+          <span className="metadata-episode-date">{t("forms.episodeDateColumn")}</span>
         </div>
         <div className="metadata-episode-scroll">
           {pending ? (
@@ -178,6 +252,7 @@ export function MetadataEpisodeDialog({ candidate, binding, loader, onClose, ret
           )}
         </div>
       </div>
+      {preview && <EpisodePreview episode={preview} language={language} onClose={() => setPreview(undefined)} />}
     </Dialog>
   );
 }
