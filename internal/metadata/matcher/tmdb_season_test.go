@@ -106,10 +106,10 @@ func TestTMDBReferenceUsesNearestSeasonAirDate(t *testing.T) {
 	}
 }
 
-func TestIdentifySeasonUsesLatestAiredWithoutAnAgeLimit(t *testing.T) {
+func TestIdentifySeasonDoesNotGuessAmongMultipleRegularSeasons(t *testing.T) {
 	season, ok := identifySeason([]tmdbSeason{{SeasonNumber: 1, AirDate: "2000-01-01"}, {SeasonNumber: 2, AirDate: "2010-01-01"}}, nil)
-	if !ok || season != 2 {
-		t.Fatalf("old works must still select the latest aired season: season=%d ok=%v", season, ok)
+	if ok || season != 0 {
+		t.Fatalf("multiple seasons without clues must remain unresolved: season=%d ok=%v", season, ok)
 	}
 }
 
@@ -209,11 +209,11 @@ func TestTMDBSearchDoesNotUseTitleYearAsWorkYear(t *testing.T) {
 			if q.Has("first_air_date_year") || q.Has("year") {
 				t.Errorf("season year must not filter work search: %s", r.URL.RawQuery)
 			}
-			if q.Get("query") != "Show" {
+			if q.Get("query") != "Show [2026]" {
 				fmt.Fprint(w, `{"results":[]}`)
 				return
 			}
-			fmt.Fprint(w, `{"results":[{"id":42,"name":"节目","original_name":"Show","genre_ids":[16],"first_air_date":"2021-04-01","original_language":"ja"}]}`)
+			fmt.Fprint(w, `{"results":[{"id":42,"name":"节目","original_name":"Show [2026]","genre_ids":[16],"first_air_date":"2021-04-01","original_language":"ja"}]}`)
 		case "/3/tv/42":
 			fmt.Fprint(w, `{"seasons":[{"season_number":1,"air_date":"2021-04-01"},{"season_number":2,"air_date":"2022-04-01"},{"season_number":3,"air_date":"2026-04-01"}]}`)
 		default:
@@ -231,6 +231,8 @@ func TestTMDBSearchDoesNotUseTitleYearAsWorkYear(t *testing.T) {
 func TestTMDBSearchDoesNotSwitchWorkAfterUnresolvedSeason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/3/search/movie":
+			fmt.Fprint(w, `{"results":[]}`)
 		case "/3/search/tv":
 			if r.URL.Query().Get("query") != "フールナイト" {
 				t.Errorf("must not relay another title after work resolution: %s", r.URL)

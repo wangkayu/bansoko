@@ -2,6 +2,7 @@ package matcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -182,5 +183,33 @@ func TestTMDBMatcherDoesNotDecodeStatusOrEpisodes(t *testing.T) {
 	// fields in the response are silently ignored.
 	if result.WorkID != "99" || result.Season != 1 {
 		t.Fatalf("expected WorkID=99 Season=1, got %+v", result)
+	}
+}
+
+func TestTMDBSimilarityNormalizesDecorationsAndGuardsShortContains(t *testing.T) {
+	m := new(TMDBMatcher)
+	if got := m.titleSimilarity("【ＡＢＣ！】", "ABC", ""); got != 1 {
+		t.Fatalf("normalized decorations must compare equally: got %v", got)
+	}
+	if got := m.titleSimilarity("梦境世界", "梦境世界蜡笔小新", ""); got >= 0.9 {
+		t.Fatalf("short CJK contains must use Levenshtein: got %v", got)
+	}
+	if got := m.titleSimilarity("Long Series Name", "Long", ""); got >= 0.8 {
+		t.Fatalf("low-ratio contains must use Levenshtein: got %v", got)
+	}
+	if got := m.titleSimilarityWithClues("Long Series Name", "Long Series Name Extended", "", tmdbSeasonClues{date: dateClue{precision: dateYear}}); got != 0.9 {
+		t.Fatalf("dated contains may retain the contains score: got %v", got)
+	}
+}
+
+func TestTMDBSimilarityTieCannotUsePopularityToDisambiguate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"results":[{"id":1,"name":"Show","original_name":"Show","genre_ids":[16],"popularity":100},{"id":2,"name":"Show","original_name":"Show","genre_ids":[16],"popularity":1}]}`)
+	}))
+	defer server.Close()
+	m := newReferenceTMDBMatcher(server)
+	_, err := m.trySearch(context.Background(), server.Client(), server.URL, "key", "Show", "tv", tmdbSeasonClues{})
+	if !errors.Is(err, errAmbiguousTMDB) {
+		t.Fatalf("same-similarity candidates must remain ambiguous: %v", err)
 	}
 }

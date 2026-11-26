@@ -79,6 +79,7 @@ type MatchResult struct {
 	BgmYear, TmdbYear *int
 	bgmTrusted        bool
 	bgmAirDate        dateClue
+	bgmPlatform       string
 }
 
 // WorkTitles returns the native names this result carries for the works it
@@ -261,7 +262,16 @@ func (m *Matcher) MatchRequest(ctx context.Context, request MatchRequest) (*Matc
 			if result.bgmTrusted {
 				titles = []string{result.BgmTitle, result.BgmTitleCN, request.Title}
 			}
-			tmdbResult, err = m.tmdbMatcher.matchTitles(ctx, request.Title, titles, targetAirDate)
+			preference := mediaPreferenceForTitle(request.Title, m.tmdbMatcher.trimmer())
+			if preference == mediaPrefNone && result.bgmTrusted {
+				switch result.bgmPlatform {
+				case "剧场版", "劇場版":
+					preference = mediaPrefMovieFirst
+				case "TV", "WEB":
+					preference = mediaPrefTVFirst
+				}
+			}
+			tmdbResult, err = m.tmdbMatcher.matchTitlesWithPreference(ctx, request.Title, titles, targetAirDate, preference)
 		}
 		m.observe(ctx, sourceTMDB, err)
 		if err != nil {
@@ -343,6 +353,7 @@ func applyBGMResult(result *MatchResult, bgmResult *BGMMatchResult) {
 		result.BgmTitle = strings.TrimSpace(bgmResult.Subject.Name)
 		result.BgmTitleCN = strings.TrimSpace(bgmResult.Subject.NameCN)
 		result.BgmPosterURL = strings.TrimSpace(bgmResult.Subject.Images.Common)
+		result.bgmPlatform = strings.TrimSpace(bgmResult.Subject.Platform)
 		if bgmResult.trusted {
 			result.bgmTrusted = true
 			result.bgmAirDate = bgmResult.airing

@@ -65,6 +65,22 @@ func (s BGMSubject) matchesTitle(key string) bool {
 	}
 	return false
 }
+func (s BGMSubject) matchesNormalizedTitle(key string) bool {
+	if key == "" || normalizeTitle(s.Name) == key || normalizeTitle(s.NameCN) == key {
+		return key != ""
+	}
+	for _, field := range s.Infobox {
+		switch strings.TrimSpace(field.Key) {
+		case "别名", "別名", "又名", "其他名称", "其它名称", "英文名", "英文名称", "日文名", "日文名称", "中文名", "中文名称", "简体中文名", "繁体中文名":
+			for _, value := range field.values() {
+				if len(value) <= 512 && normalizeTitle(value) == key {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
 
 type datePrecision uint8
 

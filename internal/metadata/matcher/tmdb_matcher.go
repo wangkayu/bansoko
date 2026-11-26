@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	configurationdomain "bansoko/internal/configuration/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
@@ -107,6 +110,10 @@ var (
 )
 
 func (m *TMDBMatcher) matchTitles(ctx context.Context, original string, titles []string, target dateClue) (*TMDBMatchResult, error) {
+	return m.matchTitlesWithPreference(ctx, original, titles, target, mediaPreferenceForTitle(original, m.trimmer()))
+}
+
+func (m *TMDBMatcher) matchTitlesWithPreference(ctx context.Context, original string, titles []string, target dateClue, preference mediaPreference) (*TMDBMatchResult, error) {
 	if strings.TrimSpace(firstNonEmpty(titles...)) == "" {
 		return nil, nil
 	}
@@ -120,27 +127,66 @@ func (m *TMDBMatcher) matchTitles(ctx context.Context, original string, titles [
 	if target.precision == dateUnknown {
 		clues.weakYear = reltitletags.WeakYear(original)
 	}
-nextTitle:
+	failedKinds := make(map[string]bool, 2)
 	for _, terms := range m.searchTitleGroups(titles) {
-		for _, kind := range []string{"tv", "movie"} {
-			for _, term := range terms {
+		for _, kind := range mediaKinds(preference) {
+			if failedKinds[kind] {
+				continue
+			}
+			kindTerms := terms
+			if kind == "movie" && preference == mediaPrefMovieOnly {
+				kindTerms = appendMoviePrefixTerms(kindTerms)
+			}
+			for _, term := range kindTerms {
 				result, err := m.trySearch(ctx, client, endpoint, apiKey, term, kind, clues)
 				switch {
-				case errors.Is(err, errAmbiguousTMDB):
-					continue nextTitle
-				case errors.Is(err, errUnresolvedTMDBSeason):
-					// Another title may point at a different work.
-					return nil, nil
+				case errors.Is(err, errAmbiguousTMDB), errors.Is(err, errUnresolvedTMDBSeason):
+					// Stop this media kind's query terms, but keep other kinds alive.
+					failedKinds[kind] = true
 				case err != nil:
 					return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb %s search: %w", kind, err)}
 				case result != nil:
 					result.Method = kind
 					return result, nil
 				}
+				if failedKinds[kind] {
+					break
+				}
 			}
 		}
 	}
 	return nil, nil
+}
+
+func mediaKinds(preference mediaPreference) []string {
+	switch preference {
+	case mediaPrefMovieOnly:
+		return []string{"movie"}
+	case mediaPrefTVOnly:
+		return []string{"tv"}
+	case mediaPrefMovieFirst:
+		return []string{"movie", "tv"}
+	case mediaPrefTVFirst:
+		return []string{"tv", "movie"}
+	default:
+		return []string{"tv", "movie"}
+	}
+}
+
+func appendMoviePrefixTerms(terms []string) []string {
+	result := append([]string(nil), terms...)
+	seen := make(map[string]bool, len(result))
+	for _, term := range result {
+		seen[bgmTitleKey(term)] = true
+	}
+	for _, term := range terms {
+		stripped := stripMoviePrefix(term)
+		if stripped != "" && !seen[bgmTitleKey(stripped)] {
+			result = append(result, stripped)
+			seen[bgmTitleKey(stripped)] = true
+		}
+	}
+	return result
 }
 
 // MatchReference resolves the exact work supplied by bangumi-data or an
@@ -306,20 +352,43 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 
 	var best *tmdbSearchResult
 	var bestConf float64
-	ambiguous := false
+	type scoredCandidate struct {
+		item            *tmdbSearchResult
+		confidence      float64
+		titleSimilarity float64
+	}
+	var candidates []scoredCandidate
 	for i := range resp.Results {
 		item := &resp.Results[i]
 		if item.ID <= 0 || !hasAnimationGenre(item.GenreIDs) {
 			continue
 		}
-		conf := m.calculateConfidence(query, item)
+		similarity := m.titleSimilarityWithClues(query, tmdbResultTitle(item), tmdbResultOriginalTitle(item), clues)
+		conf := m.calculateConfidenceWithClues(query, item, clues)
 		if conf < tmdbMinConfidence {
 			continue
 		}
-		switch {
-		case conf > bestConf:
-			best, bestConf, ambiguous = item, conf, false
-		case conf == bestConf && best.ID != item.ID:
+		candidates = append(candidates, scoredCandidate{item: item, confidence: conf, titleSimilarity: similarity})
+	}
+	var highestSimilarity float64 = -1
+	sameTitleIDs := make(map[int]bool)
+	for _, candidate := range candidates {
+		if candidate.titleSimilarity > highestSimilarity {
+			highestSimilarity = candidate.titleSimilarity
+			clear(sameTitleIDs)
+		}
+		if candidate.titleSimilarity == highestSimilarity {
+			sameTitleIDs[candidate.item.ID] = true
+		}
+	}
+	if len(sameTitleIDs) > 1 {
+		return nil, errAmbiguousTMDB
+	}
+	ambiguous := false
+	for _, candidate := range candidates {
+		if candidate.confidence > bestConf {
+			best, bestConf, ambiguous = candidate.item, candidate.confidence, false
+		} else if candidate.confidence == bestConf && best != nil && best.ID != candidate.item.ID {
 			ambiguous = true
 		}
 	}
@@ -423,37 +492,110 @@ func (m *TMDBMatcher) getJSON(ctx context.Context, client *http.Client, rawURL, 
 // --- Confidence calculation ---
 
 func (m *TMDBMatcher) calculateConfidence(query string, result *tmdbSearchResult) float64 {
-	// Keep the previous unfiltered score baseline. Airing hints concern seasons,
-	// not a TV work's first air date, and must not affect work confidence.
-	conf := 0.1 + m.titleSimilarity(query, tmdbResultTitle(result), tmdbResultOriginalTitle(result))*0.6
+	return m.calculateConfidenceWithClues(query, result, tmdbSeasonClues{})
+}
 
-	// Popularity and language contribute up to 0.1 each.
+func (m *TMDBMatcher) calculateConfidenceWithClues(query string, result *tmdbSearchResult, clues tmdbSeasonClues) float64 {
+	// Work confidence remains title-led; airing clues only select a TV season.
+	conf := 0.1 + m.titleSimilarityWithClues(query, tmdbResultTitle(result), tmdbResultOriginalTitle(result), clues)*0.6
 	conf += popularityWeight(result.Popularity) * 0.1
 	conf += languageWeight(result.OriginalLanguage) * 0.1
-
 	return math.Min(conf, 1.0)
 }
 
 func (m *TMDBMatcher) titleSimilarity(query, title, originalTitle string) float64 {
-	query = strings.ToLower(strings.TrimSpace(query))
-	title = strings.ToLower(strings.TrimSpace(title))
-	originalTitle = strings.ToLower(strings.TrimSpace(originalTitle))
+	return m.titleSimilarityWithClues(query, title, originalTitle, tmdbSeasonClues{})
+}
 
+func (m *TMDBMatcher) titleSimilarityWithClues(query, title, originalTitle string, clues tmdbSeasonClues) float64 {
+	query = normalizeTMDBTitle(query)
+	title = normalizeTMDBTitle(title)
+	originalTitle = normalizeTMDBTitle(originalTitle)
 	if query == "" {
 		return 0
 	}
 	if query == title || query == originalTitle {
 		return 1.0
 	}
-	if strings.Contains(title, query) || strings.Contains(originalTitle, query) {
-		return 0.9
-	}
-	if (title != "" && strings.Contains(query, title)) || (originalTitle != "" && strings.Contains(query, originalTitle)) {
-		return 0.8
+	compactQuery := compactTMDBTitle(query)
+	compactTitle := compactTMDBTitle(title)
+	compactOriginal := compactTMDBTitle(originalTitle)
+	if containsScoreAllowed(compactQuery, compactTitle, compactOriginal, clues) {
+		if compactTitle != "" && strings.Contains(compactTitle, compactQuery) || compactOriginal != "" && strings.Contains(compactOriginal, compactQuery) {
+			return 0.9
+		}
+		if compactTitle != "" && strings.Contains(compactQuery, compactTitle) || compactOriginal != "" && strings.Contains(compactQuery, compactOriginal) {
+			return 0.8
+		}
 	}
 	titleSim := levenshteinSimilarity(query, title)
 	originalSim := levenshteinSimilarity(query, originalTitle)
 	return math.Max(titleSim, originalSim)
+}
+
+func normalizeTMDBTitle(value string) string {
+	value = strings.NewReplacer("½", "1/2", "⅓", "1/3", "⅔", "2/3", "¼", "1/4", "¾", "3/4", "⅕", "1/5", "⅖", "2/5", "⅗", "3/5", "⅘", "4/5", "⅙", "1/6", "⅚", "5/6", "⅛", "1/8", "⅜", "3/8", "⅝", "5/8", "⅞", "7/8").Replace(value)
+	value = norm.NFKC.String(value)
+	value = strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+	return strings.TrimFunc(value, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r)
+	})
+}
+
+func compactTMDBTitle(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			return -1
+		}
+		return r
+	}, value)
+}
+
+func containsScoreAllowed(compactQuery, compactTitle, compactOriginal string, clues tmdbSeasonClues) bool {
+	if compactQuery == "" {
+		return false
+	}
+	if clues.date.precision == dateUnknown && clues.weakYear == nil {
+		if isShortTMDBQuery(compactQuery) {
+			return false
+		}
+		for _, title := range []string{compactTitle, compactOriginal} {
+			if title == "" {
+				continue
+			}
+			short, long := len([]rune(compactQuery)), len([]rune(title))
+			if short > long {
+				short, long = long, short
+			}
+			if long > 0 && float64(short)/float64(long) < 0.5 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isShortTMDBQuery(value string) bool {
+	runes := []rune(value)
+	containsCJK := false
+	lettersOrDigits := 0
+	cjkCount := 0
+	for _, r := range runes {
+		if isCJK(r) {
+			containsCJK = true
+			cjkCount++
+		} else if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			lettersOrDigits++
+		}
+	}
+	if containsCJK {
+		return cjkCount <= 4
+	}
+	return lettersOrDigits <= 5
+}
+
+func isCJK(r rune) bool {
+	return r >= 0x3040 && r <= 0x30ff || r >= 0x3400 && r <= 0x9fff || r >= 0xac00 && r <= 0xd7af
 }
 
 func popularityWeight(popularity float64) float64 {
@@ -697,29 +839,9 @@ func identifySeason(seasons []tmdbSeason, requested *int) (int, bool) {
 		return regular[0].SeasonNumber, true
 	}
 
-	now := time.Now()
-	var bestSeason *tmdbSeason
-	var minTimeDiff time.Duration
-	for i := range regular {
-		season := &regular[i]
-		seasonDate, ok := providerDate(season.AirDate)
-		if !ok || seasonDate.After(now) {
-			continue
-		}
-		if diff := now.Sub(seasonDate); bestSeason == nil || diff < minTimeDiff {
-			minTimeDiff, bestSeason = diff, season
-		}
-	}
-	if bestSeason != nil {
-		return bestSeason.SeasonNumber, true
-	}
-	earliest := regular[0]
-	for _, season := range regular {
-		if season.SeasonNumber < earliest.SeasonNumber {
-			earliest = season
-		}
-	}
-	return earliest.SeasonNumber, true
+	// A work with multiple regular seasons needs explicit or date evidence;
+	// never infer the latest aired season from the current clock.
+	return 0, false
 }
 
 // --- URL builders ---

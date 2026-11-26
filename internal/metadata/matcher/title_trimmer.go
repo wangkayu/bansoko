@@ -2,92 +2,125 @@ package matcher
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-// defaultTrimRules are the title-trimming rules. These strip season
-// markers, parenthetical remarks, and delimiter suffixes so that a search
-// query targets the canonical title.
-var defaultTrimRules = []string{
-	`第(?:\d{1,2}|[一二三四五六七八九十])季`,
-	`(?i)\b(?:S|Season\s*)\d+\b`,
-	`\s*\(.*\)`,
-	`\s*【.*】`,
-	`\s*\[.*\]`,
-	`\s*-\s*.*`,
-	`\s*～.*`,
-	`\s*~.*`,
-	`\s*：.*`,
-	`\s*:.*`,
-}
+var trimPunctuationSpace = regexp.MustCompile(`\s+([:：,，。！？!？】）)\]》【（(])`)
+var trimOpeningSpace = regexp.MustCompile(`([【（(\[《])\s+`)
+var seasonMarker = regexp.MustCompile(`(?i)(?:第(\d{1,2}|[零〇一二两三四五六七八九十]{1,3})(?:季|期)|\b(?:S|Season)\s*(\d{1,2})\b|\b(\d{1,2})(?:st|nd|rd|th)\s+Season\b)`)
 
-var whitespacePattern = regexp.MustCompile(`\s+`)
-var seasonPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`第(\d{1,2})季`),
-	regexp.MustCompile(`(?i)\b(?:S|Season\s*)(\d{1,2})\b`),
-}
+const (
+	movieCJK       = `(?:电影版|电影|電影版|電影|映画版|映画|新剧场版|剧场版|新劇場版|劇場版)`
+	movieSeparator = `[：:·\-—/／]`
+)
 
-// TitleTrimmer removes season markers and decorative text from anime titles
-// before metadata API searches. The rules are fixed (not user-configurable)
-// to keep the matching pipeline deterministic.
-type TitleTrimmer struct {
-	rules []*regexp.Regexp
-}
+var (
+	moviePrefix = regexp.MustCompile(`(?i)^(?:` + movieCJK + `(?:[\s　]+(?:` + movieSeparator + `)?|` + movieSeparator + `)|(?:the\s+)?movie[\s　]*` + movieSeparator + `)`)
+	movieMarker = regexp.MustCompile(`(?i)(?:^|[\s　：:·\-—/／（(【\[）)】\]])` + movieCJK + `(?:$|[\s　：:·\-—/／（(【\[）)】\]])`)
+	movieSuffix = regexp.MustCompile(`(?i)(?:^|[\s　：:·\-—/／])movie$|[（(【\[]\s*(?:the\s+)?movie\s*[）)】\]]|\bthe\s+movie(?:$|[\s：:·\-—/／）)】\]])`)
+)
 
-// NewTitleTrimmer compiles the default trim rules.
-func NewTitleTrimmer() *TitleTrimmer {
-	rules := make([]*regexp.Regexp, len(defaultTrimRules))
-	for i, pattern := range defaultTrimRules {
-		rules[i] = regexp.MustCompile(pattern)
+type mediaPreference uint8
+
+const (
+	mediaPrefNone mediaPreference = iota
+	mediaPrefMovieOnly
+	mediaPrefTVOnly
+	mediaPrefMovieFirst
+	mediaPrefTVFirst
+)
+
+// TitleTrimmer only removes explicit season markers and redundant whitespace.
+type TitleTrimmer struct{}
+
+func NewTitleTrimmer() *TitleTrimmer { return &TitleTrimmer{} }
+
+func (*TitleTrimmer) TrimTitle(title string) string {
+	trimmed := seasonMarker.ReplaceAllStringFunc(title, func(marker string) string {
+		if seasonNumber(seasonMarker.FindStringSubmatch(marker)) != nil {
+			return ""
+		}
+		return marker
+	})
+	trimmed = strings.Join(strings.Fields(trimmed), " ")
+	trimmed = trimPunctuationSpace.ReplaceAllString(trimmed, "$1")
+	trimmed = trimOpeningSpace.ReplaceAllString(trimmed, "$1")
+	if trimmed != "" {
+		return trimmed
 	}
-	return &TitleTrimmer{rules: rules}
+	return strings.Join(strings.Fields(title), " ")
 }
 
-// TrimTitle applies all trim rules sequentially and collapses leftover
-// whitespace. If trimming empties the title the original is returned.
-func (t *TitleTrimmer) TrimTitle(title string) string {
-	if title == "" {
-		return title
-	}
-	original := title
-	trimmed := strings.TrimSpace(title)
-	for _, rule := range t.rules {
-		trimmed = rule.ReplaceAllString(trimmed, "")
-		trimmed = strings.TrimSpace(trimmed)
-	}
-	trimmed = whitespacePattern.ReplaceAllString(trimmed, " ")
-	trimmed = strings.TrimSpace(trimmed)
-	if trimmed == "" {
-		return original
-	}
-	return trimmed
-}
-
-// ExtractSeasonNumber attempts to find a season number from patterns like
-// "第2季", "S2", "Season 2". Returns nil if no pattern matches.
-func (t *TitleTrimmer) ExtractSeasonNumber(title string) *int {
-	for _, p := range seasonPatterns {
-		m := p.FindStringSubmatch(title)
-		if len(m) >= 2 {
-			n := parseInt(m[1])
-			if n != nil && *n >= 0 && *n <= 20 {
-				return n
-			}
+// ExtractSeasonNumber recognizes season numbers, not split-part or cour markers.
+func (*TitleTrimmer) ExtractSeasonNumber(title string) *int {
+	for _, match := range seasonMarker.FindAllStringSubmatch(title, -1) {
+		if n := seasonNumber(match); n != nil {
+			return n
 		}
 	}
 	return nil
 }
 
-func parseInt(s string) *int {
-	if s == "" {
+func seasonNumber(match []string) *int {
+	value := firstNonEmpty(match[1:]...)
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		digit := func(s string) int {
+			switch s {
+			case "〇", "零":
+				return 0
+			case "两":
+				return 2
+			}
+			if len([]rune(s)) == 1 {
+				return strings.Index("一二三四五六七八九", s)/len("一") + 1
+			}
+			return -1
+		}
+		switch {
+		case value == "十":
+			n = 10
+		case value == "二十":
+			n = 20
+		case strings.HasPrefix(value, "十") && digit(strings.TrimPrefix(value, "十")) > 0:
+			n = 10 + digit(strings.TrimPrefix(value, "十"))
+		default:
+			n = digit(value)
+		}
+	}
+	if n < 0 || n > 20 {
 		return nil
 	}
-	var result int
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return nil
-		}
-		result = result*10 + int(r-'0')
+	return &n
+}
+
+func parseInt(value string) *int {
+	if value == "" {
+		return nil
 	}
-	return &result
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
+func mediaPreferenceForTitle(title string, trimmer *TitleTrimmer) mediaPreference {
+	title = strings.TrimSpace(title)
+	if moviePrefix.MatchString(title) || movieMarker.MatchString(title) || movieSuffix.MatchString(title) {
+		return mediaPrefMovieOnly
+	}
+	if trimmer.ExtractSeasonNumber(title) != nil {
+		return mediaPrefTVOnly
+	}
+	return mediaPrefNone
+}
+
+func stripMoviePrefix(title string) string {
+	match := moviePrefix.FindStringIndex(title)
+	if match == nil {
+		return ""
+	}
+	return strings.TrimSpace(title[match[1]:])
 }

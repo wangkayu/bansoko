@@ -140,12 +140,13 @@ func TestMatchRequestRelaysOnlyTrustedBangumiTitles(t *testing.T) {
 		firstStatus int
 		wantQueries []string
 		wantSeason  int
+		wantBgm     bool
 	}{
-		{"unique alias", MatchRequest{Title: "Fool Night"}, foolNightBGM + otherFoolSubjects, 0, []string{"tv:フールナイト", "movie:フールナイト", "tv:愚者之夜"}, 1},
-		{"confirmed ID uses request season", MatchRequest{Title: "Fool Night S2", BgmID: "661692"}, "", 0, []string{"tv:フールナイト", "movie:フールナイト", "tv:愚者之夜"}, 2},
-		{"fuzzy does not relay", MatchRequest{Title: "Fools"}, `{"id":661692,"name":"Fools Night"}`, 0, []string{"tv:Fools", "movie:Fools"}, 0},
-		{"rate limit stops relay", MatchRequest{Title: "Fool Night"}, foolNightBGM, http.StatusTooManyRequests, []string{"tv:フールナイト"}, 0},
-		{"authorization failure stops relay", MatchRequest{Title: "Fool Night"}, foolNightBGM, http.StatusUnauthorized, []string{"tv:フールナイト"}, 0},
+		{"unique alias", MatchRequest{Title: "Fool Night"}, foolNightBGM + otherFoolSubjects, 0, []string{"tv:フールナイト", "movie:フールナイト", "tv:愚者之夜"}, 1, true},
+		{"confirmed ID uses request season", MatchRequest{Title: "Fool Night S2", BgmID: "661692"}, "", 0, []string{"tv:フールナイト", "tv:愚者之夜"}, 2, true},
+		{"fuzzy does not relay", MatchRequest{Title: "Fools"}, `{"id":661692,"name":"Fools Night"}`, 0, []string{"tv:Fools", "movie:Fools"}, 0, false},
+		{"rate limit stops relay", MatchRequest{Title: "Fool Night"}, foolNightBGM, http.StatusTooManyRequests, []string{"tv:フールナイト"}, 0, true},
+		{"authorization failure stops relay", MatchRequest{Title: "Fool Night"}, foolNightBGM, http.StatusUnauthorized, []string{"tv:フールナイト"}, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bgm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,8 +192,15 @@ func TestMatchRequestRelaysOnlyTrustedBangumiTitles(t *testing.T) {
 			defer tmdb.Close()
 			matcher := NewMatcher(nil, &BGMMatcher{Endpoint: bgm.URL, Client: bgm.Client()}, newReferenceTMDBMatcher(tmdb), nil)
 			got, err := matcher.MatchRequest(t.Context(), tc.request)
-			if (err != nil) != (tc.firstStatus != 0) || got.BgmID == nil || *got.BgmID != "661692" || got.BgmTitleCN != "愚者之夜" || !slices.Equal(queries, tc.wantQueries) {
+			if (err != nil) != (tc.firstStatus != 0) || !slices.Equal(queries, tc.wantQueries) {
 				t.Fatalf("result = %+v, error = %v, queries = %v", got, err, queries)
+			}
+			if tc.wantBgm {
+				if got.BgmID == nil || *got.BgmID != "661692" || got.BgmTitleCN != "愚者之夜" {
+					t.Fatalf("trusted BGM result missing: %+v", got)
+				}
+			} else if got.BgmID != nil {
+				t.Fatalf("untrusted BGM result must not bind: %+v", got)
 			}
 			if tc.wantSeason == 0 {
 				if got.TmdbWorkID != nil {

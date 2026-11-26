@@ -17,6 +17,7 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	"bansoko/internal/runtime/buildinfo"
+	"golang.org/x/text/unicode/norm"
 )
 
 // specialCharPattern matches punctuation and whitespace for title
@@ -149,17 +150,19 @@ func (m *BGMMatcher) Match(ctx context.Context, title string) (*BGMMatchResult, 
 		if item.ID <= 0 {
 			continue
 		}
-		confidence := 1.0
-		if !item.matchesTitle(key) {
-			confidence = min(0.94, bgmFuzzyConfidence(title, normalized, item.Name, item.NameCN))
-			if confidence < 0.56 {
-				continue
-			}
+		direct := item.matchesTitle(key)
+		normalizedEqual := normalized != "" && item.matchesNormalizedTitle(normalized)
+		if !direct && !normalizedEqual {
+			continue
+		}
+		confidence := 0.95
+		if direct {
+			confidence = 1.0
 		}
 		switch {
 		case confidence > score:
 			best, score, ambiguous = item, confidence, false
-		case confidence == score && best.ID != item.ID:
+		case confidence == score && best != nil && best.ID != item.ID:
 			ambiguous = true
 		}
 	}
@@ -182,7 +185,7 @@ func (m *BGMMatcher) Match(ctx context.Context, title string) (*BGMMatchResult, 
 	if score == 1 {
 		return newBGMMatch(best.ID, subject, score, "direct", true), nil
 	}
-	return newBGMMatch(best.ID, subject, score, "fuzzy", false), nil
+	return newBGMMatch(best.ID, subject, score, "normalized", true), nil
 }
 
 // providerYearFromDate parses the first air year of a provider date such as
@@ -253,68 +256,11 @@ func (m *BGMMatcher) requestJSON(ctx context.Context, client *http.Client, metho
 // --- Confidence calculation ---
 
 func normalizeTitle(title string) string {
+	title = norm.NFKC.String(title)
+	title = strings.ToLower(title)
 	normalized := specialCharPattern.ReplaceAllString(title, "_")
 	normalized = underscoreRunPattern.ReplaceAllString(normalized, "_")
 	return strings.Trim(normalized, "_")
-}
-
-func bgmConfidence(searchTitle, bgmName, bgmNameCN string) float64 {
-	searchTitle = strings.TrimSpace(strings.ToLower(searchTitle))
-	bgmName = strings.TrimSpace(strings.ToLower(bgmName))
-	bgmNameCN = strings.TrimSpace(strings.ToLower(bgmNameCN))
-	if searchTitle == "" {
-		return 0.0
-	}
-
-	if (bgmName != "" && searchTitle == bgmName) || (bgmNameCN != "" && searchTitle == bgmNameCN) {
-		return 1.0
-	}
-	normalizedSearch := normalizeTitle(searchTitle)
-	normalizedBGM := normalizeTitle(bgmName)
-	normalizedBGMCN := normalizeTitle(bgmNameCN)
-	if (bgmName != "" && normalizedSearch == normalizedBGM) ||
-		(bgmNameCN != "" && normalizedSearch == normalizedBGMCN) {
-		return 0.95
-	}
-	if (bgmName != "" && strings.Contains(bgmName, searchTitle)) ||
-		(bgmNameCN != "" && strings.Contains(bgmNameCN, searchTitle)) {
-		return 0.8
-	}
-	if (bgmName != "" && strings.Contains(searchTitle, bgmName)) ||
-		(bgmNameCN != "" && strings.Contains(searchTitle, bgmNameCN)) {
-		return 0.75
-	}
-	return 0.0
-}
-
-func bgmFuzzyConfidence(original, normalized, bgmName, bgmNameCN string) float64 {
-	if strings.TrimSpace(original) == "" {
-		return 0.0
-	}
-	if c := bgmConfidence(original, bgmName, bgmNameCN); c > 0 {
-		return c
-	}
-	if c := bgmConfidence(normalized, bgmName, bgmNameCN); c > 0 {
-		return c * 0.9
-	}
-	s1 := levenshteinSimilarity(original, bgmName)
-	s2 := levenshteinSimilarity(original, bgmNameCN)
-	s3 := levenshteinSimilarity(normalized, normalizeTitle(bgmName))
-	s4 := levenshteinSimilarity(normalized, normalizeTitle(bgmNameCN))
-	maxSim := s1
-	if s2 > maxSim {
-		maxSim = s2
-	}
-	if s3 > maxSim {
-		maxSim = s3
-	}
-	if s4 > maxSim {
-		maxSim = s4
-	}
-	if maxSim >= 0.7 {
-		return maxSim * 0.8
-	}
-	return 0.0
 }
 
 func levenshteinSimilarity(s1, s2 string) float64 {

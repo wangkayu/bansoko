@@ -145,3 +145,41 @@ func TestBGMMatcherDecodesTotalEpisodesFromSubjectDetail(t *testing.T) {
 		t.Fatalf("expected subject.Eps=24, got %+v", result.Subject)
 	}
 }
+
+func TestBGMMatcherRejectsContainsAndFuzzyAutomaticBindings(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v0/search/subjects":
+			_, _ = fmt.Fprint(w, `{"data":[{"id":1,"name":"Show Extended"},{"id":2,"name":"Shwo"}]}`)
+		case "/v0/subjects/1", "/v0/subjects/2":
+			t.Fatalf("automatic matcher must not load a rejected candidate: %s", r.URL.Path)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	result, err := (&BGMMatcher{Endpoint: server.URL, Client: server.Client()}).Match(context.Background(), "Show")
+	if err != nil || result != nil {
+		t.Fatalf("contains/fuzzy candidates must remain unresolved: result=%+v err=%v", result, err)
+	}
+}
+
+func TestBGMMatcherAcceptsNormalizedExactTitle(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v0/search/subjects":
+			_, _ = fmt.Fprint(w, `{"data":[{"id":7,"name":"Fullwidth：Title"}]}`)
+		case "/v0/subjects/7":
+			_, _ = fmt.Fprint(w, `{"id":7,"name":"Fullwidth：Title","date":"2026-01-01"}`)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	result, err := (&BGMMatcher{Endpoint: server.URL, Client: server.Client()}).Match(context.Background(), "FULLWIDTH:TITLE")
+	if err != nil || result == nil || result.BgmID != "7" || !result.trusted {
+		t.Fatalf("normalized exact title must bind: result=%+v err=%v", result, err)
+	}
+}
