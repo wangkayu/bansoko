@@ -3,7 +3,6 @@
 export const configCopy = {
   discardSubscribed: "修改尚未保存，关闭后将丢失",
   discardDraft: "尚未保存，关闭后将丢失",
-  metadataMatched: "元数据已匹配",
   viewPoster: "查看海报大图",
   reading: "正在读取番剧信息…",
   loadFailed: "无法读取番剧信息",

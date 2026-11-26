@@ -96,7 +96,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             controlText[controlSize],
             "tw:pr-3 tw:pl-9",
             controlHeight[controlSize],
-            "tw:w-full tw:min-w-0 tw:placeholder:text-muted-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-60",
+            "tw:w-full tw:min-w-0 tw:placeholder:text-muted-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-60 tw:phone:text-base",
           )}
           {...props}
         />
@@ -109,7 +109,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         controlText[controlSize],
         controlHeight[controlSize],
         fullWidth ? "tw:w-full" : "",
-        "tw:min-w-0 tw:placeholder:text-muted-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-60",
+        "tw:min-w-0 tw:placeholder:text-muted-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-60 tw:phone:text-base",
         className,
       )}
       {...props}
@@ -258,7 +258,7 @@ export function Select<V extends string>({
 }
 
 const tabClass = cn(
-  "tw:-mb-px tw:border-b-2 tw:border-transparent tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground tw:transition-colors",
+  "tw:-mb-px tw:border-b-2 tw:border-transparent tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground tw:transition-colors tw:phone:mb-0 tw:phone:shrink-0 tw:phone:whitespace-nowrap",
   "tw:hover:text-foreground tw:data-active:border-primary tw:data-active:font-semibold tw:data-active:text-foreground",
   focusRing,
 );
@@ -318,7 +318,7 @@ export function TabsList({
   className?: string;
 }) {
   return (
-    <BaseTabs.List id={id} className={cn("tw:relative tw:flex tw:flex-none tw:gap-1 tw:border-b tw:border-border", className)}>
+    <BaseTabs.List id={id} className={cn("tw:relative tw:flex tw:flex-none tw:gap-1 tw:border-b tw:border-border tw:phone:min-w-0 tw:phone:overflow-x-auto", className)}>
       {items.map((item) => (
         <BaseTabs.Tab key={item.key} value={item.key} className={tabClass}>
           {item.label}

@@ -1721,7 +1721,7 @@ describe("AnimeConfigDialog 标题区元数据同步", () => {
     vi.unstubAllGlobals();
   });
 
-  it("草稿匹配 TMDB 后标题区立即去掉未关联提示并显示已匹配", async () => {
+  it("草稿匹配 TMDB 后标题区立即显示关联链接，状态仍只显示未订阅", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/metadata/search")) {
@@ -1771,7 +1771,7 @@ describe("AnimeConfigDialog 标题区元数据同步", () => {
     const dialog = () => screen.getAllByRole("dialog")[0]!;
     const missingTmdb = t("anime.metadata.missing", { names: "TMDB" });
     expect(within(dialog()).getByText(missingTmdb)).toBeInTheDocument();
-    expect(within(dialog()).queryByText(t("config.metadataMatched"))).not.toBeInTheDocument();
+    expect(within(dialog()).getByText(t("anime.state.draft"), { exact: true })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: t("forms.matchProvider", { provider: t("forms.providerTmdb") }) }));
     await flushQuery();
@@ -1783,8 +1783,11 @@ describe("AnimeConfigDialog 标题区元数据同步", () => {
     await flushQuery();
 
     expect(within(dialog()).queryByText(missingTmdb)).not.toBeInTheDocument();
-    expect(within(dialog()).getByText(t("config.metadataMatched"))).toBeInTheDocument();
-    const headFacts = dialog().querySelector<HTMLElement>(".anime-config-head-facts")!;
+    const header = dialog().querySelector("header")!;
+    expect(header.querySelectorAll("[data-tone]")).toHaveLength(1);
+    expect(within(header).getByText(t("anime.state.draft"), { exact: true })).toBeInTheDocument();
+    const headFacts = header.querySelector<HTMLElement>(".anime-config-head-facts")!;
+    expect(within(headFacts).getByRole("link", { name: /bgm-42/ })).toHaveAttribute("href", "https://bgm.tv/subject/bgm-42");
     expect(within(headFacts).getByRole("link", { name: /777/ })).toHaveAttribute("href", "https://www.themoviedb.org/tv/777");
   });
 

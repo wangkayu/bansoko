@@ -6,7 +6,6 @@ import type { configCopy } from "./zh-CN.anime-config";
 export const enConfigCopy = {
   discardSubscribed: "Changes are not saved and will be lost if you close",
   discardDraft: "Not saved yet. Closing will discard it.",
-  metadataMatched: "Metadata matched",
   viewPoster: "View poster",
   reading: "Loading anime details…",
   loadFailed: "Couldn't load anime details",

@@ -167,10 +167,10 @@ describe("Input sizes", () => {
       </>,
     );
     const normal = screen.getByLabelText("默认");
-    expect(normal).toHaveClass("tw:h-9", "tw:w-full");
+    expect(normal).toHaveClass("tw:h-9", "tw:w-full", "tw:phone:text-base");
     expect(normal).not.toHaveClass("tw:h-8");
     const compact = screen.getByLabelText("紧凑");
-    expect(compact).toHaveClass("tw:h-8", "tw:w-24");
+    expect(compact).toHaveClass("tw:h-8", "tw:w-24", "tw:phone:text-base");
     expect(compact).not.toHaveClass("tw:h-9");
     expect(compact).not.toHaveClass("tw:w-full");
   });
@@ -178,7 +178,7 @@ describe("Input sizes", () => {
   it("leadingIcon：图标在包裹层里，宽度类给包裹层，输入框自己让出图标的内边距", () => {
     render(<Input aria-label="筛选" fullWidth={false} className="tw:w-56" leadingIcon={<svg data-testid="icon" />} />);
     const input = screen.getByLabelText("筛选");
-    expect(input).toHaveClass("tw:pl-9", "tw:pr-3", "tw:w-full", "tw:h-9");
+    expect(input).toHaveClass("tw:pl-9", "tw:pr-3", "tw:w-full", "tw:h-9", "tw:phone:text-base");
     expect(input).not.toHaveClass("tw:px-3");
     expect(input.parentElement).toHaveClass("tw:w-56");
     expect(screen.getByTestId("icon").parentElement).toHaveAttribute("aria-hidden", "true");
@@ -258,6 +258,10 @@ describe("Tabs parts", () => {
   it("切换页签时 keepMounted 面板保留未保存输入", async () => {
     render(<Host />);
     expect(document.getElementById("strip")).toHaveAttribute("role", "tablist");
+    expect(screen.getByRole("tablist")).toHaveClass("tw:phone:overflow-x-auto");
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(tab).toHaveClass("tw:phone:whitespace-nowrap", "tw:phone:shrink-0");
+    }
     fireEvent.change(screen.getByLabelText("甲输入"), { target: { value: "草稿" } });
     await userEvent.click(screen.getByRole("tab", { name: "乙" }));
     expect(screen.getByRole("tab", { name: "乙" })).toHaveAttribute("aria-selected", "true");

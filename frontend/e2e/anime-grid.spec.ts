@@ -2459,12 +2459,23 @@ test.describe("AnimeGrid", () => {
     await expect(dialog.getByRole("button", { name: "清除 Bangumi 条目 关联" })).toBeVisible();
   });
 
-  test("automatically selects the matched work and season before draft confirmation", async ({ page }) => {
+  test("automatically selects the matched work and season before draft confirmation", async ({ page }, testInfo) => {
+    const phone = testInfo.project.name === "mobile";
+    if (phone) await page.setViewportSize({ width: 320, height: 740 });
     await enterApp(page);
     const card = await openProvider(page, "Mikan");
     const dialog = await openConfigFromCard(page, card);
+    const tabList = dialog.getByRole("tablist");
+    await expect(tabList).toHaveCSS("overflow-x", phone ? "auto" : "visible");
+    if (phone) {
+      for (const tab of await tabList.getByRole("tab").all()) {
+        await expect(tab).toHaveCSS("white-space", "nowrap");
+        await expect(tab).toHaveCSS("flex-shrink", "0");
+      }
+    }
     await dialog.getByRole("button", { name: "匹配 TMDB", exact: true }).click();
     const matchDialog = pageDialog(page).last();
+    await expect(matchDialog.getByRole("textbox", { name: t("forms.titleQuery") })).toHaveCSS("font-size", phone ? "16px" : "14px");
 
     // 普通查询只列候选，不自动选择。
     await matchDialog.getByRole("button", { name: "查询", exact: true }).click();
@@ -2484,6 +2495,19 @@ test.describe("AnimeGrid", () => {
     await matchDialog.getByRole("button", { name: "确认匹配", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "清除 TMDB 条目 关联" })).toBeVisible();
     await expect(dialog.locator('.metadata-card a[href="https://www.themoviedb.org/tv/265010"]')).toContainText(t("forms.seasonN", { n: "2" }));
+
+    const header = dialog.locator("header");
+    await expect(header.locator("[data-tone]")).toHaveText(t("anime.state.draft"));
+    const facts = header.locator(".anime-config-head-facts");
+    const links = [facts.locator('a[href^="https://bgm.tv/subject/"]'), facts.locator('a[href="https://www.themoviedb.org/tv/265010"]')];
+    const headerBox = await header.boundingBox();
+    if (!headerBox) throw new Error("draft header has no layout box");
+    for (const link of links) {
+      await expect(link).toBeVisible();
+      const box = await link.boundingBox();
+      expect(box?.x ?? -1).toBeGreaterThanOrEqual(headerBox.x);
+      expect(box ? box.x + box.width : Infinity).toBeLessThanOrEqual(headerBox.x + headerBox.width + 1);
+    }
   });
 
   test("previews keeping the current title on the first manual match", async ({ page }, testInfo) => {

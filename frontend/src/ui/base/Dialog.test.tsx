@@ -51,6 +51,11 @@ describe("Dialog", () => {
     expect(screen.getByRole("button", { name: "保存" }).closest("footer")).not.toBeNull();
   });
 
+  it.each(["S", "M", "L", "R", "F"] as const)("tier=%s 在手机端预留底部安全区", (tier) => {
+    render(<Dialog open tier={tier} onRequestClose={() => {}} title="弹窗">正文</Dialog>);
+    expect(screen.getByRole("dialog")).toHaveClass("tw:phone:pb-[env(safe-area-inset-bottom)]");
+  });
+
   it("bodyLayout=fill：内容区不滚动、无内边距，由内容自己布局", async () => {
     render(
       <>

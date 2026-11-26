@@ -168,7 +168,7 @@ function popupTier(tier: DialogTier, fixedHeight: boolean, reader: boolean): str
         centered,
         "tw:w-[min(440px,calc(100vw-2rem))] tw:max-h-[calc(100dvh-2rem)]",
         "tw:phone:inset-x-0 tw:phone:top-auto tw:phone:bottom-0 tw:phone:w-full tw:phone:max-h-[85dvh] tw:phone:translate-none",
-        "tw:phone:rounded-t-dialog tw:phone:rounded-b-none tw:phone:border-x-0 tw:phone:border-b-0 tw:phone:pb-[env(safe-area-inset-bottom)]",
+        "tw:phone:rounded-t-dialog tw:phone:rounded-b-none tw:phone:border-x-0 tw:phone:border-b-0",
       );
     case "M":
       if (reader) {
@@ -328,7 +328,7 @@ export function Dialog({
           }}
           style={{ zIndex }}
           className={cn(
-            "tw:fixed tw:flex tw:flex-col tw:overflow-hidden tw:bg-popover tw:text-popover-foreground tw:shadow-2 tw:outline-none",
+            "tw:fixed tw:flex tw:flex-col tw:overflow-hidden tw:bg-popover tw:text-popover-foreground tw:shadow-2 tw:outline-none tw:phone:pb-[env(safe-area-inset-bottom)]",
             "tw:transition-[opacity,scale,translate] tw:duration-200 tw:ease-out tw:data-starting-style:opacity-0 tw:data-ending-style:opacity-0",
             popupTier(tier, fixedHeight, reader),
           )}

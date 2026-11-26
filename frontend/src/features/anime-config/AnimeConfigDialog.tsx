@@ -8,7 +8,7 @@ import { setDraftIgnoreMultiVideo } from "./ignoreMultiVideo";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "../../ui/toast";
-import { AlertTriangle, CheckCircle2, Loader2, Play } from "lucide-react";
+import { AlertTriangle, Play } from "lucide-react";
 import {
   ApiError,
   getAnimeWorkspace,
@@ -305,12 +305,7 @@ export function AnimeConfigDialog({
                 </StatePill>
               )
             ) : (
-              <>
-                <StatePill tone="muted">{t("anime.state.draft")}</StatePill>
-                {headerEntry.metadataMatch.matched ? (
-                  <StatePill tone="online" icon={CheckCircle2}>{t("config.metadataMatched")}</StatePill>
-                ) : null}
-              </>
+              <StatePill tone="muted">{t("anime.state.draft")}</StatePill>
             )}
           </div>
         }
