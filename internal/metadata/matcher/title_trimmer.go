@@ -9,8 +9,8 @@ import (
 // markers, parenthetical remarks, and delimiter suffixes so that a search
 // query targets the canonical title.
 var defaultTrimRules = []string{
-	`第.季`,
-	`S\d+`,
+	`第(?:\d{1,2}|[一二三四五六七八九十])季`,
+	`(?i)\b(?:S|Season\s*)\d+\b`,
 	`\s*\(.*\)`,
 	`\s*【.*】`,
 	`\s*\[.*\]`,
@@ -22,11 +22,9 @@ var defaultTrimRules = []string{
 }
 
 var whitespacePattern = regexp.MustCompile(`\s+`)
-var yearPattern = regexp.MustCompile(`\b(19|20)\d{2}\b`)
 var seasonPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`第(\d+)季`),
-	regexp.MustCompile(`S(\d+)`),
-	regexp.MustCompile(`Season\s*(\d+)`),
+	regexp.MustCompile(`第(\d{1,2})季`),
+	regexp.MustCompile(`(?i)\b(?:S|Season\s*)(\d{1,2})\b`),
 }
 
 // TitleTrimmer removes season markers and decorative text from anime titles
@@ -65,21 +63,6 @@ func (t *TitleTrimmer) TrimTitle(title string) string {
 	return trimmed
 }
 
-// ExtractYear returns the last 4-digit year (1900-2030) found in the title, or
-// nil if none is present.
-func (t *TitleTrimmer) ExtractYear(title string) *int {
-	matches := yearPattern.FindAllString(title, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	last := matches[len(matches)-1]
-	year := parseInt(last)
-	if year != nil && *year >= 1900 && *year <= 2030 {
-		return year
-	}
-	return nil
-}
-
 // ExtractSeasonNumber attempts to find a season number from patterns like
 // "第2季", "S2", "Season 2". Returns nil if no pattern matches.
 func (t *TitleTrimmer) ExtractSeasonNumber(title string) *int {
@@ -87,7 +70,7 @@ func (t *TitleTrimmer) ExtractSeasonNumber(title string) *int {
 		m := p.FindStringSubmatch(title)
 		if len(m) >= 2 {
 			n := parseInt(m[1])
-			if n != nil && *n >= 1 && *n <= 20 {
+			if n != nil && *n >= 0 && *n <= 20 {
 				return n
 			}
 		}

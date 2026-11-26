@@ -238,9 +238,8 @@ func (m *Matcher) MatchRequest(ctx context.Context, request MatchRequest) (*Matc
 
 	targetAirDate := result.bgmAirDate
 	if targetAirDate.precision == dateUnknown && item != nil {
-		targetAirDate = parseProviderClue(item.Begin, "bangumi-data.begin")
-		if targetAirDate.precision != dateDay {
-			targetAirDate = dateClue{}
+		if begin := parseProviderClue(item.Begin, "bangumi-data.begin"); begin.precision == dateDay {
+			targetAirDate = begin
 		}
 	}
 

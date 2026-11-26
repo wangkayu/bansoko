@@ -17,6 +17,7 @@ import (
 	configurationdomain "bansoko/internal/configuration/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
+	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/runtime/buildinfo"
 )
 
@@ -61,9 +62,8 @@ type TMDBMatchResult struct {
 }
 
 // TMDBMatcher searches TMDB by title, scores candidates, and identifies the
-// correct season via a five-rule strategy. It reads the TMDB connection
-// endpoint and API key dynamically on each Match call so that config changes
-// take effect without restarting the matcher.
+// correct season from explicit references and airing evidence. It reads the
+// TMDB connection endpoint and API key on every match.
 type TMDBMatcher struct {
 	Connections    ConnectionSource
 	Secrets        SecretResolver
@@ -87,7 +87,6 @@ func (m *TMDBMatcher) trimmer() *TitleTrimmer {
 }
 
 const tmdbMinConfidence = 0.7
-const tmdbYearTolerance = 1
 
 // Match searches TMDB without a separate target air-date clue.
 func (m *TMDBMatcher) Match(ctx context.Context, title string) (*TMDBMatchResult, error) {
@@ -102,7 +101,10 @@ func (m *TMDBMatcher) MatchWithTargetDate(ctx context.Context, title, targetAirD
 
 const tmdbMatchBudget = 15 * time.Second
 
-var errAmbiguousTMDB = errors.New("ambiguous TMDB work")
+var (
+	errAmbiguousTMDB        = errors.New("ambiguous TMDB work")
+	errUnresolvedTMDBSeason = errors.New("unresolved TMDB season")
+)
 
 func (m *TMDBMatcher) matchTitles(ctx context.Context, original string, titles []string, target dateClue) (*TMDBMatchResult, error) {
 	if strings.TrimSpace(firstNonEmpty(titles...)) == "" {
@@ -114,25 +116,27 @@ func (m *TMDBMatcher) matchTitles(ctx context.Context, original string, titles [
 	if err != nil {
 		return nil, err
 	}
-	requested := m.trimmer().ExtractSeasonNumber(original)
-	seen := make(map[string]bool)
-	for _, title := range titles {
-		if key := bgmTitleKey(title); key == "" || seen[key] {
-			continue
-		} else {
-			seen[key] = true
-		}
+	clues := tmdbSeasonClues{requested: m.trimmer().ExtractSeasonNumber(original), date: target}
+	if target.precision == dateUnknown {
+		clues.weakYear = reltitletags.WeakYear(original)
+	}
+nextTitle:
+	for _, terms := range m.searchTitleGroups(titles) {
 		for _, kind := range []string{"tv", "movie"} {
-			result, err := m.searchAndScore(ctx, client, endpoint, apiKey, strings.TrimSpace(title), kind, target, requested)
-			if errors.Is(err, errAmbiguousTMDB) {
-				break
-			}
-			if err != nil {
-				return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb %s search: %w", kind, err)}
-			}
-			if result != nil {
-				result.Method = kind
-				return result, nil
+			for _, term := range terms {
+				result, err := m.trySearch(ctx, client, endpoint, apiKey, term, kind, clues)
+				switch {
+				case errors.Is(err, errAmbiguousTMDB):
+					continue nextTitle
+				case errors.Is(err, errUnresolvedTMDBSeason):
+					// Another title may point at a different work.
+					return nil, nil
+				case err != nil:
+					return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb %s search: %w", kind, err)}
+				case result != nil:
+					result.Method = kind
+					return result, nil
+				}
 			}
 		}
 	}
@@ -163,8 +167,11 @@ func (m *TMDBMatcher) matchReference(ctx context.Context, title, mediaKind, work
 	}
 	season := 0
 	if mediaKind == "tv" {
-		requested := m.trimmer().ExtractSeasonNumber(title)
-		identified, ok, err := m.selectSeason(ctx, client, endpoint, apiKey, id, details.Seasons, requested, mappedSeason, targetAirDate)
+		clues := tmdbSeasonClues{requested: m.trimmer().ExtractSeasonNumber(title), mapped: mappedSeason, date: targetAirDate}
+		if targetAirDate.precision == dateUnknown && mappedSeason == nil {
+			clues.weakYear = reltitletags.WeakYear(title)
+		}
+		identified, ok, err := m.selectSeason(ctx, client, endpoint, apiKey, id, details.Seasons, clues)
 		if err != nil {
 			return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: err}
 		}
@@ -217,47 +224,34 @@ func (m *TMDBMatcher) resolveAccess(ctx context.Context) (*http.Client, string, 
 	return client, stripConfigurationSuffix(conn.Endpoint), apiKey, nil
 }
 
-func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, targetAirDate dateClue, requestedSeason *int) (*TMDBMatchResult, error) {
-	// Try original title first.
-	result, err := m.trySearch(ctx, client, endpoint, apiKey, query, mediaKind, nil, requestedSeason, targetAirDate)
-	if err != nil {
-		return nil, err
-	}
-	if result != nil && result.Confidence >= tmdbMinConfidence {
-		return result, nil
-	}
-
-	// Try trimmed title.
-	trimmed := m.trimmer().TrimTitle(query)
-	if trimmed != query {
-		r2, err := m.trySearch(ctx, client, endpoint, apiKey, trimmed, mediaKind, nil, requestedSeason, targetAirDate)
-		if err != nil {
-			return nil, err
+// searchTitleGroups reserves the budget for the original relay terms first.
+// A trimmed variant, when it fits, is tried within the same media kind.
+func (m *TMDBMatcher) searchTitleGroups(titles []string) [][]string {
+	const maxTerms = 3
+	groups := make([][]string, 0, maxTerms)
+	seen := make(map[string]bool, maxTerms)
+	reserve := func(title string) bool {
+		key := bgmTitleKey(title)
+		if key == "" || seen[key] || len(seen) == maxTerms {
+			return false
 		}
-		if r2 != nil && r2.Confidence >= tmdbMinConfidence {
-			return r2, nil
-		}
-		if r2 != nil && (result == nil || r2.Confidence > result.Confidence) {
-			result = r2
+		seen[key] = true
+		return true
+	}
+	for _, title := range titles {
+		if reserve(title) {
+			groups = append(groups, []string{strings.TrimSpace(title)})
 		}
 	}
-
-	// Try extracting year from title for better matching.
-	year := m.trimmer().ExtractYear(query)
-	if year != nil {
-		r3, err := m.trySearch(ctx, client, endpoint, apiKey, trimmed, mediaKind, year, requestedSeason, targetAirDate)
-		if err != nil {
-			return nil, err
+	for i, group := range groups {
+		if len(seen) == maxTerms {
+			break
 		}
-		if r3 != nil && r3.Confidence >= tmdbMinConfidence {
-			return r3, nil
-		}
-		if r3 != nil && (result == nil || r3.Confidence > result.Confidence) {
-			result = r3
+		if trimmed := m.trimmer().TrimTitle(group[0]); reserve(trimmed) {
+			groups[i] = append(group, trimmed)
 		}
 	}
-
-	return result, nil
+	return groups
 }
 
 type tmdbSearchResult struct {
@@ -296,8 +290,8 @@ type tmdbDetailsResponse struct {
 	Seasons       []tmdbSeason `json:"seasons"`
 }
 
-func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, year *int, requestedSeason *int, targetAirDate dateClue) (*TMDBMatchResult, error) {
-	searchURL, err := buildTMDBSearchURL(endpoint, apiKey, query, mediaKind, year)
+func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, clues tmdbSeasonClues) (*TMDBMatchResult, error) {
+	searchURL, err := buildTMDBSearchURL(endpoint, apiKey, query, mediaKind)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +312,7 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 		if item.ID <= 0 || !hasAnimationGenre(item.GenreIDs) {
 			continue
 		}
-		conf := m.calculateConfidence(query, item, year)
+		conf := m.calculateConfidence(query, item)
 		if conf < tmdbMinConfidence {
 			continue
 		}
@@ -346,15 +340,12 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 		if err != nil {
 			return nil, fmt.Errorf("get tv details for %d: %w", best.ID, err)
 		}
-		if details == nil {
-			return nil, nil
-		}
-		identified, ok, err := m.selectSeason(ctx, client, endpoint, apiKey, best.ID, details.Seasons, requestedSeason, nil, targetAirDate)
+		identified, ok, err := m.selectSeason(ctx, client, endpoint, apiKey, best.ID, details.Seasons, clues)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			return nil, nil
+			return nil, errUnresolvedTMDBSeason
 		}
 		season = identified
 		seasons = tmdbSearchSeasons(details.Seasons)
@@ -431,23 +422,13 @@ func (m *TMDBMatcher) getJSON(ctx context.Context, client *http.Client, rawURL, 
 
 // --- Confidence calculation ---
 
-func (m *TMDBMatcher) calculateConfidence(query string, result *tmdbSearchResult, year *int) float64 {
-	var conf float64
+func (m *TMDBMatcher) calculateConfidence(query string, result *tmdbSearchResult) float64 {
+	// Keep the previous unfiltered score baseline. Airing hints concern seasons,
+	// not a TV work's first air date, and must not affect work confidence.
+	conf := 0.1 + m.titleSimilarity(query, tmdbResultTitle(result), tmdbResultOriginalTitle(result))*0.6
 
-	resultTitle := tmdbResultTitle(result)
-	resultOriginalTitle := tmdbResultOriginalTitle(result)
-
-	// 1. Title similarity (weight: 0.6)
-	titleSim := m.titleSimilarity(query, resultTitle, resultOriginalTitle)
-	conf += titleSim * 0.6
-
-	// 2. Year similarity (weight: 0.2)
-	conf += yearSimilarity(year, result) * 0.2
-
-	// 3. Popularity (weight: 0.1)
+	// Popularity and language contribute up to 0.1 each.
 	conf += popularityWeight(result.Popularity) * 0.1
-
-	// 4. Language (weight: 0.1)
 	conf += languageWeight(result.OriginalLanguage) * 0.1
 
 	return math.Min(conf, 1.0)
@@ -473,30 +454,6 @@ func (m *TMDBMatcher) titleSimilarity(query, title, originalTitle string) float6
 	titleSim := levenshteinSimilarity(query, title)
 	originalSim := levenshteinSimilarity(query, originalTitle)
 	return math.Max(titleSim, originalSim)
-}
-
-func yearSimilarity(queryYear *int, result *tmdbSearchResult) float64 {
-	if queryYear == nil {
-		return 0.5
-	}
-	var resultYear *int
-	if result.FirstAirDate != "" {
-		resultYear = extractYearFromDate(result.FirstAirDate)
-	}
-	if resultYear == nil && result.ReleaseDate != "" {
-		resultYear = extractYearFromDate(result.ReleaseDate)
-	}
-	if resultYear == nil {
-		return 0.3
-	}
-	diff := int(math.Abs(float64(*queryYear - *resultYear)))
-	if diff == 0 {
-		return 1.0
-	}
-	if diff <= tmdbYearTolerance {
-		return 1.0 - float64(diff)*0.2
-	}
-	return 0.0
 }
 
 func popularityWeight(popularity float64) float64 {
@@ -549,11 +506,16 @@ func tmdbResultOriginalTitle(r *tmdbSearchResult) string {
 
 // --- Season identification ---
 
-// selectSeason uses explicit references and the original title first, then
-// season and episode air dates. A known conflict never falls through to the
-// unique/recent-season heuristic. Episode matches never produce an EP offset.
-func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, endpoint, apiKey string, workID int, seasons []tmdbSeason, requested, mapped *int, targetAirDate dateClue) (int, bool, error) {
-	for _, explicit := range []*int{mapped, requested} {
+type tmdbSeasonClues struct {
+	requested, mapped *int
+	date              dateClue
+	weakYear          *int
+}
+
+// selectSeason gives explicit references priority. A day clue can also match
+// an episode of a merged season; less precise dates cannot.
+func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, endpoint, apiKey string, workID int, seasons []tmdbSeason, clues tmdbSeasonClues) (int, bool, error) {
+	for _, explicit := range []*int{clues.mapped, clues.requested} {
 		if explicit == nil {
 			continue
 		}
@@ -563,6 +525,7 @@ func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, end
 			}
 		}
 	}
+	targetAirDate := clues.date
 	regular := regularSeasons(seasons)
 	if len(regular) == 0 {
 		return 0, false, nil
@@ -604,11 +567,45 @@ func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, end
 		}
 		return 0, false, nil
 	}
-	if requested != nil || mapped != nil {
+	if clues.requested != nil || clues.mapped != nil {
+		return 0, false, nil
+	}
+	if targetAirDate.precision != dateUnknown {
+		season, ok := seasonInWindow(regular, targetAirDate)
+		return season, ok, nil
+	}
+	if clues.weakYear != nil {
+		// A release-title year can confirm a sole season but cannot choose
+		// between multiple seasons or compensate for a missing provider date.
+		if len(regular) != 1 {
+			return 0, false, nil
+		}
+		season := regular[0]
+		if day, ok := providerDate(season.AirDate); ok && day.Year() == *clues.weakYear {
+			return season.SeasonNumber, true, nil
+		}
 		return 0, false, nil
 	}
 	season, ok := identifySeason(regular, nil)
 	return season, ok, nil
+}
+
+func seasonInWindow(regular []tmdbSeason, window dateClue) (int, bool) {
+	best := 0
+	for _, season := range regular {
+		date, ok := providerDate(season.AirDate)
+		if !ok {
+			return 0, false
+		}
+		if !window.contains(date) {
+			continue
+		}
+		if best != 0 && best != season.SeasonNumber {
+			return 0, false
+		}
+		best = season.SeasonNumber
+	}
+	return best, best != 0
 }
 
 func regularSeasons(seasons []tmdbSeason) []tmdbSeason {
@@ -623,11 +620,15 @@ func regularSeasons(seasons []tmdbSeason) []tmdbSeason {
 
 func providerDate(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
-	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+	if parsed, err := time.Parse(time.DateOnly, value); err == nil {
 		return parsed, true
 	}
 	parsed, err := time.Parse(time.RFC3339, value)
-	return parsed, err == nil
+	if err != nil {
+		return time.Time{}, false
+	}
+	year, month, day := parsed.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC), true
 }
 
 func dateDistance(a, b time.Time) time.Duration {
@@ -723,7 +724,7 @@ func identifySeason(seasons []tmdbSeason, requested *int) (int, bool) {
 
 // --- URL builders ---
 
-func buildTMDBSearchURL(endpoint, apiKey, query, mediaKind string, year *int) (string, error) {
+func buildTMDBSearchURL(endpoint, apiKey, query, mediaKind string) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return "", fmt.Errorf("parse tmdb endpoint: %w", err)
@@ -736,13 +737,6 @@ func buildTMDBSearchURL(endpoint, apiKey, query, mediaKind string, year *int) (s
 	q.Set("query", query)
 	q.Set("language", "zh-CN")
 	q.Set("include_adult", "false")
-	if year != nil {
-		if mediaKind == "tv" {
-			q.Set("first_air_date_year", strconv.Itoa(*year))
-		} else {
-			q.Set("year", strconv.Itoa(*year))
-		}
-	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

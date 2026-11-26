@@ -163,3 +163,100 @@ func TestTMDBSearchDoesNotLoadWeakOrAmbiguousCandidates(t *testing.T) {
 		})
 	}
 }
+
+func TestTMDBReferenceResolvesOnlyUnambiguousDateWindows(t *testing.T) {
+	for _, tc := range []struct {
+		name, title, date, seasons string
+		want                       int // -1 means unresolved
+	}{
+		{"winter crosses calendar years", "Show", "2026年冬", `[{"season_number":1,"air_date":"2025-01-04"},{"season_number":2,"air_date":"2025-12-28"}]`, 2},
+		{"month end is exclusive", "Show", "2026年11月", `[{"season_number":1,"air_date":"2026-11-26"},{"season_number":2,"air_date":"2026-12-01"}]`, 1},
+		{"one regular season in year", "Show", "2026", `[{"season_number":0,"air_date":"2026-02-01"},{"season_number":1,"air_date":"2025-12-28"},{"season_number":2,"air_date":"2026-01-01"}]`, 2},
+		{"same-year ambiguity", "Show", "2026", `[{"season_number":1,"air_date":"2026-04-01"},{"season_number":2,"air_date":"2026-11-26"}]`, -1},
+		{"dateless competitor", "Show", "2026", `[{"season_number":1,"air_date":"2026-04-01"},{"season_number":2,"air_date":null}]`, -1},
+		{"invalid competitor date", "Show", "2026", `[{"season_number":1,"air_date":"2026-04-01"},{"season_number":2,"air_date":"2025-02-29"}]`, -1},
+		{"specials cannot be inferred", "Show", "2026", `[{"season_number":0,"air_date":"2026-04-01"},{"season_number":1,"air_date":"2025-04-01"}]`, -1},
+		{"missing explicit season", "Show S3", "2026", `[{"season_number":2,"air_date":"2026-04-01"}]`, -1},
+		{"explicit specials may disagree with window", "Show S0", "2026", `[{"season_number":0,"air_date":"2025-04-01"},{"season_number":1,"air_date":"2026-04-01"}]`, 0},
+		{"weak year corroborates sole season", "Show [2026] [1080P]", "", `[{"season_number":1,"air_date":"2026-04-01"}]`, 1},
+		{"weak year cannot infer sequel", "Show [2026] [1080P]", "", `[{"season_number":1,"air_date":"2021-04-01"},{"season_number":2,"air_date":"2026-04-01"}]`, -1},
+		{"weak year does not replace trusted year", "Show [2025] [1080P]", "2026", `[{"season_number":1,"air_date":"2025-04-01"},{"season_number":2,"air_date":"2026-04-01"}]`, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/3/tv/42" {
+					t.Errorf("window and weak-year resolution must not request episodes or search: %s", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				fmt.Fprintf(w, `{"seasons":%s}`, tc.seasons)
+			}))
+			defer server.Close()
+
+			got, err := newReferenceTMDBMatcher(server).MatchReference(t.Context(), tc.title, "tv", "42", nil, tc.date)
+			if err != nil || tc.want == -1 && got != nil || tc.want != -1 && (got == nil || got.Season != tc.want) {
+				t.Fatalf("match = %+v, err = %v; want season %d", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestTMDBSearchDoesNotUseTitleYearAsWorkYear(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/3/search/tv":
+			q := r.URL.Query()
+			if q.Has("first_air_date_year") || q.Has("year") {
+				t.Errorf("season year must not filter work search: %s", r.URL.RawQuery)
+			}
+			if q.Get("query") != "Show" {
+				fmt.Fprint(w, `{"results":[]}`)
+				return
+			}
+			fmt.Fprint(w, `{"results":[{"id":42,"name":"节目","original_name":"Show","genre_ids":[16],"first_air_date":"2021-04-01","original_language":"ja"}]}`)
+		case "/3/tv/42":
+			fmt.Fprint(w, `{"seasons":[{"season_number":1,"air_date":"2021-04-01"},{"season_number":2,"air_date":"2022-04-01"},{"season_number":3,"air_date":"2026-04-01"}]}`)
+		default:
+			t.Errorf("unexpected request: %s", r.URL)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	got, err := newReferenceTMDBMatcher(server).Match(t.Context(), "Show S3 [2026]")
+	if err != nil || got == nil || got.Season != 3 || got.Year == nil || *got.Year != 2021 {
+		t.Fatalf("match = %+v, err = %v; want season 3 and work year 2021", got, err)
+	}
+}
+
+func TestTMDBSearchDoesNotSwitchWorkAfterUnresolvedSeason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/3/search/tv":
+			if r.URL.Query().Get("query") != "フールナイト" {
+				t.Errorf("must not relay another title after work resolution: %s", r.URL)
+			}
+			fmt.Fprint(w, `{"results":[{"id":42,"name":"愚者之夜","original_name":"フールナイト","genre_ids":[16]}]}`)
+		case "/3/tv/42":
+			fmt.Fprint(w, `{"seasons":[{"season_number":1,"air_date":"2026-04-01"}]}`)
+		case "/3/tv/42/season/1":
+			fmt.Fprint(w, `{"episodes":[{"air_date":"2026-04-01"}]}`)
+		default:
+			t.Errorf("unexpected request: %s", r.URL)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	got, err := newReferenceTMDBMatcher(server).matchTitles(t.Context(), "Fool Night", []string{"フールナイト", "愚者之夜", "Fool Night"}, parseAiringDate("2026-11-26", "bangumi.date"))
+	if err != nil || got != nil {
+		t.Fatalf("April episodes cannot confirm a November premiere: match = %+v, error = %v", got, err)
+	}
+}
+
+func TestTMDBSearchTitleGroupsReserveDistinctRelayTerms(t *testing.T) {
+	m := new(TMDBMatcher)
+	got := m.searchTitleGroups([]string{" Show S3 ", "SHOW S3", "番組 (TV)", "Localized Show"})
+	if len(got) != 3 || len(got[0]) != 1 || got[0][0] != "Show S3" ||
+		len(got[1]) != 1 || got[1][0] != "番組 (TV)" || len(got[2]) != 1 || got[2][0] != "Localized Show" {
+		t.Fatalf("three distinct original terms must leave no room for trimmed variants: %q", got)
+	}
+}
