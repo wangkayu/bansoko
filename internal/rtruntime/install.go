@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// ErrAdoption reports a downloaded binary that failed the execution probe. The
-// live file has not been replaced when this error is returned.
+// ErrAdoption reports a downloaded binary that could not be adopted: it
+// failed the candidate probe, or the install could not be made durable. The
+// previous live binary has been kept or restored when this error is returned.
 var ErrAdoption = errors.New("reltitle binary adoption")
 
 // UpdateOptions describes one channel pass.
@@ -32,7 +33,9 @@ type UpdateOptions struct {
 	// this build's line and can be advanced. Empty reads the line of
 	// CurrentVersion.
 	ChannelLine string
-	// BuiltinVersion lets the default probe note an older-than-builtin binary.
+	// BuiltinVersion is the compiled-in parser's version. A channel build that
+	// is not strictly newer than it is skipped: installing it would leave a
+	// cache the next startup probe refuses to execute.
 	BuiltinVersion string
 	// Probe runs the adoption chain over the temporary download. Nil selects
 	// ProbeBinary; tests replace it to avoid executing a fixture binary.
@@ -75,6 +78,12 @@ func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
 		result.Reason = fmt.Sprintf("the channel offers %s, which is not newer than %s", channel.Version, options.CurrentVersion)
 		return result, nil
 	}
+	// A build the compiled-in parser already matches or exceeds would install a
+	// cache the startup probe then refuses to execute; skip it up front.
+	if _, ok := parseVersion(options.BuiltinVersion); ok && compareVersions(channel.Version, options.BuiltinVersion) <= 0 {
+		result.Reason = fmt.Sprintf("the channel offers %s, which is not newer than the builtin %s", channel.Version, options.BuiltinVersion)
+		return result, nil
+	}
 	artifact, err := channel.ArtifactFor(ArchSuffix())
 	if err != nil {
 		return result, err
@@ -98,7 +107,7 @@ func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
 	probe := options.Probe
 	if probe == nil {
 		probe = func(ctx context.Context, path string) error {
-			return ProbeBinary(ctx, path, options.BuiltinVersion)
+			return ProbeBinary(ctx, path, channel.Version, channel.Line)
 		}
 	}
 	if err := probe(ctx, temp); err != nil {
@@ -106,6 +115,11 @@ func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
 		return result, fmt.Errorf("%w: %v", ErrAdoption, err)
 	}
 	target := BinaryPath(options.ConfigRoot)
+	backup, err := backupLiveBinary(target)
+	if err != nil {
+		_ = os.Remove(temp)
+		return result, err
+	}
 	if err := replaceBinary(temp, target); err != nil {
 		return result, err
 	}
@@ -119,16 +133,55 @@ func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
 		Source:      SourceChannel,
 		InstalledAt: now().UTC(),
 	}); err != nil {
-		// The binary is already in place; a stale metadata file costs a probe,
-		// which never trusts it anyway.
-		result.Installed = true
-		result.Version = channel.Version
-		result.Path = target
-		result.Reason = "installed, but the metadata file could not be written: " + err.Error()
-		return result, nil
+		// The probe executes the binary only with a corroborating record, so a
+		// replace whose record cannot be written must not leave the new file
+		// live: put the previous binary back (or remove the new one) and fail.
+		restoreLiveBinary(target, backup)
+		_ = syncDir(filepath.Dir(target))
+		return result, fmt.Errorf("%w: the metadata file could not be written: %v", ErrAdoption, err)
+	}
+	if backup != "" {
+		_ = os.Remove(backup)
 	}
 	result.Installed = true
 	result.Version = channel.Version
 	result.Path = target
 	return result, nil
+}
+
+// backupLiveBinary hard-links the current live binary aside so a failed
+// install can put it back. It returns "" when nothing is installed yet.
+func backupLiveBinary(target string) (string, error) {
+	if _, err := os.Lstat(target); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("%w: inspect the live binary: %v", ErrChannel, err)
+	}
+	backup := target + ".prev"
+	if err := os.Remove(backup); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("%w: remove a stale backup: %v", ErrChannel, err)
+	}
+	if err := os.Link(target, backup); err == nil {
+		return backup, nil
+	}
+	// A filesystem without hard links gets a plain copy instead.
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return "", fmt.Errorf("%w: read the live binary: %v", ErrChannel, err)
+	}
+	if err := os.WriteFile(backup, data, 0o755); err != nil {
+		return "", fmt.Errorf("%w: copy the live binary aside: %v", ErrChannel, err)
+	}
+	return backup, nil
+}
+
+// restoreLiveBinary undoes a replace: the backup takes the live path back,
+// or the new file is removed when nothing was installed before.
+func restoreLiveBinary(target, backup string) {
+	if backup == "" {
+		_ = os.Remove(target)
+		return
+	}
+	_ = os.Rename(backup, target)
 }

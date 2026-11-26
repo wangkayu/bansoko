@@ -1,13 +1,14 @@
 // Package rtruntime runs the reltitle parser as a separate process when a
-// binary is installed under the configuration root, and reports why the
-// in-process library is in use otherwise.
+// channel-installed binary sits under the configuration root, and reports why
+// the in-process library is in use otherwise.
 //
-// The binary is the update unit: the online updater and a person replacing the
-// file by hand both write one path, and both are accepted by the same chain —
-// a regular file, executable, that answers `-version`, speaks rt-serve-1 in
-// its hello handshake, and parses one known title. A manually placed build
-// (including a self-compiled one with its own dictionary) is accepted at any
-// version; the version gate belongs to the updater, not to this probe.
+// The binary is the update unit and only the official channel may write one:
+// a file at the install path is executed only after installed.json proves it
+// arrived through the channel (source, a release version, and the file's
+// sha256), and only while that version sits on the builtin parser's
+// major.minor line and strictly ahead of it. A manually placed or
+// self-compiled build is never executed; upgrading bansoko quietly supersedes
+// a cached channel binary the builtin parser has caught up with.
 package rtruntime
 
 import (
@@ -51,13 +52,12 @@ const (
 // Source names where the running parser came from.
 const (
 	SourceBuiltin = "builtin"
-	SourceManual  = "manual"
 	SourceChannel = "channel"
 )
 
 // Info describes the parser a deployment is currently using.
 type Info struct {
-	// Source is SourceBuiltin, SourceManual or SourceChannel.
+	// Source is SourceBuiltin or SourceChannel.
 	Source string
 	// Version is the build version the binary reports, or the compiled-in
 	// module version for the library.
@@ -66,21 +66,22 @@ type Info struct {
 	Line string
 	// ConfigDigest is the dictionary digest ("lexicon:sha256:…").
 	ConfigDigest string
-	// Note explains why an installed binary was not adopted, or that a manual
-	// build differs from the shipped one. Empty when there is nothing to say.
+	// Note explains why an installed binary was not adopted. Empty when there
+	// is nothing to say — in particular when an upgrade quietly supersedes a
+	// cached channel binary the builtin parser has caught up with.
 	Note string
 	// Path is the installed binary this info describes ("" for builtin).
 	Path string
 }
 
-// BinaryPath is the one path the updater and a person both write.
+// BinaryPath is the one path the channel updater writes.
 func BinaryPath(configRoot string) string {
 	return filepath.Join(configRoot, DirName, BinaryName)
 }
 
-// MetadataPath records how the installed binary arrived. The probe never
-// trusts it: a hand-placed file may leave it stale, so the version, digest and
-// source always come from running the binary.
+// MetadataPath records how the installed binary arrived. The probe executes
+// the binary only while this record proves a channel install: the channel
+// source, a release version, and the file's sha256.
 func MetadataPath(configRoot string) string {
 	return filepath.Join(configRoot, DirName, "installed.json")
 }
@@ -96,48 +97,80 @@ type Installed struct {
 // Probe runs the adoption chain over the installed file.
 //
 // The returned client is nil when the builtin parser should be used: the file
-// is absent, or it failed the chain and Info.Note says why. Probe itself never
-// fails; a broken installation is a state to show, not an error to abort
-// startup with.
+// is absent, or it failed the chain and Info.Note says why. A superseded
+// channel cache (an older, equal or cross-line build) falls back with an
+// empty Note. Probe itself never fails; a broken installation is a state to
+// show, not an error to abort startup with.
 func Probe(ctx context.Context, configRoot, builtinVersion string) (*Client, Info) {
 	return probe(ctx, configRoot, BinaryPath(configRoot), builtinVersion)
 }
 
-// ProbeBinary runs the same adoption chain over an arbitrary file without
-// making it the process-wide parser. The updater uses it on the temporary
-// download, before anything can replace the live binary.
-func ProbeBinary(ctx context.Context, path, builtinVersion string) error {
-	client, info := probe(ctx, "", path, builtinVersion)
-	if client == nil {
-		if info.Note == "" {
-			return fmt.Errorf("%s was not adopted", path)
-		}
-		return errors.New(info.Note)
+// ProbeBinary validates a freshly downloaded candidate before it replaces the
+// live binary: the file checks, `-version`, the rt-serve-1 handshake with
+// non-empty fields, an exact version and line match against the channel
+// manifest, and one smoke parse. It needs no installed.json — the record is
+// written only after the candidate passes and lands at BinaryPath.
+func ProbeBinary(ctx context.Context, path, expectedVersion, expectedLine string) error {
+	problem, missing := binaryFileProblem(path)
+	if missing {
+		return fmt.Errorf("%s does not exist", path)
 	}
-	if err := client.Close(); err != nil {
-		return fmt.Errorf("close probed binary %s: %w", path, err)
+	if problem != "" {
+		return errors.New(problem)
+	}
+	if _, err := VersionOf(ctx, path); err != nil {
+		return err
+	}
+	client, err := Start(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	reported := client.Info()
+	for field, value := range map[string]string{
+		"version": reported.Version, "line": reported.Line, "digest": reported.ConfigDigest,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s reports an empty %s", path, field)
+		}
+	}
+	if !sameVersion(reported.Version, expectedVersion) {
+		return fmt.Errorf("%s reports version %s, but the channel manifest offers %s", path, reported.Version, expectedVersion)
+	}
+	if reported.Line != expectedLine {
+		return fmt.Errorf("%s reports line %s, but the channel manifest is for line %s", path, reported.Line, expectedLine)
+	}
+	if err := client.smoke(ctx); err != nil {
+		return fmt.Errorf("%s failed the parse self-check: %v", path, err)
 	}
 	return nil
 }
 
 func probe(ctx context.Context, configRoot, path, builtinVersion string) (*Client, Info) {
 	info := Info{Source: SourceBuiltin, Path: path}
-	if st, err := os.Lstat(path); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			info.Note = fmt.Sprintf("%s cannot be inspected: %v", path, err)
-		}
+	problem, missing := binaryFileProblem(path)
+	if missing {
 		return nil, info
-	} else if st.Mode()&os.ModeSymlink != 0 {
-		info.Note = fmt.Sprintf("%s is a symbolic link; a regular file is required", path)
+	}
+	if problem != "" {
+		info.Note = problem
 		return nil, info
-	} else if !st.Mode().IsRegular() {
-		info.Note = fmt.Sprintf("%s is not a regular file", path)
+	}
+
+	// Nothing executes before installed.json proves a channel install: a file
+	// without a corroborating record is a manually placed or leftover binary,
+	// and this build never runs one of those.
+	record, note := verifyInstalled(configRoot, path)
+	if note != "" {
+		info.Note = note
 		return nil, info
-	} else if st.Size() > MaxBinaryBytes {
-		info.Note = fmt.Sprintf("%s is larger than %d bytes", path, MaxBinaryBytes)
-		return nil, info
-	} else if st.Mode()&0o111 == 0 {
-		info.Note = fmt.Sprintf("%s is not executable", path)
+	}
+
+	// A cached channel binary the builtin parser has caught up with — or one
+	// left on another major.minor line after an upgrade — is superseded, not
+	// broken: fall back quietly, without executing it.
+	builtinLine := LineOf(builtinVersion)
+	if LineOf(record.Version) != builtinLine || compareVersions(record.Version, builtinVersion) <= 0 {
 		return nil, info
 	}
 
@@ -145,7 +178,6 @@ func probe(ctx context.Context, configRoot, path, builtinVersion string) (*Clien
 		info.Note = err.Error()
 		return nil, info
 	}
-
 	client, err := Start(ctx, path)
 	if err != nil {
 		info.Note = err.Error()
@@ -161,39 +193,89 @@ func probe(ctx context.Context, configRoot, path, builtinVersion string) (*Clien
 			return nil, info
 		}
 	}
+
+	// The handshake must corroborate the record that allowed execution and
+	// still lead the builtin parser: a binary answering anything else is not
+	// the install the record describes.
+	if !sameVersion(reported.Version, record.Version) {
+		_ = client.Close()
+		info.Note = fmt.Sprintf("%s reports version %s, but installed.json records %s", path, reported.Version, record.Version)
+		return nil, info
+	}
+	if reported.Line != builtinLine {
+		_ = client.Close()
+		info.Note = fmt.Sprintf("%s reports line %s, but the builtin parser is on line %s", path, reported.Line, builtinLine)
+		return nil, info
+	}
+	if compareVersions(reported.Version, builtinVersion) <= 0 {
+		_ = client.Close()
+		info.Note = fmt.Sprintf("%s reports %s, which is not newer than the builtin %s", path, reported.Version, builtinVersion)
+		return nil, info
+	}
 	if err := client.smoke(ctx); err != nil {
 		_ = client.Close()
 		info.Note = fmt.Sprintf("%s failed the parse self-check: %v", path, err)
 		return nil, info
 	}
-	info = reported
-	info.Source = SourceManual
-	if configRoot != "" {
-		info.Source = installedSource(configRoot, path, reported)
-	}
-	info.Path = path
-	info.Note = versionNote(reported.Version, builtinVersion)
+	client.info.Source = SourceChannel
+	info = client.Info()
 	return client, info
 }
 
-// installedSource names where the installed file came from. The probe never
-// trusts installed.json for what the binary is: version, line and digest come
-// from running it. A channel record that matches the file exactly is the one
-// fact the binary cannot report, so only that match labels the file a channel
-// install; anything else is the running manual build.
-func installedSource(configRoot, path string, reported Info) string {
-	record, err := readInstalled(configRoot)
-	if err != nil || record.Source != SourceChannel {
-		return SourceManual
+// binaryFileProblem applies the file safety checks: the install path must be
+// a regular, executable file of a plausible size. missing reports the
+// ordinary first start, which is no problem at all.
+func binaryFileProblem(path string) (problem string, missing bool) {
+	st, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", true
+		}
+		return fmt.Sprintf("%s cannot be inspected: %v", path, err), false
 	}
-	if !strings.EqualFold(strings.TrimPrefix(record.Version, "v"), strings.TrimPrefix(reported.Version, "v")) {
-		return SourceManual
+	switch {
+	case st.Mode()&os.ModeSymlink != 0:
+		return fmt.Sprintf("%s is a symbolic link; a regular file is required", path), false
+	case !st.Mode().IsRegular():
+		return fmt.Sprintf("%s is not a regular file", path), false
+	case st.Size() > MaxBinaryBytes:
+		return fmt.Sprintf("%s is larger than %d bytes", path, MaxBinaryBytes), false
+	case st.Mode()&0o111 == 0:
+		return fmt.Sprintf("%s is not executable", path), false
+	}
+	return "", false
+}
+
+// verifyInstalled reads installed.json and proves it describes the file on
+// disk. The record is what lets a binary execute at all, so every failure is
+// a refusal with an explanation, never a reason to run the file anyway.
+func verifyInstalled(configRoot, path string) (Installed, string) {
+	refuse := func(reason string) (Installed, string) {
+		return Installed{}, fmt.Sprintf("%s is not executed: %s; only a binary installed through the official update channel is adopted", path, reason)
+	}
+	record, err := readInstalled(configRoot)
+	if err != nil {
+		return refuse("installed.json is missing or malformed")
+	}
+	if record.Source != SourceChannel {
+		return refuse(fmt.Sprintf("installed.json records source %q, not %q", record.Source, SourceChannel))
+	}
+	if _, ok := parseVersion(record.Version); !ok {
+		return refuse(fmt.Sprintf("installed.json version %q is not a release version", record.Version))
 	}
 	digest, err := fileDigest(path)
-	if err != nil || !strings.EqualFold(digest, record.SHA256) {
-		return SourceManual
+	if err != nil {
+		return refuse(fmt.Sprintf("the file cannot be read: %v", err))
 	}
-	return SourceChannel
+	if !strings.EqualFold(digest, record.SHA256) {
+		return refuse("the file's sha256 does not match installed.json")
+	}
+	return record, ""
+}
+
+// sameVersion compares two versions ignoring an optional leading "v".
+func sameVersion(a, b string) bool {
+	return strings.EqualFold(strings.TrimPrefix(a, "v"), strings.TrimPrefix(b, "v"))
 }
 
 // readInstalled reads the record the updater writes. A missing or malformed
@@ -223,15 +305,6 @@ func fileDigest(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
-}
-
-// versionNote flags a hand-placed build that is older than the compiled-in
-// one. It is a note, not a refusal: the person who put the file there decides.
-func versionNote(installed, builtin string) string {
-	if compareVersions(installed, builtin) >= 0 {
-		return ""
-	}
-	return fmt.Sprintf("installed %s is older than the builtin %s", installed, builtin)
 }
 
 // Newer reports whether a is strictly newer than b under the same ordering the

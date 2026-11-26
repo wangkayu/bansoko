@@ -97,16 +97,6 @@ describe("SettingsTitleParser", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/title-parser/check"))).toBe(false);
   });
 
-  it("shows a manually placed parser with the manual hint (state F)", async () => {
-    const manual: TitleParserStatus = { ...builtinStatus, source: "manual", version: "0.0.3-custom", note: "" };
-    stubFetch((url) => jsonResponse(manual));
-    renderPanel();
-
-    expect(await screen.findByText("0.0.3-custom")).toBeInTheDocument();
-    expect(screen.getByText(t("settings.titleParser.source.manual"))).toBeInTheDocument();
-    expect(screen.getByText(t("settings.titleParser.manualHint"))).toBeInTheDocument();
-  });
-
   it("runs a manual check and surfaces a newer channel with bilingual notes (state B)", async () => {
     stubFetch((url, init) => {
       if (url.endsWith("/title-parser") && init?.method !== "POST") return jsonResponse(builtinStatus);

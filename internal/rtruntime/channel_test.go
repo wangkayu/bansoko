@@ -442,10 +442,11 @@ func TestUpdateRefusesAPlatformWithoutAnArtifact(t *testing.T) {
 	}
 }
 
-// TestProbeLabelsACorroboratedChannelInstall proves a file the updater wrote is
-// reported as a channel install after a restart, but only while the record and
-// the file agree.
-func TestProbeLabelsACorroboratedChannelInstall(t *testing.T) {
+// TestProbeAdoptsOnlyACorroboratedChannelInstall proves the record is what
+// lets the binary run at all: a matching channel record adopts; a record the
+// file contradicts, or one that is not a channel install, refuses without
+// executing the binary.
+func TestProbeAdoptsOnlyACorroboratedChannelInstall(t *testing.T) {
 	root, path := installFake(t)
 	digest, err := fileDigest(path)
 	if err != nil {
@@ -461,28 +462,107 @@ func TestProbeLabelsACorroboratedChannelInstall(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	probe := func() Info {
-		t.Helper()
-		client, info := Probe(testContext(t), root, fakeVersion)
-		if client == nil {
-			t.Fatalf("the probe refused the fake: %s", info.Note)
-		}
-		_ = client.Close()
-		return info
-	}
 
 	writeRecord(Installed{Version: fakeVersion, SHA256: digest, Source: SourceChannel})
-	if info := probe(); info.Source != SourceChannel {
+	client, info := Probe(testContext(t), root, fakeBuiltin)
+	if client == nil {
+		t.Fatalf("the probe refused a corroborated channel install: %s", info.Note)
+	}
+	if info.Source != SourceChannel {
 		t.Fatalf("source = %q, want %q for a corroborated channel install", info.Source, SourceChannel)
 	}
+	_ = client.Close()
 
-	writeRecord(Installed{Version: fakeVersion, SHA256: strings.Repeat("0", 64), Source: SourceChannel})
-	if info := probe(); info.Source != SourceManual {
-		t.Fatalf("source = %q, want %q when the recorded digest differs", info.Source, SourceManual)
+	// A record the file contradicts — or one not naming the channel — refuses
+	// before the binary ever runs.
+	for _, record := range []Installed{
+		{Version: fakeVersion, SHA256: strings.Repeat("0", 64), Source: SourceChannel},
+		{Version: fakeVersion, SHA256: digest, Source: "manual"},
+	} {
+		writeRecord(record)
+		client, info := Probe(testContext(t), root, fakeBuiltin)
+		if client != nil {
+			_ = client.Close()
+			t.Fatalf("the probe adopted with record %+v", record)
+		}
+		if info.Source != SourceBuiltin || !strings.Contains(info.Note, "not executed") {
+			t.Fatalf("record %+v: source = %q, note = %q; want a builtin fallback with an explanation", record, info.Source, info.Note)
+		}
+	}
+}
+
+// TestUpdateRestoresTheLiveBinaryWhenTheRecordWriteFails proves the install
+// is rollback-safe: the replace already happened when installed.json cannot
+// be written, and the previous live binary must be put back with an error
+// that names ErrAdoption.
+func TestUpdateRestoresTheLiveBinaryWhenTheRecordWriteFails(t *testing.T) {
+	artifact := []byte("#!/bin/sh\necho reltitle\n")
+	server := channelServer(t, "0.0.4", artifact, nil)
+	withChannelRoot(t, server)
+	root := t.TempDir()
+	target := BinaryPath(root)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("previous build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A directory where installed.json must be makes the record write fail
+	// after the binary was replaced.
+	if err := os.MkdirAll(MetadataPath(root), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
-	writeRecord(Installed{Version: fakeVersion, SHA256: digest, Source: SourceManual})
-	if info := probe(); info.Source != SourceManual {
-		t.Fatalf("source = %q, want %q for a manual record", info.Source, SourceManual)
+	result, err := Update(context.Background(), UpdateOptions{
+		ConfigRoot: root, Lane: "stable", Client: server.Client(), CurrentVersion: "0.0.3",
+		Probe: func(ctx context.Context, path string) error { return nil },
+	})
+	if !errors.Is(err, ErrAdoption) {
+		t.Fatalf("update error = %v, want ErrAdoption", err)
+	}
+	if result.Installed {
+		t.Fatalf("result = %+v, want nothing installed", result)
+	}
+	current, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("the previous live binary was not restored: %v", readErr)
+	}
+	if string(current) != "previous build" {
+		t.Fatalf("the live binary changed: %q", current)
+	}
+	// The rollback must leave no backup and no temporary download behind:
+	// only the restored binary and the directory that blocked the record.
+	names := make([]string, 0, 2)
+	if entries, _ := os.ReadDir(filepath.Dir(target)); true {
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+	}
+	if strings.Join(names, ",") != "installed.json,reltitle" {
+		t.Fatalf("the rt directory holds %v, want only the restored binary and the blocking directory", names)
+	}
+}
+
+// TestUpdateSkipsABuildNotNewerThanTheBuiltin proves the pre-download gate:
+// a channel build the compiled-in parser already matches would install a
+// cache the startup probe refuses to execute, so the pass skips it.
+func TestUpdateSkipsABuildNotNewerThanTheBuiltin(t *testing.T) {
+	server := channelServer(t, "0.0.4", []byte("new"), nil)
+	withChannelRoot(t, server)
+	root := t.TempDir()
+	result, err := Update(context.Background(), UpdateOptions{
+		ConfigRoot: root, Lane: "stable", Client: server.Client(), CurrentVersion: "0.0.3", BuiltinVersion: "0.0.4",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if result.Installed {
+		t.Fatal("installed a build that is not newer than the builtin")
+	}
+	if !strings.Contains(result.Reason, "builtin") {
+		t.Fatalf("a skipped update must name the builtin version: %q", result.Reason)
+	}
+	if _, err := os.Stat(BinaryPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("the binary path was written anyway: %v", err)
 	}
 }

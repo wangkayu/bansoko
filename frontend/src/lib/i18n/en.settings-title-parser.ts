@@ -16,12 +16,10 @@ export const enSettingsTitleParserCopy = {
     sourceLabel: "Source",
     source: {
       builtin: "Built-in",
-      manual: "Manually placed",
       channel: "Installed from channel",
     },
     usingBuiltin: "Using the built-in parser {version}",
     notAdopted: "{path} was not adopted",
-    manualHint: "The manually placed component is active and used as placed",
     digestFootnote: "Dictionary digest {digest}",
     channelFrom: "From the official reltitle channel",
     canUpdateTo: "Can update to {version}",

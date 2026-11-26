@@ -12560,7 +12560,7 @@ components:
       properties:
         source:
           type: string
-          enum: [builtin, manual, channel]
+          enum: [builtin, channel]
         version:
           type: string
           description: The running parser identity, e.g. `reltitle@v0.0.4` for the compiled-in library.
@@ -12572,10 +12572,10 @@ components:
           description: The dictionary digest the running parser reported (`lexicon:sha256:...`).
         binary_path:
           type: string
-          description: The one path a channel install and a manually placed build both use.
+          description: The one path the channel updater installs to; a build lands there only through the official update channel.
         note:
           type: string
-          description: The startup probe's explanation (a refused manual build, an older-than-builtin build, ...).
+          description: The startup probe's explanation when a binary at binary_path was refused (no corroborating channel record, a failed handshake, ...); empty when there is nothing to say.
         external_failure:
           type: string
           description: Why a previously adopted binary was dropped mid-flight; empty while it answers.

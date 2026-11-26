@@ -18,6 +18,10 @@ const (
 	fakeLine    = "9.9"
 	fakeDigest  = "lexicon:sha256:deadbeef"
 
+	// fakeBuiltin is the builtin version the probe tests run against: same
+	// line as the fake, one patch behind, so a corroborated channel record
+	// clears the freshness gate.
+	fakeBuiltin = "9.9.8"
 	// operationTimeout keeps a wedged client from hanging the whole package;
 	// every request the tests expect to succeed answers in milliseconds.
 	operationTimeout = 30 * time.Second
@@ -118,6 +122,29 @@ func installFake(t *testing.T) (configRoot, path string) {
 	return configRoot, path
 }
 
+// writeChannelRecord writes the installed.json the updater would have
+// written for the file at path, so the probe's pre-execution verification
+// has a corroborating channel record to check.
+func writeChannelRecord(t *testing.T, configRoot, path, version string) {
+	t.Helper()
+	digest, err := fileDigest(path)
+	if err != nil {
+		t.Fatalf("digest the installed binary: %v", err)
+	}
+	if err := writeInstalled(configRoot, Installed{Version: version, SHA256: digest, Source: SourceChannel, InstalledAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("write installed.json: %v", err)
+	}
+}
+
+// installChannelFake places the fake and its channel record: the state an
+// official update leaves behind.
+func installChannelFake(t *testing.T) (configRoot, path string) {
+	t.Helper()
+	configRoot, path = installFake(t)
+	writeChannelRecord(t, configRoot, path, fakeVersion)
+	return configRoot, path
+}
+
 func testContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
@@ -138,15 +165,15 @@ func startFake(t *testing.T) *Client {
 }
 
 func TestProbeAdoptsAWorkingBinary(t *testing.T) {
-	configRoot, path := installFake(t)
-	client, info := Probe(testContext(t), configRoot, fakeVersion)
+	configRoot, path := installChannelFake(t)
+	client, info := Probe(testContext(t), configRoot, fakeBuiltin)
 	if client == nil {
 		t.Fatalf("the probe refused a working binary: %s", info.Note)
 	}
 	t.Cleanup(func() { _ = client.Close() })
 
-	if info.Source != SourceManual {
-		t.Fatalf("source = %q, want %q", info.Source, SourceManual)
+	if info.Source != SourceChannel {
+		t.Fatalf("source = %q, want %q", info.Source, SourceChannel)
 	}
 	if info.Path != path {
 		t.Fatalf("path = %q, want %q", info.Path, path)
@@ -161,7 +188,7 @@ func TestProbeAdoptsAWorkingBinary(t *testing.T) {
 		t.Fatalf("digest = %q, want the hello digest %q", info.ConfigDigest, fakeDigest)
 	}
 	if info.Note != "" {
-		t.Fatalf("an equal-version build deserves no note, got %q", info.Note)
+		t.Fatalf("an adopted channel build deserves no note, got %q", info.Note)
 	}
 	if reported := client.Info(); reported != info {
 		t.Fatalf("the adopted client reports %+v, but the probe reported %+v", reported, info)
@@ -241,7 +268,7 @@ func TestProbeRefusesAnUnusableBinary(t *testing.T) {
 		{
 			name: "wrong protocol",
 			prepare: func(t *testing.T) (string, string) {
-				root, path := installFake(t)
+				root, path := installChannelFake(t)
 				t.Setenv("FAKERT_PROTOCOL", "rt-serve-2")
 				return root, path
 			},
@@ -250,7 +277,7 @@ func TestProbeRefusesAnUnusableBinary(t *testing.T) {
 		{
 			name: "exits on start",
 			prepare: func(t *testing.T) (string, string) {
-				root, path := installFake(t)
+				root, path := installChannelFake(t)
 				t.Setenv("FAKERT_EXIT_ON_START", "1")
 				return root, path
 			},
@@ -259,7 +286,7 @@ func TestProbeRefusesAnUnusableBinary(t *testing.T) {
 		{
 			name: "crashes during the parse self-check",
 			prepare: func(t *testing.T) (string, string) {
-				root, path := installFake(t)
+				root, path := installChannelFake(t)
 				t.Setenv("FAKERT_CRASH_ON_PARSE", "1")
 				return root, path
 			},
@@ -270,7 +297,7 @@ func TestProbeRefusesAnUnusableBinary(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			configRoot, path := testCase.prepare(t)
-			client, info := Probe(testContext(t), configRoot, fakeVersion)
+			client, info := Probe(testContext(t), configRoot, fakeBuiltin)
 			if client != nil {
 				_ = client.Close()
 				t.Fatalf("the probe adopted a binary it must refuse")
@@ -292,6 +319,204 @@ func TestProbeRefusesAnUnusableBinary(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestProbeNeverExecutesAnUnverifiedBinary proves the pre-execution gate: a
+// binary without a corroborating channel record is never run, no matter how
+// executable it looks. The marker file is the proof: the fake appends to it
+// on every execution, and every case must leave it absent.
+func TestProbeNeverExecutesAnUnverifiedBinary(t *testing.T) {
+	cases := []struct {
+		name    string
+		prepare func(t *testing.T, configRoot, path string)
+	}{
+		{
+			name:    "no record at all (a manually placed binary)",
+			prepare: func(t *testing.T, configRoot, path string) {},
+		},
+		{
+			name: "malformed installed.json",
+			prepare: func(t *testing.T, configRoot, path string) {
+				if err := os.WriteFile(MetadataPath(configRoot), []byte("not json"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "a record that is not a channel install",
+			prepare: func(t *testing.T, configRoot, path string) {
+				digest, err := fileDigest(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if err := writeInstalled(configRoot, Installed{Version: fakeVersion, SHA256: digest, Source: "manual"}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "a record whose sha256 does not match the file",
+			prepare: func(t *testing.T, configRoot, path string) {
+				if err := writeInstalled(configRoot, Installed{Version: fakeVersion, SHA256: strings.Repeat("0", 64), Source: SourceChannel}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "a record without a release version",
+			prepare: func(t *testing.T, configRoot, path string) {
+				digest, err := fileDigest(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if err := writeInstalled(configRoot, Installed{Version: "latest", SHA256: digest, Source: SourceChannel}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			configRoot, path := installFake(t)
+			testCase.prepare(t, configRoot, path)
+			marker := filepath.Join(t.TempDir(), "executed")
+			t.Setenv("FAKERT_MARK_FILE", marker)
+
+			client, info := Probe(testContext(t), configRoot, fakeBuiltin)
+			if client != nil {
+				_ = client.Close()
+				t.Fatalf("the probe adopted an unverified binary")
+			}
+			if info.Source != SourceBuiltin {
+				t.Fatalf("source = %q, want %q", info.Source, SourceBuiltin)
+			}
+			if !strings.Contains(info.Note, "not executed") {
+				t.Fatalf("note %q does not explain the refusal to execute", info.Note)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("an unverified binary was executed (marker exists): %v", err)
+			}
+		})
+	}
+}
+
+// TestProbeIgnoresASupersededChannelCache proves the freshness gate: a valid
+// channel install the builtin parser has caught up with — or one left on
+// another major.minor line by an upgrade — falls back quietly. The fallback
+// is not a warning (an empty Note) and the stale binary is never executed.
+func TestProbeIgnoresASupersededChannelCache(t *testing.T) {
+	cases := []struct {
+		name    string
+		builtin string
+	}{
+		{"the same version as the builtin", "9.9.9"},
+		{"older than the builtin", "9.9.10"},
+		{"on another major.minor line", "9.10.0"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			configRoot, _ := installChannelFake(t)
+			marker := filepath.Join(t.TempDir(), "executed")
+			t.Setenv("FAKERT_MARK_FILE", marker)
+
+			client, info := Probe(testContext(t), configRoot, testCase.builtin)
+			if client != nil {
+				_ = client.Close()
+				t.Fatalf("the probe adopted a superseded binary")
+			}
+			if info.Source != SourceBuiltin {
+				t.Fatalf("source = %q, want %q", info.Source, SourceBuiltin)
+			}
+			if info.Note != "" {
+				t.Fatalf("a superseded cache is a quiet fallback, not a note: %q", info.Note)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("a superseded binary was executed (marker exists): %v", err)
+			}
+		})
+	}
+}
+
+// TestProbeRefusesAHandshakeThatDisagreesWithTheRecord executes the binary
+// (the record allowed it) and then refuses whatever the hello handshake
+// contradicts: the record's version or the builtin parser's line.
+func TestProbeRefusesAHandshakeThatDisagreesWithTheRecord(t *testing.T) {
+	cases := []struct {
+		name     string
+		env      map[string]string
+		wantNote string
+	}{
+		{
+			name:     "the binary reports another version",
+			env:      map[string]string{"FAKERT_VERSION": "9.9.10"},
+			wantNote: "reports version 9.9.10",
+		},
+		{
+			name:     "the binary reports another line",
+			env:      map[string]string{"FAKERT_LINE": "8.8"},
+			wantNote: "reports line 8.8",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			configRoot, _ := installChannelFake(t)
+			for name, value := range testCase.env {
+				t.Setenv(name, value)
+			}
+
+			client, info := Probe(testContext(t), configRoot, fakeBuiltin)
+			if client != nil {
+				_ = client.Close()
+				t.Fatalf("the probe adopted a binary whose handshake contradicts the record")
+			}
+			if info.Source != SourceBuiltin {
+				t.Fatalf("source = %q, want %q", info.Source, SourceBuiltin)
+			}
+			if !strings.Contains(info.Note, testCase.wantNote) {
+				t.Fatalf("note %q does not name the mismatch (want %q)", info.Note, testCase.wantNote)
+			}
+		})
+	}
+}
+
+// TestProbeBinaryValidatesACandidate covers the updater's pre-replace probe:
+// no installed.json exists yet, so the expected version and line from the
+// channel manifest are the reference the download must match.
+func TestProbeBinaryValidatesACandidate(t *testing.T) {
+	t.Run("accepts a matching candidate", func(t *testing.T) {
+		if err := ProbeBinary(testContext(t), fakeBinary(t), fakeVersion, fakeLine); err != nil {
+			t.Fatalf("a matching candidate was refused: %v", err)
+		}
+	})
+	t.Run("refuses a version the manifest did not offer", func(t *testing.T) {
+		err := ProbeBinary(testContext(t), fakeBinary(t), "9.9.10", fakeLine)
+		if err == nil || !strings.Contains(err.Error(), "channel manifest offers 9.9.10") {
+			t.Fatalf("error = %v, want the manifest mismatch named", err)
+		}
+	})
+	t.Run("refuses a line the manifest did not offer", func(t *testing.T) {
+		err := ProbeBinary(testContext(t), fakeBinary(t), fakeVersion, "8.8")
+		if err == nil || !strings.Contains(err.Error(), "manifest is for line 8.8") {
+			t.Fatalf("error = %v, want the manifest mismatch named", err)
+		}
+	})
+	t.Run("refuses a candidate that fails the parse self-check", func(t *testing.T) {
+		t.Setenv("FAKERT_CRASH_ON_PARSE", "1")
+		err := ProbeBinary(testContext(t), fakeBinary(t), fakeVersion, fakeLine)
+		if err == nil || !strings.Contains(err.Error(), "parse self-check") {
+			t.Fatalf("error = %v, want the self-check named", err)
+		}
+	})
+	t.Run("refuses a missing file", func(t *testing.T) {
+		if err := ProbeBinary(testContext(t), filepath.Join(t.TempDir(), "reltitle"), fakeVersion, fakeLine); err == nil {
+			t.Fatal("a missing candidate was accepted")
+		}
+	})
 }
 
 func TestClientParsesATitle(t *testing.T) {
@@ -479,36 +704,5 @@ func TestCompareVersionsOrdersReleaseVersions(t *testing.T) {
 		if got := compareVersions(testCase.a, testCase.b); got != testCase.want {
 			t.Errorf("compareVersions(%q, %q) = %d, want %d", testCase.a, testCase.b, got, testCase.want)
 		}
-	}
-}
-
-func TestVersionNoteFlagsOnlyAnOlderBuild(t *testing.T) {
-	cases := []struct {
-		name               string
-		installed, builtin string
-		wantNote           bool
-	}{
-		{"older", "1.2.2", "1.2.3", true},
-		{"equal", "1.2.3", "1.2.3", false},
-		{"newer", "1.3.0", "1.2.3", false},
-		{"unparseable installed version", "0.0.0-dev", "1.0.0", true},
-		{"unparseable builtin version", "1.0.0", "garbage", false},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			note := versionNote(testCase.installed, testCase.builtin)
-			if testCase.wantNote && note == "" {
-				t.Fatalf("versionNote(%q, %q) said nothing; an older build must be flagged", testCase.installed, testCase.builtin)
-			}
-			if !testCase.wantNote && note != "" {
-				t.Fatalf("versionNote(%q, %q) = %q, want no note", testCase.installed, testCase.builtin, note)
-			}
-			if !testCase.wantNote {
-				return
-			}
-			if !strings.Contains(note, testCase.installed) || !strings.Contains(note, testCase.builtin) {
-				t.Fatalf("note %q must name both versions", note)
-			}
-		})
 	}
 }

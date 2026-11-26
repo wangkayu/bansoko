@@ -35,7 +35,6 @@ const (
 // Source values describe where the running parser came from.
 const (
 	SourceBuiltin = rtruntime.SourceBuiltin
-	SourceManual  = rtruntime.SourceManual
 	SourceChannel = rtruntime.SourceChannel
 )
 
@@ -106,8 +105,8 @@ type Parser interface {
 type Options struct {
 	ConfigRoot string
 	HTTPClient *http.Client
-	// Note is the startup probe's explanation (a refused manual build, an
-	// older-than-builtin note, ...).
+	// Note is the startup probe's explanation (a binary that was refused
+	// because no channel record corroborates it, a failed handshake, ...).
 	Note string
 	// Source is the startup probe's source for the running parser.
 	Source string
@@ -148,7 +147,7 @@ func New(options Options) *Service {
 	lane = normalizeLane(lane)
 	source := options.Source
 	switch source {
-	case SourceBuiltin, SourceManual, SourceChannel:
+	case SourceBuiltin, SourceChannel:
 	default:
 		source = SourceBuiltin
 	}
@@ -371,17 +370,13 @@ func channelLine() (string, error) {
 
 // runningSource reflects the backend answering now. A mid-flight transport
 // failure drops the adopted binary and falls back to the library, so the
-// stored startup source cannot be reported on its own.
+// stored startup source cannot be reported on its own: anything that is not
+// the compiled-in module is an adopted channel build.
 func (s *Service) runningSource() string {
 	if s.parser.ActiveVersion() == reltitletags.ImplementationVersion {
 		return SourceBuiltin
 	}
-	switch s.source {
-	case SourceManual, SourceChannel:
-		return s.source
-	default:
-		return SourceManual
-	}
+	return SourceChannel
 }
 
 // reltitleParser is the production Parser.

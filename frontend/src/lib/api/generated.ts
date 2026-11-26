@@ -4855,16 +4855,16 @@ export interface components {
         /** @description The reltitle parser component as this process sees it. `channel` is absent until the first check or install. */
         TitleParserStatus: {
             /** @enum {string} */
-            source: "builtin" | "manual" | "channel";
+            source: "builtin" | "channel";
             /** @description The running parser identity, e.g. `reltitle@v0.0.4` for the compiled-in library. */
             version: string;
             /** @description The running parser's major.minor line (e.g. `0.0`); empty when it cannot be derived. */
             line: string;
             /** @description The dictionary digest the running parser reported (`lexicon:sha256:...`). */
             config_digest: string;
-            /** @description The one path a channel install and a manually placed build both use. */
+            /** @description The one path the channel updater installs to; a build lands there only through the official update channel. */
             binary_path: string;
-            /** @description The startup probe's explanation (a refused manual build, an older-than-builtin build, ...). */
+            /** @description The startup probe's explanation when a binary at binary_path was refused (no corroborating channel record, a failed handshake, ...); empty when there is nothing to say. */
             note: string;
             /** @description Why a previously adopted binary was dropped mid-flight; empty while it answers. */
             external_failure: string;

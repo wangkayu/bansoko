@@ -177,9 +177,6 @@ export function SettingsTitleParser() {
                 },
               ]}
             />
-            {status.source === "manual" && (
-              <p className="settings-title-parser-hint text-caption">{t("settings.titleParser.manualHint")}</p>
-            )}
             {status.config_digest && (
               <p className="settings-title-parser-footnote text-caption" title={status.config_digest}>
                 {t("settings.titleParser.digestFootnote", { digest: status.config_digest })}

@@ -2636,7 +2636,6 @@ const (
 const (
 	TitleParserStatusSourceBuiltin TitleParserStatusSource = "builtin"
 	TitleParserStatusSourceChannel TitleParserStatusSource = "channel"
-	TitleParserStatusSourceManual  TitleParserStatusSource = "manual"
 )
 
 // Defines values for TitleSuggestionSource.
@@ -9980,7 +9979,7 @@ type TitleParserChannelNotes struct {
 
 // TitleParserStatus The reltitle parser component as this process sees it. `channel` is absent until the first check or install.
 type TitleParserStatus struct {
-	// BinaryPath The one path a channel install and a manually placed build both use.
+	// BinaryPath The one path the channel updater installs to; a build lands there only through the official update channel.
 	BinaryPath string `json:"binary_path"`
 
 	// Channel The last answer from the published reltitle channel. A failed check updates checked_at and error and keeps the previous successful version, notes and release_url.
@@ -9999,7 +9998,7 @@ type TitleParserStatus struct {
 	// Message The last install attempt's outcome: why nothing was installed when the channel offered no newer build, or what was installed. Empty before the first install.
 	Message string `json:"message"`
 
-	// Note The startup probe's explanation (a refused manual build, an older-than-builtin build, ...).
+	// Note The startup probe's explanation when a binary at binary_path was refused (no corroborating channel record, a failed handshake, ...); empty when there is nothing to say.
 	Note   string                  `json:"note"`
 	Source TitleParserStatusSource `json:"source"`
 

@@ -322,7 +322,7 @@ func httpClientOf(client *http.Client) *http.Client {
 	return &http.Client{Timeout: channelTimeout}
 }
 
-// InstalledBinary describes the file that arrived through the channel.
+// writeInstalled durably records the install the probe will later verify.
 func writeInstalled(configRoot string, installed Installed) error {
 	payload, err := json.MarshalIndent(installed, "", "  ")
 	if err != nil {
@@ -334,7 +334,11 @@ func writeInstalled(configRoot string, installed Installed) error {
 	if err := os.WriteFile(temp, payload, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(temp, path)
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	return nil
 }
 
 // downloadToTemp streams one artifact into a temporary file beside the target

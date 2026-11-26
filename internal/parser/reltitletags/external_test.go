@@ -2,6 +2,9 @@ package reltitletags
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,21 +15,30 @@ import (
 	"bansoko/internal/rtruntime"
 )
 
+// adoptedVersion is stamped into the test build below: one patch ahead of the
+// compiled-in module on the same major.minor line, so the probe's freshness
+// gate accepts it the way it accepts a real channel build. It must move when
+// the reltitle dependency does.
+const adoptedVersion = "0.1.2-test.1"
+
 // buildRealReltitle compiles the reltitle binary from the module this package
 // already depends on, so the adoption path is exercised against the real
 // protocol rather than a stand-in.
 func buildRealReltitle(t *testing.T) string {
 	t.Helper()
 	target := filepath.Join(t.TempDir(), "reltitle")
-	cmd := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-o", target, "github.com/wangkayu/reltitle/cmd/reltitle")
+	cmd := exec.Command("go", "build", "-trimpath", "-buildvcs=false",
+		"-ldflags", "-X main.version="+adoptedVersion,
+		"-o", target, "github.com/wangkayu/reltitle/cmd/reltitle")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build reltitle: %v\n%s", err, output)
 	}
 	return target
 }
 
-// installBinary puts a binary at <root>/rt/reltitle, the one path the updater
-// and a person both write.
+// installBinary puts a binary at <root>/rt/reltitle with the installed.json
+// the channel updater would have written: the probe executes nothing without
+// that corroborating record.
 func installBinary(t *testing.T, root, binary string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, rtruntime.DirName), 0o755); err != nil {
@@ -37,6 +49,17 @@ func installBinary(t *testing.T, root, binary string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(rtruntime.BinaryPath(root), source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record, err := json.Marshal(map[string]string{
+		"version": adoptedVersion,
+		"sha256":  fmt.Sprintf("%x", sha256.Sum256(source)),
+		"source":  rtruntime.SourceChannel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rtruntime.MetadataPath(root), record, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -69,7 +92,7 @@ func TestAdoptedBinaryProjectsTheSameTags(t *testing.T) {
 	}
 	defer UseBuiltin()
 
-	if ActiveVersion() != "reltitle@0.0.0-dev" {
+	if ActiveVersion() != "reltitle@"+adoptedVersion {
 		t.Fatalf("active version = %q, want the binary's own build version", ActiveVersion())
 	}
 	if ActiveDigest() == "" || ActiveDigest() != info.ConfigDigest {

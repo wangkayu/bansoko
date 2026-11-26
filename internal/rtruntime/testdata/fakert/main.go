@@ -17,6 +17,7 @@ import (
 
 const (
 	defaultVersion  = "9.9.9"
+	defaultLine     = "9.9"
 	defaultProtocol = "rt-serve-1"
 	// fakeDigest is deliberately not a real digest: a test that sees this
 	// value knows the answer came from the fake and not from a dictionary.
@@ -24,6 +25,14 @@ const (
 )
 
 func main() {
+	// FAKERT_MARK_FILE names a file every execution appends to, so a test can
+	// prove a refused binary was never run at all.
+	if mark := os.Getenv("FAKERT_MARK_FILE"); mark != "" {
+		if handle, err := os.OpenFile(mark, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			_, _ = fmt.Fprintln(handle, "ran")
+			_ = handle.Close()
+		}
+	}
 	version := valueOr("FAKERT_VERSION", defaultVersion)
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -134,7 +143,7 @@ func answer(request serveRequest, version, protocol string) serveResponse {
 		return serveResponse{ID: request.ID, OK: true, Result: map[string]string{
 			"protocol":      protocol,
 			"version":       version,
-			"line":          "9.9",
+			"line":          valueOr("FAKERT_LINE", defaultLine),
 			"config_digest": fakeDigest,
 		}}
 	case "vocabulary":

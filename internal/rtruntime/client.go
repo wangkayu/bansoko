@@ -75,7 +75,9 @@ func Start(ctx context.Context, path string) (*Client, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("%s speaks %q; this build speaks %q", path, hello.Protocol, Protocol)
 	}
-	client.info = Info{Source: SourceManual, Version: hello.Version, Line: hello.Line, ConfigDigest: hello.ConfigDigest, Path: path}
+	// The source stays unset here: a started process is not an adopted one.
+	// Probe marks the info SourceChannel after the full adoption chain passes.
+	client.info = Info{Version: hello.Version, Line: hello.Line, ConfigDigest: hello.ConfigDigest, Path: path}
 	return client, nil
 }
 

@@ -13,12 +13,10 @@ export const settingsTitleParserCopy = {
     sourceLabel: "来源",
     source: {
       builtin: "内置",
-      manual: "手动放置",
       channel: "通道安装",
     },
     usingBuiltin: "使用内置解析器 {version}",
     notAdopted: "{path} 未被采用",
-    manualHint: "手动放置的组件已启用，按放置者的选择使用",
     digestFootnote: "词典摘要 {digest}",
     channelFrom: "来自 reltitle 官方通道",
     canUpdateTo: "可更新到 {version}",

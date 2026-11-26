@@ -235,12 +235,13 @@ func runServe(args []string) {
 			fatalStartup(runtimeLogger, "runtime database role separation violated", "runtime_role_separation_violated")
 		}
 	}
-	// Adopted reltitle binary (owner 2026-11-01): a file at
+	// Adopted reltitle binary: a channel-installed build at
 	// <config>/rt/reltitle overrides the compiled-in parser when it passes the
-	// adoption chain (regular executable, -version, an rt-serve-1 hello and one
-	// smoke parse). A refused file is a state to report, never a startup
-	// failure: the builtin parser keeps working, and a hand-placed build is
-	// accepted at any version.
+	// adoption chain (a corroborating installed.json, same major.minor line and
+	// strictly newer than the builtin, -version, an rt-serve-1 hello and one
+	// smoke parse). A manually placed or superseded build is never executed; a
+	// refused file is a state to report, never a startup failure: the builtin
+	// parser keeps working.
 	rtClient, rtInfo := rtruntime.Probe(ctx, cfg.ConfigDir, reltitletags.BuiltinVersion())
 	switch {
 	case rtClient != nil:
@@ -845,7 +846,7 @@ func runServe(args []string) {
 	apiServer.SetEventActions(eventActions)
 	// The reltitle parser component has its own channel, independent of the
 	// Bansoko application update. The startup probe's note and source are
-	// passed through so the read model explains a refused manual build. An
+	// passed through so the read model explains a refused binary. An
 	// unknown lane value falls back to stable; the warning keeps that from
 	// passing silently while the deployment reads the other branch.
 	rtLane, rtLaneKnown := titleparser.NormalizeLane(os.Getenv(titleparser.EnvLane))
