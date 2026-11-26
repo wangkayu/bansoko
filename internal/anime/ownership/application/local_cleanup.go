@@ -82,7 +82,7 @@ FROM managed_anime WHERE id = $1 AND lifecycle_state = 'retired'`, managedAnimeI
 	if err := tx.QueryRowContext(ctx, `
 SELECT cleanup_managed_anime_local_data($1, $2, $3, $4)`,
 		managedAnimeID, idempotencyKey, requestHash, input.ExpectedLifecycleEpoch).Scan(&result); err != nil {
-		return mapLocalCleanupDBError(err, managedAnimeID)
+		return s.mapLocalCleanupDBError(ctx, err, managedAnimeID)
 	}
 	var receipt struct {
 		Status string `json:"status"`
@@ -148,7 +148,7 @@ func localCleanupRequestHash(managedAnimeID string, epoch int64, confirmation st
 // the public conditions. A tombstoned id and any fence rejection keep the
 // retirement boundary's stable codes; the domain-specific rejections keep
 // theirs.
-func mapLocalCleanupDBError(err error, managedAnimeID string) error {
+func (s *Service) mapLocalCleanupDBError(ctx context.Context, err error, managedAnimeID string) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
 		return err
@@ -159,6 +159,11 @@ func mapLocalCleanupDBError(err error, managedAnimeID string) error {
 	case "LOCAL_CLEANUP_NOT_FOUND", "LOCAL_CLEANUP_OWNER_VANISHED":
 		return &apperrors.NotFound{Resource: "managed_anime", ID: managedAnimeID}
 	case "LOCAL_CLEANUP_ACQUISITION_RETAINED":
+		s.logger.Warn(ctx, observabilityport.RuntimeEvent{
+			Message:   "An acquisition still retains local records.",
+			Component: "anime_ownership", Operation: "local_cleanup", Outcome: "failure",
+			HTTPStatus: 409, ReasonCode: localCleanupRetainedReason(pgErr.Detail),
+		})
 		return &apperrors.Business{Status: 409, Code: "LOCAL_CLEANUP_ACQUISITION_RETAINED", Message: "A download or file step of this instance is still finishing; local records can be cleaned up once it ends."}
 	case "LOCAL_CLEANUP_NOT_RETIRED":
 		return &apperrors.Business{
@@ -175,4 +180,18 @@ func mapLocalCleanupDBError(err error, managedAnimeID string) error {
 	default:
 		return animeapplication.MapRetirementDBError(err)
 	}
+}
+
+// localCleanupRetainedReason maps the suffix of "acquisition <id>: <status>".
+// Use the last separator because acquisition IDs can contain colons.
+func localCleanupRetainedReason(detail string) string {
+	const prefix = "acquisition "
+	sep := strings.LastIndex(detail, ": ")
+	if strings.HasPrefix(detail, prefix) && sep > len(prefix) {
+		switch detail[sep+2:] {
+		case "effect_unresolved", "dependents_present", "release_bound":
+			return detail[sep+2:]
+		}
+	}
+	return "acquisition_retained"
 }

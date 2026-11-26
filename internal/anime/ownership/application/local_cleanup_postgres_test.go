@@ -340,10 +340,15 @@ VALUES ('cleanup-live-wi', 'download_task', 'cleanup-live-task', 'cleanup-live-r
 	// effect is unresolved (its worker still holds a live lease) cleanup is
 	// refused with the typed retained reason and changes nothing.
 	before := acquisitionfixture.Snapshot(t, disposabledb.Owner(t))
+	logger := &localCleanupTestLogger{}
+	service.SetLogger(logger)
 	blocked := service.CleanupAnimeLocalData(ctx, animeID, localCleanupInput(epoch), "cleanup-key-live-0001")
 	var business *apperrors.Business
-	if !errors.As(blocked, &business) || business.Code != "LOCAL_CLEANUP_ACQUISITION_RETAINED" {
+	if !errors.As(blocked, &business) || business.Status != 409 || business.Code != "LOCAL_CLEANUP_ACQUISITION_RETAINED" || len(business.Details) != 0 {
 		t.Fatalf("live effect cleanup gate: %v", blocked)
+	}
+	if len(logger.warnings) != 1 || logger.warnings[0].ReasonCode != "effect_unresolved" || logger.warnings[0].OwnerID != "" {
+		t.Fatalf("live effect cleanup warnings = %+v, want only the safe effect_unresolved reason", logger.warnings)
 	}
 	if before != acquisitionfixture.Snapshot(t, disposabledb.Owner(t)) {
 		t.Fatal("live effect cleanup changed graph")
