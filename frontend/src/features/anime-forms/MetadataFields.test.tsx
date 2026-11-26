@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -208,44 +208,97 @@ describe("MetadataMatchDialog", () => {
     expect(screen.getByRole("link", { name: /486109/ })).toBeInTheDocument();
   });
 
-  it("自动查询使用管线输入并预选节目和 season，确认前不写回表单", async () => {
+  const boundDraft = { bgm: { work_id: "486109" }, tmdb: { work_id: "123", media_kind: "tv" as const, season: 2 }, season: 2 };
+
+  async function automaticDialog() {
+    clickMatch("tmdb");
+    const dialog = within(await screen.findByRole("dialog"));
+    return {
+      dialog,
+      input: dialog.getByRole("textbox", { name: t("forms.titleQuery") }),
+      auto: dialog.getByRole("button", { name: t("forms.autoSearch") }),
+      confirm: dialog.getByRole("button", { name: t("forms.confirmMatch") }),
+    };
+  }
+
+  it.each(["Fool Night", "  fOOL NIGHT  "])("保留未实质修改的 Mikan 查询身份（%s）", async (query) => {
     const searcher = searcherReturning([tmdbCandidate]);
     const onChange = vi.fn();
-    render(
-      <Controlled
-        searcher={searcher}
-        origin="mikan"
-        originEntryRef="3967"
-        initial={{ bgm: { work_id: "486109" }, tmdb: { work_id: "265010", media_kind: "tv", season: 1 } }}
-        onChange={onChange}
-      />,
-    );
-
-    clickMatch("tmdb");
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByRole("textbox", { name: t("forms.titleQuery") }), { target: { value: "手动修改的查询词" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.autoSearch") }));
-
-    await waitFor(() => expect(searcher.searchAutomatic).toHaveBeenCalledWith("tmdb", {
-      title: "沉默魔女的秘密",
-      origin: "mikan",
-      originEntryRef: "3967",
-      bgmWorkId: "486109",
-      tmdbWorkId: "265010",
-      tmdbMediaKind: "tv",
-      tmdbSeason: 1,
-    }));
+    render(<Controlled title="Fool Night" searcher={searcher} origin="mikan" originEntryRef="3967" initial={boundDraft} onChange={onChange} />);
+    const { dialog, input, auto } = await automaticDialog();
+    if (query !== "Fool Night") {
+      fireEvent.change(input, { target: { value: "另一条查询" } });
+      fireEvent.change(input, { target: { value: query } });
+    }
+    fireEvent.click(auto);
+    expect(searcher.searchAutomatic).toHaveBeenCalledWith("tmdb", {
+      title: query.trim(), origin: "mikan", originEntryRef: "3967",
+      bgmWorkId: "486109", tmdbWorkId: "123", tmdbMediaKind: "tv", tmdbSeason: 2,
+    });
+    expect(await dialog.findByRole("option")).toHaveAttribute("aria-selected", "true");
     expect(searcher.search).not.toHaveBeenCalled();
-    expect(await within(dialog).findByRole("option", { name: /星际邮差艾拉/ })).toHaveAttribute("aria-selected", "true");
-    expect(within(dialog).getByRole("combobox", { name: t("forms.applySeason") })).toHaveTextContent("2");
     expect(onChange).not.toHaveBeenCalled();
+  });
 
-    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+  it.each([true, false])("空草稿可按建议词或手输词自动查询（建议词=%s）", async (suggestion) => {
+    const searcher = searcherReturning([]);
+    render(<Controlled title="" searcher={searcher} origin="mikan" originEntryRef="3967" initial={boundDraft}
+      matchQueryCandidates={suggestion ? ["fool night"] : undefined} />);
+    const { dialog, input, auto } = await automaticDialog();
+    if (!suggestion) {
+      fireEvent.change(input, { target: { value: "   " } });
+      expect(auto).toBeDisabled();
+      fireEvent.change(input, { target: { value: "Fool Night" } });
+    }
+    expect(auto).toBeEnabled();
+    fireEvent.click(auto);
+    expect(searcher.searchAutomatic).toHaveBeenCalledWith("tmdb", { title: suggestion ? "fool night" : "Fool Night", origin: "custom" });
+    await dialog.findByText(t("forms.noCandidates"));
+  });
+
+  it("改词自动查询剥离旧绑定，采用候选季号并只替换 TMDB", async () => {
+    const candidate = { ...tmdbCandidate, suggestedSeason: 1, seasons: [{ ...tmdbCandidate.seasons![0]!, seasonNumber: 1, name: "第一季" }] };
+    const searcher = searcherReturning([candidate]);
+    const onChange = vi.fn();
+    render(<Controlled searcher={searcher} origin="mikan" originEntryRef="3967" initial={boundDraft} onChange={onChange} />);
+    const { dialog, input, auto, confirm } = await automaticDialog();
+    fireEvent.change(input, { target: { value: "Fool Night" } });
+    fireEvent.click(auto);
+    expect(searcher.searchAutomatic).toHaveBeenCalledWith("tmdb", { title: "Fool Night", origin: "custom" });
+    expect(await dialog.findByRole("option")).toHaveAttribute("aria-selected", "true");
+    expect(dialog.getByRole("status")).toHaveTextContent(t("forms.retainUnverifiedBinding", { provider: "TMDB", otherProvider: "Bangumi", id: "486109" }));
+    expect(dialog.getByRole("combobox", { name: t("forms.applySeason") })).toHaveTextContent("第一季");
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(confirm);
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
+      bgm: boundDraft.bgm, tmdb: { work_id: candidate.workId, media_kind: "tv", season: 1 },
     }));
   });
 
+  it("改词清除预选，迟到的旧自动查询不能覆盖新查询", async () => {
+    let resolveOld!: (candidates: MetadataCandidate[]) => void;
+    const searcher = searcherReturning([tmdbCandidate]);
+    vi.mocked(searcher.searchAutomatic).mockResolvedValueOnce([tmdbCandidate])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValueOnce([]);
+    const onChange = vi.fn();
+    render(<Controlled searcher={searcher} onChange={onChange} />);
+    const { dialog, input, auto, confirm } = await automaticDialog();
+    fireEvent.click(auto);
+    expect(await dialog.findByRole("option")).toHaveAttribute("aria-selected", "true");
+    fireEvent.change(input, { target: { value: "second" } });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(auto);
+    expect(auto).toBeDisabled();
+    fireEvent.change(input, { target: { value: "third" } });
+    fireEvent.click(auto);
+    await dialog.findByText(t("forms.noCandidates"));
+    await act(async () => resolveOld([tmdbCandidate]));
+    expect(dialog.queryByRole("option")).not.toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
   it("候选选中前即可浏览 EP，浏览季号不会写入匹配设置", async () => {
     const onChange = vi.fn();
     const episodeLoader = vi.fn(async (_work: Parameters<MetadataEpisodeLoader>[0], season?: number) => [

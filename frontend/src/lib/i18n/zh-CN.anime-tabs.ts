@@ -223,6 +223,7 @@ export const formsCopy = {
   titlePlaceholder: "输入标题",
   search: "查询",
   autoSearch: "自动查询",
+  retainUnverifiedBinding: "将采用此 {provider} 匹配，保留现有 {otherProvider} #{id}。两者关系未经验证。",
   noCandidates: "没有找到匹配的条目。可以稍后再次查询，或保持未匹配。",
   candidatesAria: "匹配结果",
   queryCandidatesAria: "检索词候选",

@@ -226,6 +226,7 @@ export const enFormsCopy = {
   titlePlaceholder: "Enter a title",
   search: "Search",
   autoSearch: "Auto Search",
+  retainUnverifiedBinding: "Use this {provider} match and keep the existing {otherProvider} #{id}. The relationship between them has not been verified.",
   noCandidates: "No matching entries found. Search again later, or leave it unmatched.",
   candidatesAria: "Match results",
   queryCandidatesAria: "Suggested queries",

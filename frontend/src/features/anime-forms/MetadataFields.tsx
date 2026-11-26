@@ -299,6 +299,7 @@ export function MetadataFields({
       )}
       {matchProvider !== undefined && onMatchProviderChange && (
         <MetadataMatchDialog
+          key={matchProvider}
           provider={matchProvider}
           title={title}
           origin={origin}
@@ -1057,8 +1058,8 @@ function YearRow({
 //
 // The standalone match dialog (MatchDialog): title search → candidate list → confirm selection.
 // The TMDB section additionally carries the media type (tv/movie) and TMDB season editing: the
-// initial value prefers the anime's own set season (preferredSeason), otherwise the
-// suggestedSeason among the candidate's real seasons; a movie has no season (season 0 is sent).
+// initial value prefers the resolved candidate season for automatic matches, and the anime's own
+// season for manual matches; a movie has no season (season 0 is sent).
 // tv groups real seasons and custom seasons, with invalid input reported inline. Confirming the
 // match writes the TMDB season back with the binding tuple (the anime's season is only prefilled
 // while unset, see above). TMDB also supports "enter by ID": after a local positive-integer
@@ -1071,6 +1072,10 @@ function YearRow({
 const TMDB_ID_PATTERN = /^[1-9]\d{0,11}$/;
 
 const PROVIDER_DIALOG_LABELS: Record<MetadataProvider, string> = { bgm: "Bangumi", tmdb: "TMDB" };
+
+function queryKey(title: string): string {
+  return title.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
 
 function validSeason(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= 99;
@@ -1122,6 +1127,7 @@ function MetadataMatchDialog({
   const [selected, setSelected] = useState<MetadataCandidate>();
   const [episodeReference, setEpisodeReference] = useState<MetadataCandidate>();
   const episodeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const requestSequence = useRef(0);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string>();
@@ -1134,17 +1140,31 @@ function MetadataMatchDialog({
   const [manualError, setManualError] = useState<string>();
   const [titleChoice, setTitleChoice] = useState<boolean>();
 
+  function changeQuery(next: string) {
+    setQuery(next);
+    if (queryKey(next) === queryKey(query)) return;
+    requestSequence.current++;
+    setSearching(false);
+    setSearched(false);
+    setError(undefined);
+    setCandidates([]);
+    setSelected(undefined);
+  }
+
   async function search(queryOverride = query, automatic = false) {
     const nextQuery = queryOverride.trim();
     if (!nextQuery || searching) return;
+    const sequence = ++requestSequence.current;
+    const useDraftIdentity = title.trim() !== "" && queryKey(nextQuery) === queryKey(title);
     setQuery(nextQuery);
     setSearching(true);
     setSearched(true);
     setError(undefined);
+    setCandidates([]);
     setSelected(undefined);
     try {
       const nextCandidates = automatic
-        ? await searcher.searchAutomatic(provider, {
+        ? await searcher.searchAutomatic(provider, useDraftIdentity ? {
             title: nextQuery,
             origin,
             originEntryRef,
@@ -1152,15 +1172,16 @@ function MetadataMatchDialog({
             tmdbWorkId: current.tmdb?.work_id,
             tmdbMediaKind: current.tmdb?.media_kind,
             tmdbSeason: current.tmdb?.season,
-          })
+          } : { title: nextQuery, origin: "custom" })
         : await searcher.search(provider, nextQuery);
+      if (sequence !== requestSequence.current) return;
       setCandidates(nextCandidates);
-      if (automatic && nextCandidates[0]) pick(nextCandidates[0]);
+      if (automatic && nextCandidates[0]) pick(nextCandidates[0], true);
     } catch (cause) {
-      setCandidates([]);
+      if (sequence !== requestSequence.current) return;
       setError(toUserMessage(cause, t("forms.queryFailed")));
     } finally {
-      setSearching(false);
+      if (sequence === requestSequence.current) setSearching(false);
     }
   }
 
@@ -1182,18 +1203,24 @@ function MetadataMatchDialog({
   const offeredTitle = offer?.title ?? "";
   const titleOffered = offeredTitle !== "" && offeredTitle !== titleOffer?.current.trim();
   const setTitle = titleChoice ?? offer?.checked ?? false;
+  const otherProvider = provider === "tmdb" ? "bgm" : "tmdb";
+  const retainedWorkId = (!title.trim() || queryKey(query) !== queryKey(title))
+    ? current[otherProvider]?.work_id
+    : undefined;
 
-  function pick(candidate: MetadataCandidate) {
+  function pick(candidate: MetadataCandidate, automatic = false) {
     setSelected(candidate);
     setTitleChoice(undefined);
     const kind = candidate.mediaKind ?? "tv";
     setMediaKind(kind);
     const realSeasonNumbers = new Set((candidate.seasons ?? []).map((season) => season.seasonNumber));
-    const inferred = preferredSeason ?? candidate.suggestedSeason;
+    const inferred = automatic
+      ? candidate.suggestedSeason ?? preferredSeason
+      : preferredSeason ?? candidate.suggestedSeason;
     if (inferred !== undefined && realSeasonNumbers.has(inferred)) {
       setSeasonSelect(String(inferred));
       setSeasonCustom("");
-    } else if (preferredSeason !== undefined || inferred !== undefined) {
+    } else if (inferred !== undefined) {
       setSeasonSelect("custom");
       setSeasonCustom(String(inferred));
     } else {
@@ -1257,7 +1284,7 @@ function MetadataMatchDialog({
               aria-label={t("forms.titleQuery")}
               value={query}
               placeholder={t("forms.titlePlaceholder")}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => changeQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
@@ -1279,8 +1306,8 @@ function MetadataMatchDialog({
             className="metadata-match-search-action"
             size="sm"
             variant="ghost"
-            onClick={() => void search(title, true)}
-            disabled={searching || title.trim() === ""}
+            onClick={() => void search(query, true)}
+            disabled={searching || query.trim() === ""}
           >
             <Sparkles className="metadata-match-action-icon" />
             {t("forms.autoSearch")}
@@ -1404,6 +1431,16 @@ function MetadataMatchDialog({
           </div>
         )}
 
+        {selected && retainedWorkId && (
+          <p role="status" className="metadata-match-season-status">
+            {t("forms.retainUnverifiedBinding", {
+              provider: PROVIDER_DIALOG_LABELS[provider],
+              otherProvider: PROVIDER_DIALOG_LABELS[otherProvider],
+              id: retainedWorkId,
+            })}
+          </p>
+        )}
+
         {titleOffer && titleOffered && (
           <div className="metadata-match-selected">
             <Checkbox checked={setTitle} onCheckedChange={setTitleChoice}>{t("forms.alsoSetTitle", { title: offeredTitle })}</Checkbox>
@@ -1414,13 +1451,13 @@ function MetadataMatchDialog({
         {candidates.length > 0 && (
           <div className="metadata-match-candidates" role="listbox" aria-label={t("forms.candidatesAria")}>
             {candidates.map((candidate) => {
-              const active = selected?.workId === candidate.workId;
+              const active = selected === candidate;
               const canBrowseEpisodes = episodeLoader && (
                 provider === "bgm" ||
                 (provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.detailsStatus === "available" && (candidate.seasons?.length ?? 0) > 0)
               );
               return (
-                <div key={`${candidate.provider}:${candidate.workId}`} role="presentation" className="metadata-match-option-wrap">
+                <div key={`${candidate.provider}:${candidate.mediaKind ?? "subject"}:${candidate.workId}`} role="presentation" className="metadata-match-option-wrap">
                   <button
                     type="button"
                     role="option"
