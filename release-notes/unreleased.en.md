@@ -7,11 +7,14 @@
 - The reltitle title-parser component no longer loads manually placed or custom-compiled binaries: only the builtin parser and official update channel builds on the same major.minor line and strictly newer than the builtin are used. After upgrading bansoko-server, cached channel builds that are no longer ahead, or that sit on another version line, are silently ignored (never executed).
 - Details for unsubscribed titles show a single “Not subscribed” status and keep the Bangumi and TMDB links. On phones, swipe across the details tabs to reach more tabs. Full-screen dialogs leave room for system gestures, and iOS Safari no longer zooms in when you focus an input.
 - Episode list previews now show episode durations. Bangumi lists show both the primary and original titles and filter across both; TMDB lists add an on-demand language switcher for Simplified Chinese, Japanese, and English, plus a per-episode preview dialog that loads the still image and localized overview only when opened.
+- Manual TMDB searches list animated works first without hiding live-action matches that fit within the result limit.
+- Automatic metadata matching uses Bangumi v0 search and recognizes exact aliases. A trusted Bangumi match can provide titles for TMDB search; ambiguous airing dates leave the TMDB season unset instead of guessing.
 
 ## Fixed
 
 - Library scans recognize movies without episode numbers, and importing a movie uses the movie naming rules to build its file path.
 - Movie subscriptions show “Waiting for import” until the file enters the library. After import, they show 1/1 with a full progress bar and appear under “Completed” in bulk management.
+- Auto Search in the metadata dialog now uses the title in the search box. It preselects the suggested season when available and leaves the binding unchanged until you confirm.
 
 ## Important
 
