@@ -95,6 +95,9 @@ function progressCell(row: ManageRow): { text: string; done: boolean; ratio?: nu
   const stored = importedCount(row.progress);
   const total = progressTotal(row.progress);
   const done = progressDone(row.progress);
+  if (stored === 0 && row.mediaKind === "movie") {
+    return { text: t("grid.progress.waitingForImport"), done, ratio: total === undefined ? undefined : 0 };
+  }
   if (total === undefined) {
     return { text: stored === 0 ? "—" : t("grid.manage.progressNoTotal", { stored }), done };
   }

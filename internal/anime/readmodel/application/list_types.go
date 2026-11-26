@@ -31,7 +31,33 @@ func subscriptionStateFromDB(value string) subscriptiondomain.SubscriptionState 
 	return subscriptiondomain.SubscriptionState(value)
 }
 
-func buildApplicationEpisodeProgress(episodesStr sql.NullString, totalEpisodes, catalogTotal *int) *EpisodeProgress {
+// Both projections aggregate only coverage held by active, verified placements
+// that participate in the owner's identity. m supplies the owner ID and kind.
+const applicationEpisodeProgressSQL = `
+  SELECT ARRAY_TO_STRING(ARRAY_AGG(DISTINCT keys.episode ORDER BY keys.episode), ',') AS episodes
+  FROM (
+    SELECT CASE WHEN m.media_kind = 'movie' THEN 1
+           ELSE substring(pc.observation_key FROM '^tv:(?:s[0-9]+:)?e([0-9]+)$')::int END AS episode
+    FROM placements p
+    JOIN placement_coverage pc ON pc.placement_id = p.id
+    WHERE p.managed_anime_id = m.managed_anime_id
+      AND p.state = 'active'
+      AND p.verification_state = 'verified'
+      AND p.replacement_eligible
+      AND CASE WHEN m.media_kind = 'movie' THEN pc.observation_key = 'movie:0'
+          ELSE pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$' END
+  ) keys`
+
+func buildApplicationEpisodeProgress(episodesStr sql.NullString, mediaKind *string, totalEpisodes, catalogTotal *int) *EpisodeProgress {
+	if mediaKind != nil && *mediaKind == "movie" {
+		total := 1
+		progress := &EpisodeProgress{Episodes: []int{}, Total: &total}
+		if episodesStr.Valid && episodesStr.String == "1" {
+			progress.Episodes = []int{1}
+			progress.Done = true
+		}
+		return progress
+	}
 	episodeNumbers, ok := parseEpisodeArray(episodesStr.String)
 	if !ok {
 		return nil

@@ -193,16 +193,14 @@ func (s *Service) readAnimeWorkspace(ctx context.Context, managedAnimeID string,
 func (s *Service) readWorkspaceConfigurationProgress(ctx context.Context, workspace *AnimeWorkspace) error {
 	var progressEpisodes sql.NullString
 	if err := s.db.QueryRowContext(ctx, `
-SELECT ARRAY_TO_STRING(ARRAY_AGG(DISTINCT keys.episode ORDER BY keys.episode), ',')
-FROM (
-  SELECT substring(pc.observation_key FROM '^tv:(?:s[0-9]+:)?e([0-9]+)$')::int AS episode
-  FROM placements p JOIN placement_coverage pc ON pc.placement_id = p.id
-  WHERE p.managed_anime_id = $1 AND p.state = 'active' AND p.verification_state = 'verified'
-    AND p.replacement_eligible AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
-) keys`, workspace.ManagedAnime.ID).Scan(&progressEpisodes); err != nil {
+SELECT progress.episodes
+FROM (VALUES ($1::text, $2::text)) AS m(managed_anime_id, media_kind)
+CROSS JOIN LATERAL (
+`+applicationEpisodeProgressSQL+`
+) progress`, workspace.ManagedAnime.ID, workspace.Metadata.MediaKind).Scan(&progressEpisodes); err != nil {
 		return fmt.Errorf("read anime episode progress: %w", err)
 	}
-	workspace.EpisodeProgress = buildApplicationEpisodeProgress(progressEpisodes, workspace.Metadata.TotalEpisodes, nil)
+	workspace.EpisodeProgress = buildApplicationEpisodeProgress(progressEpisodes, workspace.Metadata.MediaKind, workspace.Metadata.TotalEpisodes, nil)
 	// A waiting plan of a settled root (the instance was deleted while it
 	// waited) no longer waits for anything.
 	var configWaitingFiles int64

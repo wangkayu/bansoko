@@ -913,6 +913,27 @@ describe("MetadataFields 总集数行", () => {
     expect(screen.getByRole("region", { name: t("forms.totalEpisodes") })).toHaveTextContent(t("settings.delivery.state.other"));
   });
 
+
+  it.each([false, true])("电影的总集数固定为 1（directEdit=%s）", (directEdit) => {
+    const onSaveTotalEpisodes = vi.fn();
+    render(
+      <MetadataFields
+        idPrefix="movie"
+        value={{ tmdb: { work_id: "123", media_kind: "tv", season: 1 }, total_episodes: 12 }}
+        mediaKind="movie"
+        directEdit={directEdit}
+        onChange={vi.fn()}
+        searcher={searcherReturning([])}
+        onSaveTotalEpisodes={onSaveTotalEpisodes}
+      />,
+    );
+    const region = screen.getByRole("region", { name: t("forms.totalEpisodes") });
+    expect(region).toHaveTextContent(t("forms.movieFixedTotal"));
+    expect(within(region).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(region).queryByRole("spinbutton")).not.toBeInTheDocument();
+    expect(within(region).queryByRole("button")).not.toBeInTheDocument();
+    expect(onSaveTotalEpisodes).not.toHaveBeenCalled();
+  });
   it("不传 onSaveTotalEpisodes 时不渲染总集数行", () => {
     render(
       <MetadataFields

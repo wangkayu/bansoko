@@ -184,6 +184,7 @@ export const enFormsCopy = {
   tmdbSeason: "TMDB season",
   seasonInvalid: "Season must be a whole number from 0 to 99",
   movieNoSeason: "Movies have no season",
+  movieFixedTotal: "Movies count as one item",
   seasonAria: "Season",
   seasonUnset: "Not set",
   seasonSpecials: "Specials (Season 0)",

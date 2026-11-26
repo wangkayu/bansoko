@@ -6,7 +6,7 @@ import { t } from "../../../lib/i18n";
  *  total (by count only — no episode-number alignment, no gap marking). Not rendered while the total
  *  is unknown, since the text row already says "n episodes imported". A stopped subscription greys
  *  out, and all-imported turns the completion color. */
-export function ProgressTrack({ entry, progress = progressPresentation(entry.episodeProgress) }: {
+export function ProgressTrack({ entry, progress = progressPresentation(entry.episodeProgress, entry.metadataMatch.mediaKind) }: {
   entry: CatalogEntryView;
   progress?: ReturnType<typeof progressPresentation>;
 }) {

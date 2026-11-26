@@ -26,6 +26,7 @@ function item(overrides: {
   lifecycle?: "active" | "retired";
   lifecycleEpoch?: number;
   showSeason?: number | null;
+  mediaKind?: AnimeListItem["metadata"]["media_kind"];
   rssHealth?: "ready" | "degraded" | "failed" | null;
   episodes?: number[];
   total?: number | null;
@@ -54,7 +55,7 @@ function item(overrides: {
       tmdb: null,
       title_override: null,
       total_episodes: null,
-      media_kind: null,
+      media_kind: overrides.mediaKind ?? null,
       year: null,
       season: overrides.showSeason ?? null,
       version: 1,
@@ -84,8 +85,7 @@ const fixtures = [
   // 搜索创建：provider 入口但没有季度。
   item({ id: "a2", title: "转生哥布林有问题吗？", origin: "anibt", originEntryRef: "anibt:gb", episodes: [1, 2, 3, 4, 5], createdAt: "2026-10-11T00:00:00Z" }),
   item({ id: "c1", title: "落语朱音", origin: "custom", instanceLabel: "落语朱音", showSeason: null, createdAt: "2026-10-26T00:00:00Z" }),
-  // 剧场版：1/1 完成但不进「已完成」筛选。
-  item({ id: "m2", title: "灌篮高手（剧场版）", origin: "mikan", originEntryRef: "mikan:sl", entrySeason: "2022-winter", episodes: [1], total: 1, createdAt: "2026-09-02T00:00:00Z" }),
+  item({ id: "m2", title: "灌篮高手（剧场版）", origin: "mikan", originEntryRef: "mikan:sl", entrySeason: "2022-winter", mediaKind: "movie", episodes: [1], total: 1, createdAt: "2026-09-02T00:00:00Z" }),
 ];
 
 describe("manageRowsFrom（列表项 → 管理行）", () => {
@@ -123,9 +123,11 @@ describe("备注与标题区分", () => {
 });
 
 describe("已完成与进度筛选", () => {
-  it("已完成 = 有总集数且已入库 > 1；1/1 的剧场版不算", () => {
-    const rows = manageRowsFrom(fixtures);
-    expect(manageCompleted(rows[5])).toBe(false); // 灌篮高手 1/1
+  it("已入库电影可筛为已完成，未入库电影和单集 TV 不可", () => {
+    const movie = manageRowsFrom(fixtures)[5];
+    expect(manageCompleted(movie)).toBe(true);
+    expect(manageCompleted({ ...movie, progress: { episodes: [], total: 1 } })).toBe(false);
+    expect(manageCompleted({ ...movie, mediaKind: "tv" })).toBe(false);
     const full = manageRowsFrom([
       item({ id: "f1", title: "佐佐木与文鸟小哔 第二季", origin: "mikan", originEntryRef: "mikan:szk", episodes: Array.from({ length: 12 }, (_, i) => i + 1), total: 12, createdAt: "2026-09-30T00:00:00Z" }),
     ]);
@@ -138,8 +140,7 @@ describe("已完成与进度筛选", () => {
       filterManageRows(rows, { ...emptyManageFilters, progress }).map((row) => row.key);
     expect(byProgress("none")).toEqual(["a1b", "c1"]);
     expect(byProgress("doing")).toEqual(["a1", "m1", "a2"]);
-    // 无一行满足已完成（11/24、6/13、5/—、1/1 都不算）。
-    expect(byProgress("done")).toEqual([]);
+    expect(byProgress("done")).toEqual(["m2"]);
   });
 });
 

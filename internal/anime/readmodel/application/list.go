@@ -79,21 +79,7 @@ LEFT JOIN LATERAL (
   WHERE src.subscription_id = sub.id
 ) health_agg ON TRUE
 LEFT JOIN LATERAL (
-  -- Progress is what the library holds: the episode coverage keys of the
-  -- anime's active verified placements (a batch counts every placed file;
-  -- every episode key counts, specials included; unknown files carry none;
-  -- a file kept out of the instance's identity counts nothing).
-  SELECT ARRAY_TO_STRING(ARRAY_AGG(DISTINCT keys.episode ORDER BY keys.episode), ',') AS episodes
-  FROM (
-    SELECT substring(pc.observation_key FROM '^tv:(?:s[0-9]+:)?e([0-9]+)$')::int AS episode
-    FROM placements p
-    JOIN placement_coverage pc ON pc.placement_id = p.id
-    WHERE p.managed_anime_id = a.id
-      AND p.state = 'active'
-      AND p.verification_state = 'verified'
-      AND p.replacement_eligible
-      AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
-  ) keys
+`+applicationEpisodeProgressSQL+`
 ) progress_agg ON TRUE
 LEFT JOIN LATERAL (
   SELECT (ce.source_hint->>'episodes')::int AS total_episodes,
@@ -184,7 +170,7 @@ ORDER BY a.created_at, a.id`)
 			t := int(catalogTotalEpisodes.Int32)
 			catalogTotal = &t
 		}
-		item.EpisodeProgress = buildApplicationEpisodeProgress(episodes, item.Metadata.TotalEpisodes, catalogTotal)
+		item.EpisodeProgress = buildApplicationEpisodeProgress(episodes, item.Metadata.MediaKind, item.Metadata.TotalEpisodes, catalogTotal)
 		// The schedule and release format are provider catalog facts read from
 		// the entry the subscription came from; a custom subscription has none.
 		hint := map[string]any{"weekdayLabel": weekdayLabel.String, "weekday": weekday.String, "format": providerFormat.String}

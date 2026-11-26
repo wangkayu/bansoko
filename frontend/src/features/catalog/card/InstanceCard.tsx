@@ -75,7 +75,7 @@ export function InstanceCard({
     ? t("grid.card.viewFor", { title: entry.title })
     : t("grid.card.openConfig", { title: entry.title });
 
-  const progress = progressPresentation(entry.episodeProgress);
+  const progress = progressPresentation(entry.episodeProgress, entry.metadataMatch.mediaKind);
   const { summary, shortSummary, done } = progress;
   const hasEpisodes = progress.count > 0;
 

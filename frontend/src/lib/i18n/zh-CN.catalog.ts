@@ -128,6 +128,7 @@ export const gridCopy = {
   },
   progress: {
     waiting: "等待首集",
+    waitingForImport: "等待入库",
     summary: "已入库 {stored}/{total}",
     summaryNoTotal: "已入库 {stored} 集",
     // 只按数量计（2026-10-19 裁定）；窄卡用短摘要。

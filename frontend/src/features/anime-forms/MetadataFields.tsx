@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Eraser, ListOrdered, LoaderCircle, Pencil, Search, Sparkles } from "lucide-react";
 import { toUserMessage, type AnimeMetadataDraft, type SubscriptionOrigin } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
@@ -122,23 +122,24 @@ export function MetadataFields({
   onInvalidChange?: (invalid: boolean) => void;
 }) {
   const [episodeBinding, setEpisodeBinding] = useState<MetadataEpisodeBinding>();
-  const [, setInvalidFields] = useState<{ season: boolean; total: boolean; year: boolean }>({
-    season: false,
-    total: false,
-    year: false,
-  });
+  const invalidFields = useRef({ season: false, total: false, year: false });
   function setFieldInvalid(key: "season" | "total" | "year", invalid: boolean) {
-    setInvalidFields((prev) => {
-      if (prev[key] === invalid) return prev;
-      const next = { ...prev, [key]: invalid };
-      onInvalidChange?.(next.season || next.total || next.year);
-      return next;
-    });
+    const fields = invalidFields.current;
+    if (fields[key] === invalid) return;
+    fields[key] = invalid;
+    onInvalidChange?.(fields.season || fields.total || fields.year);
   }
   const { bgm, tmdb } = value;
   const season = value.season ?? null;
   // The kind the server resolves with: the stored kind, else the bound TMDB kind it backfills, else tv.
   const resolvedKind = mediaKind ?? value.tmdb?.media_kind ?? "tv";
+  useEffect(() => {
+    const fields = invalidFields.current;
+    if (resolvedKind !== "movie" || (!fields.season && !fields.total)) return;
+    fields.season = false;
+    fields.total = false;
+    onInvalidChange?.(fields.year);
+  }, [resolvedKind, onInvalidChange]);
   // A TMDB change while the kind is unset carries the kind it resolves to, so the kind stays when
   // the binding is cleared or replaced later.
   function changeTMDB(next: AnimeMetadataDraft, boundKind: "tv" | "movie" | undefined, title?: string) {
@@ -222,7 +223,7 @@ export function MetadataFields({
               onInvalidChange={(invalid) => setFieldInvalid("year", invalid)}
             />
           )}
-          {onSaveTotalEpisodes && (
+          {resolvedKind !== "movie" && onSaveTotalEpisodes && (
             <DirectTotalEpisodesRow
               idPrefix={idPrefix}
               totalEpisodes={value.total_episodes ?? null}
@@ -273,7 +274,7 @@ export function MetadataFields({
               onChange={(year) => onChange({ ...value, year })}
             />
           )}
-          {onSaveTotalEpisodes && (
+          {resolvedKind !== "movie" && onSaveTotalEpisodes && (
             <TotalEpisodesRow
               idPrefix={idPrefix}
               totalEpisodes={value.total_episodes ?? null}
@@ -282,6 +283,16 @@ export function MetadataFields({
             />
           )}
         </>
+      )}
+      {resolvedKind === "movie" && (
+        <section className="metadata-card" aria-labelledby={`${idPrefix}-total-eps-label`}>
+          <div className="metadata-header">
+            <span id={`${idPrefix}-total-eps-label`} className="metadata-title text-body">
+              {t("forms.totalEpisodes")}
+            </span>
+            <span className="metadata-muted text-caption">{t("forms.movieFixedTotal")}</span>
+          </div>
+        </section>
       )}
       {episodeBinding && (
         <MetadataEpisodeDialog binding={episodeBinding} loader={episodeLoader} onClose={() => setEpisodeBinding(undefined)} />

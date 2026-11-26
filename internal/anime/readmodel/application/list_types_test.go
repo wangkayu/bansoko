@@ -29,7 +29,7 @@ func TestEpisodeProgressDoneIsCountBased(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := buildApplicationEpisodeProgress(sql.NullString{String: tc.episodes, Valid: tc.episodes != ""}, tc.total, tc.catalog)
+			got := buildApplicationEpisodeProgress(sql.NullString{String: tc.episodes, Valid: tc.episodes != ""}, nil, tc.total, tc.catalog)
 			if tc.wantNil {
 				if got != nil {
 					t.Fatalf("progress = %+v, want nil", got)
@@ -41,6 +41,29 @@ func TestEpisodeProgressDoneIsCountBased(t *testing.T) {
 			}
 			if got.Done != tc.wantDone {
 				t.Fatalf("done = %v, want %v", got.Done, tc.wantDone)
+			}
+		})
+	}
+}
+
+func TestMovieEpisodeProgressUsesFixedTotal(t *testing.T) {
+	movie := "movie"
+	storedTotal, catalogTotal := 12, 24
+	for _, tc := range []struct {
+		name     string
+		coverage sql.NullString
+		imported int
+	}{
+		{name: "waiting"},
+		{name: "imported", coverage: sql.NullString{String: "1", Valid: true}, imported: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildApplicationEpisodeProgress(tc.coverage, &movie, &storedTotal, &catalogTotal)
+			if got == nil || got.Total == nil || *got.Total != 1 || got.Episodes == nil || len(got.Episodes) != tc.imported || got.Done != (tc.imported == 1) {
+				t.Fatalf("progress = %+v, want %d/1 with a non-nil episodes array", got, tc.imported)
+			}
+			if tc.imported == 1 && got.Episodes[0] != 1 {
+				t.Fatalf("episodes = %v, want [1]", got.Episodes)
 			}
 		})
 	}

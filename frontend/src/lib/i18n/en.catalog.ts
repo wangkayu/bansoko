@@ -129,6 +129,7 @@ export const enGridCopy = {
   },
   progress: {
     waiting: "Waiting for Episode 1",
+    waitingForImport: "Waiting for import",
     summary: "Imported: {stored}/{total}",
     summaryNoTotal: "Imported: {stored}",
     summaryShort: "{stored}/{total}",

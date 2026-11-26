@@ -1819,14 +1819,14 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(bodies[0]).toMatchObject({ tmdb: { work_id: "265010", media_kind: "tv", season: 1 }, year: 2023 });
   });
 
-  it("总集数：直接输入，非法输入失焦报错不写回；与年份一起由一次保存上送，类型针保留", async () => {
+  it("TV 总集数可直接输入，非法值失焦报错，有效值和年份一起保存", async () => {
     const fetchMock = stubMetadataPatchFetch();
     const workspace = workspaceFixture();
     workspace.metadata = {
       managed_anime_id: "anime-1",
       bgm: null,
       tmdb: null,
-      media_kind: "movie",
+      media_kind: "tv",
       year: 2020,
       total_episodes: 6,
       version: 1,
@@ -1853,7 +1853,32 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("tabs.metadata.savedReevaluated", { n: 2 })));
     const bodies = metadataPatchBodies(fetchMock);
     expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({ media_kind: "movie", total_episodes: 1, year: 2021 });
+    expect(bodies[0]).toMatchObject({ media_kind: "tv", total_episodes: 1, year: 2021 });
+  });
+
+  it("电影总集数固定为一且不可编辑，仍可保存年份", async () => {
+    const fetchMock = stubMetadataPatchFetch();
+    const workspace = workspaceFixture();
+    workspace.metadata = {
+      managed_anime_id: "anime-1",
+      bgm: null,
+      tmdb: null,
+      media_kind: "movie",
+      year: 2020,
+      total_episodes: 6,
+      version: 1,
+    };
+    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
+    const totalRegion = screen.getByRole("region", { name: t("forms.totalEpisodes") });
+    expect(totalRegion).toHaveTextContent(t("forms.movieFixedTotal"));
+    expect(within(totalRegion).queryByRole("textbox")).not.toBeInTheDocument();
+    const yearRegion = screen.getByRole("region", { name: t("forms.year") });
+    fireEvent.change(within(yearRegion).getByRole("textbox"), { target: { value: "2021" } });
+    expect(footerStatus()).toHaveTextContent(t("act.unsavedCount", { n: 1 }));
+
+    clickFooterSave();
+    await waitFor(() => expect(metadataPatchBodies(fetchMock)).toHaveLength(1));
+    expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ media_kind: "movie", total_episodes: 6, year: 2021 });
   });
 
   it("总集数：清空上送 total_episodes: null", async () => {

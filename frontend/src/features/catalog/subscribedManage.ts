@@ -33,6 +33,7 @@ export interface ManageRow {
   entrySeason?: string;
   /** The owner-edited naming season (anime.season), a display fact of the row. */
   showSeason?: number;
+  mediaKind?: AnimeListItem["metadata"]["media_kind"];
   state: ManageState;
   /** lifecycle_state === "retired": read-only, every batch action skips it. */
   retired: boolean;
@@ -65,6 +66,7 @@ export function manageRowsFrom(items: AnimeListItem[]): ManageRow[] {
     originEntryRef: item.subscription.origin_entry_ref ?? undefined,
     entrySeason: item.subscription.entry_season ?? undefined,
     showSeason: item.metadata.season ?? undefined,
+    mediaKind: item.metadata.media_kind,
     state: item.subscription.state,
     retired: item.subscription.lifecycle_state === "retired",
     lifecycleEpoch: item.subscription.lifecycle_epoch,
@@ -80,12 +82,11 @@ function instanceNote(label: string | null | undefined, title: string): string |
   return label;
 }
 
-/** 已完成 (the filter): the total is known and more than one episode is imported and
- *  everything announced is in — a single-file movie (1/1) shows the 完成 pill but never
- *  lands in this filter. */
+/** Completed movies count as one import. TV keeps the multi-episode threshold. */
 export function manageCompleted(row: ManageRow): boolean {
   const total = progressTotal(row.progress);
-  return total !== undefined && importedCount(row.progress) > 1 && progressDone(row.progress);
+  const minimumImported = row.mediaKind === "movie" ? 1 : 2;
+  return total !== undefined && importedCount(row.progress) >= minimumImported && progressDone(row.progress);
 }
 
 function manageAllDone(row: ManageRow): boolean {

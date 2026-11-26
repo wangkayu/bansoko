@@ -481,7 +481,7 @@ function OwnerRssTab({
     : undefined;
   // An offset change moves the imported files to their new episode: the dialog states what the
   // keep mode and the same-name setting then do with them.
-  const hasImported = (workspace.episode_progress?.episodes.length ?? 0) > 0;
+  const hasImported = workspace.metadata.media_kind !== "movie" && (workspace.episode_progress?.episodes.length ?? 0) > 0;
   const replacementPolicy = useQuery({
     queryKey: fileMaintenanceKeys.replacement(animeID),
     queryFn: () => getInstanceReplacementPolicy(animeID),

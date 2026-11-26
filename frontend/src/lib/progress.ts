@@ -1,8 +1,5 @@
-// Episode progress helpers. The backend reports the imported (offset-applied,
-// SP-excluded) episode numbers plus an optional announced total. Progress is
-// count-based: the number of imported episodes is
-// compared with the total; episode numbers are never mapped to slots, so the
-// UI shows no gaps or missing episodes.
+// Progress counts distinct imported items against an optional total. TV episode
+// numbers are never mapped to slots. The backend represents a movie as one item.
 
 import { t } from "./i18n";
 
@@ -27,26 +24,26 @@ export function progressTotal(progress: EpisodeProgressLike | undefined): number
  *  - none imported -> 等待首集
  *  - with total -> 已入库 n/total (short: n/total)
  *  - without total -> 已入库 n 集 */
-export function progressSummary(progress: EpisodeProgressLike | undefined, short = false): string {
-  return progressText(importedCount(progress), progressTotal(progress), short);
+export function progressSummary(progress: EpisodeProgressLike | undefined, short = false, mediaKind?: string | null): string {
+  return progressText(importedCount(progress), progressTotal(progress), short, mediaKind);
 }
 
-function progressText(count: number, total: number | undefined, short: boolean): string {
-  if (count === 0) return t("grid.progress.waiting");
+function progressText(count: number, total: number | undefined, short: boolean, mediaKind?: string | null): string {
+  if (count === 0) return t(mediaKind === "movie" ? "grid.progress.waitingForImport" : "grid.progress.waiting");
   if (total === undefined) return t("grid.progress.summaryNoTotal", { stored: count });
   return t(short ? "grid.progress.summaryShort" : "grid.progress.summary", { stored: count, total });
 }
 
 /** One count for all of a card's progress labels and bar; text stays locale-current. */
-export function progressPresentation(progress: EpisodeProgressLike | undefined) {
+export function progressPresentation(progress: EpisodeProgressLike | undefined, mediaKind?: string | null) {
   const count = importedCount(progress);
   const total = progressTotal(progress);
   return {
     count,
     done: progress?.done ?? (total !== undefined && count >= total),
     ratio: total === undefined ? undefined : Math.min(1, count / total),
-    summary: progressText(count, total, false),
-    shortSummary: progressText(count, total, true),
+    summary: progressText(count, total, false, mediaKind),
+    shortSummary: progressText(count, total, true, mediaKind),
   };
 }
 

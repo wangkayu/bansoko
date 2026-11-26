@@ -207,6 +207,63 @@ VALUES ('source-empty', 'subscription-empty', 'custom_rss', 'https://feed.exampl
 	}
 }
 
+func TestMovieProgressInListAndWorkspace(t *testing.T) {
+	db := animetest.OpenTestDB(t)
+	ctx := context.Background()
+	service, root := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
+	subscribed := readmodelSubscribeTestDraft(t, root, "subscribe-movie-progress")
+	animeID := subscribed.ManagedAnime.Id
+	if _, err := db.ExecContext(ctx, `
+UPDATE anime_metadata
+SET media_kind = 'movie', tmdb_work_id = '123', tmdb_media_kind = 'tv', tmdb_season = 1, total_episodes = 12
+WHERE managed_anime_id = $1`, animeID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The owner kind wins over the binding and old TV coverage. Only active,
+	// verified, eligible movie placements count.
+	animetest.SeedPlacementCoverage(t, db, animeID, "movie-progress-tv", "verified", "tv:e1")
+	animetest.SeedPlacementCoverage(t, db, animeID, "movie-progress-unverified", "unverified", "movie:0")
+	animetest.SeedPlacementCoverage(t, db, animeID, "movie-progress-ineligible", "verified", "movie:0")
+	animetest.SeedPlacementCoverage(t, db, animeID, "movie-progress-superseded", "verified", "movie:0")
+	if _, err := db.ExecContext(ctx, `UPDATE placements SET replacement_eligible = false WHERE id = 'movie-progress-ineligible'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE placements SET state = 'superseded' WHERE id = 'movie-progress-superseded'`); err != nil {
+		t.Fatal(err)
+	}
+
+	assertProgress := func(wantEpisodes []int) {
+		t.Helper()
+		items, err := service.ListAnimeApplication(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 || items[0].ManagedAnime.ID != animeID {
+			t.Fatalf("list = %+v, want the movie owner", items)
+		}
+		workspace, err := service.GetAnimeWorkspaceApplication(ctx, animeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		configuration, err := service.GetAnimeWorkspaceConfigurationApplication(ctx, animeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, progress := range map[string]*EpisodeProgress{
+			"list": items[0].EpisodeProgress, "workspace": workspace.EpisodeProgress, "configuration": configuration.EpisodeProgress,
+		} {
+			if progress == nil || progress.Total == nil || *progress.Total != 1 || progress.Done != (len(wantEpisodes) > 0) || !reflect.DeepEqual(progress.Episodes, wantEpisodes) {
+				t.Errorf("%s progress = %+v, want episodes %v out of 1", name, progress, wantEpisodes)
+			}
+		}
+	}
+	assertProgress([]int{})
+	animetest.SeedPlacementCoverage(t, db, animeID, "movie-progress-imported", "verified", "movie:0")
+	animetest.SeedPlacementCoverage(t, db, animeID, "movie-progress-duplicate", "verified", "movie:0")
+	assertProgress([]int{1})
+}
+
 // TestListAnimeCoverURLFromCatalogSnapshot proves the subscribed-list cover
 // resolution: cover_url comes from the provider's persisted catalog entry
 // (source_hint.cover) matched by subscription origin + origin_entry_ref, so a

@@ -27,7 +27,7 @@ func mapAnimeListItems(values []readmodelapplication.AnimeListItem) []generated.
 				Done     bool  `json:"done"`
 				Episodes []int `json:"episodes"`
 				Total    *int  `json:"total,omitempty"`
-			}{Done: value.EpisodeProgress.Done, Episodes: append([]int(nil), value.EpisodeProgress.Episodes...), Total: mapAnimeListInt(value.EpisodeProgress.Total)}
+			}{Done: value.EpisodeProgress.Done, Episodes: append([]int{}, value.EpisodeProgress.Episodes...), Total: mapAnimeListInt(value.EpisodeProgress.Total)}
 		}
 		if value.ReleaseFormat != "" {
 			format := generated.ReleaseFormat(value.ReleaseFormat)

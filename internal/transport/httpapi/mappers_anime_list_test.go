@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"testing"
 
 	animeapplication "bansoko/internal/anime/application"
@@ -40,5 +41,19 @@ func TestMapAnimeListItemsProjectsApplicationValues(t *testing.T) {
 	(*item.SubscribedGroups)[0] = "changed"
 	if *mapped[0].ManagedAnime.TitleOverride != "Override" || *mapped[0].EpisodeProgress.Total != 12 || (*mapped[0].SubscribedGroups)[0] != "Group A" {
 		t.Fatal("mapped list item changed with application input")
+	}
+}
+
+func TestMapAnimeListItemsSerializesWaitingMovieWithEmptyEpisodes(t *testing.T) {
+	total := 1
+	mapped := mapAnimeListItems([]readmodelapplication.AnimeListItem{{
+		EpisodeProgress: &readmodelapplication.EpisodeProgress{Episodes: []int{}, Total: &total},
+	}})
+	got, err := json.Marshal(mapped[0].EpisodeProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"done":false,"episodes":[],"total":1}`; string(got) != want {
+		t.Fatalf("episode_progress = %s, want %s", got, want)
 	}
 }

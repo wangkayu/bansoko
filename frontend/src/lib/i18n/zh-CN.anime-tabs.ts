@@ -181,6 +181,7 @@ export const formsCopy = {
   tmdbSeason: "TMDB 季度",
   seasonInvalid: "季度必须是 0 到 99 的整数",
   movieNoSeason: "电影没有季度",
+  movieFixedTotal: "电影固定为 1",
   seasonAria: "季度",
   seasonUnset: "未设置",
   seasonSpecials: "特别篇（第 0 季）",

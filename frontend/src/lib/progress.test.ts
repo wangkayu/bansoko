@@ -19,6 +19,20 @@ describe("progressPresentation", () => {
     });
   });
 
+  it.each([["zh-CN", "等待入库"], ["en", "Waiting for import"]] as const)(
+    "renders movie import progress in %s", (locale, waiting) => {
+      setLocale(locale, { persist: false });
+      const empty = { episodes: [], total: 1, done: false };
+      expect(progressSummary(empty, false, "movie")).toBe(waiting);
+      expect(progressPresentation(empty, "movie")).toEqual({
+        count: 0, done: false, ratio: 0, summary: waiting, shortSummary: waiting,
+      });
+      expect(progressPresentation({ episodes: [1], total: 1, done: true }, "movie")).toEqual({
+        count: 1, done: true, ratio: 1, summary: t("grid.progress.summary", { stored: 1, total: 1 }), shortSummary: "1/1",
+      });
+    },
+  );
+
   it("renders the current language without caching translated text", () => {
     const progress = { episodes: [1, 2], total: 12 };
     setLocale("zh-CN", { persist: false });
