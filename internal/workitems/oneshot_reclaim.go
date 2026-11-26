@@ -28,7 +28,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// One-shot marker states (mirrors migration 065).
+// One-shot marker states (001_baseline.sql and 063_retention_renames.sql).
 const (
 	OneShotStateRunning        = "running"
 	OneShotStateReclaimPending = "reclaim_pending"
@@ -1214,7 +1214,7 @@ func (s *OneShotReclaimService) compactOneShotRootsTx(ctx context.Context, tx *s
 
 // deleteTemporaryOwnerGraphTx deletes ONLY the anchored temporary database
 // owner graph, leaf-first, mirroring the existing unsubscribe deletion order
-// (internal/anime/application/delete_subscription.go). It never touches qB
+// (internal/anime/ownership/application/delete_subscription.go). It never touches qB
 // tasks, downloaded data, library targets, or user-owned files, and it never
 // deletes the marker itself.
 func deleteTemporaryOwnerGraphTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
