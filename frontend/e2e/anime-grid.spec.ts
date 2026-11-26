@@ -1091,7 +1091,7 @@ function episodeRows(count: number, year: number): EpisodeRow[] {
 }
 
 async function mockEpisodeRoute(page: Page, path: string, body: unknown) {
-  await page.route(`**${path}`, async (route) => {
+  await page.route((url) => url.pathname === path, async (route) => {
     if (route.request().method() !== "GET") {
       await fulfillMethodNotAllowed(route, "GET");
       return;
@@ -1550,15 +1550,16 @@ test.describe("AnimeGrid", () => {
       const toolbarHeights = [stateFiltersBox!, originBox!, seasonBox!, sortBox!, searchBox!, progressBox!].map((box) => Math.round(box.height));
       expect(new Set(toolbarHeights).size).toBe(1);
       expect(toolbarHeights[0]).toBe(32);
-      const fontSizes = await Promise.all([
+      const controlFontSizes = await Promise.all([
         stateFilters.locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.sortAria")).evaluate((el) => getComputedStyle(el).fontSize),
-        dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).evaluate((el) => getComputedStyle(el).fontSize),
       ]);
-      expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
+      expect(new Set(controlFontSizes)).toEqual(new Set(["12px"]));
+      // Inputs stay at 16px on phones so iOS Safari does not auto-zoom on focus.
+      await expect(dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") })).toHaveCSS("font-size", "16px");
       // The state filter is the prototype's soft segment group: an explicit 全部 option with
       // the per-state counts inline, never a set of boxed chips.
       await expect(stateFilters.locator('[role="radio"]').first()).toContainText(t("grid.manage.stateAll"));
