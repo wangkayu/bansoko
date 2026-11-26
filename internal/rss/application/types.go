@@ -15,7 +15,6 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/batchplan"
 	downloadadmission "bansoko/internal/download/admission"
-	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/events"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
@@ -576,23 +575,4 @@ type selectedReleaseIdentity struct {
 	ReleaseVersion int64           `json:"release_version"`
 	SubscriptionID string          `json:"subscription_id"`
 	ManagedAnimeID string          `json:"managed_anime_id"`
-}
-
-type internalFrozenDownloadInput struct {
-	ReleaseStableItemKey string                        `json:"release_stable_item_key"`
-	SelectedRelease      selectedReleaseIdentity       `json:"selected_release"`
-	TargetFacts          *target.FrozenFacts           `json:"target_facts,omitempty"`
-	TargetSetDigest      string                        `json:"target_set_digest,omitempty"`
-	SourceLocatorDisplay string                        `json:"source_locator_display"`
-	TorrentInputID       string                        `json:"torrent_input_id"`
-	TorrentPayloadDigest string                        `json:"torrent_payload_digest"`
-	TorrentFilename      string                        `json:"torrent_filename"`
-	TorrentParserVersion string                        `json:"torrent_parser_version"`
-	TorrentVersion       string                        `json:"torrent_version"`
-	InfoHash             string                        `json:"info_hash,omitempty"`
-	InfoHashV1           string                        `json:"info_hash_v1,omitempty"`
-	InfoHashV2           string                        `json:"info_hash_v2,omitempty"`
-	ReleaseFiles         []storedReleaseFile           `json:"release_files,omitempty"`
-	PathSnapshot         *downloaddomain.PathSnapshot  `json:"path_snapshot,omitempty"`
-	AdoptionProvenance   *downloadadmission.Provenance `json:"adoption_provenance,omitempty"`
 }

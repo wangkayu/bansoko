@@ -15,7 +15,6 @@ import (
 
 	"bansoko/internal/acquisition/torrent"
 	"bansoko/internal/batchplan"
-	"bansoko/internal/download/admission"
 	"bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/episodeidentity"
@@ -245,28 +244,7 @@ type taskSnapshot struct {
 	version        int64
 }
 
-type frozenInput struct {
-	ReleaseStableItemKey string                  `json:"release_stable_item_key"`
-	SelectedRelease      json.RawMessage         `json:"selected_release,omitempty"`
-	SelectedSeed         json.RawMessage         `json:"selected_seed,omitempty"`
-	TargetFacts          json.RawMessage         `json:"target_facts,omitempty"`
-	TargetSetDigest      string                  `json:"target_set_digest,omitempty"`
-	SourceLocatorDisplay string                  `json:"source_locator_display"`
-	TorrentInputID       string                  `json:"torrent_input_id"`
-	TorrentPayloadDigest string                  `json:"torrent_payload_digest"`
-	TorrentFilename      string                  `json:"torrent_filename"`
-	TorrentParserVersion string                  `json:"torrent_parser_version"`
-	TorrentVersion       string                  `json:"torrent_version"`
-	InfoHash             string                  `json:"info_hash,omitempty"`
-	InfoHashV1           string                  `json:"info_hash_v1,omitempty"`
-	InfoHashV2           string                  `json:"info_hash_v2,omitempty"`
-	ReleaseFiles         []json.RawMessage       `json:"release_files,omitempty"`
-	PathSnapshot         *domain.PathSnapshot    `json:"path_snapshot,omitempty"`
-	PartialDownload      *domain.PartialDownload `json:"partial_download,omitempty"`
-	PartialNamespace     string                  `json:"partial_namespace,omitempty"`
-	PartialStartSent     bool                    `json:"partial_start_sent,omitempty"`
-	AdoptionProvenance   *admission.Provenance   `json:"adoption_provenance,omitempty"`
-}
+type frozenInput = domain.FrozenInput
 
 // providerCorrelation is intentionally an internal DownloadTask owner
 // snapshot. InfoHash is the hash returned by qB/provider inspection and is
@@ -322,12 +300,20 @@ func (s *Service) loadTask(ctx context.Context, taskID string, lock bool) (taskS
 	return task, nil
 }
 
+// DecodeFrozenInput checks the persisted input using the downloader's strict decoder.
+func DecodeFrozenInput(raw []byte) (domain.FrozenInput, error) {
+	return decodeFrozenInput(raw)
+}
+
 func decodeFrozenInput(raw []byte) (frozenInput, error) {
 	var input frozenInput
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil {
 		return frozenInput{}, fmt.Errorf("%w: %v", ErrFrozenInputInvalid, err)
+	}
+	if files := bytes.TrimSpace(input.ReleaseFiles); len(files) > 0 && files[0] != '[' && !bytes.Equal(files, []byte("null")) {
+		return frozenInput{}, fmt.Errorf("%w: release_files must be an array or null", ErrFrozenInputInvalid)
 	}
 	if strings.TrimSpace(input.SourceLocatorDisplay) == "" {
 		return frozenInput{}, fmt.Errorf("%w: source locator display is required", ErrFrozenInputInvalid)

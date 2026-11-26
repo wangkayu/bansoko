@@ -30,12 +30,7 @@ type Result struct {
 	Provenance   *Provenance
 }
 
-type Provenance struct {
-	Kind                string `json:"kind"`
-	ProviderTaskID      string `json:"provider_task_id"`
-	ProviderInfoHash    string `json:"provider_info_hash"`
-	OperationKeyChecked string `json:"operation_key_checked"`
-}
+type Provenance = domain.AdoptionProvenance
 
 func (r Request) HashCandidates() []string {
 	values := []string{r.InfoHash, r.InfoHashV1, r.InfoHashV2}

@@ -55,11 +55,15 @@ func (s *Service) observePartialDownload(ctx context.Context, claim workitems.Cl
 
 func partialDownloadManifest(input frozenInput) (map[string]int64, error) {
 	selection := input.PartialDownload
-	if selection == nil || selection.Validate() != nil || len(input.ReleaseFiles) != selection.FileCount {
+	if selection == nil || selection.Validate() != nil {
 		return nil, qbittorrent.ErrPartialDownloadIdentity
 	}
-	manifest := make(map[string]int64, len(input.ReleaseFiles))
-	for _, raw := range input.ReleaseFiles {
+	var files []json.RawMessage
+	if err := json.Unmarshal(input.ReleaseFiles, &files); err != nil || len(files) != selection.FileCount {
+		return nil, qbittorrent.ErrPartialDownloadIdentity
+	}
+	manifest := make(map[string]int64, len(files))
+	for _, raw := range files {
 		var file struct {
 			Path string `json:"source_path"`
 			Size *int64 `json:"size_bytes"`

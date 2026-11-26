@@ -1376,33 +1376,10 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 		if err != nil {
 			return OneShotAdmissionResult{}, fmt.Errorf("read one-shot torrent input identity: %w", err)
 		}
-		frozenInputRaw, err := json.Marshal(struct {
-			ReleaseStableItemKey string                                    `json:"release_stable_item_key"`
-			SelectedRelease      *animeapplication.SelectedReleaseIdentity `json:"selected_release"`
-			SelectedSeed         oneShotSelectedSeedJSON                   `json:"selected_seed"`
-			TargetFacts          json.RawMessage                           `json:"target_facts"`
-			TargetSetDigest      string                                    `json:"target_set_digest,omitempty"`
-			SourceLocatorDisplay string                                    `json:"source_locator_display"`
-			TorrentInputID       string                                    `json:"torrent_input_id"`
-			TorrentPayloadDigest string                                    `json:"torrent_payload_digest"`
-			TorrentFilename      string                                    `json:"torrent_filename"`
-			TorrentParserVersion string                                    `json:"torrent_parser_version"`
-			TorrentVersion       string                                    `json:"torrent_version"`
-			InfoHashV1           string                                    `json:"info_hash_v1,omitempty"`
-			InfoHashV2           string                                    `json:"info_hash_v2,omitempty"`
-			ReleaseFiles         json.RawMessage                           `json:"release_files,omitempty"`
-			PartialDownload      *downloaddomain.PartialDownload           `json:"partial_download,omitempty"`
-		}{
+		frozenInputRaw, err := encodeOneShotFrozenInput(downloaddomain.FrozenInput{
 			ReleaseStableItemKey: evaluation.StableItemKey,
-			SelectedRelease: &animeapplication.SelectedReleaseIdentity{
-				ReleaseID: releaseID, RSSSourceID: sourceID, StableItemKey: evaluation.StableItemKey,
-				RawFacts: rawFacts, SourceFacts: sourceFacts,
-				ReleaseVersion: 1, SubscriptionID: subscriptionID, ManagedAnimeID: animeID,
-			},
-			SelectedSeed:         oneShotSelectedSeedJSONFromDomain(seed),
 			TargetFacts:          targetFactsRaw,
 			TargetSetDigest:      targetSetDigest,
-			SourceLocatorDisplay: animedomain.LocatorDisplay(seed.Locator),
 			TorrentInputID:       torrentInputID,
 			TorrentPayloadDigest: torrentPayloadDigest,
 			TorrentFilename:      filename,
@@ -1410,9 +1387,12 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 			TorrentVersion:       torrentVersion,
 			InfoHashV1:           payload.Metadata.InfoHashV1,
 			InfoHashV2:           payload.Metadata.InfoHashV2,
-			ReleaseFiles:         releaseFilesFromInternalFacts(internalFacts),
 			PartialDownload:      partialDownload,
-		})
+		}, animeapplication.SelectedReleaseIdentity{
+			ReleaseID: releaseID, RSSSourceID: sourceID, StableItemKey: evaluation.StableItemKey,
+			RawFacts: rawFacts, SourceFacts: sourceFacts,
+			ReleaseVersion: 1, SubscriptionID: subscriptionID, ManagedAnimeID: animeID,
+		}, seed, internalFacts)
 		if err != nil {
 			return OneShotAdmissionResult{}, fmt.Errorf("encode one-shot frozen input: %w", err)
 		}
@@ -1584,6 +1564,25 @@ func oneShotOutcomePointer(value *string) *OneShotTerminalOutcome {
 	}
 	outcome := OneShotTerminalOutcome(*value)
 	return &outcome
+}
+
+func encodeOneShotFrozenInput(input downloaddomain.FrozenInput, release animeapplication.SelectedReleaseIdentity, seed SelectedSeed, internalFacts []byte) (json.RawMessage, error) {
+	var err error
+	input.SelectedRelease, err = json.Marshal(release)
+	if err != nil {
+		return nil, err
+	}
+	input.SelectedSeed, err = json.Marshal(oneShotSelectedSeedJSONFromDomain(seed))
+	if err != nil {
+		return nil, err
+	}
+	if len(input.TargetFacts) == 0 {
+		// OneShot has always emitted target_facts, even when null.
+		input.TargetFacts = json.RawMessage("null")
+	}
+	input.SourceLocatorDisplay = animedomain.LocatorDisplay(seed.Locator)
+	input.ReleaseFiles = releaseFilesFromInternalFacts(internalFacts)
+	return json.Marshal(input)
 }
 
 // releaseFilesFromInternalFacts passes the stored release_files through in the

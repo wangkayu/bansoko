@@ -727,7 +727,10 @@ func TestRefreshTransientTorrentFailurePreservesVerifiedMetadataAndRequeuesEvalu
 	if err := db.QueryRowContext(context.Background(), `SELECT frozen_input FROM download_tasks WHERE release_id = $1`, releaseID).Scan(&frozenRaw); err != nil {
 		t.Fatal(err)
 	}
-	var frozen internalFrozenDownloadInput
+	var frozen struct {
+		ReleaseFiles []json.RawMessage `json:"release_files"`
+		InfoHashV1   string            `json:"info_hash_v1"`
+	}
 	if err := json.Unmarshal(frozenRaw, &frozen); err != nil {
 		t.Fatal(err)
 	}

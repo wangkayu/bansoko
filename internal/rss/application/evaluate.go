@@ -15,6 +15,7 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	draft "bansoko/internal/anime/draft/application"
 	"bansoko/internal/batchplan"
+	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
@@ -1137,6 +1138,47 @@ func encodeFrozenReleasePolicy(snapshot releaseSnapshot, evidence releaseParserE
 	return policy, nil
 }
 
+func encodeFrozenDownloadInput(snapshot releaseSnapshot, item acquisitiondomain.FeedItem, inputRef releaseTorrentInputRef, acquisition *targetAcquisition) (json.RawMessage, error) {
+	selected, err := json.Marshal(selectedReleaseIdentity{
+		ReleaseID: snapshot.releaseID, RSSSourceID: snapshot.sourceID, StableItemKey: snapshot.stableItemKey,
+		RawFacts: snapshot.rawFacts, SourceFacts: snapshot.sourceFacts,
+		ReleaseVersion: snapshot.releaseVersion, SubscriptionID: snapshot.subscriptionID, ManagedAnimeID: snapshot.managedAnimeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	input := downloaddomain.FrozenInput{
+		ReleaseStableItemKey: snapshot.stableItemKey, SelectedRelease: selected,
+		SourceLocatorDisplay: animedomain.SanitizeLocatorDisplay(snapshot.locatorDisplay),
+		TorrentInputID:       inputRef.ID, TorrentPayloadDigest: inputRef.PayloadDigest, TorrentFilename: inputRef.Filename,
+		TorrentParserVersion: inputRef.ParserVersion, TorrentVersion: inputRef.TorrentVersion,
+		InfoHash: item.TorrentInfoHash, InfoHashV1: inputRef.InfoHashV1, InfoHashV2: inputRef.InfoHashV2,
+	}
+	if files := encodeStoredReleaseFiles(item.ReleaseFiles); len(files) > 0 {
+		input.ReleaseFiles, err = json.Marshal(files)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if acquisition != nil {
+		input.TargetSetDigest = acquisition.set.Digest
+		// The persisted acquisition_targets set is referenced by digest and count.
+		input.TargetFacts, err = json.Marshal(target.FrozenFacts{
+			Admission: string(acquisition.admission.Admission), Reason: acquisition.admission.Reason,
+			TargetSetDigest: acquisition.set.Digest, TargetCount: len(acquisition.set.Targets),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if match := acquisition.downloaderAdmission; match != nil {
+			pathSnapshot := match.PathSnapshot
+			input.PathSnapshot = &pathSnapshot
+			input.AdoptionProvenance = match.Provenance
+		}
+	}
+	return json.Marshal(input)
+}
+
 func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, store *workitems.Store, snapshot releaseSnapshot, item acquisitiondomain.FeedItem, evidence releaseParserEvidence, acquisitions ...*targetAcquisition) (string, string, error) {
 	if store == nil {
 		return "", "", errors.New("work item store is nil")
@@ -1148,44 +1190,15 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 	if err != nil {
 		return "", "", err
 	}
-	correlation := "corr-" + uuid.NewString()
-	frozenInput := internalFrozenDownloadInput{
-		ReleaseStableItemKey: snapshot.stableItemKey,
-		SelectedRelease: selectedReleaseIdentity{
-			ReleaseID: snapshot.releaseID, RSSSourceID: snapshot.sourceID, StableItemKey: snapshot.stableItemKey,
-			RawFacts: append(json.RawMessage(nil), snapshot.rawFacts...), SourceFacts: append(json.RawMessage(nil), snapshot.sourceFacts...),
-			ReleaseVersion: snapshot.releaseVersion, SubscriptionID: snapshot.subscriptionID, ManagedAnimeID: snapshot.managedAnimeID,
-		},
-		SourceLocatorDisplay: animedomain.SanitizeLocatorDisplay(snapshot.locatorDisplay),
-		InfoHash:             item.TorrentInfoHash,
-		ReleaseFiles:         encodeStoredReleaseFiles(item.ReleaseFiles),
+	var acquisition *targetAcquisition
+	if len(acquisitions) > 0 {
+		acquisition = acquisitions[0]
 	}
-	if len(acquisitions) > 0 && acquisitions[0] != nil {
-		acquisition := acquisitions[0]
-		frozenInput.TargetSetDigest = acquisition.set.Digest
-		// The set's rows and observations were persisted by the evaluation
-		// (acquisition_targets); the frozen input names them by digest and count.
-		frozenInput.TargetFacts = &target.FrozenFacts{
-			Admission: string(acquisition.admission.Admission), Reason: acquisition.admission.Reason,
-			TargetSetDigest: acquisition.set.Digest, TargetCount: len(acquisition.set.Targets),
-		}
-		if acquisition.downloaderAdmission != nil {
-			pathSnapshot := acquisition.downloaderAdmission.PathSnapshot
-			frozenInput.PathSnapshot = &pathSnapshot
-			frozenInput.AdoptionProvenance = acquisition.downloaderAdmission.Provenance
-		}
-	}
-	frozenInput.TorrentInputID = inputRef.ID
-	frozenInput.TorrentPayloadDigest = inputRef.PayloadDigest
-	frozenInput.TorrentFilename = inputRef.Filename
-	frozenInput.TorrentParserVersion = inputRef.ParserVersion
-	frozenInput.TorrentVersion = inputRef.TorrentVersion
-	frozenInput.InfoHashV1 = inputRef.InfoHashV1
-	frozenInput.InfoHashV2 = inputRef.InfoHashV2
-	inputJSON, err := json.Marshal(frozenInput)
+	inputJSON, err := encodeFrozenDownloadInput(snapshot, item, inputRef, acquisition)
 	if err != nil {
 		return "", "", fmt.Errorf("encode frozen download input: %w", err)
 	}
+	correlation := "corr-" + uuid.NewString()
 	policyJSON, err := encodeFrozenReleasePolicy(snapshot, evidence)
 	if err != nil {
 		return "", "", err
