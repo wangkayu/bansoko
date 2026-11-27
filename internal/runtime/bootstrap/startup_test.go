@@ -208,8 +208,8 @@ func TestRunServerMigratesSelectedTreeBeforeServing(t *testing.T) {
 	if dir, _ := envValue(rec.execEnv, envSchemaDir); dir != baseAssetDir(baseSchemaDir) {
 		t.Fatalf("server schema dir %q", dir)
 	}
-	if _, ok := envValue(rec.execEnv, deploymentidentity.EnvSource); ok {
-		t.Fatal("a manual base launch must not inject deployment identity facts")
+	if source, _ := envValue(rec.execEnv, deploymentidentity.EnvSource); source != deploymentidentity.SourceBase {
+		t.Fatalf("manual base launch must report base identity, got %q", source)
 	}
 }
 
@@ -316,13 +316,17 @@ func TestEstablishProcessPrivilegesExportsEffectiveIDs(t *testing.T) {
 
 func TestRunPendingMarkerGoesToConsumeFlowWithoutStartupMigration(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, pendingMarkerName), []byte("{}"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, pendingMarkerName), validPlanMarker, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(deploymentidentity.EnvUpdatesRoot, root)
 	t.Setenv("BANSOKO_UPDATE_MODE", "embedded")
 	rec := &launchRecorder{}
 	installLaunchSeams(t, rec)
+	writeReleaseTree(t, root, "release-1")
+	previous := currentExecutable
+	currentExecutable = func() (string, error) { return releaseServerBin(relDirOf(root, "release-1")), nil }
+	t.Cleanup(func() { currentExecutable = previous })
 	if code := run("server"); code != 0 {
 		t.Fatalf("run = %d", code)
 	}

@@ -68,7 +68,7 @@ func pendingMarkerMemberCount(data []byte) (int, error) {
 }
 
 func readPendingMarker(path string) (pendingMarker, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return pendingMarker{}, err
 	}
@@ -285,7 +285,7 @@ func consumePendingMarker(updatesRoot string) error {
 		OperationID: marker.OperationID, Channel: updatefence.AdmittedByEmbedded,
 		Step: embeddedupdate.StepPendingMigration, TargetReleaseID: marker.ReleaseID,
 		TargetVersion: manifest.Version, TargetSchemaVersion: manifest.TargetMigrationVersion,
-		TargetReleaseSequence: marker.ReleaseSequence, ManifestDigest: marker.ManifestDigest,
+		TargetReleaseSequence: marker.ReleaseSequence, TargetLane: string(manifest.Channel), ManifestDigest: marker.ManifestDigest,
 		BackupID: backupID, PreviousReleaseID: marker.PreviousReleaseID,
 		RollbackSourceCaptured: true,
 	})

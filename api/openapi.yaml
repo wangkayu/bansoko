@@ -69,7 +69,6 @@ paths:
       tags: [System]
       operationId: getReadyz
       x-scope: none
-      x-surface-keep: "ops: readiness verdict for deployment probes and agents (503 carries the diagnostic body); no application caller"
       security: []
       summary: Structured service admission evidence.
       description: >
@@ -9535,10 +9534,30 @@ components:
           allOf:
             - $ref: '#/components/schemas/DeploymentIdentity'
           nullable: true
+    DeploymentBuild:
+      type: object
+      additionalProperties: false
+      required: [version, build_id]
+      properties:
+        version: {type: string}
+        build_id: {type: string}
+        series: {type: string}
+        lane: {type: string, enum: [stable, test, unordered]}
+        release_sequence: {type: integer, format: int64, minimum: 1}
     DeploymentIdentity:
       type: object
       additionalProperties: false
       properties:
+        selected_build:
+          $ref: '#/components/schemas/DeploymentBuild'
+        base_build:
+          $ref: '#/components/schemas/DeploymentBuild'
+        anchor:
+          type: string
+          enum: [docker, native]
+        selection_reason_code: {type: string}
+        selection_reason: {type: string}
+        takeover_operation_id: {type: string}
         base_image_digest:
           type: string
           description: Immutable base image digest layer, when the deployment provides it.
@@ -12812,6 +12831,11 @@ components:
       additionalProperties: false
       required: [operation_id, channel, step, target_release_id, created_at, updated_at]
       properties:
+        operation_kind: {type: string, enum: [overlay_update, base_takeover]}
+        target_source: {type: string, enum: [base, overlay]}
+        target_lane: {type: string, enum: [stable, test]}
+        target_sequence: {type: integer, format: int64, minimum: 1}
+        previous_release_id: {type: string}
         operation_id:
           type: string
         channel:

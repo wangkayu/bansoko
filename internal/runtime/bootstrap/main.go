@@ -41,6 +41,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -57,6 +58,7 @@ import (
 	hardeningdomain "bansoko/internal/hardening/domain"
 	"bansoko/internal/runtime/bootprepare"
 	"bansoko/internal/runtime/bootsecrets"
+	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/config"
 	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/runtime/deploymentprovenance"
@@ -103,9 +105,15 @@ func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string)
 	// A native deployment has no container image to anchor against: mark the
 	// anchor honestly instead of fabricating a sha256 digest. The key is always
 	// written so an inherited anchor can never leak into a container launch.
-	anchor := ""
-	if baseDigest == "" {
+	build, docker := readImageAnchor()
+	anchor := deploymentidentity.AnchorDocker
+	if !docker {
 		anchor = deploymentidentity.AnchorNative
+	}
+	var baseBuild string
+	if docker && build.BuildID != "" {
+		raw, _ := json.Marshal(build)
+		baseBuild = string(raw)
 	}
 	return map[string]string{
 		deploymentidentity.EnvSource:               source,
@@ -116,6 +124,9 @@ func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string)
 		deploymentidentity.EnvAnchorKind:           anchor,
 		deploymentidentity.EnvExpectedProcessBuild: "",
 		deploymentidentity.EnvBootstrapVersion:     embeddedBootstrapVersion,
+		deploymentidentity.EnvBaseBuild:            baseBuild,
+		deploymentidentity.EnvSelectionReasonCode:  "overlay_update_active",
+		deploymentidentity.EnvSelectionReason:      "embedded update selected the running tree",
 	}
 }
 
@@ -126,9 +137,11 @@ func deploymentIdentityEnvWithBuild(source, releaseID, payloadDigest, operationI
 }
 
 type overlayIdentityProof struct {
+	Manifest               hardeningdomain.ReleaseManifest
 	PayloadDigest          string
 	OperationID            string
 	ExpectedProcessBuildID string
+	Build                  buildinfo.BuildInfo
 }
 
 // verifyOverlayIdentity proves the signed release tree before reading the
@@ -160,6 +173,8 @@ func verifyOverlayIdentity(updatesRoot, releaseID string) (overlayIdentityProof,
 		PayloadDigest:          provenance.PayloadDigest,
 		OperationID:            provenance.ProducingOperationID,
 		ExpectedProcessBuildID: provenance.ExpectedProcessBuildID,
+		Build:                  buildinfo.BuildInfo{Order: meta.Order, Version: meta.Version, Commit: meta.SourceCommit, BuildID: meta.BuildID, SchemaVersion: meta.TargetSchemaVersion},
+		Manifest:               manifest,
 	}, nil
 }
 
@@ -243,6 +258,8 @@ type plan struct {
 	releaseID        string
 	handoffReleaseID string
 	reason           string
+	reasonCode       string
+	baseBuild        buildinfo.BuildInfo
 	maintenanceOp    string // operation id when parked on journal state
 	maintenanceStep  string // journal step string when parked
 }
@@ -291,110 +308,104 @@ func updateMode() string {
 // planLaunch decides which binary tree runs. kind is "server" or "migrate".
 func planLaunch(kind, updatesRoot string) (out plan) {
 	out = plan{kind: kind}
-
-	rootInfo, statErr := os.Stat(updatesRoot)
-	switch {
-	case errors.Is(statErr, os.ErrNotExist):
-		return basePlan(out, "no updates volume present")
-	case statErr != nil:
-		return maintenancePlan(out, "", "", fmt.Sprintf("updates volume %s unusable: %v", updatesRoot, statErr))
-	case !rootInfo.IsDir():
-		return maintenancePlan(out, "", "", fmt.Sprintf("updates path %s is not a directory", updatesRoot))
+	facts := selectionFacts{kind: kind, mode: updateMode()}
+	defer func() {
+		_ = json.NewEncoder(os.Stderr).Encode(map[string]any{
+			"event": "bootstrap_selection", "kind": kind, "update_mode": facts.mode, "action": out.mode.String(),
+			"reason_code": out.reasonCode, "reason": out.reason, "overlay_release_id": out.releaseID,
+			"base_build_id": out.baseBuild.BuildID, "operation_id": out.maintenanceOp,
+		})
+	}()
+	park := func(reason string) plan {
+		out.reasonCode = "update_evidence_unusable"
+		return maintenancePlan(out, out.maintenanceOp, out.maintenanceStep, reason)
 	}
-
+	if !config.IsValidUpdateMode(facts.mode) {
+		return park(fmt.Sprintf("unsupported BANSOKO_UPDATE_MODE %q", facts.mode))
+	}
+	facts.base, facts.imageAnchor = readImageAnchor()
+	out.baseBuild = facts.base
+	rootInfo, statErr := os.Lstat(updatesRoot)
+	if errors.Is(statErr, syscall.ENOENT) {
+		out.reasonCode = arbitrateBaseVsOverlay(facts).reasonCode
+		return basePlan(out, "no updates volume present")
+	}
+	if statErr != nil || !rootInfo.IsDir() {
+		return park(fmt.Sprintf("updates volume %s unusable: %v", updatesRoot, statErr))
+	}
 	entrypointJournal, err := embeddedupdate.Open(filepath.Join(updatesRoot, journalFileName))
 	if err != nil {
-		if errors.Is(err, embeddedupdate.ErrJournalCorrupted) {
-			return maintenancePlan(out, "", "", fmt.Sprintf("%v (corrupt file quarantined for diagnosis)", err))
-		}
-		return maintenancePlan(out, "", "", fmt.Sprintf("journal unavailable: %v", err))
+		return park(fmt.Sprintf("journal unavailable: %v", err))
 	}
 	defer func() {
 		if closeErr := entrypointJournal.Close(); closeErr != nil {
-			out = maintenancePlan(out, out.maintenanceOp, out.maintenanceStep,
-				fmt.Sprintf("update journal close failed: %v", closeErr))
+			out = park(fmt.Sprintf("update journal close failed: %v", closeErr))
 		}
 	}()
-
-	record, found, loadErr := entrypointJournal.Load()
-	if loadErr != nil {
-		return maintenancePlan(out, "", "", fmt.Sprintf("journal unreadable after open: %v", loadErr))
+	record, found, err := entrypointJournal.Load()
+	if err != nil {
+		return park(fmt.Sprintf("journal unreadable after open: %v", err))
 	}
-	mode := updateMode()
-	if !config.IsValidUpdateMode(mode) {
-		return maintenancePlan(out, "", "", fmt.Sprintf("unsupported BANSOKO_UPDATE_MODE %q", mode))
+	if !found {
+		quarantined, err := filepath.Glob(filepath.Join(updatesRoot, "journal.corrupt-*"))
+		if err != nil || len(quarantined) > 0 {
+			return park("quarantined journal requires operator review")
+		}
+	}
+	facts.active = found && record.Active()
+	facts.rollbackBlocked = found && record.Step == embeddedupdate.StepRollbackBlocked
+	facts.consumeFamily = consumeFamilySteps[record.Step]
+	if facts.active || facts.rollbackBlocked {
+		out.maintenanceOp, out.maintenanceStep = record.OperationID, string(record.Step)
 	}
 	markerPath := filepath.Join(updatesRoot, pendingMarkerName)
-	if _, markerErr := os.Lstat(markerPath); markerErr == nil {
-		if kind == "server" && mode == "embedded" {
-			out.mode = modePendingMarker
-			out.reason = "pending embedded update marker"
-			return out
-		}
-		return maintenancePlan(out, "", "", "pending embedded update marker requires embedded server bootstrap")
-	} else if !errors.Is(markerErr, os.ErrNotExist) {
-		return maintenancePlan(out, "", "", fmt.Sprintf("pending marker unavailable: %v", markerErr))
+	if _, err := os.Lstat(markerPath); err == nil {
+		marker, err := readPendingMarker(markerPath)
+		facts.pending = err == nil
+		facts.unusable = err != nil || (facts.active && !facts.rollbackBlocked && (record.Step != embeddedupdate.StepPendingMigration ||
+			marker.OperationID != record.OperationID || marker.ReleaseID != record.TargetReleaseID || marker.ReleaseSequence != record.TargetReleaseSequence ||
+			marker.ManifestDigest != record.ManifestDigest || marker.PreviousReleaseID != record.PreviousReleaseID))
+	} else if !errors.Is(err, syscall.ENOENT) {
+		facts.unusable = true
 	}
-	// rollback_blocked is a terminal journal step but remains active evidence:
-	// it deliberately keeps the deployment fenced until an operator proves
-	// recovery. Non-embedded modes must never consume any embedded evidence.
-	activeEmbeddedEvidence := found && (record.Active() || record.Step == embeddedupdate.StepRollbackBlocked)
-	if activeEmbeddedEvidence && mode != "embedded" {
-		return maintenancePlan(out, record.OperationID, string(record.Step),
-			fmt.Sprintf("active embedded update requires BANSOKO_UPDATE_MODE=embedded (current mode %q)", mode))
-	}
-	if found && record.Step == embeddedupdate.StepRollbackBlocked {
-		// A rollback-blocked terminal record is deliberately not a normal
-		// terminal outcome. It is the durable proof that neither the target nor
-		// the fallback was proven safe, so PID1 must keep the instance parked in
-		// maintenance and preserve the open fence for operator recovery.
-		return maintenancePlan(out, record.OperationID, string(record.Step),
-			"rollback is blocked; serving must remain fail-closed")
-	}
-	if found && record.Step == embeddedupdate.StepFenceClosurePending && kind != "server" {
-		return maintenancePlan(out, record.OperationID, string(record.Step),
-			"owner-scoped fence closure must be retried by the server bootstrap consumer")
-	}
-	if found && record.Active() {
-		if kind == "server" && consumeFamilySteps[record.Step] {
-			out.mode = modeConsume
-			out.maintenanceOp = record.OperationID
-			out.maintenanceStep = string(record.Step)
-			out.handoffReleaseID = record.TargetReleaseID
-			if record.Step == embeddedupdate.StepFenceClosurePending && record.FenceClosureTarget != embeddedupdate.StepSucceeded {
-				// Rollback and pre-migration abort remove the rejected target before
-				// their retryable fence closure. Continue from the verified fallback
-				// release instead of handing off to a tree that no longer exists.
-				out.handoffReleaseID = record.PreviousReleaseID
-			}
-			out.reason = "embedded-update handoff consumption (" + string(record.Step) + ")"
-			return out
-		}
-		// Everything else (pre-handoff updater checkpoints on any kind, and
-		// handoff-family steps seen from the migrate job) fails closed into
-		// maintenance so a half-applied state stays observable instead of
-		// being silently skipped or racing the consuming process.
-		return maintenancePlan(out, record.OperationID, string(record.Step),
-			"active update operation needs manual recovery")
-	}
-
-	target, resolveErr := resolveCurrentRelease(kind, updatesRoot)
-	if resolveErr != nil {
+	var target overlayTarget
+	if !facts.pending && !facts.active && !facts.rollbackBlocked && !facts.unusable {
 		pointer := deploymentidentity.ReadCurrentPointer(updatesRoot)
-		if pointer.Presented {
-			return maintenancePlan(out, "", "", fmt.Sprintf("current overlay pointer is not usable: %v", resolveErr))
+		facts.pointerPresent = pointer.Presented
+		if !pointer.Presented && found && record.CurrentReleaseID != "" {
+			facts.evidenceConflict = true
 		}
-		// No pointer is the normal base-image state after a clean rollback or on a
-		// fresh updates volume. A present but broken pointer must never be treated
-		// as an invitation to silently downgrade to base.
-	} else if _, verifyErr := verifyOverlayIdentity(updatesRoot, target.releaseID); verifyErr != nil {
-		return maintenancePlan(out, "", "", fmt.Sprintf("current overlay release identity is not provable: %v", verifyErr))
-	} else {
-		return overlayPlan(out, target.releaseID, target.binaryPath, target.binaryPath,
-			filepath.Join(target.path, "db/migrations"),
-			filepath.Join(target.path, "frontend/dist"))
+		if pointer.Readable {
+			if found && record.CurrentReleaseID != "" && record.CurrentReleaseID != pointer.Token {
+				facts.evidenceConflict = true
+			}
+			target = overlayTarget{releaseID: pointer.Token, path: relDirOf(updatesRoot, pointer.Token)}
+			target.binaryPath = releaseServerBin(target.path)
+			proof, err := verifyOverlayIdentity(updatesRoot, pointer.Token)
+			facts.overlayProven = err == nil
+			facts.overlay = proof.Build
+			facts.compatible = err == nil && compatibleImageAnchor(facts.base, proof.Manifest)
+		}
 	}
-	return basePlan(out, "overlay not usable")
+	decision := arbitrateBaseVsOverlay(facts)
+	out.mode, out.reasonCode = decision.action, decision.reasonCode
+	switch decision.action {
+	case modeBase:
+		return basePlan(out, "no current overlay")
+	case modeOverlay:
+		return overlayPlan(out, target.releaseID, target.binaryPath, target.binaryPath, filepath.Join(target.path, "db/migrations"), filepath.Join(target.path, "frontend/dist"))
+	case modeConsume:
+		out.reason = "embedded-update handoff consumption (" + string(record.Step) + ")"
+		out.handoffReleaseID = record.TargetReleaseID
+		if record.Step == embeddedupdate.StepFenceClosurePending && record.FenceClosureTarget != embeddedupdate.StepSucceeded {
+			out.handoffReleaseID = record.PreviousReleaseID
+		}
+	case modePendingMarker:
+		out.reason = "pending embedded update marker"
+	case modeMaintenance:
+		out.reason = decision.reasonCode
+	}
+	return out
 }
 
 func basePlan(out plan, reason string) plan {
@@ -413,10 +424,36 @@ func basePlan(out plan, reason string) plan {
 	return out
 }
 
-// baseServerBinary resolves the executable for base launches: the container
-// path when it exists (container layout), otherwise the running binary
-// itself. A native single-binary start re-execs itself for the serve/migrate
-// children instead of depending on container paths.
+func compatibleImageAnchor(base buildinfo.BuildInfo, overlay hardeningdomain.ReleaseManifest) bool {
+	if base.Dirty || base.APIVersion == "" || base.APIVersion != overlay.APIContractVersion || base.SchemaVersion == "" {
+		return false
+	}
+	floor, err := overlay.EffectiveMinImageVersion()
+	if err != nil || floor == "" {
+		return false
+	}
+	compatible, err := updateapplication.ImageCompatibilityAtLeast(base.BaseCompatibilityVersion, floor)
+	return err == nil && compatible
+}
+
+func readImageAnchor() (buildinfo.BuildInfo, bool) {
+	info, err := os.Lstat(baseServerPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return buildinfo.BuildInfo{}, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, baseServerPath, "version", "--json")
+	cmd.Env = []string{}
+	data, err := cmd.Output()
+	var build buildinfo.BuildInfo
+	if err != nil || json.Unmarshal(data, &build) != nil || build.Version == "" || build.BuildID == "" {
+		return buildinfo.BuildInfo{}, true
+	}
+	return build, true
+}
+
+// baseServerBinary resolves the immutable image binary or the native lifecycle anchor.
 func baseServerBinary() string {
 	if anchor := os.Getenv(nativeAnchorEnv); anchor != "" {
 		return anchor
@@ -475,14 +512,14 @@ type overlayTarget struct {
 // release-id token written by promotion) and locates the corresponding tree
 // under releases/.
 func resolveCurrentRelease(_ string, updatesRoot string) (overlayTarget, error) {
-	raw, err := os.ReadFile(filepath.Join(updatesRoot, currentPointerName))
-	if err != nil {
-		return overlayTarget{}, fmt.Errorf("read current pointer: %w", err)
+	pointer := deploymentidentity.ReadCurrentPointer(updatesRoot)
+	if !pointer.Presented {
+		return overlayTarget{}, os.ErrNotExist
 	}
-	token := strings.TrimSpace(string(raw))
-	if !validReleaseToken(token) {
-		return overlayTarget{}, fmt.Errorf("current pointer carries an invalid release token %q", token)
+	if !pointer.Readable {
+		return overlayTarget{}, deploymentidentity.ErrPointerCorrupt
 	}
+	token := pointer.Token
 	releaseDir := filepath.Join(updatesRoot, releasesDirName, token)
 	info, statErr := os.Stat(releaseDir)
 	if statErr != nil || !info.IsDir() {
@@ -590,7 +627,7 @@ func run(kind string) int {
 	if code, handedOff := handoffUnifiedBootstrap(chosen, updatesRoot); handedOff {
 		return code
 	}
-	if kind == "server" && chosen.mode != modePendingMarker {
+	if kind == "server" && (chosen.mode == modeBase || chosen.mode == modeOverlay) {
 		if err := discardPreMarkerWork(updatesRoot); err != nil {
 			logf("MAINTENANCE fail-closed: pre-marker workspace cleanup failed: %v", err)
 			blockForever()
@@ -657,17 +694,12 @@ func launchPlan(chosen plan, updatesRoot string) int {
 			pairs[key] = value
 		}
 	default:
-		// Embedded deployments verify the running tree against the update
-		// chain, so a base launch carries the builder-injected immutable image
-		// digest. A manual deployment pulled by tag has no digest to prove:
-		// no identity facts are injected and readiness reports the identity as
-		// not provided instead of unready.
-		if updateMode() == "embedded" {
-			for key, value := range deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "") {
-				pairs[key] = value
-			}
+		for key, value := range deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "") {
+			pairs[key] = value
 		}
 	}
+	pairs[deploymentidentity.EnvSelectionReasonCode] = chosen.reasonCode
+	pairs[deploymentidentity.EnvSelectionReason] = chosen.reason
 	if chosen.kind == "server" {
 		if chosen.migratePath == "" {
 			logf("MAINTENANCE fail-closed: the selected %s tree has no migration binary", chosen.mode)

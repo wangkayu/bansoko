@@ -6,6 +6,8 @@ import (
 	"time"
 
 	outboundpersistence "bansoko/internal/provider/outbound/persistence"
+	"bansoko/internal/runtime/buildinfo"
+	"bansoko/internal/runtime/deploymentidentity"
 	"bansoko/internal/runtime/readiness"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -55,6 +57,21 @@ func (s *Server) GetSystemUpstreamHealth(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, r.Context(), http.StatusOK, result)
 }
 
+func deploymentBuild(build *buildinfo.BuildInfo) *generated.DeploymentBuild {
+	if build == nil || build.BuildID == "" || build.Version == "" {
+		return nil
+	}
+	out := &generated.DeploymentBuild{BuildId: build.BuildID, Version: build.Version}
+	lane := generated.DeploymentBuildLane(buildinfo.Unordered)
+	if build.Ordered() {
+		lane = generated.DeploymentBuildLane(build.Lane)
+		out.ReleaseSequence = &build.ReleaseSequence
+		out.Series = &build.Series
+	}
+	out.Lane = &lane
+	return out
+}
+
 // GetLivez proves the process and HTTP runtime are alive. It never touches the
 // database, providers or qBittorrent, so a business dependency failure is not
 // misreported as a dead process. Admission decisions use GetReadyz.
@@ -94,7 +111,22 @@ func toGeneratedReadiness(report readiness.Report) generated.ReadinessReport {
 		CheckedAt: report.CheckedAt,
 	}
 	if identity := report.DeploymentIdentity; identity != nil {
-		result.DeploymentIdentity = &generated.DeploymentIdentity{}
+		result.DeploymentIdentity = &generated.DeploymentIdentity{
+			BaseBuild: deploymentBuild(identity.BaseBuild), SelectedBuild: deploymentBuild(identity.SelectedBuild),
+		}
+		if identity.Anchor == deploymentidentity.AnchorDocker || identity.Anchor == deploymentidentity.AnchorNative {
+			value := generated.DeploymentIdentityAnchor(identity.Anchor)
+			result.DeploymentIdentity.Anchor = &value
+		}
+		if value := identity.SelectionReasonCode; value != "" {
+			result.DeploymentIdentity.SelectionReasonCode = &value
+		}
+		if value := identity.SelectionReason; value != "" {
+			result.DeploymentIdentity.SelectionReason = &value
+		}
+		if value := identity.TakeoverOperationID; value != "" {
+			result.DeploymentIdentity.TakeoverOperationId = &value
+		}
 		if value := identity.BaseImageDigest; value != "" {
 			result.DeploymentIdentity.BaseImageDigest = &value
 		}

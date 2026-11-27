@@ -763,9 +763,11 @@ func TestUpdatesRootUsesConfiguredRootOrDefault(t *testing.T) {
 	}
 }
 
+var validPlanMarker = []byte(`{"operation_id":"update-1","release_id":"release-1","manifest_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","release_sequence":1,"previous_release_id":""}`)
+
 func TestPlanLaunchSelectsPendingMarkerOnlyForEmbeddedServer(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, pendingMarkerName), []byte("{}"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, pendingMarkerName), validPlanMarker, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("BANSOKO_UPDATE_MODE", "embedded")

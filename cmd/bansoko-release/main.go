@@ -11,6 +11,7 @@ import (
 
 	hardeningdomain "bansoko/internal/hardening/domain"
 	"bansoko/internal/releasecontract"
+	"bansoko/internal/runtime/buildinfo"
 	updateapplication "bansoko/internal/update/application"
 	updatechannel "bansoko/internal/update/channel"
 	"bansoko/internal/update/packagemaker"
@@ -71,11 +72,21 @@ func packPayload(args []string) error {
 	version := flags.String("version", "", "release version")
 	sourceCommit := flags.String("source-commit", "", "source commit")
 	buildID := flags.String("build-id", "", "build id recorded in release-metadata.json")
+	series := flags.String("series", "", "release sequence domain")
+	lane := flags.String("lane", "", "release lane")
+	sequence := flags.String("release-sequence", "", "positive release sequence")
 	targetSchemaVersion := flags.String("target-schema-version", "", "target schema migration version")
 	platform := flags.String("platform", "", "target platform (GOOS)")
 	architecture := flags.String("architecture", "", "target architecture (GOARCH)")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	order, err := buildinfo.ParseOrder(*series, *lane, *sequence)
+	if err != nil {
+		return err
+	}
+	if !order.Ordered() {
+		order = buildinfo.Order{}
 	}
 	result, err := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
 		ServerBinaryPath: *serverBinary,
@@ -85,6 +96,7 @@ func packPayload(args []string) error {
 		OutputPath:       *output,
 		SourceDateEpoch:  *sourceDateEpoch,
 		Metadata: packagemaker.Metadata{
+			Order:               order,
 			FormatVersion:       *formatVersion,
 			ReleaseID:           *releaseID,
 			Version:             *version,

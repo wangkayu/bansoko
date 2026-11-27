@@ -7,10 +7,11 @@
   "required": ["schema_version", "release_sequence", "release_id", "version", "channel", "published_at", "source_commit", "api_contract_version", "target_migration_version", "required_downtime", "backup_required", "rollback_class", "migrations", "images", "compose_ref", "frontend_ref", "artifacts", "sbom_ref", "provenance_ref", "artifact_digest", "immutable", "embedded_update"],
   "properties": {
     "schema_version": {"const": "release-manifest-1"},
+    "series": {"const": "bansoko-ci-v1"},
     "release_sequence": {"type": "integer", "minimum": 1},
     "release_id": {"type": "string", "minLength": 1},
     "version": {"type": "string", "minLength": 1},
-    "channel": {"enum": ["stable", "beta", "nightly"]},
+    "channel": {"enum": ["stable", "test"]},
     "published_at": {"type": "string", "format": "date-time"},
     "source_commit": {"type": "string", "minLength": 7},
     "api_contract_version": {"type": "string", "minLength": 1},

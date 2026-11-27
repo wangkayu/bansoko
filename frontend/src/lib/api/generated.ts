@@ -3545,7 +3545,23 @@ export interface components {
              *      */
             deployment_identity?: components["schemas"]["DeploymentIdentity"] | null;
         };
+        DeploymentBuild: {
+            version: string;
+            build_id: string;
+            series?: string;
+            /** @enum {string} */
+            lane?: "stable" | "test" | "unordered";
+            /** Format: int64 */
+            release_sequence?: number;
+        };
         DeploymentIdentity: {
+            selected_build?: components["schemas"]["DeploymentBuild"];
+            base_build?: components["schemas"]["DeploymentBuild"];
+            /** @enum {string} */
+            anchor?: "docker" | "native";
+            selection_reason_code?: string;
+            selection_reason?: string;
+            takeover_operation_id?: string;
             /** @description Immutable base image digest layer, when the deployment provides it. */
             base_image_digest?: string;
             /** @description Overlay release id this process serves (empty for base launches). */
@@ -4992,6 +5008,15 @@ export interface components {
             reason: string;
         };
         EmbeddedUpdateStatus: {
+            /** @enum {string} */
+            operation_kind?: "overlay_update" | "base_takeover";
+            /** @enum {string} */
+            target_source?: "base" | "overlay";
+            /** @enum {string} */
+            target_lane?: "stable" | "test";
+            /** Format: int64 */
+            target_sequence?: number;
+            previous_release_id?: string;
             operation_id: string;
             /** @description Update channel that admitted the operation (embedded). */
             channel: string;

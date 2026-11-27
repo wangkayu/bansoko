@@ -106,6 +106,10 @@ func main() {
 		os.Exit(2)
 	}
 	mode, args := runtimeCommand(argv)
+	if err := buildinfo.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	switch mode {
 	case "start":
 		// Native lifecycle: the unified PID1 flow without container privilege
@@ -123,7 +127,7 @@ func main() {
 	case "reset-password":
 		os.Exit(bootstrapcmd.ResetPassword(args, os.Stdin, os.Stdout, os.Stderr))
 	case "version":
-		os.Exit(runVersion(os.Stdout))
+		os.Exit(runVersion(os.Stdout, args...))
 	case "doctor":
 		os.Exit(runDoctor(args, os.Stdout))
 	default:
@@ -777,6 +781,7 @@ func runServe(args []string) {
 			ChannelBase:      os.Getenv(updateapplication.EnvChannelBase),
 			Production:       cfg.Environment == "production",
 			UpdateConnection: configService,
+			RunningOrder:     buildinfo.Current().Order,
 			BuildReleaseID:   buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
 			UpdateMode:     cfg.UpdateMode,

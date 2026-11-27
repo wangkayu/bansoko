@@ -24,7 +24,7 @@ mutants = {
   'test preflight after the image' => ->(w) { s=w['jobs']['test-release']['steps']; s[3],s[4]=s[4],s[3] },
   'test preflight dropped' => ->(w) { w['jobs']['test-release']['steps'].delete_at(3) },
   'hub token reaches the test preflight' => ->(w) { w['jobs']['test-release']['steps'][3]['env']['DOCKERHUB_TOKEN'] = '${{ secrets.DOCKERHUB_TOKEN }}' },
-  'channel token reaches the test image' => ->(w) { w['jobs']['test-release']['steps'][4]['env']['BANSOKO_RELEASE_GITHUB_TOKEN'] = '${{ secrets.GITHUB_TOKEN }}' },
+  'channel token reaches the test image' => ->(w) { w['jobs']['test-release']['steps'][5]['env']['BANSOKO_RELEASE_GITHUB_TOKEN'] = '${{ secrets.GITHUB_TOKEN }}' },
   'test lane loses the protected ref proof' => ->(w) { w['jobs']['test-release']['steps'][5]['env'].delete('BANSOKO_RELEASE_REF_PROTECTED') },
   'test lane loses its results binding' => ->(w) { w['jobs']['test-release']['steps'][6]['env'].delete('BANSOKO_REQUIRED_RESULTS') },
   'test lane write scope removed' => ->(w) { w['jobs']['test-release'].delete('permissions') },
@@ -44,7 +44,7 @@ mutants = {
   'echo SHA' => ->(w) { w['jobs']['release']['steps'][1]['run'] = 'echo test HEAD' },
   'echo effect' => ->(w) { w['jobs']['release']['steps'][4]['run'] = 'echo ci-release.py image' },
   'missing results' => ->(w) { w['jobs']['release']['steps'][4]['env'].delete('BANSOKO_REQUIRED_RESULTS') },
-  'early channel token' => ->(w) { w['jobs']['release']['steps'][4]['env']['BANSOKO_RELEASE_GITHUB_TOKEN'] = '${{ secrets.KEY }}' },
+  'early channel token' => ->(w) { w['jobs']['release']['steps'][5]['env']['BANSOKO_RELEASE_GITHUB_TOKEN'] = '${{ secrets.KEY }}' },
   'effect reversed' => ->(w) { s=w['jobs']['release']['steps']; s[5],s[6]=s[6],s[5] },
   'preflight after the image' => ->(w) { s=w['jobs']['release']['steps']; s[3],s[4]=s[4],s[3] },
   'preflight dropped' => ->(w) { w['jobs']['release']['steps'].delete_at(3) },
@@ -72,14 +72,15 @@ mutants = {
   'latest skips trust' => ->(w) { w['jobs']['docker-hub-release']['steps'].delete_at(2) },
   'latest pushes the test tag' => ->(w) { w['jobs']['docker-hub-release']['steps'][3]['run'] = 'bash scripts/ci/ci-dockerhub-publish.sh test' },
   'shard index drift' => ->(w) { w['jobs']['postgres-integration-shard-2']['steps'].last['env']['BANSOKO_TEST_PG_SHARD'] = '1/3' },
-  'publish step loses the github token' => ->(w) { w['jobs']['release']['steps'][5]['env'].delete('BANSOKO_RELEASE_GITHUB_TOKEN') },
-  'channel step loses the github token' => ->(w) { w['jobs']['release']['steps'][6]['env'].delete('BANSOKO_RELEASE_GITHUB_TOKEN') },
-  'registry token reaches the channel step' => ->(w) { w['jobs']['release']['steps'][6]['env']['DOCKERHUB_TOKEN'] = '${{ secrets.DOCKERHUB_TOKEN }}' },
+  'publish step loses the github token' => ->(w) { w['jobs']['release']['steps'][6]['env'].delete('BANSOKO_RELEASE_GITHUB_TOKEN') },
+  'publish step loses the frozen identity' => ->(w) { w['jobs']['release']['steps'][6]['env'].delete('BANSOKO_CI_RELEASE_IDENTITY') },
+  'channel step loses the github token' => ->(w) { w['jobs']['release']['steps'][7]['env'].delete('BANSOKO_RELEASE_GITHUB_TOKEN') },
+  'registry token reaches the channel step' => ->(w) { w['jobs']['release']['steps'][7]['env']['DOCKERHUB_TOKEN'] = '${{ secrets.DOCKERHUB_TOKEN }}' },
   'write scope removed' => ->(w) { w['jobs']['release'].delete('permissions') },
   'write scope widened to the workflow' => ->(w) { w['jobs']['release'].delete('permissions'); w['permissions'] = {'contents' => 'write'} },
   'write scope handed to a gate' => ->(w) { w['jobs']['contract-boundary']['permissions'] = {'contents' => 'write'} },
   'write scope handed to the latest image' => ->(w) { w['jobs']['docker-hub-release']['permissions'] = {'contents' => 'write'} },
-  'write token reaches the image step' => ->(w) { w['jobs']['release']['steps'][4]['env']['BANSOKO_RELEASE_GITHUB_TOKEN'] = '${{ secrets.GITHUB_TOKEN }}' }
+  'write token reaches the image step' => ->(w) { w['jobs']['release']['steps'][5]['env']['BANSOKO_RELEASE_GITHUB_TOKEN'] = '${{ secrets.GITHUB_TOKEN }}' }
 }
 Dir.mktmpdir('release-dag-mutation') do |dir|
   mutants.each_with_index do |(name, mutate), i|

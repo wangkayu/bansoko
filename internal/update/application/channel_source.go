@@ -183,6 +183,13 @@ func (r *channelResolver) resolve(ctx context.Context) (resolution, error) {
 		}
 		return resolution{}, business
 	}
+	manifestLane := string(manifest.Channel)
+	if manifest.Series == "" && manifestLane == "nightly" {
+		manifestLane = "test"
+	}
+	if document.Channel != manifestLane {
+		return resolution{}, &apperrors.Business{Status: 503, Code: "UPDATE_CHANNEL_MISMATCH", Message: "The discovery document and manifest belong to different release lanes."}
+	}
 	if err := document.Matches(manifest.ReleaseID, manifest.Version, digest, manifest.ReleaseSequence); err != nil {
 		return resolution{}, &apperrors.Business{
 			Status:  503,

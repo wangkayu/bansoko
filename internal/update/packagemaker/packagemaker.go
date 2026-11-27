@@ -26,6 +26,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"bansoko/internal/runtime/buildinfo"
 )
 
 const (
@@ -51,6 +53,7 @@ type FileRecord struct {
 // fields plus the per-file manifest; the archive's own digest is computed by
 // the caller after packing and never appears inside the archive.
 type Metadata struct {
+	buildinfo.Order
 	FormatVersion       string       `json:"format_version"`
 	ReleaseID           string       `json:"release_id"`
 	Version             string       `json:"version"`
@@ -93,6 +96,9 @@ type plannedEntry struct {
 // Options.OutputPath and returns the bare-hex sha256 digest of the compressed
 // bytes with its size.
 func BuildEmbeddedPayload(opts Options) (Result, error) {
+	if opts.Metadata.Order != (buildinfo.Order{}) && !opts.Metadata.Order.Ordered() {
+		return Result{}, fmt.Errorf("packagemaker: incomplete or invalid release ordering")
+	}
 	if opts.SourceDateEpoch <= 0 {
 		return Result{}, fmt.Errorf("packagemaker: positive source date epoch is required")
 	}

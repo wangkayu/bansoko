@@ -16,7 +16,7 @@ func AdmitInput(value generated.UpdateAdmitInput) updateapplication.AdmitInput {
 
 // Status projects an application update status onto the HTTP response shape.
 func Status(value updateapplication.Status) generated.EmbeddedUpdateStatus {
-	return generated.EmbeddedUpdateStatus{
+	result := generated.EmbeddedUpdateStatus{
 		OperationId:         value.OperationID,
 		Channel:             value.Channel,
 		Step:                value.Step,
@@ -27,6 +27,21 @@ func Status(value updateapplication.Status) generated.EmbeddedUpdateStatus {
 		CreatedAt:           value.CreatedAt,
 		UpdatedAt:           value.UpdatedAt,
 	}
+	if value.OperationID != "" {
+		kind, source := generated.EmbeddedUpdateStatusOperationKind("overlay_update"), generated.EmbeddedUpdateStatusTargetSource("overlay")
+		result.OperationKind, result.TargetSource = &kind, &source
+	}
+	if value.TargetLane == "stable" || value.TargetLane == "test" {
+		lane := generated.EmbeddedUpdateStatusTargetLane(value.TargetLane)
+		result.TargetLane = &lane
+	}
+	if value.TargetSequence > 0 {
+		result.TargetSequence = &value.TargetSequence
+	}
+	if value.PreviousReleaseID != "" {
+		result.PreviousReleaseId = &value.PreviousReleaseID
+	}
+	return result
 }
 
 // Check projects the complete application check result at the HTTP boundary.

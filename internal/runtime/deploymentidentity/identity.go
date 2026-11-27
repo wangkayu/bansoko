@@ -11,12 +11,16 @@
 package deploymentidentity
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
+	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/configdir"
 )
 
@@ -44,6 +48,10 @@ const (
 	EnvAnchorKind = "BANSOKO_DEPLOYMENT_ANCHOR"
 	// AnchorNative marks a native (non-container) base anchor.
 	AnchorNative            = "native"
+	AnchorDocker            = "docker"
+	EnvBaseBuild            = "BANSOKO_DEPLOYMENT_BASE_BUILD"
+	EnvSelectionReasonCode  = "BANSOKO_DEPLOYMENT_SELECTION_REASON_CODE"
+	EnvSelectionReason      = "BANSOKO_DEPLOYMENT_SELECTION_REASON"
 	DefaultUpdatesRoot      = "/config/updates"
 	currentPointerFileName  = "current"
 	payloadDigestHexPattern = `^[0-9a-f]{64}$`
@@ -65,11 +73,16 @@ var (
 // Identity is the three-layer deployment identity snapshot. Fields stay empty
 // when unknown; a base launch legitimately carries no payload fields.
 type Identity struct {
-	BaseImageDigest   string `json:"base_image_digest,omitempty"`
-	SelectedReleaseID string `json:"selected_release_id,omitempty"`
-	SelectedSource    string `json:"selected_source,omitempty"` // "base" | "overlay"
-	PayloadDigest     string `json:"payload_digest,omitempty"`
-	UpdateOperationID string `json:"update_operation_id,omitempty"`
+	SelectedBuild       *buildinfo.BuildInfo `json:"selected_build,omitempty"`
+	BaseBuild           *buildinfo.BuildInfo `json:"base_build,omitempty"`
+	SelectionReasonCode string               `json:"selection_reason_code,omitempty"`
+	SelectionReason     string               `json:"selection_reason,omitempty"`
+	TakeoverOperationID string               `json:"takeover_operation_id,omitempty"`
+	BaseImageDigest     string               `json:"base_image_digest,omitempty"`
+	SelectedReleaseID   string               `json:"selected_release_id,omitempty"`
+	SelectedSource      string               `json:"selected_source,omitempty"` // "base" | "overlay"
+	PayloadDigest       string               `json:"payload_digest,omitempty"`
+	UpdateOperationID   string               `json:"update_operation_id,omitempty"`
 	// ProcessBuildID is the BuildInfo build id of the running binary. The
 	// bootstrap never injects it; the server fills it when reporting so the
 	// identity view stays the single combined surface.
@@ -86,6 +99,12 @@ type Identity struct {
 // FromEnv reads the identity from environment lookup (injectable for tests).
 func FromEnv(getenv func(string) string) Identity {
 	trim := func(key string) string { return strings.TrimSpace(getenv(key)) }
+	var baseBuild *buildinfo.BuildInfo
+	if raw := trim(EnvBaseBuild); raw != "" {
+		if json.Unmarshal([]byte(raw), &baseBuild) != nil {
+			baseBuild = nil
+		}
+	}
 	return Identity{
 		BaseImageDigest:        trim(EnvBaseImageDigest),
 		SelectedReleaseID:      trim(EnvSelectedReleaseID),
@@ -94,6 +113,9 @@ func FromEnv(getenv func(string) string) Identity {
 		UpdateOperationID:      trim(EnvUpdateOperationID),
 		ExpectedProcessBuildID: trim(EnvExpectedProcessBuild),
 		Anchor:                 trim(EnvAnchorKind),
+		BaseBuild:              baseBuild,
+		SelectionReasonCode:    trim(EnvSelectionReasonCode),
+		SelectionReason:        trim(EnvSelectionReason),
 	}
 }
 
@@ -163,14 +185,14 @@ func (i Identity) Validate(pointer *PointerState) error {
 		return ErrSourceInvalid
 	}
 	if i.SelectedSource == SourceBase {
-		if i.BaseImageDigest == "" && i.Anchor != AnchorNative {
+		if i.BaseImageDigest == "" && i.Anchor != AnchorNative && i.Anchor != AnchorDocker {
 			return ErrBaseImageRequired
 		}
 		if i.SelectedReleaseID != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" {
 			return ErrPayloadOnBase
 		}
 	} else {
-		if i.BaseImageDigest == "" && i.Anchor != AnchorNative {
+		if i.BaseImageDigest == "" && i.Anchor != AnchorNative && i.Anchor != AnchorDocker {
 			return ErrBaseImageRequired
 		}
 		if i.SelectedReleaseID == "" {
@@ -227,12 +249,28 @@ func (i Identity) ValidateForRuntime(pointer *PointerState, requireSource bool) 
 // ReadCurrentPointer performs one live read of the updates-volume current
 // pointer used for the consistency check in readyz.
 func ReadCurrentPointer(updatesRoot string) PointerState {
-	raw, err := os.ReadFile(filepath.Join(updatesRoot, currentPointerFileName))
+	const maxPointerBytes = 256
+	corrupt := PointerState{Presented: true, Corrupt: true}
+	path := filepath.Join(updatesRoot, currentPointerFileName)
+	info, err := os.Lstat(path)
+	if errors.Is(err, syscall.ENOENT) {
+		return PointerState{}
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxPointerBytes {
+		return corrupt
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return PointerState{Readable: false, Presented: false}
-		}
-		return PointerState{Readable: false, Presented: true, Corrupt: true}
+		return corrupt
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return corrupt
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxPointerBytes+1))
+	if err != nil || len(raw) > maxPointerBytes {
+		return corrupt
 	}
 	token := strings.TrimSpace(string(raw))
 	if token == "" || !releaseIDRE.MatchString(token) {

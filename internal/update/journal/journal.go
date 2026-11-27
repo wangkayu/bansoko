@@ -341,6 +341,7 @@ type Record struct {
 	TargetVersion         string `json:"target_version"`
 	TargetSchemaVersion   string `json:"target_schema_version"`
 	TargetReleaseSequence int64  `json:"target_release_sequence,omitempty"`
+	TargetLane            string `json:"target_lane,omitempty"`
 	PayloadDigest         string `json:"payload_digest,omitempty"`
 	ManifestDigest        string `json:"manifest_digest,omitempty"`
 	// ManifestPath and ManifestSize locate the admission-time copy of the
@@ -1197,7 +1198,7 @@ func requireRealDir(path string) error {
 // from the handle itself (not a raceable stat on the path), and the data is
 // capped so a hostile or corrupt file cannot allocate without bound.
 func readFileBounded(path string, limit int64) ([]byte, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}

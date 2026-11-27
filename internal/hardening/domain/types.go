@@ -16,6 +16,7 @@ const (
 	ReleaseChannelStable  ReleaseChannel = "stable"
 	ReleaseChannelBeta    ReleaseChannel = "beta"
 	ReleaseChannelNightly ReleaseChannel = "nightly"
+	ReleaseChannelTest    ReleaseChannel = "test"
 )
 
 type RollbackClass string
@@ -91,6 +92,7 @@ func (s *EmbeddedUpdateSegment) ValidateTarget(platform, architecture string) er
 }
 
 type ReleaseManifest struct {
+	Series                 string         `json:"series,omitempty"`
 	SchemaVersion          string         `json:"schema_version"`
 	ReleaseSequence        int64          `json:"release_sequence,omitempty"`
 	ReleaseID              string         `json:"release_id,omitempty"`
@@ -154,7 +156,11 @@ func (m ReleaseManifest) ValidateForRelease() error {
 		return errors.New("release identity fields are required")
 	}
 	switch m.Channel {
-	case ReleaseChannelStable, ReleaseChannelBeta, ReleaseChannelNightly:
+	case ReleaseChannelStable, ReleaseChannelTest:
+	case ReleaseChannelBeta, ReleaseChannelNightly:
+		if m.Series != "" {
+			return fmt.Errorf("unsupported ordered release channel %q", m.Channel)
+		}
 	default:
 		return fmt.Errorf("unsupported release channel %q", m.Channel)
 	}

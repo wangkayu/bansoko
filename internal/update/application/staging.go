@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/update/packagemaker"
 )
 
@@ -196,6 +197,9 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 			return packagemaker.Metadata{}, errors.New("release metadata contains trailing JSON data")
 		}
 		return packagemaker.Metadata{}, fmt.Errorf("decode trailing release metadata: %w", err)
+	}
+	if meta.Order != (buildinfo.Order{}) && !meta.Order.Ordered() {
+		return packagemaker.Metadata{}, errors.New("release metadata ordering is invalid")
 	}
 	if strings.TrimSpace(meta.ReleaseID) == "" || len(meta.Files) == 0 {
 		return packagemaker.Metadata{}, errors.New("release metadata lacks identity or file records")
@@ -385,6 +389,28 @@ func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker
 	if archiveMeta.ReleaseID != manifest.ReleaseID || archiveMeta.Version != manifest.Version ||
 		strings.TrimSpace(archiveMeta.BuildID) == "" || archiveMeta.TargetSchemaVersion != manifest.TargetMigrationVersion {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata does not match the release identity")
+	}
+	if manifest.Series != "" || archiveMeta.Order.Ordered() {
+		order := buildinfo.Order{Series: manifest.Series, Lane: string(manifest.Channel), ReleaseSequence: manifest.ReleaseSequence}
+		if !order.Ordered() || archiveMeta.Order != order || archiveMeta.BuildID != manifest.ReleaseID ||
+			archiveMeta.SourceCommit != manifest.SourceCommit || target.ReleaseSequence != order.ReleaseSequence ||
+			target.TargetReleaseID != archiveMeta.ReleaseID || target.TargetVersion != archiveMeta.Version || target.TargetSchemaVersion != archiveMeta.TargetSchemaVersion {
+			return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("ordered release metadata differs from the manifest identity")
+		}
+		matched := false
+		for _, artifact := range manifest.Artifacts {
+			if artifact.Platform != archiveMeta.Platform || artifact.Architecture != archiveMeta.Architecture {
+				continue
+			}
+			for _, file := range archiveMeta.Files {
+				if file.Path == packagemaker.ServerEntryPath && file.SHA256 == artifact.Digest && file.Size == artifact.Size && file.SHA256 == manifest.ArtifactDigest {
+					matched = true
+				}
+			}
+		}
+		if !matched {
+			return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("payload server differs from the manifest artifact")
+		}
 	}
 	return currentMeta, manifest, nil
 }

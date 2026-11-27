@@ -608,6 +608,19 @@ const (
 	CreateOwnerInputSessionTransportToken  CreateOwnerInputSessionTransport = "token"
 )
 
+// Defines values for DeploymentBuildLane.
+const (
+	DeploymentBuildLaneStable    DeploymentBuildLane = "stable"
+	DeploymentBuildLaneTest      DeploymentBuildLane = "test"
+	DeploymentBuildLaneUnordered DeploymentBuildLane = "unordered"
+)
+
+// Defines values for DeploymentIdentityAnchor.
+const (
+	DeploymentIdentityAnchorDocker DeploymentIdentityAnchor = "docker"
+	DeploymentIdentityAnchorNative DeploymentIdentityAnchor = "native"
+)
+
 // Defines values for DeploymentIdentitySelectedSource.
 const (
 	DeploymentIdentitySelectedSourceBase    DeploymentIdentitySelectedSource = "base"
@@ -735,6 +748,24 @@ const (
 	DownloadTaskStateQueued       DownloadTaskState = "queued"
 	DownloadTaskStateSubmitting   DownloadTaskState = "submitting"
 	DownloadTaskStateWaitingRetry DownloadTaskState = "waiting_retry"
+)
+
+// Defines values for EmbeddedUpdateStatusOperationKind.
+const (
+	EmbeddedUpdateStatusOperationKindBaseTakeover  EmbeddedUpdateStatusOperationKind = "base_takeover"
+	EmbeddedUpdateStatusOperationKindOverlayUpdate EmbeddedUpdateStatusOperationKind = "overlay_update"
+)
+
+// Defines values for EmbeddedUpdateStatusTargetLane.
+const (
+	EmbeddedUpdateStatusTargetLaneStable EmbeddedUpdateStatusTargetLane = "stable"
+	EmbeddedUpdateStatusTargetLaneTest   EmbeddedUpdateStatusTargetLane = "test"
+)
+
+// Defines values for EmbeddedUpdateStatusTargetSource.
+const (
+	EmbeddedUpdateStatusTargetSourceBase    EmbeddedUpdateStatusTargetSource = "base"
+	EmbeddedUpdateStatusTargetSourceOverlay EmbeddedUpdateStatusTargetSource = "overlay"
 )
 
 // Defines values for EventActionAttemptState.
@@ -4619,8 +4650,23 @@ type DeletePlacementRequest struct {
 	PlacementVersion int64 `json:"placement_version"`
 }
 
+// DeploymentBuild defines model for DeploymentBuild.
+type DeploymentBuild struct {
+	BuildId         string               `json:"build_id"`
+	Lane            *DeploymentBuildLane `json:"lane,omitempty"`
+	ReleaseSequence *int64               `json:"release_sequence,omitempty"`
+	Series          *string              `json:"series,omitempty"`
+	Version         string               `json:"version"`
+}
+
+// DeploymentBuildLane defines model for DeploymentBuild.Lane.
+type DeploymentBuildLane string
+
 // DeploymentIdentity defines model for DeploymentIdentity.
 type DeploymentIdentity struct {
+	Anchor    *DeploymentIdentityAnchor `json:"anchor,omitempty"`
+	BaseBuild *DeploymentBuild          `json:"base_build,omitempty"`
+
 	// BaseImageDigest Immutable base image digest layer, when the deployment provides it.
 	BaseImageDigest *string `json:"base_image_digest,omitempty"`
 
@@ -4628,17 +4674,24 @@ type DeploymentIdentity struct {
 	PayloadDigest *string `json:"payload_digest,omitempty"`
 
 	// ProcessBuildId Build id of the running server binary (the BuildInfo layer, filled by the server).
-	ProcessBuildId *string `json:"process_build_id,omitempty"`
+	ProcessBuildId *string          `json:"process_build_id,omitempty"`
+	SelectedBuild  *DeploymentBuild `json:"selected_build,omitempty"`
 
 	// SelectedReleaseId Overlay release id this process serves (empty for base launches).
 	SelectedReleaseId *string `json:"selected_release_id,omitempty"`
 
 	// SelectedSource Whether the served tree comes from the base image or the updates-volume overlay.
-	SelectedSource *DeploymentIdentitySelectedSource `json:"selected_source,omitempty"`
+	SelectedSource      *DeploymentIdentitySelectedSource `json:"selected_source,omitempty"`
+	SelectionReason     *string                           `json:"selection_reason,omitempty"`
+	SelectionReasonCode *string                           `json:"selection_reason_code,omitempty"`
+	TakeoverOperationId *string                           `json:"takeover_operation_id,omitempty"`
 
 	// UpdateOperationId Durable update operation that produced this selection (empty when not provable).
 	UpdateOperationId *string `json:"update_operation_id,omitempty"`
 }
+
+// DeploymentIdentityAnchor defines model for DeploymentIdentity.Anchor.
+type DeploymentIdentityAnchor string
 
 // DeploymentIdentitySelectedSource Whether the served tree comes from the base image or the updates-volume overlay.
 type DeploymentIdentitySelectedSource string
@@ -4890,18 +4943,32 @@ type EffectiveRules struct {
 // EmbeddedUpdateStatus defines model for EmbeddedUpdateStatus.
 type EmbeddedUpdateStatus struct {
 	// Channel Update channel that admitted the operation (embedded).
-	Channel     string    `json:"channel"`
-	CreatedAt   time.Time `json:"created_at"`
-	LastError   *string   `json:"last_error,omitempty"`
-	OperationId string    `json:"operation_id"`
+	Channel           string                             `json:"channel"`
+	CreatedAt         time.Time                          `json:"created_at"`
+	LastError         *string                            `json:"last_error,omitempty"`
+	OperationId       string                             `json:"operation_id"`
+	OperationKind     *EmbeddedUpdateStatusOperationKind `json:"operation_kind,omitempty"`
+	PreviousReleaseId *string                            `json:"previous_release_id,omitempty"`
 
 	// Step Durable step of the embedded update state machine.
-	Step                string    `json:"step"`
-	TargetReleaseId     string    `json:"target_release_id"`
-	TargetSchemaVersion *string   `json:"target_schema_version,omitempty"`
-	TargetVersion       *string   `json:"target_version,omitempty"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	Step                string                            `json:"step"`
+	TargetLane          *EmbeddedUpdateStatusTargetLane   `json:"target_lane,omitempty"`
+	TargetReleaseId     string                            `json:"target_release_id"`
+	TargetSchemaVersion *string                           `json:"target_schema_version,omitempty"`
+	TargetSequence      *int64                            `json:"target_sequence,omitempty"`
+	TargetSource        *EmbeddedUpdateStatusTargetSource `json:"target_source,omitempty"`
+	TargetVersion       *string                           `json:"target_version,omitempty"`
+	UpdatedAt           time.Time                         `json:"updated_at"`
 }
+
+// EmbeddedUpdateStatusOperationKind defines model for EmbeddedUpdateStatus.OperationKind.
+type EmbeddedUpdateStatusOperationKind string
+
+// EmbeddedUpdateStatusTargetLane defines model for EmbeddedUpdateStatus.TargetLane.
+type EmbeddedUpdateStatusTargetLane string
+
+// EmbeddedUpdateStatusTargetSource defines model for EmbeddedUpdateStatus.TargetSource.
+type EmbeddedUpdateStatusTargetSource string
 
 // EpisodeParseResult defines model for EpisodeParseResult.
 type EpisodeParseResult struct {

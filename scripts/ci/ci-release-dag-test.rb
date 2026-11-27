@@ -73,6 +73,7 @@ end
 # lane's channel branch, so the mode names are pinned per job.
 lanes = {
   'release' => [TAG_ONLY, {
+    'freeze release identity' => ['freeze', []],
     'release notes and version preflight' => ['preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
     'build image' => ['image', %w[DOCKERHUB_TOKEN]],
     'publish immutable package' => ['publish', %w[BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
@@ -80,6 +81,7 @@ lanes = {
     'create GitHub Release' => ['github-release', %w[GH_TOKEN]]
   }],
   'test-release' => [MAIN_ONLY, {
+    'freeze release identity' => ['test-freeze', []],
     'test version preflight' => ['test-preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
     'build test image' => ['test-image', %w[DOCKERHUB_TOKEN]],
     'publish immutable test package' => ['test-publish', %w[BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
@@ -95,6 +97,10 @@ lanes.each do |id, (condition, expected)|
   trust = steps.index { |s| s['run'] == 'python3 scripts/ci/ci-release-trust.py' }
   abort "#{id}: missing platform trust check" unless trust
   abort "#{id}: trust secret drift" unless steps[trust].fetch('env', {}) == { 'BANSOKO_RELEASE_READ_TOKEN' => '${{ secrets.GITHUB_TOKEN }}' }
+  identity_step = steps[trust + 1]
+  abort "#{id}: release identity must be frozen after trust" unless identity_step['id'] == 'release-identity'
+  binding = '${{ steps.release-identity.outputs.identity }}'
+  abort "#{id}: identity output binding drift" unless lane.fetch('outputs', {}) == { 'identity' => binding }
   indices = []
   expected.each do |name, (mode, secret_keys)|
     index = steps.index { |s| s['name'] == name }
@@ -105,6 +111,11 @@ lanes.each do |id, (condition, expected)|
     env = s.fetch('env')
     abort "#{id}: needs result binding missing" unless env['BANSOKO_REQUIRED_RESULTS'] == '${{ toJSON(needs) }}'
     abort "#{id}: protected ref binding missing" unless env['BANSOKO_RELEASE_REF_PROTECTED'] == 'true'
+    if mode.end_with?('freeze')
+      abort "#{id}: freeze consumes identity" if env.key?('BANSOKO_CI_RELEASE_IDENTITY')
+    else
+      abort "#{id}: frozen identity binding drift" unless env['BANSOKO_CI_RELEASE_IDENTITY'] == binding
+    end
     actual = env.select { |_k, v| v.to_s.include?('secrets.') }.keys
     abort "#{id}: secret scope mismatch" unless actual.sort == secret_keys.sort
     indices << index
@@ -125,7 +136,7 @@ end
 
 # Docker Hub: main publishes only the test image; a tag publishes `X.Y.Z` and
 # `:latest` only after the release of the same run succeeded.
-{ 'docker-hub' => [MAIN_ONLY, required, 'test'], 'docker-hub-release' => [TAG_ONLY, required + ['release'], 'release'] }.each do |id, (condition, needs, mode)|
+{ 'docker-hub' => [MAIN_ONLY, required + ['test-release'], 'test'], 'docker-hub-release' => [TAG_ONLY, required + ['release'], 'release'] }.each do |id, (condition, needs, mode)|
   hub = jobs.fetch(id)
   abort "#{id}: condition unsafe" unless hub['if'] == condition
   abort "#{id}: dependencies incomplete" unless Array(hub['needs']).sort == needs.sort
@@ -136,6 +147,8 @@ end
     'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', 'python3 scripts/ci/ci-release-trust.py', "bash scripts/ci/ci-dockerhub-publish.sh #{mode}"
   ]
   hub_push = hub_steps.find { |s| s['run'] == "bash scripts/ci/ci-dockerhub-publish.sh #{mode}" }
+  upstream = mode == 'test' ? 'test-release' : 'release'
+  abort "#{id}: frozen identity missing" unless hub_push.fetch('env', {})['BANSOKO_CI_RELEASE_IDENTITY'] == "${{ needs.#{upstream}.outputs.identity }}"
   abort "#{id}: secret scope mismatch" unless hub_push.fetch('env', {}).select { |_k, v| v.to_s.include?('secrets.') }.keys == ['DOCKERHUB_TOKEN']
   hub_trust = hub_steps.find { |s| s['run'] == 'python3 scripts/ci/ci-release-trust.py' }
   abort "#{id}: trust secret drift" unless hub_trust.fetch('env', {}) == { 'BANSOKO_RELEASE_READ_TOKEN' => '${{ secrets.GITHUB_TOKEN }}' }

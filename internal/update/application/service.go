@@ -24,6 +24,7 @@ import (
 	hardeningdomain "bansoko/internal/hardening/domain"
 	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/update/journal"
 )
 
@@ -66,6 +67,7 @@ type Deps struct {
 	TargetPlatform, TargetArchitecture string
 	HTTPClient                         *http.Client
 	UpdateConnection                   UpdateConnectionResolver
+	RunningOrder                       buildinfo.Order
 	BuildReleaseID                     string
 	BuildVersion                       string
 	BuildCompatibilityVersion          string
@@ -82,7 +84,21 @@ type Deps struct {
 	CheckBackupTools func() error
 }
 
+// Legacy manifests on the existing fixed lane used the same CI run counter.
+func advancesRunningRelease(running buildinfo.Order, candidate hardeningdomain.ReleaseManifest) bool {
+	lane := string(candidate.Channel)
+	if candidate.Series == "" && candidate.Channel == hardeningdomain.ReleaseChannelNightly {
+		lane = LaneTest
+	}
+	series := candidate.Series
+	if series == "" {
+		series = buildinfo.CISeries
+	}
+	return !running.Ordered() || running.Series != series || running.Lane != lane || candidate.ReleaseSequence > running.ReleaseSequence
+}
+
 type Service struct {
+	runningOrder                                                       buildinfo.Order
 	db                                                                 *sql.DB
 	updatesRoot, manifestURL                                           string
 	source                                                             *UpdateHTTPSource
@@ -131,7 +147,7 @@ func NewService(deps Deps) (*Service, error) {
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger, restartGate: deps.RestartGate, checkBackupTools: deps.CheckBackupTools}, nil
+	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, runningOrder: deps.RunningOrder, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger, restartGate: deps.RestartGate, checkBackupTools: deps.CheckBackupTools}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
@@ -277,7 +293,7 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 	if required, e := manifest.EffectiveMinImageVersion(); e != nil {
 		return fail(fmt.Errorf("embedded update image compatibility rejected: %w", e))
 	} else if required != "" && s.buildCompatibilityVersion != "" {
-		compatible, ce := imageCompatibilityAtLeast(s.buildCompatibilityVersion, required)
+		compatible, ce := ImageCompatibilityAtLeast(s.buildCompatibilityVersion, required)
 		if ce != nil {
 			return fail(&apperrors.Business{Status: 422, Code: "IMAGE_COMPATIBILITY_INVALID", Message: ce.Error()})
 		}
@@ -302,6 +318,9 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 	if manifest.ReleaseSequence < 1 {
 		return fail(errors.New("update target has no positive release sequence"))
 	}
+	if !advancesRunningRelease(s.runningOrder, manifest) {
+		return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_STALE", Message: "The update target does not advance beyond the running release."})
+	}
 	if s.db != nil {
 		// Mirrors the fence's own floor: an attempt that failed does not fence
 		// its sequence, so the release it targeted can be retried.
@@ -316,7 +335,7 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 	opID := "embedded-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	now := s.clock().UTC()
 	version, schema := manifest.Version, manifest.TargetMigrationVersion
-	status := Status{OperationID: opID, Channel: Channel, Step: "accepted", TargetReleaseID: manifest.ReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, CreatedAt: now, UpdatedAt: now}
+	status := Status{OperationID: opID, Channel: Channel, Step: "accepted", TargetReleaseID: manifest.ReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, TargetLane: string(manifest.Channel), TargetSequence: manifest.ReleaseSequence, CreatedAt: now, UpdatedAt: now}
 	s.mu.Lock()
 	s.lastStatus = status
 	s.mu.Unlock()
@@ -356,7 +375,8 @@ func (s *Service) packageSourceFor(manifestURL string) (*UpdateHTTPSource, error
 	return ResolvePackageSource(manifestURL, s.packageRoot, s.packageConfig)
 }
 
-func imageCompatibilityAtLeast(current, required string) (bool, error) {
+// ImageCompatibilityAtLeast compares two base capability versions, not releases.
+func ImageCompatibilityAtLeast(current, required string) (bool, error) {
 	a, e := parseBaseCompatibilityVersion(current)
 	if e != nil {
 		return false, e
@@ -504,7 +524,7 @@ func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 	result.Compatibility.MinImageVersion = required
 	compatible := true
 	if required != "" && s.buildCompatibilityVersion != "" {
-		compatible, e = imageCompatibilityAtLeast(s.buildCompatibilityVersion, required)
+		compatible, e = ImageCompatibilityAtLeast(s.buildCompatibilityVersion, required)
 		if e != nil {
 			result.Status = "check_failed"
 			return result, &apperrors.Business{Status: 422, Code: "IMAGE_COMPATIBILITY_INVALID", Message: e.Error()}
@@ -529,7 +549,7 @@ func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 		} else {
 			result.Compatibility.Reason = "A newer base image is required."
 		}
-	case manifest.ReleaseID == s.buildID:
+	case manifest.ReleaseID == s.buildID || !advancesRunningRelease(s.runningOrder, manifest):
 		result.Status = "up_to_date"
 		result.Candidate = nil
 		result.Compatibility.Kind = "overlay"
@@ -579,7 +599,7 @@ func (s *Service) GetUpdateStatus(ctx context.Context) (Status, bool, error) {
 			lastError = &value
 		}
 		version, schema := record.TargetVersion, record.TargetSchemaVersion
-		return Status{OperationID: record.OperationID, Channel: record.Channel, Step: string(record.Step), TargetReleaseID: record.TargetReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, LastError: lastError, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, true, nil
+		return Status{OperationID: record.OperationID, Channel: record.Channel, Step: string(record.Step), TargetReleaseID: record.TargetReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, TargetLane: record.TargetLane, TargetSequence: record.TargetReleaseSequence, PreviousReleaseID: record.PreviousReleaseID, LastError: lastError, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, true, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -600,5 +620,5 @@ func (s *Service) readPendingStatus() (Status, bool, error) {
 	if err != nil {
 		return Status{}, false, fmt.Errorf("read pending update marker: %w", err)
 	}
-	return Status{OperationID: marker.OperationID, Channel: Channel, Step: "pending_backup", TargetReleaseID: marker.ReleaseID}, true, nil
+	return Status{OperationID: marker.OperationID, Channel: Channel, Step: "pending_backup", TargetReleaseID: marker.ReleaseID, TargetSequence: marker.ReleaseSequence, PreviousReleaseID: marker.PreviousReleaseID}, true, nil
 }

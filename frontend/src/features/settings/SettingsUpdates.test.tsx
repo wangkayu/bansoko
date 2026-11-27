@@ -90,6 +90,22 @@ const acceptedStatus = {
 const pendingBackupStatus = { ...acceptedStatus, step: "pending_backup" };
 
 describe("SettingsUpdates", () => {
+  it.each([200, 503])("shows verified build selection with update status %i", async (status) => {
+    stubFetch((url) => {
+      if (url.endsWith("/readyz")) return jsonResponse({ deployment_identity: {
+        anchor: "docker",
+        selected_build: { version: "1.2.0", build_id: "v1.2.0", lane: "stable", release_sequence: 12 },
+        base_build: { version: "1.3.0", build_id: "v1.3.0", lane: "stable", release_sequence: 13 },
+        selection_reason_code: "base_newer_takeover_not_enabled",
+      } });
+      return status === 200 ? jsonResponse({}) : jsonResponse({ code: "SERVICE_NOT_CONFIGURED" }, status);
+    });
+    renderUpdates();
+    expect(await screen.findByText("1.2.0 · v1.2.0 · stable #12")).toBeVisible();
+    expect(screen.getByText("1.3.0 · v1.3.0 · stable #13")).toBeVisible();
+    expect(screen.getByText(t("settings.updates.selection.base_newer_takeover_not_enabled"))).toBeVisible();
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     window.sessionStorage.clear();

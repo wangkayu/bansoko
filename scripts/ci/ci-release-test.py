@@ -728,29 +728,23 @@ class PublicationTests(unittest.TestCase):
                 Path(args[args.index("--output") + 1]).write_bytes(b'{"signed":true}')
             return ""
 
-        with tempfile.TemporaryDirectory() as temp:
-            with (
-                patch.object(
-                    release,
-                    "public_fetch",
-                    side_effect=[(200, manifest), (200, b"payload")],
-                ),
-                patch.object(release, "run", side_effect=command),
-                patch.object(
-                    release, "require_public_github", side_effect=RuntimeError("private")
-                ) as guard,
-                patch.object(release, "github_channel") as write,
-                patch.dict(
-                    os.environ,
-                    {
-                        "BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel",
-                    },
-                ),
-                self.assertRaises(RuntimeError),
-            ):
-                release.channel(ident)
-            guard.assert_called_once()
-            write.assert_not_called()
+        with (
+            patch.object(
+                release,
+                "public_fetch",
+                side_effect=[(200, manifest), (200, b"payload")],
+            ),
+            patch.object(release, "run", side_effect=command),
+            patch.object(
+                release, "require_public_github", side_effect=RuntimeError("private")
+            ) as guard,
+            patch.object(release, "github_channel") as write,
+            patch.dict(os.environ, {"BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel"}),
+            self.assertRaises(RuntimeError),
+        ):
+            release.channel(ident)
+        guard.assert_called_once()
+        write.assert_not_called()
 
     def test_the_channel_names_the_formal_stable_channel(self):
         ident = {"sha": self.sha, "run_id": "71", "sequence": 53, "version": "0.1.0", "release_id": "v0.1.0"}
@@ -822,7 +816,7 @@ class TestLaneTests(unittest.TestCase):
         )
         self.assertEqual(
             release.LANES["test"],
-            {"branch": "update-channel-test", "discovery": "test", "manifest": "nightly"},
+            {"branch": "update-channel-test", "discovery": "test", "manifest": "test"},
         )
         # An identity built before lanes existed is the formal one.
         self.assertEqual(release.branch_of({}), "update-channel")
@@ -1177,6 +1171,30 @@ class FormalReleaseTests(unittest.TestCase):
     def test_github_release_requires_its_token(self):
         with patch.dict(os.environ, {"GH_TOKEN": ""}), self.assertRaises(RuntimeError):
             release.github_release(self.ident)
+
+
+class FrozenIdentityTests(unittest.TestCase):
+    def test_binary_readback_requires_exact_identity_on_each_platform(self):
+        ident = dict(lane="test", version="0.1.0-test.42", release_id="v0.1.0-test.42", sha="a" * 40, sequence=42)
+        for arch in ("amd64", "arm64"):
+            actual = dict(release.release_identity(ident), platform="linux", architecture=arch, dirty=False)
+            actual["build_id"] = actual.pop("release_id")
+            actual["commit"] = actual.pop("source_commit")
+            release.verify_binary_identity(json.dumps(actual), ident, arch)
+            for wrong in (dict(release_sequence=41), dict(commit="b" * 40), dict(architecture="unknown"), dict(dirty=True)):
+                with self.subTest(arch=arch, wrong=wrong), self.assertRaises(RuntimeError):
+                    release.verify_binary_identity(json.dumps(dict(actual, **wrong)), ident, arch)
+
+    def test_moving_tag_only_advances_or_repeats_the_same_release(self):
+        ident = dict(lane="stable", version="0.1.0", release_id="v0.1.0", sha="a" * 40, sequence=42)
+        actual = dict(series=release.SERIES, lane="stable", release_sequence=42, version=ident["version"],
+                      build_id=ident["release_id"], commit=ident["sha"])
+        for earlier in ({}, dict(actual, release_sequence=41), actual):
+            release.guard_moving_identity(earlier, ident)
+        for wrong in (dict(release_sequence=43), dict(release_sequence=0), dict(lane="test"),
+                      dict(series="other"), dict(commit="b" * 40), dict(version="0.2.0")):
+            with self.subTest(wrong=wrong), self.assertRaises(RuntimeError):
+                release.guard_moving_identity(dict(actual, **wrong), ident)
 
 
 if __name__ == "__main__":

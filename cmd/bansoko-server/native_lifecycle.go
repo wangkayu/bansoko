@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +30,20 @@ import (
 
 // runVersion reports the binary identity used by native operators to verify a
 // download or an installed build before starting it.
-func runVersion(stdout io.Writer) int {
+func runVersion(stdout io.Writer, args ...string) int {
+	if len(args) > 0 {
+		if len(args) != 1 || args[0] != "--json" {
+			return 2
+		}
+		if err := json.NewEncoder(stdout).Encode(struct {
+			buildinfo.BuildInfo
+			Platform     string `json:"platform"`
+			Architecture string `json:"architecture"`
+		}{buildinfo.Current(), runtime.GOOS, runtime.GOARCH}); err != nil {
+			return 1
+		}
+		return 0
+	}
 	info := buildinfo.Current()
 	fmt.Fprintf(stdout, "bansoko %s (commit %s)\n", info.Version, info.Commit)
 	fmt.Fprintf(stdout, "target schema version: %s\n", migrations.TargetVersion())

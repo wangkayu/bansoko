@@ -1187,12 +1187,24 @@ test.describe("settings fixture coverage", () => {
   });
 
   test("版本与升级默认空态与 AI Lab 可达", async ({ page }) => {
+    await page.route("**/api/v1/readyz", (route) => route.fulfill({ json: {
+      ready: true,
+      deployment_identity: {
+        anchor: "docker",
+        selected_build: { version: "1.2.0", build_id: "v1.2.0", lane: "stable", release_sequence: 12 },
+        base_build: { version: "1.3.0", build_id: "v1.3.0", lane: "stable", release_sequence: 13 },
+        selection_reason_code: "base_newer_takeover_not_enabled",
+      },
+    } }));
     test.skip(isMobile(page), "sidebar 链接交互是桌面形态，手机另有两级导航用例");
     await openSettings(page, "/#/settings/updates");
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 10000 });
     // 内嵌更新状态未提供时，版本与升级页展示默认空态。
     await expect(dialog.getByText("检查是否有新版本", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("1.2.0 · v1.2.0 · stable #12", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("1.3.0 · v1.3.0 · stable #13", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("镜像版本较新，但尚未启用接管", { exact: true })).toBeVisible();
 
     await page.getByRole("navigation", { name: "设置分类" }).getByRole("link", { name: "API 令牌" }).click();
     await expect(page).toHaveURL(/\/settings\/ai$/);

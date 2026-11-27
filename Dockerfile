@@ -25,6 +25,9 @@ COPY --from=frontend-builder /src/frontend/dist ./frontend/dist
 ARG VERSION=dev
 ARG SOURCE_COMMIT=unknown
 ARG BUILD_ID=development
+ARG RELEASE_SERIES=
+ARG RELEASE_LANE=
+ARG RELEASE_SEQUENCE=
 ARG BUILD_TIME=unknown
 ARG BUILD_DIRTY=true
 ARG API_VERSION=v1
@@ -48,7 +51,7 @@ RUN schema_version="${SCHEMA_VERSION}"; \
     fi; \
     [ -n "$schema_version" ] || { echo "no migrations found" >&2; exit 1; }; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false \
-    -ldflags="-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=${VERSION} -X bansoko/internal/runtime/buildinfo.Commit=${SOURCE_COMMIT} -X bansoko/internal/runtime/buildinfo.BuildID=${BUILD_ID} -X bansoko/internal/runtime/buildinfo.BuildTime=${BUILD_TIME} -X bansoko/internal/runtime/buildinfo.BuildDirty=${BUILD_DIRTY} -X bansoko/internal/runtime/buildinfo.APIVersion=${API_VERSION} -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=${BASE_COMPATIBILITY_VERSION}" \
+    -ldflags="-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=${VERSION} -X bansoko/internal/runtime/buildinfo.Commit=${SOURCE_COMMIT} -X bansoko/internal/runtime/buildinfo.BuildID=${BUILD_ID} -X bansoko/internal/runtime/buildinfo.BuildTime=${BUILD_TIME} -X bansoko/internal/runtime/buildinfo.BuildDirty=${BUILD_DIRTY} -X bansoko/internal/runtime/buildinfo.APIVersion=${API_VERSION} -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=${BASE_COMPATIBILITY_VERSION} -X bansoko/internal/runtime/buildinfo.Series=${RELEASE_SERIES} -X bansoko/internal/runtime/buildinfo.Lane=${RELEASE_LANE} -X bansoko/internal/runtime/buildinfo.ReleaseSequence=${RELEASE_SEQUENCE}" \
     -o /out/bansoko-server ./cmd/bansoko-server
 
 # Provenance the image carries. GPL-3.0-only section 6 asks a distributor who

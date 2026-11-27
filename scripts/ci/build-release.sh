@@ -14,6 +14,7 @@ image_platform="${BANSOKO_RELEASE_IMAGE_PLATFORM:-$goos/$goarch}"
 # manifest, so they are required and validated fail-closed instead of being
 # defaulted.
 release_sequence="${BANSOKO_RELEASE_SEQUENCE:-}"
+release_series="${BANSOKO_RELEASE_SERIES:-bansoko-ci-v1}"
 bootstrap_min_version="${BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION:-}"
 base_image_min_version="${BANSOKO_BASE_IMAGE_MIN_VERSION:-}"
 api_version="${BANSOKO_API_VERSION:-v1}"
@@ -83,7 +84,7 @@ if [[ "$version" == "latest" || "$version" == *latest* ]]; then
   exit 2
 fi
 case "$channel" in
-  stable|beta|nightly) ;;
+  stable|test) ;;
   *) echo "unsupported release channel: $channel" >&2; exit 2 ;;
 esac
 if [[ "$(git -C "$root" status --porcelain)" != "" && "${BANSOKO_ALLOW_DIRTY_RELEASE:-0}" != "1" ]]; then
@@ -146,7 +147,7 @@ fi
 
 artifact_path="$tmp_dir/$artifact_name"
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -C "$root" -trimpath -buildvcs=false \
-  -ldflags "-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=$version -X bansoko/internal/runtime/buildinfo.Commit=$source_commit -X bansoko/internal/runtime/buildinfo.BuildID=$release_id -X bansoko/internal/runtime/buildinfo.BuildTime=$published_at -X bansoko/internal/runtime/buildinfo.APIVersion=$api_version -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=$base_image_min_version -X bansoko/internal/runtime/buildinfo.BuildDirty=false" \
+  -ldflags "-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=$version -X bansoko/internal/runtime/buildinfo.Commit=$source_commit -X bansoko/internal/runtime/buildinfo.BuildID=$release_id -X bansoko/internal/runtime/buildinfo.BuildTime=$published_at -X bansoko/internal/runtime/buildinfo.APIVersion=$api_version -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=$base_image_min_version -X bansoko/internal/runtime/buildinfo.BuildDirty=false -X bansoko/internal/runtime/buildinfo.Series=$release_series -X bansoko/internal/runtime/buildinfo.Lane=$channel -X bansoko/internal/runtime/buildinfo.ReleaseSequence=$release_sequence" \
   -o "$artifact_path" ./cmd/bansoko-server
 
 # The embedded payload ships the same unified binary that serves the release;
@@ -169,6 +170,9 @@ pack_summary="$(go -C "$root" run ./cmd/bansoko-release pack-payload \
   --source-date-epoch "$source_epoch" \
   --format-version "embedded-update-v1" \
   --release-id "$release_id" \
+  --series "$release_series" \
+  --lane "$channel" \
+  --release-sequence "$release_sequence" \
   --version "$version" \
   --source-commit "$source_commit" \
   --build-id "$release_id" \
@@ -252,6 +256,9 @@ if [[ "${BANSOKO_RELEASE_SKIP_IMAGES:-0}" != "1" ]]; then
       --build-arg VERSION="$version" \
       --build-arg SOURCE_COMMIT="$source_commit" \
       --build-arg BUILD_ID="$release_id" \
+      --build-arg RELEASE_SERIES="$release_series" \
+      --build-arg RELEASE_LANE="$channel" \
+      --build-arg RELEASE_SEQUENCE="$release_sequence" \
       --build-arg BUILD_TIME="$published_at" \
       --build-arg BUILD_DIRTY=false \
       --build-arg API_VERSION="$api_version" \
@@ -325,6 +332,7 @@ $derived_image_bootstrap_version" >&2
 fi
 
 BANSOKO_RELEASE_VERSION="$version" BANSOKO_RELEASE_ID="$release_id" BANSOKO_RELEASE_CHANNEL="$channel" BANSOKO_RELEASE_PUBLISHED_AT="$published_at" BANSOKO_SOURCE_COMMIT="$source_commit" BANSOKO_RELEASE_API_VERSION="$api_version" BANSOKO_RELEASE_SCHEMA_VERSION="$schema_version" BANSOKO_RELEASE_GOOS="$goos" BANSOKO_RELEASE_GOARCH="$goarch" BANSOKO_RELEASE_ARTIFACT_DIGEST="$artifact_digest" BANSOKO_RELEASE_ARTIFACT_SIZE="$artifact_size" BANSOKO_RELEASE_SBOM_DIGEST="$sbom_digest" BANSOKO_RELEASE_PROVENANCE_DIGEST="$provenance_digest" BANSOKO_RELEASE_IMAGE_DIGEST="$image_digest" BANSOKO_RELEASE_FRONTEND_REF="$frontend_ref" \
+BANSOKO_RELEASE_SERIES="$release_series" \
 BANSOKO_RELEASE_SEQUENCE="$release_sequence" \
 BANSOKO_RELEASE_EMBEDDED_FORMAT="embedded-update-v1" \
 BANSOKO_RELEASE_PAYLOAD_DIGEST="$payload_digest" BANSOKO_RELEASE_PAYLOAD_SIZE="$payload_size" \
@@ -345,6 +353,7 @@ ruby -rjson -rdigest -e '
   # sha256 of their bytes.
   manifest = {
     "schema_version" => "release-manifest-1",
+    "series" => ENV.fetch("BANSOKO_RELEASE_SERIES"),
     "release_sequence" => Integer(ENV.fetch("BANSOKO_RELEASE_SEQUENCE")),
     "release_id" => ENV.fetch("BANSOKO_RELEASE_ID"),
     "version" => ENV.fetch("BANSOKO_RELEASE_VERSION"), "channel" => ENV.fetch("BANSOKO_RELEASE_CHANNEL"),

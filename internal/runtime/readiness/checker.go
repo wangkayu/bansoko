@@ -238,6 +238,8 @@ func (c *Checker) Report(ctx context.Context) Report {
 		} else {
 			shown := identity
 			shown.ProcessBuildID = c.deps.Build.BuildID
+			selectedBuild := c.deps.Build
+			shown.SelectedBuild = &selectedBuild
 			providedIdentity = &shown
 			pointer := c.deps.Deployment.CurrentPointer()
 			runtimeValidationErr := error(nil)

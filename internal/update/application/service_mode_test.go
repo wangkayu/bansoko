@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/runtime/buildinfo"
 )
 
 func TestNewServiceRequiresEmbeddedMode(t *testing.T) {
@@ -29,17 +32,40 @@ func TestNewServiceDoesNotRequireGateFenceJournalOrBackup(t *testing.T) {
 	}
 }
 
+func TestAdvancesRunningRelease(t *testing.T) {
+	running := buildinfo.Order{Series: buildinfo.CISeries, Lane: "test", ReleaseSequence: 42}
+	for _, tc := range []struct {
+		name, series, lane string
+		sequence           int64
+		want               bool
+	}{
+		{"lower", buildinfo.CISeries, "test", 41, false},
+		{"equal", buildinfo.CISeries, "test", 42, false},
+		{"higher", buildinfo.CISeries, "test", 43, true},
+		{"cross lane", buildinfo.CISeries, "stable", 41, true},
+		{"cross series", "other-series", "test", 41, true},
+		{"legacy nightly", "", "nightly", 41, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := hardeningdomain.ReleaseManifest{Series: tc.series, Channel: hardeningdomain.ReleaseChannel(tc.lane), ReleaseSequence: tc.sequence}
+			if got := advancesRunningRelease(running, candidate); got != tc.want {
+				t.Fatalf("advancesRunningRelease = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestImageCompatibilityAtLeast(t *testing.T) {
 	for _, tc := range []struct {
 		current, required string
 		want              bool
 	}{{"base-v2", "base-v10", false}, {"base-v10", "base-v10", true}, {"base-v10", "base-v2", true}} {
-		got, err := imageCompatibilityAtLeast(tc.current, tc.required)
+		got, err := ImageCompatibilityAtLeast(tc.current, tc.required)
 		if err != nil || got != tc.want {
 			t.Fatalf("imageCompatibilityAtLeast(%q,%q)=%v,%v want %v", tc.current, tc.required, got, err, tc.want)
 		}
 	}
-	if _, err := imageCompatibilityAtLeast("base-vx", "base-v1"); err == nil {
+	if _, err := ImageCompatibilityAtLeast("base-vx", "base-v1"); err == nil {
 		t.Fatal("invalid compatibility label accepted")
 	}
 }

@@ -68,7 +68,7 @@ for platform in linux/amd64 linux/arm64 darwin/arm64; do
   name="bansoko-$version-$goos-$goarch.tar.gz"
   buildinfo=bansoko/internal/runtime/buildinfo
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -tags embed_frontend -trimpath -buildvcs=false \
-    -ldflags "-s -w -buildid= -X $buildinfo.Version=$version -X $buildinfo.Commit=$commit -X $buildinfo.BuildID=$release_id -X $buildinfo.BuildTime=$build_time -X $buildinfo.BuildDirty=$dirty -X $buildinfo.SchemaVersion=$schema_version -X $buildinfo.BaseCompatibilityVersion=${BANSOKO_BASE_IMAGE_MIN_VERSION:-base-v1}" \
+    -ldflags "-s -w -buildid= -X $buildinfo.Version=$version -X $buildinfo.Commit=$commit -X $buildinfo.BuildID=$release_id -X $buildinfo.BuildTime=$build_time -X $buildinfo.BuildDirty=$dirty -X $buildinfo.SchemaVersion=$schema_version -X $buildinfo.BaseCompatibilityVersion=${BANSOKO_BASE_IMAGE_MIN_VERSION:-base-v1} -X $buildinfo.Series=${BANSOKO_RELEASE_SERIES:-} -X $buildinfo.Lane=${BANSOKO_RELEASE_CHANNEL:-} -X $buildinfo.ReleaseSequence=${BANSOKO_RELEASE_SEQUENCE:-}" \
     -o "$stage/bansoko-server" ./cmd/bansoko-server
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" bash scripts/generators/generate-third-party-notices.sh \
     "$stage/THIRD_PARTY_NOTICES.md" "$tmp/frontend-licenses.json"

@@ -25,30 +25,21 @@ cd "$root"
 image="wangkayu/bansoko"
 user="wangkayu"
 platforms="linux/amd64,linux/arm64"
-short="$(git rev-parse --short=9 HEAD)"
 mode="${1:-test}"
 case "$mode" in
-  test)
-    version="$(tr -d '[:space:]' < VERSION)"
-    immutable_tag="$version-$short"
-    moving_tag="test"
-    build_id="$short"
-    ;;
-  release)
-    if [[ ! "${GITHUB_REF:-}" =~ ^refs/tags/v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
-      echo "release mode publishes only from a vX.Y.Z tag (got ${GITHUB_REF:-<unset>})" >&2
-      exit 1
-    fi
-    version="${BASH_REMATCH[1]}"
-    immutable_tag="$version"
-    moving_tag="latest"
-    build_id="v$version"
-    ;;
-  *)
-    echo "unknown mode: $mode (test|release)" >&2
-    exit 1
-    ;;
+  test) lane=test; moving_tag=test ;;
+  release) lane=stable; moving_tag=latest ;;
+  *) echo "unknown mode: $mode (test|release)" >&2; exit 1 ;;
 esac
+identity="$(python3 - "$lane" <<'PY'
+import runpy, sys
+release = runpy.run_path('scripts/ci/ci-release.py')
+ident = release['frozen_identity'](sys.argv[1])
+print(ident['version'], ident['release_id'], ident['sequence'], release['SERIES'])
+PY
+)"
+read -r version build_id release_sequence release_series <<<"$identity"
+immutable_tag="$version"
 # Same PostgreSQL the quickstart bundles: the smoke proves the published image
 # against the database a tester actually gets.
 postgres_image="postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
@@ -129,6 +120,12 @@ docker buildx build \
   --build-arg VERSION="$version" \
   --build-arg SOURCE_COMMIT="$GITHUB_SHA" \
   --build-arg BUILD_ID="$build_id" \
+  --build-arg RELEASE_SERIES="$release_series" \
+  --build-arg RELEASE_LANE="$lane" \
+  --build-arg RELEASE_SEQUENCE="$release_sequence" \
+  --label bansoko.release.series="$release_series" \
+  --label bansoko.release.lane="$lane" \
+  --label bansoko.release.sequence="$release_sequence" \
   --build-arg BUILD_DIRTY=false \
   --build-arg BUILD_TIME="$(git show -s --format=%cI HEAD)" \
   --label org.opencontainers.image.source=https://github.com/wangkayu/bansoko \
@@ -232,10 +229,52 @@ if [[ "$pg_ready" != "1" ]]; then
   exit 1
 fi
 
+python3 - "$lane" "$image:$immutable_tag" <<'PY'
+import runpy, sys
+release = runpy.run_path('scripts/ci/ci-release.py')
+ident = release['frozen_identity'](sys.argv[1])
+for arch in ('amd64', 'arm64'):
+    release['verify_binary_identity'](release['read_image_version'](sys.argv[2], arch), ident, arch)
+PY
+
 boot_smoke amd64 120
 boot_smoke arm64 300
 
 # Only a proven build becomes the moving tag.
+python3 - "$lane" "$image:$moving_tag" <<'PY'
+import json, re, runpy, subprocess, sys
+release = runpy.run_path('scripts/ci/ci-release.py')
+ident = release['frozen_identity'](sys.argv[1])
+ref = sys.argv[2]
+probe = subprocess.run(['docker', 'buildx', 'imagetools', 'inspect', ref, '--format', '{{json .Manifest}}'],
+                       text=True, capture_output=True, check=False)
+if probe.returncode:
+    if re.search(r'(?:manifest unknown|not found)\s*$', probe.stderr.strip(), re.I):
+        sys.exit(0)
+    raise RuntimeError('cannot prove current moving tag identity')
+arches = set()
+for entry in json.loads(probe.stdout).get('manifests', []):
+    platform = entry.get('platform', {})
+    if platform.get('os') != 'linux' or platform.get('architecture') not in ('amd64', 'arm64'):
+        continue
+    arch = platform['architecture']
+    digest = entry['digest']
+    if arch in arches or not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+        raise RuntimeError('invalid moving tag platform or digest')
+    arches.add(arch)
+    pinned = ref.rsplit(':', 1)[0] + '@' + digest
+    raw = release['read_image_version'](pinned, arch)
+    try:
+        actual = json.loads(raw)
+    except json.JSONDecodeError:
+        # Old images print a single version even when given --json.
+        if not re.fullmatch(r'v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', raw):
+            raise RuntimeError('cannot read existing moving tag build') from None
+        actual = {}
+    release['guard_moving_identity'](actual, ident)
+if arches != {'amd64', 'arm64'}:
+    raise RuntimeError('moving tag must contain both architectures')
+PY
 docker buildx imagetools create --tag "$image:$moving_tag" "$image:$immutable_tag" >/dev/null
 docker buildx imagetools inspect "$image:$moving_tag" --format '{{json .Manifest}}' \
   | python3 -c 'import json,sys

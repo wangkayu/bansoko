@@ -241,7 +241,7 @@ GITHUB_NOTES = "github-release-notes.md"
 # the same lanes by name (`--lane`) and refuse the other lane's identity.
 LANES = {
     "stable": {"branch": BRANCH, "discovery": DISCOVERY_CHANNEL, "manifest": MANIFEST_CHANNEL},
-    "test": {"branch": TEST_BRANCH, "discovery": "test", "manifest": "nightly"},
+    "test": {"branch": TEST_BRANCH, "discovery": "test", "manifest": "test"},
 }
 
 
@@ -276,6 +276,7 @@ def identity(lane="stable"):
     if (
         not re.fullmatch(r"[a-f0-9]{40}", sha)
         or not re.fullmatch(r"[1-9][0-9]*", n)
+        or int(n) > MAX_SEQUENCE
         or not run_id.isdecimal()
     ):
         fail("invalid immutable event identity")
@@ -330,6 +331,69 @@ def identity(lane="stable"):
         "release_id": "v" + version,
         "lane": lane,
     }
+
+
+SERIES = "bansoko-ci-v1"
+MAX_SEQUENCE = (1 << 63) - 1
+
+
+def release_identity(ident):
+    return dict(series=SERIES, lane=ident["lane"], release_sequence=ident["sequence"],
+                release_id=ident["release_id"], version=ident["version"], source_commit=ident["sha"])
+
+
+def frozen_identity(lane):
+    frozen = decode_json(required("BANSOKO_CI_RELEASE_IDENTITY"))
+    ref = "refs/tags/" + frozen["release_id"] if lane == "stable" else "refs/heads/main"
+    sequence, version = frozen["release_sequence"], frozen["version"]
+    expected_version = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    if lane == "test":
+        expected_version += r"-test\." + str(sequence)
+    if (os.environ.get("GITHUB_EVENT_NAME") != "push" or os.environ.get("GITHUB_REF") != ref
+            or frozen["lane"] != lane or frozen["series"] != SERIES
+            or type(sequence) is not int or not 0 < sequence <= MAX_SEQUENCE
+            or str(sequence) != required("GITHUB_RUN_NUMBER") or not re.fullmatch(expected_version, version)
+            or frozen["release_id"] != "v" + version
+            or frozen["source_commit"] != required("GITHUB_SHA")
+            or not re.fullmatch(r"[a-f0-9]{40}", frozen["source_commit"])
+            or run("git", "rev-parse", "HEAD") != frozen["source_commit"]
+            or run("git", "status", "--porcelain")):
+        fail("frozen release identity differs from the checked-out event")
+    ident = dict(sha=frozen["source_commit"], run_id=required("GITHUB_RUN_ID"),
+                 sequence=sequence, version=version, release_id=frozen["release_id"], lane=lane)
+    if frozen != release_identity(ident):
+        fail("unexpected frozen identity fields")
+    return ident
+
+
+def verify_binary_identity(raw, ident, architecture):
+    actual = decode_json(raw)
+    expected = release_identity(ident)
+    expected["build_id"] = expected.pop("release_id")
+    expected["commit"] = expected.pop("source_commit")
+    expected.update(platform="linux", architecture=architecture, dirty=False)
+    if any(actual.get(key) != value for key, value in expected.items()):
+        fail("binary identity differs from frozen release for linux/" + architecture)
+    return actual
+
+
+def read_image_version(ref, architecture):
+    return run("docker", "run", "--rm", "--platform", "linux/" + architecture,
+               "--entrypoint", "/app/bansoko-server", ref, "version", "--json")
+
+
+def guard_moving_identity(actual, ident):
+    sequence = actual.get("release_sequence")
+    if sequence is None and actual.get("lane", "unordered") == "unordered":
+        return  # One-time upgrade from a pre-sequence image.
+    expected = release_identity(ident)
+    if (actual.get("series"), actual.get("lane")) != (expected["series"], expected["lane"]):
+        fail("moving tag is on a different series or lane")
+    if type(sequence) is not int or not 0 < sequence <= MAX_SEQUENCE or sequence > ident["sequence"]:
+        fail("moving tag sequence would regress")
+    if sequence == ident["sequence"] and (actual.get("version"), actual.get("build_id"), actual.get("commit")) != (
+            ident["version"], ident["release_id"], ident["sha"]):
+        fail("moving tag already has a different identity at this sequence")
 
 
 def release_tool(*args):
@@ -410,6 +474,9 @@ def build_native_assets(ident, destination):
         os.environ,
         BANSOKO_RELEASE_VERSION=ident["version"],
         BANSOKO_RELEASE_ID=ident["release_id"],
+        BANSOKO_RELEASE_SERIES=SERIES,
+        BANSOKO_RELEASE_CHANNEL=ident["lane"],
+        BANSOKO_RELEASE_SEQUENCE=str(ident["sequence"]),
         BANSOKO_NATIVE_OUTPUT_DIR=str(destination),
         SOURCE_DATE_EPOCH=run("git", "show", "-s", "--format=%ct", ident["sha"]),
     )
@@ -484,6 +551,8 @@ def decode_json(value):
 
 
 def inspect_image(ref, ident, scratch):
+    for architecture in ("amd64", "arm64"):
+        verify_binary_identity(read_image_version(ref, architecture), ident, architecture)
     run("docker", "pull", "--platform", "linux/amd64", ref)
     info = decode_json(run("docker", "image", "inspect", ref))[0]
     labels = info["Config"].get("Labels", {})
@@ -594,7 +663,7 @@ def image(ident):
             "buildx",
             "build",
             "--platform",
-            "linux/amd64",
+            "linux/amd64,linux/arm64",
             "--push",
             "--provenance=false",
             "--tag",
@@ -608,6 +677,9 @@ def image(ident):
             "BUILD_ID": ident["release_id"],
             "BUILD_TIME": timestamp,
             "BUILD_DIRTY": "false",
+            "RELEASE_SERIES": SERIES,
+            "RELEASE_LANE": ident["lane"],
+            "RELEASE_SEQUENCE": str(ident["sequence"]),
         }.items():
             args += ["--build-arg", key + "=" + value]
         for key, value in {
@@ -689,6 +761,7 @@ def publish(ident):
             os.environ,
             BANSOKO_RELEASE_VERSION=ident["version"],
             BANSOKO_RELEASE_ID=ident["release_id"],
+            BANSOKO_RELEASE_SERIES=SERIES,
             BANSOKO_RELEASE_SEQUENCE=str(ident["sequence"]),
             BANSOKO_RELEASE_CHANNEL=lane_of(ident)["manifest"],
             BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=bootstrap,
@@ -733,16 +806,19 @@ def publish(ident):
             "provenance.json",
         ]
         # The legacy package is unchanged. ARM64 has its own immutable namespace.
+        image_ref = BUILD_IMAGE_REPOSITORY + "@" + handoff["digest"]
+        verify_package_binary(OUTPUT / "embedded-update-v1.tar.gz", image_ref, ident, "amd64")
         arm = OUTPUT / "arm64"
         arm_env = dict(
             env, BANSOKO_RELEASE_OUTPUT_DIR=str(arm), BANSOKO_RELEASE_GOARCH="arm64",
-            BANSOKO_RELEASE_IMAGE_PLATFORM="linux/amd64",
+            BANSOKO_RELEASE_IMAGE_PLATFORM="linux/arm64",
             BANSOKO_RELEASE_MANIFEST=str(arm / "release-manifest.json"),
             BANSOKO_RELEASE_ARTIFACT=str(arm / "bansoko-server-linux-arm64"),
             BANSOKO_RELEASE_EMBEDDED_PAYLOAD=str(arm / "embedded-update-v1.tar.gz"),
         )
         for script in ("build-release.sh", "check-release.sh"):
             subprocess.run(["bash", "scripts/ci/" + script], cwd=ROOT, env=arm_env, check=True)
+        verify_package_binary(arm / "embedded-update-v1.tar.gz", image_ref, ident, "arm64")
         require_public_github(required(GITHUB_TOKEN_ENV))
         github_publish(ident, published_files)
         github_publish(ident, published_files, prefix="arm64/")
@@ -1108,6 +1184,7 @@ def github_channel(candidate, ident, temp, prefix=""):
 
 
 STABLE_MODES = {
+    "freeze": lambda _: None,
     "preflight": preflight,
     "image": image,
     "publish": publish,
@@ -1116,6 +1193,7 @@ STABLE_MODES = {
 }
 # The test lane has no GitHub Release: a test build is not a release.
 TEST_MODES = {
+    "test-freeze": lambda _: None,
     "test-preflight": preflight,
     "test-image": image,
     "test-publish": publish,
@@ -1132,11 +1210,30 @@ def dispatch(mode):
     fail("unknown release mode")
 
 
+def identity_output(lane):
+    payload = json.dumps(release_identity(identity(lane)), separators=(",", ":"))
+    with open(required("GITHUB_OUTPUT"), "a") as output:
+        print("identity=" + payload, file=output)
+
+
+def verify_package_binary(path, ref, ident, arch):
+    with tempfile.TemporaryDirectory(prefix="bansoko-payload-readback-") as temp:
+        subprocess.run(["tar", "-xzf", str(path), "-C", temp, "bansoko-server"], check=True)
+        exe = Path(temp) / "bansoko-server"
+        raw = run("docker", "run", "--rm", "--platform", "linux/" + arch,
+                  "--mount", f"type=bind,src={exe},dst=/release-server,readonly",
+                  "--entrypoint", "/release-server", ref, "version", "--json")
+        verify_binary_identity(raw, ident, arch)
+
+
 if __name__ == "__main__":
     try:
-        lane, step = dispatch(sys.argv[1] if len(sys.argv) > 1 else "")
-        ident = identity(lane)
-        step(ident)
+        mode = sys.argv[1] if len(sys.argv) > 1 else ""
+        lane, step = dispatch(mode)
+        if mode in ("freeze", "test-freeze"):
+            identity_output(lane)
+        else:
+            step(frozen_identity(lane))
     except (
         RuntimeError,
         ValueError,
