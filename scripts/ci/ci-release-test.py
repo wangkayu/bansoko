@@ -1219,19 +1219,20 @@ class FrozenIdentityTests(unittest.TestCase):
         ident = {"lane": "test", "version": "0.3.0-test.42", "release_id": "v0.3.0-test.42",
                  "sha": "b" * 40, "sequence": 42}
         for arch in ("amd64", "arm64"):
-            raw = (f"bansoko 0.2.3 (commit {commit})\n"
-                   f"target schema version: 001_baseline\nembedded frontend: false\nplatform: linux/{arch}")
-            for version, revision, valid in (
-                ("0.2.3-123456789", commit, True),
-                ("0.2.3-123456789", "c" * 40, False),
-                ("0.2.4-123456789", commit, False),
-                ("0.2.3-123456788", commit, False),
+            for runtime_version, version, revision, valid in (
+                ("0.2.3", "0.2.3-123456789", commit, True),
+                ("0.2.1-dev", "0.2.1-dev-123456789", commit, True),
+                ("0.2.3", "0.2.3-123456789", "c" * 40, False),
+                ("0.2.3", "0.2.4-123456789", commit, False),
+                ("0.2.3", "0.2.3-123456788", commit, False),
             ):
+                raw = (f"bansoko {runtime_version} (commit {commit})\n"
+                       f"target schema version: 001_baseline\nembedded frontend: false\nplatform: linux/{arch}")
                 image = {"Os": "linux", "Architecture": arch, "Config": {"Labels": {
                     "org.opencontainers.image.version": version, "org.opencontainers.image.revision": revision,
                     "org.opencontainers.image.source": "https://github.com/" + release.UPSTREAM_REPOSITORY,
                 }}}
-                with (self.subTest(arch=arch, version=version, revision=revision),
+                with (self.subTest(arch=arch, runtime_version=runtime_version, version=version, revision=revision),
                       patch.object(release, "read_image_version", return_value=raw),
                       patch.object(release, "run", return_value=json.dumps(image))):
                     if valid:

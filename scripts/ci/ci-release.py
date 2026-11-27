@@ -440,7 +440,12 @@ def guard_moving_identity(actual, ident):
         version = actual.get("version", "")
         stable = r"[0-9]+\.[0-9]+\.[0-9]+"
         legacy_lane = actual.get("legacy_lane")
-        pattern = stable if legacy_lane is not None or ident["lane"] == "stable" else stable + r"-test\.[1-9][0-9]*"
+        if legacy_lane == "test":
+            pattern = stable + r"(?:-dev)?"
+        elif legacy_lane == "stable" or ident["lane"] == "stable":
+            pattern = stable
+        else:
+            pattern = stable + r"-test\.[1-9][0-9]*"
         if upstream and (legacy_lane is None or legacy_lane == ident["lane"]) and re.fullmatch(pattern, version):
             return  # One-time switch from a proven pre-sequence image.
         fail("moving tag has no compatible pre-sequence identity")
