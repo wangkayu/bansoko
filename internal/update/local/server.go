@@ -86,48 +86,68 @@ func SocketPath(updatesRoot string) string {
 	return filepath.Join(updatesRoot, socketFileName)
 }
 
-// Listen verifies the directory chain and binds the local control socket. An
-// active listener, an unsafe parent, or an unexpected probe error is never
-// treated as a stale socket.
-func Listen(updatesRoot string, service Service, options Options) (_ *Server, resultErr error) {
+// openEndpoint validates the directory and binds the exact serving path.
+// It never unlinks an active listener.
+func openEndpoint(updatesRoot string) (_ *net.UnixListener, _ string, _ os.FileInfo, resultErr error) {
 	if !Supported {
-		return nil, errors.New("local update control is unsupported on this platform")
-	}
-	if service == nil {
-		return nil, errors.New("local update control requires the running embedded update service")
+		return nil, "", nil, errors.New("local update control is unsupported on this platform")
 	}
 	root, err := ensureDirectoryChain(updatesRoot)
 	if err != nil {
-		return nil, fmt.Errorf("local update parent directory is unsafe: %w", err)
+		return nil, "", nil, fmt.Errorf("local update parent directory is unsafe: %w", err)
 	}
 	path := SocketPath(root)
 	if err := removeProvenStaleSocket(path); err != nil {
-		return nil, err
+		return nil, "", nil, err
 	}
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
-		return nil, fmt.Errorf("listen for local update control: %w", err)
+		return nil, "", nil, fmt.Errorf("listen for local update control: %w", err)
 	}
 	listener.SetUnlinkOnClose(false)
-	createdInfo, err := os.Lstat(path)
-	if err != nil {
-		_ = listener.Close()
-		return nil, fmt.Errorf("inspect new local update socket: %w", err)
-	}
-	cleanup := true
+	info, err := os.Lstat(path)
 	defer func() {
-		if resultErr != nil && cleanup {
+		if resultErr != nil {
 			_ = listener.Close()
-			_ = removeSocketIfSame(path, createdInfo)
+			_ = removeSocketIfSame(path, info)
 		}
 	}()
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("inspect new local update socket: %w", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return nil, "", nil, errors.New("local update endpoint is not a socket")
+	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return nil, fmt.Errorf("restrict local update socket: %w", err)
+		return nil, "", nil, fmt.Errorf("restrict local update socket: %w", err)
 	}
-	if createdInfo.Mode()&os.ModeSocket == 0 {
-		return nil, errors.New("local update endpoint is not a socket")
+	return listener, path, info, nil
+}
+
+// CheckEndpoint proves startup can bind the real socket without serving requests.
+func CheckEndpoint(updatesRoot string) error {
+	listener, path, info, err := openEndpoint(updatesRoot)
+	if err != nil {
+		return err
 	}
-	info := createdInfo
+	return errors.Join(listener.Close(), removeSocketIfSame(path, info))
+}
+
+// Listen binds the local control endpoint and starts its request loop.
+func Listen(updatesRoot string, service Service, options Options) (_ *Server, resultErr error) {
+	if service == nil {
+		return nil, errors.New("local update control requires the running embedded update service")
+	}
+	listener, path, info, err := openEndpoint(updatesRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = listener.Close()
+			_ = removeSocketIfSame(path, info)
+		}
+	}()
 	maxConnections := options.MaxConnections
 	if maxConnections == 0 {
 		maxConnections = defaultMaxConnections
@@ -171,7 +191,6 @@ func Listen(updatesRoot string, service Service, options Options) (_ *Server, re
 		slots: make(chan struct{}, maxConnections), closed: make(chan struct{}), acceptDone: make(chan struct{}),
 		peerIdentity: identity, beforeWrite: options.beforeWrite, conns: make(map[net.Conn]*requestState),
 	}
-	cleanup = false
 	go server.serve()
 	return server, nil
 }

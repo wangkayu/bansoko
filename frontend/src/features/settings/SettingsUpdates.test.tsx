@@ -154,19 +154,21 @@ describe("SettingsUpdates", () => {
     expect(screen.getByText(t("settings.updates.cardCurrent"))).toBeInTheDocument();
   });
 
-  it.each(["fetched", "staged", "maintenance_entered", "backup_verified"] as const)(
-    "fails closed for obsolete %s status rather than showing active progress",
+  it.each(["prepared", "fetched", "staged", "maintenance_entered", "backup_verified", "abort_pending"] as const)(
+    "shows and polls active %s status in manual mode",
     async (step) => {
+      let reads = 0;
       stubFetch((url) => {
-        if (url.endsWith("/update/status")) return jsonResponse({ ...pendingBackupStatus, step });
-        return jsonResponse({ code: "NOT_FOUND" }, 404);
+        if (url.endsWith("/readyz")) return jsonResponse({ update_mode: "manual" });
+        if (url.endsWith("/update/status")) return jsonResponse({ ...acceptedStatus, step: ++reads === 1 ? step : "succeeded" });
+        throw new Error(`Unexpected request: ${url}`);
       });
       renderUpdates();
-
-      expect(await screen.findByText(t("settings.updates.unknownTitle"))).toBeInTheDocument();
-      expect(screen.queryByText(t("settings.updates.cardCurrent"))).not.toBeInTheDocument();
-      expect(screen.queryByText(t("settings.updates.leaveSafe"))).not.toBeInTheDocument();
-      expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/update/status"))).toHaveLength(1);
+      expect(await screen.findByText(t(`settings.updates.step.${step}`))).toBeInTheDocument();
+      expect(screen.getByText(t("settings.updates.cardCurrent"))).toBeInTheDocument();
+      expect(await screen.findByText(t("settings.updates.cardLast"), {}, { timeout: 3000 })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: t("settings.updates.check") })).not.toBeInTheDocument();
+      expect(reads).toBe(2);
     },
   );
 
@@ -634,6 +636,19 @@ describe("SettingsUpdates", () => {
     expect(screen.queryByText(t("settings.updates.statusFailed"))).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: t("settings.updates.check") })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: t("settings.updates.reread") })).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, "succeeded", "rollback_blocked"] as const)("keeps manual mode read-only with status %s", async (step) => {
+    stubFetch((url) => {
+      if (url.endsWith("/readyz")) return jsonResponse({ update_mode: "manual" });
+      if (url.endsWith("/update/status")) return step ? jsonResponse({ ...acceptedStatus, step }) : jsonResponse({ code: "UPDATE_NOT_FOUND" }, 404);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    renderUpdates();
+    const label = step === "rollback_blocked" ? "blockedTitle" : step ? "cardLast" : "manualModeTitle";
+    expect(await screen.findByText(t(`settings.updates.${label}`))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("settings.updates.check") })).not.toBeInTheDocument();
+    expect(screen.queryByText(t("settings.updates.statusFailed"))).not.toBeInTheDocument();
   });
 
   it("keeps a cached historical status fail-closed until status recovers", async () => {

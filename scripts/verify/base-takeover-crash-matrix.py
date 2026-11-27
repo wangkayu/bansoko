@@ -80,8 +80,22 @@ def build_fixture(work, image):
         os.Stderr.WriteString("fixture: private probe waiting\\n")
         for { time.Sleep(time.Second) }
     }'''))
+    takeover_name = ROOT / "internal/runtime/bootstrap/takeover.go"
+    takeover = work / "fixture_takeover.go"
+    migration_armed = "\t\t\tif !f.advance(embeddedupdate.StepMigrationStarted, \"\", \"owner migration armed\", nil) {\n\t\t\t\treturn f.park(\"cannot persist migration boundary\")\n\t\t\t}"
+    original_takeover = takeover_name.read_text()
+    assert original_takeover.count(migration_armed) == 1
+    takeover.write_text(original_takeover.replace('import (', 'import (\n\t"os"\n\t"time"', 1)
+                        .replace(migration_armed, migration_armed + '''
+\t\t\tif os.Getenv("BANSOKO_FIXTURE_HOLD_MIGRATION_STARTED") == "1" {
+\t\t\t\tlogf("fixture: migration started")
+\t\t\t\tfor {
+\t\t\t\t\ttime.Sleep(time.Second)
+\t\t\t\t}
+\t\t\t}'''))
     build_overlay.write_text(json.dumps({"Replace": {
         str(runner_name): str(runner), str(probe_name): str(probe),
+        str(takeover_name): str(takeover),
     }}))
     for identity, sequence, schema, target in [
         (OVERLAY, 2, old_schema, work / "overlay"),
@@ -141,10 +155,13 @@ ENTRYPOINT [\"/app/bansoko-server\"]
         "producing_operation_id": "fixture-overlay-install", "expected_process_build_id": OVERLAY,
     }))
     (updates / "current").write_text(OVERLAY + "\n")
-    return updates
+    manifest_digest = output("go", "run", "./cmd/bansoko-release", "verify",
+                             "--manifest", str(tree / ".release-manifest.json")).split("manifest_digest=", 1)[1]
+    return updates, manifest_digest
 
 
-def scenario(image, seed, checkpoint, mode, rollback, signal=None):
+def scenario(image, seed, checkpoint, mode, rollback, signal=None, bad_socket=False):
+    seed, manifest_digest = seed
     name = image + "-" + checkpoint.replace("_", "-")
     pg, app = name + "-pg", name + "-app"
     volume = name + "-config"
@@ -173,6 +190,7 @@ def scenario(image, seed, checkpoint, mode, rollback, signal=None):
             "-e", f"BANSOKO_EMBEDDED_FIXTURE_STOP_AFTER={stop}",
             "-e", "BANSOKO_EMBEDDED_FIXTURE_FAIL_READINESS=" + ("1" if rollback else "0"),
             "-e", "BANSOKO_FIXTURE_HOLD_PROBE=" + ("1" if hold_probe else "0"),
+            "-e", "BANSOKO_FIXTURE_HOLD_MIGRATION_STARTED=" + ("1" if signal == "KILL" and hold_probe else "0"),
             image, "bootstrap", env=extra_env,
             stdout=subprocess.DEVNULL)
         return output("docker", "port", app, "8080/tcp")
@@ -207,6 +225,10 @@ def scenario(image, seed, checkpoint, mode, rollback, signal=None):
             "--entrypoint", f"{old}/bansoko-server", image, "migrate", env=extra_env)
         install_id = sql("SELECT install_id FROM instance_bootstrap")
         sql("INSERT INTO managed_anime (id,title) VALUES ('takeover-fixture','Preserved title')")
+        sql("INSERT INTO embedded_update_locks (op_id, admitted_by, sequence, manifest_digest, state, released_at) "
+            f"VALUES ('fixture-overlay-install', 'embedded', 2, '{manifest_digest}', 'settled', now())")
+        if bad_socket:
+            config_command("sh", "-ec", "touch /config/updates/update-control.sock")
         address = start(checkpoint if signal is None else "", hold_probe=signal is not None)
         if signal or checkpoint == "base_ready":
             def maintenance():
@@ -224,7 +246,40 @@ def scenario(image, seed, checkpoint, mode, rollback, signal=None):
         def logs():
             return subprocess.run(["docker", "logs", app], check=True, text=True,
                                   capture_output=True, timeout=10).stderr
-        if signal:
+        if bad_socket:
+            # The private readiness probe must bind the same local control
+            # endpoint a real serve binds. With a regular file in that path the
+            # prologue fails, so the takeover never claims success: it rolls the
+            # database back instead and the unproven overlay cannot be
+            # re-probed while the path stays unusable.
+            await_value(lambda: "local update control listener failed" in logs(), timeout=60)
+            await_value(lambda: journal()["step"] == "rollback_blocked", timeout=60)
+            blocked = journal()
+            assert blocked["operation_kind"] == "base_takeover", blocked
+            assert blocked["step"] != "succeeded", blocked
+            assert config_command("cat", "/config/updates/current") == OVERLAY
+            def parked():
+                try:
+                    with urllib.request.urlopen(f"http://{address}/api/v1/readyz", timeout=2):
+                        raise AssertionError("public readiness succeeded while the takeover is blocked")
+                except urllib.error.HTTPError as err:
+                    assert err.code == 503, err.code
+                    report = json.load(err)
+                    assert report["reason"] == "not_ready:maintenance", report
+                    return report["checks"]["maintenance"]["detail"]
+                except OSError:
+                    return False
+            assert await_value(parked) == "step=rollback_blocked operation=" + blocked["operation_id"]
+            run("docker", "kill", "--signal", "TERM", app, stdout=subprocess.DEVNULL)
+            assert output("docker", "wait", app, timeout=20) == "124"
+            print(json.dumps({"checkpoint": checkpoint, "mode": mode, "step": blocked["step"], "passed": True}), flush=True)
+            return
+        if signal == "KILL":
+            await_value(lambda: "fixture: migration started" in logs())
+            assert journal()["step"] == "migration_started"
+            run("docker", "kill", "--signal", "KILL", app, stdout=subprocess.DEVNULL)
+            assert output("docker", "wait", app, timeout=20) == "137"
+        elif signal:
             await_value(lambda: "fixture: private probe waiting" in logs())
             assert journal()["step"] == "migration_succeeded"
             sockets = output("docker", "exec", app, "cat", "/proc/net/unix")
@@ -237,8 +292,9 @@ def scenario(image, seed, checkpoint, mode, rollback, signal=None):
         interrupted = journal()
         assert interrupted["operation_kind"] == "base_takeover"
         if signal:
-            assert interrupted["step"] == "migration_succeeded"
-            assert not config_command("find", "/config", "-type", "s")
+            assert interrupted["step"] == ("migration_started" if signal == "KILL" else "migration_succeeded")
+            if signal != "KILL":
+                assert not config_command("find", "/config", "-type", "s")
         if checkpoint == "restore_live_quarantined":
             assert sql("SELECT count(*) FROM pg_database WHERE datname='takeover_fixture'", "postgres") == "0"
         run("docker", "rm", "-v", app, stdout=subprocess.DEVNULL)
@@ -255,7 +311,7 @@ def scenario(image, seed, checkpoint, mode, rollback, signal=None):
         assert sql("SELECT title FROM managed_anime WHERE id='takeover-fixture'") == "Preserved title"
         assert sql("SELECT to_regclass('public.fixture_added_by_takeover') IS NOT NULL") == ("f" if rollback else "t")
         assert sql("SELECT op_id || '|' || admitted_by || '|' || sequence || '|' || manifest_digest || '|' || state "
-                   "FROM embedded_update_locks WHERE released_at IS NOT NULL") == (
+                   "FROM embedded_update_locks WHERE released_at IS NOT NULL AND sequence = 3") == (
             f"{operation}|embedded|3|{record['manifest_digest']}|" + ("failed" if rollback else "settled"))
         if not rollback:
             config_command("sh", "-ec", 'test ! -e /config/updates/current; test -d "$1/releases/$2"; test -f "$1/provenance/$2.json"',
@@ -303,6 +359,8 @@ def main():
                 scenario(image, seed, checkpoint, mode, rollback)
             scenario(image, seed, "signal_term", "manual", False, signal="TERM")
             scenario(image, seed, "signal_int", "embedded", False, signal="INT")
+            scenario(image, seed, "signal_kill", "embedded", False, signal="KILL")
+            scenario(image, seed, "local_socket_unusable", "embedded", True, bad_socket=True)
         finally:
             subprocess.run(["docker", "image", "rm", image], check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)

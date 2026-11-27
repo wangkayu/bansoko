@@ -2,7 +2,7 @@ package application
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -37,6 +37,10 @@ type LiveDatabase struct {
 // A pre-existing database with the same generated name is never rewritten:
 // without this claim it belongs to somebody else.
 const restoreClaimPrefix = "bansoko.restore-claim:"
+
+// restoreScratchPrefix names the inaccessible database CREATE DATABASE builds
+// before the claiming transaction publishes it under the ready name.
+const restoreScratchPrefix = "bsk_restore_unclaimed_"
 
 // validRestoreDatabaseName accepts PostgreSQL identifiers when quoted.
 func validRestoreDatabaseName(name string) bool {
@@ -261,7 +265,7 @@ func advanceRestoreCutover(ctx context.Context, admin *sql.DB, p RestoreCutover,
 				return false, err
 			}
 		}
-		if err := renameQuarantinedDatabase(ctx, admin, p.Live, p.Aside); err != nil {
+		if err := QuarantineAndRenameDatabase(ctx, admin, p.Live, p.Aside); err != nil {
 			return false, err
 		}
 		if onRename != nil {
@@ -269,7 +273,7 @@ func advanceRestoreCutover(ctx context.Context, admin *sql.DB, p RestoreCutover,
 		}
 		return false, nil
 	case live.oid == 0 && owned(ready, p.ReadyOID) && owned(aside, p.LiveOID) && !aside.allowsConnections:
-		if err := renameQuarantinedDatabase(ctx, admin, p.Ready, p.Live); err != nil {
+		if err := QuarantineAndRenameDatabase(ctx, admin, p.Ready, p.Live); err != nil {
 			return false, err
 		}
 		if onRename != nil {
@@ -303,9 +307,12 @@ func (p RestoreCutover) restoredDatabase(ctx context.Context, admin *sql.DB) (ca
 	return info, true, nil
 }
 
-// Commit the quarantine and rename together so a process stop cannot hide the
-// live fence behind ALLOW_CONNECTIONS=false before the first rename.
-func renameQuarantinedDatabase(ctx context.Context, admin *sql.DB, database, target string) error {
+// QuarantineAndRenameDatabase commits ALLOW_CONNECTIONS=false, the eviction of
+// serving sessions and the rename in one transaction. PostgreSQL 17 accepts
+// ALTER DATABASE ... RENAME TO inside a transaction block, so a stop can never
+// leave the database renamed while still accepting connections, nor the reverse.
+// A failure rolls back the name and connection policy, not terminated sessions.
+func QuarantineAndRenameDatabase(ctx context.Context, admin *sql.DB, database, target string) error {
 	tx, err := admin.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -359,7 +366,7 @@ func EnsureOperationRestoreDatabase(ctx context.Context, admin *sql.DB, live, re
 		return errors.New("restore requires an owned live database and an unused aside name")
 	}
 	if b.oid == 0 {
-		return createClaimedRestoreDatabase(ctx, admin, live, ready, operationID)
+		return createClaimedRestoreDatabase(ctx, admin, live, ready, operationID, owner)
 	}
 	if b.owner != owner || !b.allowsConnections {
 		return errors.New("operation restore database has unexpected catalog identity")
@@ -374,14 +381,22 @@ func EnsureOperationRestoreDatabase(ctx context.Context, admin *sql.DB, live, re
 	return nil
 }
 
-func createClaimedRestoreDatabase(ctx context.Context, admin *sql.DB, live, ready, operationID string) error {
-	// CREATE DATABASE cannot run in a transaction. A crash here leaves only
-	// an inaccessible scratch DB, never an unclaimed canonical ready name.
-	var nonce [16]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
+// RestoreScratchName derives the single inaccessible name this operation may
+// create before its claiming transaction publishes the ready database. Binding
+// the name to the operation means replay reclaims only its own abandoned
+// scratch database, never one an operator or another operation created.
+func RestoreScratchName(live, ready, operationID string) string {
+	key := sha256.Sum256([]byte(live + "\x00" + ready + "\x00" + operationID))
+	return fmt.Sprintf("%s%x", restoreScratchPrefix, key[:16])
+}
+
+func createClaimedRestoreDatabase(ctx context.Context, admin *sql.DB, live, ready, operationID string, owner uint32) error {
+	// CREATE DATABASE cannot run in a transaction. Reserve a scratch name for
+	// this operation alone so replay never scans or reclaims another DB.
+	scratch := RestoreScratchName(live, ready, operationID)
+	if err := reclaimRestoreScratch(ctx, admin, scratch, owner); err != nil {
 		return err
 	}
-	scratch := fmt.Sprintf("bsk_restore_unclaimed_%x", nonce)
 	if err := createLikeWithConnections(ctx, admin, scratch, live, false); err != nil {
 		return err
 	}
@@ -400,6 +415,27 @@ func createClaimedRestoreDatabase(ctx context.Context, admin *sql.DB, live, read
 		return err
 	}
 	return tx.Commit()
+}
+
+func reclaimRestoreScratch(ctx context.Context, admin *sql.DB, name string, owner uint32) error {
+	var dbOwner uint32
+	var occupied bool
+	err := admin.QueryRowContext(ctx, `
+		SELECT datdba::bigint, datallowconn OR datistemplate OR datacl IS NOT NULL
+		       OR pg_catalog.shobj_description(oid, 'pg_database') IS NOT NULL
+		FROM pg_catalog.pg_database WHERE datname = $1`, name).Scan(&dbOwner, &occupied)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if occupied || dbOwner != owner {
+		return errors.New("operation scratch database has unexpected ownership or permissions")
+	}
+	// Do not force termination: an unexpected session must prevent deletion.
+	_, err = admin.ExecContext(ctx, `DROP DATABASE `+quoteIdent(name))
+	return err
 }
 
 func databaseClaimByOID(ctx context.Context, admin *sql.DB, oid uint32) (string, error) {

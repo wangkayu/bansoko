@@ -412,13 +412,22 @@ def read_moving_image_identity(pinned, architecture):
         )
         if legacy is None or labels.get("org.opencontainers.image.source") != "https://github.com/" + UPSTREAM_REPOSITORY:
             fail("cannot prove pre-sequence moving tag identity")
-        actual = {"version": legacy[1], "commit": legacy[2], "lane": "unordered"}
+        version, commit = legacy.groups()
+        oci_version = labels.get("org.opencontainers.image.version")
+        if oci_version == version:
+            lane = "stable"
+        elif oci_version == version + "-" + commit[:9]:
+            lane = "test"
+        else:
+            fail("pre-sequence moving tag version differs from its pinned OCI config")
+        actual = {"version": version, "commit": commit, "lane": "unordered", "legacy_lane": lane}
     else:
         if not isinstance(actual, dict) or (actual.get("platform"), actual.get("architecture")) != ("linux", architecture):
             fail("moving tag binary is on the wrong platform")
-    if (actual.get("version"), actual.get("commit")) != (
-        labels.get("org.opencontainers.image.version"), labels.get("org.opencontainers.image.revision")
-    ) or not actual.get("version") or not re.fullmatch(r"[0-9a-f]{40}", actual.get("commit") or ""):
+        if actual.get("version") != labels.get("org.opencontainers.image.version"):
+            fail("moving tag binary version differs from its pinned OCI config")
+    if (not actual.get("version") or actual.get("commit") != labels.get("org.opencontainers.image.revision")
+            or not re.fullmatch(r"[0-9a-f]{40}", actual.get("commit") or "")):
         fail("moving tag binary identity differs from its pinned OCI config")
     return actual
 
@@ -430,8 +439,9 @@ def guard_moving_identity(actual, ident):
     if sequence is None and actual.get("lane") == "unordered" and not actual.get("series"):
         version = actual.get("version", "")
         stable = r"[0-9]+\.[0-9]+\.[0-9]+"
-        pattern = stable if ident["lane"] == "stable" else stable + r"-test\.[1-9][0-9]*"
-        if upstream and re.fullmatch(pattern, version):
+        legacy_lane = actual.get("legacy_lane")
+        pattern = stable if legacy_lane is not None or ident["lane"] == "stable" else stable + r"-test\.[1-9][0-9]*"
+        if upstream and (legacy_lane is None or legacy_lane == ident["lane"]) and re.fullmatch(pattern, version):
             return  # One-time switch from a proven pre-sequence image.
         fail("moving tag has no compatible pre-sequence identity")
     series = actual.get("series")

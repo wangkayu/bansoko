@@ -25,6 +25,12 @@ const ACTIVE_STEPS: Record<string, true> = {
   // Admission is an in-memory server phase, not a durable checkpoint. A
   // successful status GET can still report it while the payload is fetched.
   accepted: true,
+  prepared: true,
+  fetched: true,
+  staged: true,
+  maintenance_entered: true,
+  backup_verified: true,
+  abort_pending: true,
   pending_backup: true,
   pending_migration: true,
   migration_succeeded: true,
@@ -98,12 +104,13 @@ function consumePendingReceipt(operationID: string): boolean {
 
 export function SettingsUpdates() {
   const queryClient = useQueryClient();
-  const { data: deployment } = useQuery({
+  const { data: readiness, isPending: readinessPending } = useQuery({
     queryKey: [...updateKeys.status, "deployment"],
     queryFn: getReadyz,
-    select: (report) => report.deployment_identity,
     retry: false,
   });
+  const deployment = readiness?.deployment_identity;
+  const manualMode = readiness?.update_mode === "manual";
   const describeBuild = (build: NonNullable<typeof deployment>["selected_build"]) =>
     build ? `${build.version} · ${build.build_id}${build.release_sequence ? ` · ${build.lane} #${build.release_sequence}` : ""}` : t("settings.updates.buildUnknown");
   const reasonKey = deployment?.selection_reason_code;
@@ -191,6 +198,7 @@ export function SettingsUpdates() {
   }, [queryClient, refetchStatus]);
 
   async function handleCheck() {
+    if (manualMode || readinessPending) return;
     if (checkPhase === "checking") return;
 
     setCheckPhase("checking");
@@ -214,6 +222,7 @@ export function SettingsUpdates() {
   }
 
   function requestUpdate(candidate: UpdateCandidate) {
+    if (manualMode || readinessPending) return;
     const currentStatus = queryClient.getQueryData<EmbeddedUpdateStatus | null>(updateKeys.status);
     if (
       statusError ||
@@ -272,6 +281,7 @@ export function SettingsUpdates() {
   }
 
   async function confirmUpdate() {
+    if (manualMode || readinessPending) return;
     const candidate = pendingCandidate;
     const idempotencyKey = pendingKey;
     const currentStatus = queryClient.getQueryData<EmbeddedUpdateStatus | null>(updateKeys.status);
@@ -314,16 +324,14 @@ export function SettingsUpdates() {
   }
 
   const visibleStatus = (statusError || statusRefetchError || statusReconnectError || !recoveredStatus) && isActiveStatus(lastActiveStatus) ? lastActiveStatus : recoveredStatus;
-  // Manual deployments (update service unwired) report SERVICE_NOT_CONFIGURED;
-  // that is a declared capability state, not a failure, so it renders as a
-  // neutral note instead of the red status error.
+  // Older deployments can report an unwired update service instead of a mode.
   const statusNotConfigured = statusError instanceof ApiError && statusError.code === "SERVICE_NOT_CONFIGURED";
   const activeStatus = isActiveStatus(visibleStatus);
   const blockedStatus = isBlockedStatus(visibleStatus);
   const historicalStatus = isHistoricalStatus(visibleStatus);
   const unknownStatus = Boolean(visibleStatus && !activeStatus && !blockedStatus && !historicalStatus);
   const statusReady =
-    !statusLoading && !statusFetching && !statusError && !statusRefetchError && !statusReconnectError && !activeStatus && !blockedStatus && !unknownStatus;
+    !manualMode && !readinessPending && !statusLoading && !statusFetching && !statusError && !statusRefetchError && !statusReconnectError && !activeStatus && !blockedStatus && !unknownStatus;
   return (
     <section className="settings-updates">
       <div className="settings-updates-header">
@@ -340,7 +348,9 @@ export function SettingsUpdates() {
 
       {statusLoading && !visibleStatus && <StateBlock kind="busy" skeleton="settings" title={t("settings.updates.loading")} />}
 
-      {statusNotConfigured && <StateBlock kind="empty" title={t("settings.updates.manualModeTitle")} description={t("settings.updates.manualModeHint")} />}
+      {(statusNotConfigured || (manualMode && !visibleStatus && !statusLoading && !statusError)) && (
+        <StateBlock kind="empty" title={t("settings.updates.manualModeTitle")} description={t("settings.updates.manualModeHint")} />
+      )}
 
       {(statusError || statusRefetchError || statusReconnectError) && !activeStatus && !statusNotConfigured && (
         <StateBlock
@@ -383,7 +393,7 @@ export function SettingsUpdates() {
       {statusReady && <ManualCheckPanel phase={checkPhase} error={checkError} onCheck={() => void handleCheck()} />}
 
       <ConfirmDialog
-        open={confirmOpen}
+        open={confirmOpen && !manualMode}
         onOpenChange={setConfirmOpen}
         title={t("settings.updates.confirmTitle", { version: pendingCandidate?.version ?? "" })}
         description={pendingCandidate ? <UpdateConfirmation candidate={pendingCandidate} /> : undefined}

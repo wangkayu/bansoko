@@ -154,11 +154,30 @@ func discardMarkerTarget(updatesRoot, markerPath string, marker pendingMarker) e
 	return nil
 }
 
+func validateMarkerPointer(updatesRoot string, marker pendingMarker) error {
+	pointer := deploymentidentity.ReadCurrentPointer(updatesRoot)
+	if pointer.Presented && (!pointer.Readable || pointer.Corrupt) {
+		return errors.New("pending marker cannot consume an unreadable current pointer")
+	}
+	if pointer.Token != marker.PreviousReleaseID {
+		return fmt.Errorf("pending marker previous release %q differs from current release %q", marker.PreviousReleaseID, pointer.Token)
+	}
+	if pointer.Token != "" {
+		if _, _, err := verifyReleaseTreeIdentity(relDirOf(updatesRoot, pointer.Token)); err != nil {
+			return fmt.Errorf("verify current release for pending marker: %w", err)
+		}
+	}
+	return nil
+}
+
 func consumePendingMarker(updatesRoot string) error {
 	markerPath := filepath.Join(updatesRoot, pendingMarkerName)
 	marker, err := readPendingMarker(markerPath)
 	if err != nil {
 		return fmt.Errorf("invalid pending marker: %w", err)
+	}
+	if err := validateMarkerPointer(updatesRoot, marker); err != nil {
+		return err
 	}
 	journal, err := embeddedupdate.Open(filepath.Join(updatesRoot, journalFileName))
 	if err != nil {
@@ -203,15 +222,6 @@ func consumePendingMarker(updatesRoot string) error {
 	if err != nil || digest != marker.ManifestDigest {
 		return errors.New("pending marker digest differs from signed manifest")
 	}
-	pointer := deploymentidentity.ReadCurrentPointer(updatesRoot)
-	if pointer.Presented && (!pointer.Readable || pointer.Corrupt) {
-		return errors.New("pending marker cannot consume an unreadable current pointer")
-	}
-	current := pointer.Token
-	if current != marker.PreviousReleaseID {
-		return fmt.Errorf("pending marker previous release %q differs from current release %q", marker.PreviousReleaseID, current)
-	}
-
 	dsn := maintenanceDatabaseURL()
 	if strings.TrimSpace(dsn) == "" {
 		return errors.New("pending marker consumption requires the owner database DSN")

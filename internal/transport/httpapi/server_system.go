@@ -110,6 +110,10 @@ func toGeneratedReadiness(report readiness.Report) generated.ReadinessReport {
 		Checks:    checks,
 		CheckedAt: report.CheckedAt,
 	}
+	if report.UpdateMode != "" {
+		mode := generated.ReadinessReportUpdateMode(report.UpdateMode)
+		result.UpdateMode = &mode
+	}
 	if identity := report.DeploymentIdentity; identity != nil {
 		result.DeploymentIdentity = &generated.DeploymentIdentity{
 			BaseBuild: deploymentBuild(identity.BaseBuild), SelectedBuild: deploymentBuild(identity.SelectedBuild),

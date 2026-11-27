@@ -283,6 +283,20 @@ jobs:
           done
           echo "go mod download failed after 5 attempts" >&2
           exit 1
+      - name: install PostgreSQL 17 server tools for isolated restore tests
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl
+          curl --fail --silent --show-error --location --retry 3 \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/postgresql.asc
+          printf '%s\n' 'deb [signed-by=/usr/share/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends postgresql-17
+      - name: PostgreSQL 17 restore admission and crash replay
+        run: |
+          bash scripts/ci/run-unprivileged.sh bash scripts/ci/go-test-no-skips.sh restore-pg17 \
+            -count=1 -tags restorecutoverpg ./internal/backup/application \
+            -run '^TestRestore(Admission|Cutover|Quarantine)PG17$'
       - name: serial PostgreSQL gate (shard 1/3)
         env:
           # The service is addressed by its service key on the job network, the

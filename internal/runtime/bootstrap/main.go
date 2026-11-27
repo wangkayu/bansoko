@@ -366,7 +366,7 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 	if _, err := os.Lstat(markerPath); err == nil {
 		marker, err := readPendingMarker(markerPath)
 		facts.pending = err == nil
-		facts.unusable = err != nil || (facts.active && !facts.rollbackBlocked && (record.Step != embeddedupdate.StepPendingMigration ||
+		facts.unusable = err != nil || validateMarkerPointer(updatesRoot, marker) != nil || (facts.active && !facts.rollbackBlocked && (record.Step != embeddedupdate.StepPendingMigration ||
 			marker.OperationID != record.OperationID || marker.ReleaseID != record.TargetReleaseID || marker.ReleaseSequence != record.TargetReleaseSequence ||
 			marker.ManifestDigest != record.ManifestDigest || marker.PreviousReleaseID != record.PreviousReleaseID))
 	} else if !errors.Is(err, syscall.ENOENT) {

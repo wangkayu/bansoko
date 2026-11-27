@@ -31,10 +31,11 @@ type CheckOutcome struct {
 
 // Report is the machine-readable readiness snapshot.
 type Report struct {
-	Ready     bool                    `json:"ready"`
-	Reason    string                  `json:"reason"`
-	Checks    map[string]CheckOutcome `json:"checks"`
-	CheckedAt time.Time               `json:"checked_at"`
+	Ready      bool                    `json:"ready"`
+	Reason     string                  `json:"reason"`
+	Checks     map[string]CheckOutcome `json:"checks"`
+	CheckedAt  time.Time               `json:"checked_at"`
+	UpdateMode string                  `json:"update_mode,omitempty"`
 	// DeploymentIdentity is the three-layer release identity of this process
 	// (base image / selected overlay release / update operation). It is null
 	// when the process was not launched through the update-aware bootstrap.
@@ -59,6 +60,7 @@ type Dependencies struct {
 	// identity (bare-metal dev): the check reports "not_provided" and never
 	// hard-fails on its own.
 	Deployment DeploymentIdentityProvider
+	UpdateMode string
 }
 
 // DeploymentIdentityProvider exposes the injected deployment identity plus one
@@ -293,6 +295,7 @@ func (c *Checker) Report(ctx context.Context) Report {
 	return Report{
 		Ready: ready, Reason: reason, Checks: checks, CheckedAt: time.Now().UTC(),
 		DeploymentIdentity: providedIdentity,
+		UpdateMode:         c.deps.UpdateMode,
 	}
 }
 

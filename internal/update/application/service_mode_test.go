@@ -42,8 +42,10 @@ func TestAdvancesRunningRelease(t *testing.T) {
 		{"lower", buildinfo.CISeries, "test", 41, false},
 		{"equal", buildinfo.CISeries, "test", 42, false},
 		{"higher", buildinfo.CISeries, "test", 43, true},
-		{"cross lane", buildinfo.CISeries, "stable", 41, true},
-		{"cross series", "other-series", "test", 41, true},
+		{"older cross lane", buildinfo.CISeries, "stable", 41, false},
+		{"equal cross lane", buildinfo.CISeries, "stable", 42, false},
+		{"newer cross lane", buildinfo.CISeries, "stable", 43, true},
+		{"cross series", "gh:other/bansoko:v1", "test", 41, true},
 		{"legacy nightly", "", "nightly", 41, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

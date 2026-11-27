@@ -62,6 +62,19 @@ func matchesTakeoverPair(r embeddedupdate.Record, a embeddedupdate.BaseAnchor, p
 
 var errTakeoverIncompatible = errors.New("takeover restore prerequisites are not met")
 
+func proveProducingFence(ctx context.Context, lookup func(context.Context, string) (updatefence.Row, bool, error), proof overlayIdentityProof) error {
+	digest, err := proof.Manifest.CanonicalDigest()
+	if err != nil {
+		return fmt.Errorf("digest previous overlay manifest: %w", err)
+	}
+	row, found, err := lookup(ctx, proof.OperationID)
+	if err != nil || !found || !row.Released || row.State != "settled" || row.AdmittedBy != updatefence.AdmittedByEmbedded ||
+		row.OperationID != proof.OperationID || row.Sequence != proof.Manifest.ReleaseSequence || row.ManifestDigest != digest {
+		return errors.New("previous overlay has no exact closed producing fence")
+	}
+	return nil
+}
+
 func createTakeoverIntent(parent context.Context, j *embeddedupdate.FileJournal, root, ownerURL string, db *sql.DB, prior embeddedupdate.Record, found bool) (embeddedupdate.Record, error) {
 	var none embeddedupdate.Record
 	if same, err := isCurrentExecutable(baseServerPath); err != nil || !same {
@@ -92,6 +105,9 @@ func createTakeoverIntent(parent context.Context, j *embeddedupdate.FileJournal,
 	ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 	defer cancel()
 	store := updatefence.New(db)
+	if err := proveProducingFence(ctx, store.Lookup, proof); err != nil {
+		return none, err
+	}
 	if rows, err := store.ListOpenAll(ctx); err != nil || len(rows) != 0 {
 		return none, errors.New("an unresolved database fence prevents takeover")
 	}

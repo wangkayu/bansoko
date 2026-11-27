@@ -386,6 +386,65 @@ func TestConsumePendingMarkerReplayWithPendingJournalRemovesOnlyTheMarker(t *tes
 	}
 }
 
+func TestPendingMarkerReplayRefusesUnprovenCurrent(t *testing.T) {
+	for _, tc := range []struct{ name, pointer string }{
+		{"corrupt", "../outside"},
+		{"different", markerTargetRelease},
+		{"unreadable", ""},
+		{"dangling release", markerPreviousRelease},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := markerRoot(t)
+			marker := markerForRelease(t, root, markerTargetRelease, markerPreviousRelease, "marker-pointer-op")
+			markerPath := writePendingMarker(t, root, marker)
+			seedConsumeJournal(t, root, marker.OperationID, func(record *embeddedupdate.Record) {
+				record.TargetReleaseID = marker.ReleaseID
+				record.TargetReleaseSequence = marker.ReleaseSequence
+				record.ManifestDigest = marker.ManifestDigest
+				record.BackupID = "embedded-" + marker.OperationID
+				record.PreviousReleaseID = marker.PreviousReleaseID
+				record.RollbackSourceCaptured = true
+			}, embeddedupdate.StepAccepted, embeddedupdate.StepFetched, embeddedupdate.StepStaged,
+				embeddedupdate.StepMaintenanceEntered, embeddedupdate.StepBackupVerified, embeddedupdate.StepPendingMigration)
+			if err := os.WriteFile(filepath.Join(root, "current"), []byte(tc.pointer+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.name == "unreadable" {
+				path := filepath.Join(root, "current")
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Join(root, "elsewhere"), path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.name == "dangling release" {
+				if err := os.RemoveAll(relDirOf(root, markerPreviousRelease)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			journalPath := filepath.Join(root, journalFileName)
+			journalBefore := string(mustReadFile(t, journalPath))
+			before := string(mustReadFile(t, markerPath))
+			t.Setenv("BANSOKO_UPDATE_MODE", "embedded")
+			fence, backup := &recordingMarkerFence{}, &recordingMarkerBackup{}
+			installMarkerSeam(t, fence, backup)
+			if got := planLaunch("server", root); got.mode != modeMaintenance || got.reasonCode != "update_evidence_unusable" {
+				t.Fatalf("plan failed open: %+v", got)
+			}
+			if err := consumePendingMarker(root); err == nil {
+				t.Fatal("replay accepted an unproven current pointer")
+			}
+			if after := string(mustReadFile(t, journalPath)); after != journalBefore {
+				t.Fatal("refused replay modified journal")
+			}
+			if after := string(mustReadFile(t, markerPath)); after != before || fence.calls() != 0 || backup.calls != 0 {
+				t.Fatal("refused replay modified marker or touched update effects")
+			}
+		})
+	}
+}
+
 // TestConsumePendingMarkerBackupFailureClosesExactFenceWithoutMigration is the
 // backup-failure boundary: the verified backup is the only irreversible
 // prerequisite of the handoff, so its failure must close this operation's fence

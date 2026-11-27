@@ -85,17 +85,14 @@ type Deps struct {
 	CheckBackupTools func() error
 }
 
-// Legacy manifests on the existing fixed lane used the same CI run counter.
+// Stable and test share a CI counter within a series, even when switching lanes.
+// Legacy unordered manifests use the upstream counter for compatibility.
 func advancesRunningRelease(running buildinfo.Order, candidate hardeningdomain.ReleaseManifest) bool {
-	lane := string(candidate.Channel)
-	if candidate.Series == "" && candidate.Channel == hardeningdomain.ReleaseChannelNightly {
-		lane = LaneTest
-	}
 	series := candidate.Series
 	if series == "" {
 		series = buildinfo.CISeries
 	}
-	return !running.Ordered() || running.Series != series || running.Lane != lane || candidate.ReleaseSequence > running.ReleaseSequence
+	return !running.Ordered() || running.Series != series || candidate.ReleaseSequence > running.ReleaseSequence
 }
 
 type Service struct {

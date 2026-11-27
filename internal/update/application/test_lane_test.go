@@ -8,6 +8,7 @@ import (
 	"time"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/runtime/buildinfo"
 )
 
 // The test update lane publishes `X.Y.Z-test.<run>` builds, numbered by the
@@ -86,6 +87,16 @@ func TestMovingBetweenLanesFollowsTheSequenceFloor(t *testing.T) {
 		// (sequence 125). Neither check nor admission offers the old build.
 		older := newLaneCandidate(t, "0.1.0", hardeningdomain.ReleaseChannelStable, 125, nil)
 		service, _ := older.service(t, 130, "0.1.0-test.130", false)
+		withoutHistory, _ := older.service(t, 0, "0.1.0-test.130", false)
+		withoutHistory.runningOrder = buildinfo.Order{Series: buildinfo.CISeries, Lane: "test", ReleaseSequence: 130}
+		if check, err := withoutHistory.CheckUpdate(context.Background()); err != nil || check.Status != "up_to_date" || check.Candidate != nil {
+			t.Fatalf("check with empty history = %+v, %v", check, err)
+		}
+		_, admitted, admissionErr := older.admit(t, withoutHistory, "lane-older-stable-empty-history")
+		requireDisposableBusinessError(t, admissionErr, http.StatusUnprocessableEntity, "UPDATE_TARGET_STALE")
+		if admitted {
+			t.Fatal("running test sequence was ignored with an empty fence history")
+		}
 		if check, err := service.CheckUpdate(context.Background()); err != nil || check.Status != "up_to_date" || check.Candidate != nil {
 			t.Fatalf("check = %+v, %v", check, err)
 		}

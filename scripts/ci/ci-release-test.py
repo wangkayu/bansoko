@@ -1214,5 +1214,32 @@ class FrozenIdentityTests(unittest.TestCase):
                         release.read_moving_image_identity("repo@sha256:digest", "arm64")
 
 
+    def test_historical_test_tag_uses_runtime_version_and_oci_commit_suffix(self):
+        commit = "123456789" + "a" * 31
+        ident = {"lane": "test", "version": "0.3.0-test.42", "release_id": "v0.3.0-test.42",
+                 "sha": "b" * 40, "sequence": 42}
+        for arch in ("amd64", "arm64"):
+            raw = (f"bansoko 0.2.3 (commit {commit})\n"
+                   f"target schema version: 001_baseline\nembedded frontend: false\nplatform: linux/{arch}")
+            for version, revision, valid in (
+                ("0.2.3-123456789", commit, True),
+                ("0.2.3-123456789", "c" * 40, False),
+                ("0.2.4-123456789", commit, False),
+                ("0.2.3-123456788", commit, False),
+            ):
+                image = {"Os": "linux", "Architecture": arch, "Config": {"Labels": {
+                    "org.opencontainers.image.version": version, "org.opencontainers.image.revision": revision,
+                    "org.opencontainers.image.source": "https://github.com/" + release.UPSTREAM_REPOSITORY,
+                }}}
+                with (self.subTest(arch=arch, version=version, revision=revision),
+                      patch.object(release, "read_image_version", return_value=raw),
+                      patch.object(release, "run", return_value=json.dumps(image))):
+                    if valid:
+                        release.guard_moving_identity(release.read_moving_image_identity("repo@sha256:digest", arch), ident)
+                    else:
+                        with self.assertRaises(RuntimeError):
+                            release.read_moving_image_identity("repo@sha256:digest", arch)
+
+
 if __name__ == "__main__":
     unittest.main()

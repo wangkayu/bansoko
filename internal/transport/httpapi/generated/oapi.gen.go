@@ -2020,6 +2020,12 @@ const (
 	RSSSourceRuntimeHealthUnknown  RSSSourceRuntimeHealth = "unknown"
 )
 
+// Defines values for ReadinessReportUpdateMode.
+const (
+	ReadinessReportUpdateModeEmbedded ReadinessReportUpdateMode = "embedded"
+	ReadinessReportUpdateModeManual   ReadinessReportUpdateMode = "manual"
+)
+
 // Defines values for RealtimeEventTarget.
 const (
 	RealtimeEventTargetCatalog    RealtimeEventTarget = "catalog"
@@ -8561,7 +8567,13 @@ type ReadinessReport struct {
 
 	// Reason "ready", "degraded:<code>", or "not_ready:<comma-separated codes>". Stable machine-readable admission verdict.
 	Reason string `json:"reason"`
+
+	// UpdateMode Configured update mode. Manual mode exposes status but does not check for or admit online updates.
+	UpdateMode *ReadinessReportUpdateMode `json:"update_mode,omitempty"`
 }
+
+// ReadinessReportUpdateMode Configured update mode. Manual mode exposes status but does not check for or admit online updates.
+type ReadinessReportUpdateMode string
 
 // RealtimeEvent One invalidation signal on /events/stream. It names the read model to re-read and never carries a business object.
 type RealtimeEvent struct {

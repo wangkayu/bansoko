@@ -61,10 +61,14 @@ func maintenanceIdentity(journalPath string) *deploymentidentity.Identity {
 	if err != nil || !found || r.Takeover == nil {
 		return nil
 	}
+	reason := "takeover_resuming"
+	if r.Step == embeddedupdate.StepRollbackBlocked {
+		reason = "rollback_blocked"
+	}
 	return &deploymentidentity.Identity{
 		BaseBuild: &r.Takeover.Anchor.Build, Anchor: deploymentidentity.AnchorDocker,
 		TakeoverOperationID: r.OperationID,
-		SelectionReasonCode: "takeover_resuming", SelectionReason: string(r.Step),
+		SelectionReasonCode: reason, SelectionReason: string(r.Step),
 	}
 }
 

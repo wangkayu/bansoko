@@ -9522,6 +9522,10 @@ components:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/ReadinessCheck'
+        update_mode:
+          type: string
+          enum: [embedded, manual]
+          description: Configured update mode. Manual mode exposes status but does not check for or admit online updates.
         checked_at:
           type: string
           format: date-time

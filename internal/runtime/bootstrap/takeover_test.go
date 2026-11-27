@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -261,6 +262,56 @@ func TestRetirementReplayAndRetention(t *testing.T) {
 			}
 			if _, err := os.Stat(retired); tt.gone && !errors.Is(err, os.ErrNotExist) || !tt.gone && err != nil {
 				t.Fatalf("retirement existence: gone=%v stat=%v", tt.gone, err)
+			}
+		})
+	}
+}
+
+// The takeover intent is only valid when the previous overlay's own producing
+// operation is proven closed in the database. Volume evidence alone is not a
+// trust root: a self-consistent tree, provenance file and journal must still be
+// backed by the exact settled fence row.
+func TestTakeoverIntentRequiresTheClosedProducingFence(t *testing.T) {
+	root := t.TempDir()
+	releaseID := "fixture-overlay"
+	writeReleaseTreeWithOrder(t, root, releaseID, buildinfo.Order{Series: buildinfo.CISeries, Lane: "stable", ReleaseSequence: 2})
+	seedReleaseProvenance(t, root, releaseID)
+	proof, err := verifyOverlayIdentity(root, releaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := proof.Manifest.CanonicalDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact := updatefence.Row{OperationID: proof.OperationID, AdmittedBy: updatefence.AdmittedByEmbedded,
+		Sequence: proof.Manifest.ReleaseSequence, ManifestDigest: digest, State: "settled", Released: true}
+	for _, tc := range []struct {
+		name   string
+		row    updatefence.Row
+		found  bool
+		lookup error
+	}{
+		{"exact", exact, true, nil},
+		{"missing", updatefence.Row{}, false, nil},
+		{"lookup failure", exact, false, errors.New("database unavailable")},
+		{"still open", func() updatefence.Row { r := exact; r.Released = false; return r }(), true, nil},
+		{"failed", func() updatefence.Row { r := exact; r.State = "failed"; return r }(), true, nil},
+		{"foreign owner", func() updatefence.Row { r := exact; r.AdmittedBy = "overlay"; return r }(), true, nil},
+		{"other operation", func() updatefence.Row { r := exact; r.OperationID = "other-op"; return r }(), true, nil},
+		{"other sequence", func() updatefence.Row { r := exact; r.Sequence = 1; return r }(), true, nil},
+		{"other digest", func() updatefence.Row { r := exact; r.ManifestDigest = strings.Repeat("a", 64); return r }(), true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lookup := func(_ context.Context, operationID string) (updatefence.Row, bool, error) {
+				if operationID != proof.OperationID {
+					t.Fatalf("lookup operation = %q, want %q", operationID, proof.OperationID)
+				}
+				return tc.row, tc.found, tc.lookup
+			}
+			err := proveProducingFence(context.Background(), lookup, proof)
+			if (err == nil) != (tc.name == "exact") {
+				t.Fatalf("proveProducingFence = %v, want accepted=%v", err, tc.name == "exact")
 			}
 		})
 	}

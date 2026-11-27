@@ -784,6 +784,7 @@ func runServe(args []string, probe bool) int {
 		Gate:                         maintenanceGate,
 		QB:                           qbHealthProbe{connections: configService},
 		Deployment:                   deployment,
+		UpdateMode:                   cfg.UpdateMode,
 	})
 
 	// Embedded self-update channel (Sub B Step 3, BANSOKO_UPDATE_MODE=embedded).
@@ -901,6 +902,12 @@ func runServe(args []string, probe bool) int {
 	}))
 
 	if probe {
+		if cfg.UpdateMode == "embedded" {
+			if err := localupdate.CheckEndpoint(updatesRootForIdentity); err != nil {
+				fmt.Fprintf(os.Stderr, "private readiness: local update control listener failed: %v\n", err)
+				return 1
+			}
+		}
 		return bootstrapcmd.RunPrivateReadiness(readinessChecker.Report)
 	}
 

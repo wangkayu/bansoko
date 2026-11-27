@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -208,6 +209,118 @@ func TestRestoreCutoverPG17(t *testing.T) {
 				t.Fatal("runtime was granted DELETE outside the backup ACL")
 			}
 		})
+	}
+}
+
+// TestRestoreQuarantinePG17 pins the PostgreSQL 17 behaviour the recovery
+// cutover depends on: RENAME inside a transaction block is accepted, so the
+// connection policy and rename commit or roll back together, while eviction
+// ends existing sessions. Replay reclaims only its own unclaimed scratch.
+func TestRestoreQuarantinePG17(t *testing.T) {
+	base, _ := newCutoverCluster(t)
+	ctx := t.Context()
+	admin, err := sql.Open("pgx", base.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	exec := func(t *testing.T, statement string) {
+		t.Helper()
+		if _, err := admin.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	read := func(t *testing.T, name string) (bool, bool) {
+		t.Helper()
+		var allows bool
+		err := admin.QueryRowContext(ctx, `SELECT datallowconn FROM pg_catalog.pg_database WHERE datname = $1`, name).Scan(&allows)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, false
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return true, allows
+	}
+	id := "bsk_quarantine_" + uuid.NewString()[:8]
+	live, aside, blocked := id, id+"_aside", id+"_blocked"
+	ready := id + "_ready"
+	scratch := backupapp.RestoreScratchName(blocked, ready, id)
+	other := backupapp.RestoreScratchName(blocked, ready, id+"-other")
+	for _, name := range []string{live, blocked, ready, scratch, other} {
+		statement := `CREATE DATABASE ` + name
+		if name == scratch || name == other {
+			statement += ` ALLOW_CONNECTIONS false`
+		}
+		exec(t, statement)
+	}
+	liveURL := base
+	liveURL.Path = "/" + live
+	client, err := sql.Open("pgx", liveURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	conn, err := client.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var pid int
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+
+	// One transaction admits no new session and publishes the rename.
+	if err := backupapp.QuarantineAndRenameDatabase(ctx, admin, live, aside); err != nil {
+		t.Fatalf("transactional quarantine and rename: %v", err)
+	}
+	if present, _ := read(t, live); present {
+		t.Fatal("the quarantined database kept its serving name")
+	}
+	if present, allows := read(t, aside); !present || allows {
+		t.Fatalf("aside database present=%v allowsConnections=%v, want a closed quarantine", present, allows)
+	}
+
+	var stillConnected bool
+	if err := admin.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = $1)`, pid).Scan(&stillConnected); err != nil || stillConnected {
+		t.Fatalf("live client was not evicted: connected=%v err=%v", stillConnected, err)
+	}
+
+	// A refused rename rolls the quarantine back: the database keeps its name
+	// and stays online instead of being left half-renamed.
+	if err := backupapp.QuarantineAndRenameDatabase(ctx, admin, blocked, aside); err == nil {
+		t.Fatal("renamed onto an existing database name")
+	}
+	if present, allows := read(t, blocked); !present || !allows {
+		t.Fatalf("failed rename left the database present=%v allowsConnections=%v", present, allows)
+	}
+
+	// A crash between CREATE DATABASE and the claiming transaction leaves an
+	// inaccessible, unclaimed scratch database. The next admission reclaims it
+	// and never adopts or drops a database that is connectable or claimed.
+	exec(t, `DROP DATABASE `+ready)
+	for _, mutation := range []struct{ set, reset string }{
+		{`COMMENT ON DATABASE ` + scratch + ` IS 'bansoko.restore-claim:other-operation'`, `COMMENT ON DATABASE ` + scratch + ` IS NULL`},
+		{`ALTER DATABASE ` + scratch + ` ALLOW_CONNECTIONS true`, `ALTER DATABASE ` + scratch + ` ALLOW_CONNECTIONS false`},
+	} {
+		exec(t, mutation.set)
+		if err := backupapp.EnsureOperationRestoreDatabase(ctx, admin, blocked, ready, id+"_unused_aside", id); err == nil {
+			t.Fatal("occupied scratch database was reclaimed")
+		}
+		exec(t, mutation.reset)
+	}
+	if err := backupapp.EnsureOperationRestoreDatabase(ctx, admin, blocked, ready, id+"_unused_aside", id); err != nil {
+		t.Fatal(err)
+	}
+	if present, _ := read(t, scratch); present {
+		t.Fatal("abandoned unclaimed scratch database survived admission")
+	}
+	if present, _ := read(t, other); !present {
+		t.Fatal("another operation's scratch database was dropped")
+	}
+	if present, allows := read(t, ready); !present || !allows {
+		t.Fatalf("ready database present=%v allowsConnections=%v", present, allows)
 	}
 }
 

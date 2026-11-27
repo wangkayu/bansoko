@@ -3539,6 +3539,11 @@ export interface components {
             checks: {
                 [key: string]: components["schemas"]["ReadinessCheck"];
             };
+            /**
+             * @description Configured update mode. Manual mode exposes status but does not check for or admit online updates.
+             * @enum {string}
+             */
+            update_mode?: "embedded" | "manual";
             /** Format: date-time */
             checked_at: string;
             /** @description Deployment identity of the running process, including the attested base build, selected build, and any overlay payload and operation. Present when bootstrap supplied deployment identity.
