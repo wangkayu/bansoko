@@ -312,6 +312,11 @@ func (m *Matcher) applyBangumiData(index *BangumiDataIndex, request MatchRequest
 	}
 	if item == nil && request.Title != "" {
 		item = index.LookupByTitle(request.Title)
+		if item == nil {
+			if base, year := splitTrailingTitleYear(request.Title); year != 0 {
+				item = index.lookupByTitleYear(base, year)
+			}
+		}
 	}
 	if item != nil && result.BgmID != nil && item.BgmID != "" && item.BgmID != *result.BgmID {
 		// A title/Mikan hit for another BGM subject must not lend its TMDB

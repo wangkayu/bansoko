@@ -54,8 +54,7 @@ type BGMMatchResult struct {
 	Year *int
 }
 
-// BGMMatcher scores one Bangumi v0 search response before loading details.
-// When Connections is
+// BGMMatcher scores Bangumi v0 search results before loading details. When Connections is
 // set, the single enabled bgm connection supplies the endpoint and, through
 // ClientResolver, the egress route client on each call so configuration
 // changes apply without a restart. With no usable bgm connection the matcher
@@ -129,11 +128,10 @@ func newBGMMatch(id int, subject *BGMSubject, confidence float64, method string,
 		TotalEpisodes: subject.Eps, Year: identitymetadatadomain.NormalizeYear(&airing.year), trusted: trusted, airing: airing}
 }
 
-// Match resolves at most one subject from a single search response.
+// Match resolves at most one subject, trying the original title first.
 func (m *BGMMatcher) Match(ctx context.Context, title string) (*BGMMatchResult, error) {
 	title = strings.TrimSpace(title)
-	key := bgmTitleKey(title)
-	if key == "" {
+	if title == "" {
 		return nil, nil
 	}
 	endpoint, client := m.resolve(ctx)
@@ -141,29 +139,21 @@ func (m *BGMMatcher) Match(ctx context.Context, title string) (*BGMMatchResult, 
 	if err != nil {
 		return nil, fmt.Errorf("bgm subject search: %w", err)
 	}
-	normalized := normalizeTitle(title)
-	var best *BGMSubject
-	var score float64
-	ambiguous := false
-	for i := range items {
-		item := &items[i]
-		if item.ID <= 0 {
-			continue
+	best, score, ambiguous := bestBGMTitleMatch(items, title, 0)
+	var fallbackYear int
+	if best == nil {
+		base, year := splitTrailingTitleYear(title)
+		if year == 0 {
+			return nil, nil
 		}
-		direct := item.matchesTitle(key)
-		normalizedEqual := normalized != "" && item.matchesNormalizedTitle(normalized)
-		if !direct && !normalizedEqual {
-			continue
-		}
-		confidence := 0.95
-		if direct {
-			confidence = 1.0
-		}
-		switch {
-		case confidence > score:
-			best, score, ambiguous = item, confidence, false
-		case confidence == score && best != nil && best.ID != item.ID:
-			ambiguous = true
+		fallbackYear = year
+		best, score, ambiguous = bestBGMTitleMatch(items, base, year)
+		if best == nil {
+			items, err = m.searchAPI(ctx, endpoint, client, base)
+			if err != nil {
+				return nil, fmt.Errorf("bgm subject fallback search: %w", err)
+			}
+			best, score, ambiguous = bestBGMTitleMatch(items, base, year)
 		}
 	}
 	if best == nil || ambiguous {
@@ -182,10 +172,48 @@ func (m *BGMMatcher) Match(ctx context.Context, title string) (*BGMMatchResult, 
 	if subject.Platform == "" {
 		subject.Platform = best.Platform
 	}
+	method := "normalized"
 	if score == 1 {
-		return newBGMMatch(best.ID, subject, score, "direct", true), nil
+		method = "direct"
 	}
-	return newBGMMatch(best.ID, subject, score, "normalized", true), nil
+	result := newBGMMatch(best.ID, subject, score, method, true)
+	// Detail can contradict the year reported by the search response.
+	if fallbackYear != 0 && (result.airing.year != fallbackYear || result.airing.conflict) {
+		return nil, nil
+	}
+	return result, nil
+}
+
+func bestBGMTitleMatch(items []BGMSubject, title string, year int) (*BGMSubject, float64, bool) {
+	key, normalized := bgmTitleKey(title), normalizeTitle(title)
+	var best *BGMSubject
+	var score float64
+	ambiguous := false
+	for i := range items {
+		item := &items[i]
+		if item.ID <= 0 {
+			continue
+		}
+		confidence := 0.95
+		if item.matchesTitle(key) {
+			confidence = 1
+		} else if normalized == "" || !item.matchesNormalizedTitle(normalized) {
+			continue
+		}
+		if year != 0 {
+			airing := item.airingDate()
+			if airing.year != year || airing.conflict {
+				continue
+			}
+		}
+		switch {
+		case confidence > score:
+			best, score, ambiguous = item, confidence, false
+		case confidence == score && best.ID != item.ID:
+			ambiguous = true
+		}
+	}
+	return best, score, ambiguous
 }
 
 // providerYearFromDate parses the first air year of a provider date such as

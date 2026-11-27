@@ -15,6 +15,7 @@
 
 ## Fixed
 
+- When the original title has no match, Bangumi and bangumi-data can use a trailing bracketed year to find a unique match with the same airing year. Unbracketed years stay part of the title.
 - Library scans recognize movies without episode numbers, and importing a movie uses the movie naming rules to build its file path.
 - Movie subscriptions show “Waiting for import” until the file enters the library. After import, they show 1/1 with a full progress bar and appear under “Completed” in bulk management.
 - Auto Search in the metadata dialog now uses the title in the search box. It preselects the suggested season when available and leaves the binding unchanged until you confirm.

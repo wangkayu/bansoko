@@ -19,18 +19,25 @@ type DataItem struct {
 // BangumiDataIndex is an immutable in-memory lookup over one data snapshot.
 // A refresh builds a new index and atomically publishes it as a whole.
 type BangumiDataIndex struct {
-	byBgmID   map[string]*DataItem
-	byMikanID map[string]*DataItem
-	byTitle   map[string]*DataItem
+	byBgmID     map[string]*DataItem
+	byMikanID   map[string]*DataItem
+	byTitle     map[string]*DataItem
+	byTitleYear map[titleYearKey]*DataItem
+}
+
+type titleYearKey struct {
+	title string
+	year  int
 }
 
 // NewBangumiDataIndex builds the same normalized lookup used by the CDN
 // snapshot parser. It also keeps deterministic fixtures independent of HTTP.
 func NewBangumiDataIndex(items []DataItem) *BangumiDataIndex {
 	idx := &BangumiDataIndex{
-		byBgmID:   make(map[string]*DataItem),
-		byMikanID: make(map[string]*DataItem),
-		byTitle:   make(map[string]*DataItem),
+		byBgmID:     make(map[string]*DataItem),
+		byMikanID:   make(map[string]*DataItem),
+		byTitle:     make(map[string]*DataItem),
+		byTitleYear: make(map[titleYearKey]*DataItem),
 	}
 	for i := range items {
 		item := &items[i]
@@ -38,6 +45,7 @@ func NewBangumiDataIndex(items []DataItem) *BangumiDataIndex {
 		item.MikanID = strings.TrimSpace(item.MikanID)
 		item.TmdbID = strings.TrimSpace(item.TmdbID)
 		item.Begin = strings.TrimSpace(item.Begin)
+		year := parseProviderClue(item.Begin, "bangumi-data.begin").year
 		if item.BgmID != "" {
 			idx.byBgmID[item.BgmID] = item
 		}
@@ -45,6 +53,17 @@ func NewBangumiDataIndex(items []DataItem) *BangumiDataIndex {
 			idx.byMikanID[item.MikanID] = item
 		}
 		for _, title := range item.Titles {
+			if year != 0 {
+				if normalized := normalizeDataTitle(title); normalized != "" {
+					key := titleYearKey{normalized, year}
+					if previous, exists := idx.byTitleYear[key]; !exists {
+						idx.byTitleYear[key] = item
+					} else if previous != item {
+						// Multiple rows in one year are ambiguous; repeated aliases are not.
+						idx.byTitleYear[key] = nil
+					}
+				}
+			}
 			key := normalizeLookupKey(title)
 			if key != "" {
 				if previous, exists := idx.byTitle[key]; !exists {
@@ -133,6 +152,17 @@ func (idx *BangumiDataIndex) LookupByTitle(title string) *DataItem {
 		return nil
 	}
 	return idx.byTitle[normalizeLookupKey(title)]
+}
+
+func (idx *BangumiDataIndex) lookupByTitleYear(base string, year int) *DataItem {
+	return idx.byTitleYear[titleYearKey{normalizeDataTitle(base), year}]
+}
+
+func normalizeDataTitle(title string) string {
+	if key := normalizeTitle(title); key != "" {
+		return key
+	}
+	return normalizeLookupKey(title)
 }
 
 func collectTitles(item *bgmDataItem) []string {

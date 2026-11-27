@@ -40,3 +40,48 @@ func TestBangumiDataTitleConflictsDoNotHideProviderIDs(t *testing.T) {
 		t.Fatal("only the conflicting title should become ambiguous")
 	}
 }
+
+func TestMatcherBangumiDataTrailingTitleYear(t *testing.T) {
+	index := NewBangumiDataIndex([]DataItem{
+		{BgmID: "1", MikanID: "101", Titles: []string{"Ranma 1/2"}, Begin: "1989-04-15"},
+		{BgmID: "2", Titles: []string{"Ranma 1/2", "Ranma 1／2"}, Begin: "2024-10-06T00:00:00+09:00", TmdbID: "tv/42/season/1"},
+		{BgmID: "3", Titles: []string{"Ranma 1/2", "Ranma 1/2 (2024)"}, Begin: "2025-01-01"},
+		{BgmID: "4", Titles: []string{"Show"}, Begin: "2024-04-01"},
+		{BgmID: "5", Titles: []string{" SHOW "}, Begin: "2024-10-01"},
+		{BgmID: "6", Titles: []string{"Show"}, Begin: "2024-11-01"},
+		{BgmID: "7", Titles: []string{"Invalid"}, Begin: "2024-02-30"},
+	})
+	m := NewMatcher(index, nil, nil, nil)
+	for _, tt := range []struct {
+		name, title, want string
+		origin, entryRef  string
+	}{
+		{name: "new", title: "Ranma 1/2 [2024]", want: "2"},
+		{name: "old", title: "Ranma 1/2 (1989)", want: "1"},
+		{name: "normalized", title: "Ｒanma 1/2 (2024) ", want: "2"},
+		{name: "unqualified conflict", title: "Ranma 1/2"},
+		{name: "year does not match", title: "Ranma 1/2 (2023)"},
+		{name: "ties stay ambiguous", title: "Show (2024)"},
+		{name: "bare year is not stripped", title: "Ranma 1/2 2024"},
+		{name: "invalid begin", title: "Invalid (2024)"},
+		{name: "original title wins", title: "Ranma 1/2 (2024)", want: "3"},
+		{name: "provider ID wins", title: "Ranma 1/2 [2024]", want: "1", origin: "mikan", entryRef: "101"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &MatchResult{}
+			item := m.applyBangumiData(index, MatchRequest{Title: tt.title, Origin: tt.origin, EntryRef: tt.entryRef}, result)
+			if tt.want == "" {
+				if item != nil || result.HasAny() {
+					t.Fatalf("expected no binding, got item=%+v result=%+v", item, result)
+				}
+				return
+			}
+			if item == nil || result.BgmID == nil || *result.BgmID != tt.want {
+				t.Fatalf("expected BGM %s, got item=%+v result=%+v", tt.want, item, result)
+			}
+			if tt.want == "2" && (result.TmdbWorkID == nil || *result.TmdbWorkID != "42") {
+				t.Fatalf("expected the matched row's TMDB work, got %+v", result)
+			}
+		})
+	}
+}
