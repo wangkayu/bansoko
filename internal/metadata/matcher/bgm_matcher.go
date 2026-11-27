@@ -16,6 +16,7 @@ import (
 	configurationdomain "bansoko/internal/configuration/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 	"golang.org/x/text/unicode/norm"
 )
@@ -60,6 +61,7 @@ type BGMMatchResult struct {
 // changes apply without a restart. With no usable bgm connection the matcher
 // keeps its default behavior: the public API endpoint and a direct client.
 type BGMMatcher struct {
+	Outbound       outbound.Coordinator
 	Client         *http.Client
 	Endpoint       string // default "https://api.bgm.tv"
 	Connections    ConnectionSource
@@ -270,7 +272,7 @@ func (m *BGMMatcher) requestJSON(ctx context.Context, client *http.Client, metho
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", buildinfo.UserAgent("metadata-matcher"))
-	resp, err := client.Do(req)
+	resp, err := outbound.Do(client, m.Outbound, outbound.BGM, req)
 	if err != nil {
 		return requestFailure(client, req, err)
 	}

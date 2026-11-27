@@ -22,6 +22,7 @@ import (
 	identitymetadataport "bansoko/internal/identitymetadata/port"
 	"bansoko/internal/metadata/matcher"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 )
 
@@ -63,6 +64,7 @@ type ConfiguredCandidateSearcher struct {
 	ClientResolver HTTPClientResolver
 	Client         *http.Client
 	BGMEndpoint    string
+	Outbound       outbound.Coordinator
 }
 
 var _ identitymetadataport.CandidateSearcher = ConfiguredCandidateSearcher{}
@@ -334,7 +336,7 @@ func (s ConfiguredCandidateSearcher) searchBGM(ctx context.Context, query string
 			} `json:"images"`
 		} `json:"data"`
 	}
-	if err := s.doJSON(ctx, client, http.MethodPost, endpoint, "", body, &payload); err != nil {
+	if err := s.doJSON(ctx, client, outbound.BGM, http.MethodPost, endpoint, "", body, &payload); err != nil {
 		return nil, &matcher.MatchError{Kind: matcher.ErrorProvider, Layer: "bgm", Err: err}
 	}
 	result := make([]identitymetadatadomain.SearchCandidate, 0, minInt(limit, len(payload.List)))
@@ -359,10 +361,10 @@ func (s ConfiguredCandidateSearcher) searchBGM(ctx context.Context, query string
 }
 
 func (s ConfiguredCandidateSearcher) getJSON(ctx context.Context, client *http.Client, endpoint *url.URL, apiKey string, target any) error {
-	return s.doJSON(ctx, client, http.MethodGet, endpoint, apiKey, nil, target)
+	return s.doJSON(ctx, client, outbound.TMDB, http.MethodGet, endpoint, apiKey, nil, target)
 }
 
-func (s ConfiguredCandidateSearcher) doJSON(ctx context.Context, client *http.Client, method string, endpoint *url.URL, apiKey string, body []byte, target any) error {
+func (s ConfiguredCandidateSearcher) doJSON(ctx context.Context, client *http.Client, bucket outbound.BucketKey, method string, endpoint *url.URL, apiKey string, body []byte, target any) error {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
@@ -382,7 +384,7 @@ func (s ConfiguredCandidateSearcher) doJSON(ctx context.Context, client *http.Cl
 	if isBearerToken(apiKey) {
 		request.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	response, err := client.Do(request)
+	response, err := outbound.Do(client, s.Outbound, bucket, request)
 	if err != nil {
 		return err
 	}

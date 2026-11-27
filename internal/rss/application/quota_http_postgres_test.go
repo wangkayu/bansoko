@@ -25,7 +25,12 @@ func TestRSSHTTPRateLimitRefundsAttempts(t *testing.T) {
 			status.Store(http.StatusTooManyRequests)
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				hits.Add(1)
-				w.Header().Set("Retry-After", "23")
+				switch hits.Load() {
+				case 1, 10:
+					w.Header().Set("Retry-After", "23")
+				case 3:
+					w.Header().Set("Retry-After", "unparseable")
+				}
 				w.WriteHeader(int(status.Load()))
 			}))
 			defer upstream.Close()
@@ -75,19 +80,26 @@ func TestRSSHTTPRateLimitRefundsAttempts(t *testing.T) {
 				t.Fatal(err)
 			}
 			claim := createRSSClaim(t, db, store, owner, workitems.KindRSSRefresh, version)
-			for i := range 4 {
+			for i, wait := range []time.Duration{23, 5, 10, 20, 40, 80, 160, 300, 300} {
 				outcome, err := service.Handle(ctx, claim)
-				if err != nil || outcome.Kind != worker.OutcomeDeferRSS || outcome.ReasonCode != "provider_rate_limited" || outcome.RetryAfter != 23*time.Second || outcome.WriteOwner != nil {
+				var explicitDelay time.Duration
+				if i == 0 {
+					explicitDelay = 23 * time.Second
+				}
+				if err != nil || outcome.Kind != worker.OutcomeDeferRSS || outcome.ReasonCode != "provider_rate_limited" || outcome.RetryAfter != explicitDelay || outcome.WriteOwner != nil {
 					t.Fatalf("quota outcome=%+v err=%v", outcome, err)
 				}
 				if err := store.DeferRSSQuota(ctx, claim, outcome.ReasonCode, outcome.RetryAfter); err != nil {
 					t.Fatal(err)
 				}
 				var attempt, failures, circuits int
-				var unchanged, waiting bool
-				err = db.QueryRowContext(ctx, `SELECT w.attempt,s.consecutive_failures,s.version=$2,w.available_at>CURRENT_TIMESTAMP,(SELECT count(*) FROM rss_provider_circuits) FROM work_items w CROSS JOIN rss_source_runtime s WHERE w.id=$1 AND s.rss_source_id=$3`, claim.ID, version, sourceID).Scan(&attempt, &failures, &unchanged, &waiting, &circuits)
-				if err != nil || attempt != 0 || failures != 0 || circuits != 0 || !unchanged || !waiting || hits.Load() != int32(i+1) {
-					t.Fatalf("refund: attempt=%d failures=%d circuits=%d unchanged=%t waiting=%t hits=%d err=%v", attempt, failures, circuits, unchanged, waiting, hits.Load(), err)
+				var unchanged bool
+				var delay float64
+				err = db.QueryRowContext(ctx, `SELECT w.attempt,s.consecutive_failures,s.version=$2,
+                    extract(epoch FROM w.available_at-w.updated_at),(SELECT count(*) FROM rss_provider_circuits)
+                    FROM work_items w CROSS JOIN rss_source_runtime s WHERE w.id=$1 AND s.rss_source_id=$3`, claim.ID, version, sourceID).Scan(&attempt, &failures, &unchanged, &delay, &circuits)
+				if err != nil || attempt != 0 || failures != 0 || circuits != 0 || !unchanged || delay != float64(wait) || hits.Load() != int32(i+1) {
+					t.Fatalf("refund: attempt=%d failures=%d circuits=%d unchanged=%t delay=%v want=%v hits=%d err=%v", attempt, failures, circuits, unchanged, delay, wait, hits.Load(), err)
 				}
 				if _, err := schemaOwner.ExecContext(ctx, `UPDATE work_items SET available_at=CURRENT_TIMESTAMP WHERE id=$1`, claim.ID); err != nil {
 					t.Fatal(err)
@@ -108,7 +120,7 @@ func TestRSSHTTPRateLimitRefundsAttempts(t *testing.T) {
 					t.Fatalf("%s: outcome=%+v err=%v", failure, outcome, err)
 				}
 			}
-			if hits.Load() != 5 {
+			if hits.Load() != 10 {
 				t.Fatalf("upstream hits=%d", hits.Load())
 			}
 		})

@@ -1,6 +1,7 @@
 ## Improved
 
-- Upstream diagnostics show shared quota cooldowns separately from catalog and subgroup refresh results. Automation summaries distinguish six outcomes; throttled RSS refreshes wait without exhausting retries or tripping the provider circuit.
+- Upstream diagnostics show shared quota cooldowns separately from catalog and subgroup refresh results. Mikan catalog and subgroup reads share a cooldown, as do manual searches and automatic matching for each of Bangumi and TMDB.
+- Automation summaries distinguish six outcomes. RSS refreshes that repeatedly receive a rate limit without a retry deadline wait progressively longer, without exhausting retries or tripping the provider circuit.
 
 - Run Bansoko without Docker on Linux x86-64, Linux ARM64, and Apple silicon Macs. The download includes the Web UI, database migrations, and MediaInfo. PostgreSQL 17 and qBittorrent run separately.
 - Use bansoko-server doctor to check the host before starting. Managed Linux deployments support on-demand in-app updates on both architectures. macOS uses manual updates.

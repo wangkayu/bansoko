@@ -174,6 +174,10 @@ func rssQuotaWait(err error) (string, time.Duration, bool) {
 	delay := min(24*time.Hour, max(time.Second, status.RetryAfter))
 	switch status.State {
 	case providerdomain.StateRateLimited:
+		if status.CooldownUntil.IsZero() && status.RetryAfter <= 0 {
+			// Zero asks the fenced transition to advance the item's quota backoff.
+			return "provider_rate_limited", 0, true
+		}
 		return "provider_rate_limited", delay, true
 	case providerdomain.StateCooldown:
 		return "provider_cooldown", delay, true

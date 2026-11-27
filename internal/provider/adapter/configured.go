@@ -43,7 +43,7 @@ func (r ConfiguredGroupReader) ReadGroups(ctx context.Context, catalogEntryRef s
 	case providerdomain.ProviderAniBT:
 		return (AniBTGroupReader{Endpoint: selected.Endpoint, Client: client, Outbound: r.Outbound}).ReadGroups(ctx, catalogEntryRef)
 	case providerdomain.ProviderMikan:
-		return (MikanGroupReader{Endpoint: selected.Endpoint, Client: client, Recorder: r.Recorder}).ReadGroups(ctx, catalogEntryRef)
+		return (MikanGroupReader{Endpoint: selected.Endpoint, Client: client, Recorder: r.Recorder, Outbound: r.Outbound}).ReadGroups(ctx, catalogEntryRef)
 	default:
 		return providerdomain.GroupReadResult{}, fmt.Errorf("unsupported provider %q", r.Provider)
 	}

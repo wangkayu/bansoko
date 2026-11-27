@@ -15,6 +15,7 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	observabilityport "bansoko/internal/observability/port"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 
 	"github.com/PuerkitoBio/goquery"
@@ -26,6 +27,7 @@ type MikanHTTPReader struct {
 	Endpoint string
 	Client   *http.Client
 	Recorder observabilityport.Recorder
+	Outbound outbound.Coordinator
 }
 
 func (r MikanHTTPReader) ReadSeason(ctx context.Context, season string, hints domain.ReadHints) (domain.ReadResult, error) {
@@ -60,7 +62,7 @@ func (r MikanHTTPReader) ReadSeason(ctx context.Context, season string, hints do
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
-	response, err := client.Do(request)
+	response, err := outbound.Do(client, r.Outbound, outbound.Mikan, request)
 	if err != nil {
 		return domain.ReadResult{}, &domain.ReadError{Code: domain.ReadFailureUnreachable, Err: fmt.Errorf("fetch Mikan catalog: %w", err)}
 	}

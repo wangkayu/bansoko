@@ -483,6 +483,7 @@ func provideApplicationGraph(
 
 	catalogDBSource := catalogadapter.DBConnectionSource{DB: db}
 	metadataSearcher := metadataadapter.NewSearchService(catalogDBSource, dbSecretStore, runtimeConfiguration)
+	metadataSearcher.SetOutbound(providerOutbound)
 	metadataSearcher.SetTitleRecorder(posterpersistence.NewRepository(db))
 	observabilityService, err := observabilityapplication.NewService(db)
 	if err != nil {
@@ -501,13 +502,13 @@ func provideApplicationGraph(
 
 	catalogReaders := map[string]catalogapplication.Reader{
 		catalogapplication.ProviderAniBT: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver, Outbound: providerOutbound},
-		catalogapplication.ProviderMikan: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver},
+		catalogapplication.ProviderMikan: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver, Outbound: providerOutbound},
 	}
 	catalogService := catalogapplication.NewProviderService(db, catalogReaders, catalogapplication.NewSubscriptionItemReader(db))
 	catalogService.SetEventHub(eventHub)
 	catalogService.SetGroupReaders(map[string]catalogapplication.GroupReader{
 		"anibt": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, Outbound: providerOutbound},
-		"mikan": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration},
+		"mikan": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration, Outbound: providerOutbound},
 	})
 	// Preview never prefetches torrents: the list carries RSS-native facts only,
 	// and a seed's bytes are fetched lazily when the user expands it.
@@ -814,7 +815,7 @@ func provideAutomationGraph(
 		PolicyReader: selectionService,
 		GroupReaders: map[string]automationapplication.GroupReader{
 			"anibt": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderAniBT, Connections: catalogDBSource, ClientResolver: configService, Outbound: providerOutbound},
-			"mikan": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: configService},
+			"mikan": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: configService, Outbound: providerOutbound},
 		},
 		Connections:     catalogDBSource,
 		MetadataMatcher: metadataMatcher,

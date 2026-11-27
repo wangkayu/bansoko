@@ -112,11 +112,15 @@ type Scenario = {
   viewStatus?: number;
   /** The error body for a non-200 read (defaults to a generic INTERNAL). */
   viewErrorBody?: unknown;
+  /** Per-read override (1-based read count), e.g. only the second page read goes stale. */
+  viewStatusFor?: (readNumber: number) => { status: number; body?: unknown } | undefined;
   candidate?: unknown;
   customFetch?: { status: number; body?: unknown };
   download?: (stableSeedKey: string) => Download | "network" | Promise<Download | "network">;
-  /** Single-group refresh (POST .../rss): returns the new snapshot identity; by default that group's refresh fails. */
+  /** Single-group refresh (POST .../rss): a fresh snapshot by default; overrides can throttle one attempt. */
   refresh?: { status: number; body?: unknown };
+  /** Per-refresh override (1-based refresh count), e.g. only the stale recovery loop is throttled. */
+  refreshFor?: (refreshNumber: number) => { status: number; body?: unknown } | undefined;
   /** Seed expansion: by default the fetch succeeds (the container already holds readable bytes). */
   expand?: (stableSeedKey: string) => Expand;
   /** Parser catalog: showing the parser section requires at least two parsers with release-title capability. */
@@ -138,6 +142,8 @@ type Call = { url: string; body?: unknown; idempotencyKey: string | null };
 let calls: Call[] = [];
 
 function stubFetch(scenario: Scenario) {
+  let viewReads = 0;
+  let refreshes = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const headers = new Headers(init?.headers);
@@ -221,7 +227,8 @@ function stubFetch(scenario: Scenario) {
 
     if (url.endsWith("/entry-1/rss")) {
       record(JSON.parse(String(init?.body)));
-      const refresh = scenario.refresh ?? { status: 200 };
+      refreshes++;
+      const refresh = scenario.refreshFor?.(refreshes) ?? scenario.refresh ?? { status: 200 };
       if (refresh.status !== 200) {
         return Response.json(refresh.body ?? { code: "PROVIDER_ERROR", message: "刷新失败" }, { status: refresh.status });
       }
@@ -280,8 +287,11 @@ function stubFetch(scenario: Scenario) {
 
     if (url.endsWith("/anime/rss-list-view")) {
       record(JSON.parse(String(init?.body)));
-      if (scenario.viewStatus && scenario.viewStatus !== 200) {
-        return Response.json(scenario.viewErrorBody ?? { code: "INTERNAL", message: "内部错误" }, { status: scenario.viewStatus });
+      viewReads++;
+      const overridden = scenario.viewStatusFor?.(viewReads);
+      const viewStatus = overridden?.status ?? scenario.viewStatus;
+      if (viewStatus && viewStatus !== 200) {
+        return Response.json(overridden?.body ?? scenario.viewErrorBody ?? { code: "INTERNAL", message: "内部错误" }, { status: viewStatus });
       }
       const body = calls.at(-1)!.body as Parameters<NonNullable<Scenario["viewFor"]>>[0];
       return Response.json(scenario.viewFor?.(body) ?? scenario.view ?? viewOf([seedGroup()]));
@@ -689,6 +699,43 @@ describe("OneShotDialog 第一步：种子目录", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
+  for (const state of ["rate_limited", "cooldown"] as const) {
+    it(`快照过期后的自动重取遇到 ${state}：保留该组种子与已选项，不报错也不再重发`, async () => {
+      const now = Date.now();
+      stubFetch({
+        viewStatusFor: (read) => read === 2
+          ? { status: 409, body: { code: "FEED_SNAPSHOT_REFRESH_REQUIRED", message: "expired" } }
+          : undefined,
+        refreshFor: (refresh) => refresh === 2
+          ? { status: 429, body: {
+              code: state === "cooldown" ? "PROVIDER_COOLDOWN" : "PROVIDER_RATE_LIMITED",
+              message: "quota",
+              upstream: {
+                state,
+                checked_at: new Date(now).toISOString(),
+                cooldown_until: new Date(now + 45_000).toISOString(),
+              },
+            } }
+          : undefined,
+      });
+      await renderAndEnter();
+      fireEvent.click(await findSeed(SEED_A));
+      // The group's own refresh succeeds, then the page read reports the snapshot it just replaced as stale.
+      fireEvent.click(button(t("oneshot.refreshSeedsAction")));
+
+      const banner = state === "cooldown" ? t("upstream.cooldown") : t("upstream.rateLimited");
+      expect(await screen.findByText(banner)).toBeInTheDocument();
+      expect(screen.getByText(t("upstream.waitSeconds", { n: 45 }))).toBeInTheDocument();
+      expect(button(t("oneshot.refreshSeedsAction"))).toBeEnabled();
+      expect(await findSeed(SEED_A)).toBeChecked();
+      expect(screen.getByText(t("oneshot.selectedCount", { n: 1 }))).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      // Exactly one recovery request for the entered group, and no second page read after it.
+      expect(calls.filter((call) => call.url.endsWith("/entry-1/rss"))).toHaveLength(2);
+      expect(reads()).toHaveLength(2);
+    });
+  }
+
   it("一次性刷新遇到限流时保留当前组种子与已选项", async () => {
     const now = Date.now();
     stubFetch({
@@ -707,6 +754,29 @@ describe("OneShotDialog 第一步：种子目录", () => {
     expect(await findSeed(SEED_A)).toBeChecked();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(calls.filter((call) => call.url.endsWith("/entry-1/rss"))).toHaveLength(1);
+  });
+
+  it("刷新成功但种子列表读回失败：保留勾选，重试成功后才清空", async () => {
+    stubFetch({
+      viewStatusFor: (read) => read === 2
+        ? { status: 500, body: { code: "INTERNAL", message: "种子列表读回失败" } }
+        : undefined,
+    });
+    await renderAndEnter();
+    fireEvent.click(await findSeed(SEED_A));
+    fireEvent.click(button(t("oneshot.refreshSeedsAction")));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await findSeed(SEED_A)).toBeChecked();
+    expect(screen.getByText(t("oneshot.selectedCount", { n: 1 }))).toBeInTheDocument();
+    const retry = button(t("oneshot.refreshSeedsAction"));
+    expect(retry).toBeEnabled();
+    expect(reads().at(-1)!.body).toMatchObject({ feed: [{ snapshot_id: "snap-2", snapshot_version: 9 }] });
+
+    fireEvent.click(retry);
+    expect(await screen.findByText(t("oneshot.selectedCount", { n: 0 }))).toBeInTheDocument();
+    expect(await findSeed(SEED_A)).not.toBeChecked();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("分组过期：该组可单独刷新，刷新后清空该组已选", async () => {

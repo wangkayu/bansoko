@@ -8,6 +8,7 @@ import (
 	"bansoko/internal/episodetitle"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	"bansoko/internal/metadata/matcher"
+	"bansoko/internal/provider/outbound"
 )
 
 // SearchService adapts ConfiguredCandidateSearcher to the application boundary
@@ -44,6 +45,11 @@ func (s *SearchService) SetTitleRecorder(recorder WorkTitleRecorder) { s.titles 
 // SetMatcher enables the read-only automatic candidate search without giving
 // the dialog any subscription write capability.
 func (s *SearchService) SetMatcher(metadataMatcher *matcher.Matcher) { s.matcher = metadataMatcher }
+
+// SetOutbound shares provider quotas with the automatic matcher.
+func (s *SearchService) SetOutbound(coordinator outbound.Coordinator) {
+	s.searcher.Outbound = coordinator
+}
 
 // NewSearchService wires the configured connection source and secret resolver
 // into a metadata search service. A nil secret resolver is acceptable when

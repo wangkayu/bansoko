@@ -21,6 +21,7 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	"bansoko/internal/parser/reltitletags"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 )
 
@@ -68,6 +69,7 @@ type TMDBMatchResult struct {
 // correct season from explicit references and airing evidence. It reads the
 // TMDB connection endpoint and API key on every match.
 type TMDBMatcher struct {
+	Outbound       outbound.Coordinator
 	Connections    ConnectionSource
 	Secrets        SecretResolver
 	ClientResolver HTTPClientResolver
@@ -485,7 +487,7 @@ func (m *TMDBMatcher) getJSON(ctx context.Context, client *http.Client, rawURL, 
 	if isBearerToken(apiKey) {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	resp, err := client.Do(req)
+	resp, err := outbound.Do(client, m.Outbound, outbound.TMDB, req)
 	if err != nil {
 		return requestFailure(client, req, err)
 	}

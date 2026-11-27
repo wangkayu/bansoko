@@ -14,6 +14,7 @@ import (
 
 	observabilityport "bansoko/internal/observability/port"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 
 	"github.com/PuerkitoBio/goquery"
@@ -27,6 +28,7 @@ type MikanGroupReader struct {
 	Client   *http.Client
 	Now      func() time.Time
 	Recorder observabilityport.Recorder
+	Outbound outbound.Coordinator
 }
 
 func (r MikanGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string) (providerdomain.GroupReadResult, error) {
@@ -44,7 +46,7 @@ func (r MikanGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 	}
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("provider"))
-	response, err := httpClient(r.Client).Do(request)
+	response, err := outbound.Do(httpClient(r.Client), r.Outbound, outbound.Mikan, request)
 	if err != nil {
 		return providerdomain.GroupReadResult{}, fmt.Errorf("fetch Mikan groups: %w", err)
 	}

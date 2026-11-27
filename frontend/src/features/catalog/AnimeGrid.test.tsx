@@ -908,6 +908,45 @@ describe("AnimeGrid（fixture 目录）", () => {
     expect(screen.queryByText(t("upstream.rateLimited"))).not.toBeInTheDocument();
   });
 
+  it("手动 429 提示以点击时的观测为基线：后台刷新推进快照后旧提示自动消失", async () => {
+    const base = fetchMock;
+    let advance = false;
+    fetchMock = vi.fn<FetchStub>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/catalog/providers/mikan/seasons/2026-summer/refresh") && init?.method === "POST") {
+        return Response.json({
+          code: "PROVIDER_RATE_LIMITED",
+          message: "quota",
+          upstream: { state: "rate_limited", checked_at: new Date(FIXED_NOW).toISOString(), retry_after_seconds: 60 },
+        }, { status: 429 });
+      }
+      if (advance && /\/catalog\/providers\/mikan\/seasons\/[^/?]+$/.test(url) && (!init?.method || init.method === "GET")) {
+        const workspace = catalogWorkspace("mikan");
+        return Response.json({
+          ...workspace,
+          snapshot: { ...workspace.snapshot, observed_at: "2026-07-16T00:00:00Z", last_success_at: "2026-07-16T00:00:00Z", version: 2 },
+        });
+      }
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { queryClient } = await renderGrid();
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: t("grid.refreshSite", { site: "Mikan" }) }));
+    await flush();
+    // The still-fresh snapshot it re-read must not swallow the manual failure.
+    expect(screen.getByText(t("upstream.rateLimited"))).toBeInTheDocument();
+    const { toast } = await import("sonner");
+    expect(toast.error).not.toHaveBeenCalled();
+
+    advance = true;
+    await act(async () => { await queryClient.invalidateQueries({ queryKey: ["catalog", "list", "mikan"] }); });
+    await flush();
+    // A newer successful observation supersedes the manual notice.
+    expect(screen.queryByText(t("upstream.rateLimited"))).not.toBeInTheDocument();
+  });
+
   it("已隐藏的番剧不出现在列表里，也没有显示它们的开关", async () => {
     suppressions = [
       {

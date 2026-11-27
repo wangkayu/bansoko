@@ -95,7 +95,7 @@ func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints d
 	case application.ProviderAniBT:
 		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client, Outbound: r.Outbound}).ReadSeason(ctx, season, hints)
 	case application.ProviderMikan:
-		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).ReadSeason(ctx, season, hints)
+		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder, Outbound: r.Outbound}).ReadSeason(ctx, season, hints)
 	default:
 		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", r.Provider)
 	}

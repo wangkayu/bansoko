@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	acquisition "bansoko/internal/acquisition/application"
@@ -48,7 +49,9 @@ func TestPreviewProviderEntryRSSReturnsTypedQuota(t *testing.T) {
 func TestDiscoverMikanGroupsReturnsTypedQuota(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
 	defer db.Close()
+	var hits atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
 		if r.URL.Path != "/Home/Bangumi/123" {
 			t.Errorf("Mikan detail path = %s", r.URL.Path)
 		}
@@ -58,19 +61,24 @@ func TestDiscoverMikanGroupsReturnsTypedQuota(t *testing.T) {
 	defer upstream.Close()
 	service := catalogapplication.NewService(db, nil)
 	service.SetGroupReaders(map[string]catalogapplication.GroupReader{
-		"mikan": provideradapter.MikanGroupReader{Endpoint: upstream.URL, Client: upstream.Client()},
+		"mikan": provideradapter.MikanGroupReader{Endpoint: upstream.URL, Client: upstream.Client(), Outbound: newProviderQuotaScheduler(t)},
 	})
 	server := &Server{deps: Dependencies{Catalog: service}}
 	request := httptest.NewRequest(http.MethodPost, "/catalog/providers/mikan/entries/123/groups:discover", nil)
 	response := httptest.NewRecorder()
 	server.DiscoverProviderEntryGroups(response, request, "mikan", "123")
 	assertProviderQuotaResponse(t, response, "17")
+	response = httptest.NewRecorder()
+	server.DiscoverProviderEntryGroups(response, httptest.NewRequest(http.MethodPost, request.URL.Path, nil), "mikan", "123")
+	assertLocalProviderCooldown(t, response, hits.Load())
 }
 
 func TestRefreshMikanCatalogReturnsTypedQuota(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
 	defer db.Close()
+	var hits atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
 		if r.URL.Path != "/Home/BangumiCoverFlowByDayOfWeek" {
 			t.Errorf("Mikan season path = %s", r.URL.Path)
 		}
@@ -79,7 +87,7 @@ func TestRefreshMikanCatalogReturnsTypedQuota(t *testing.T) {
 	}))
 	defer upstream.Close()
 	service := catalogapplication.NewProviderService(db, map[string]catalogapplication.Reader{
-		"mikan": catalogapplication.MikanHTTPReader{Endpoint: upstream.URL, Client: upstream.Client()},
+		"mikan": catalogapplication.MikanHTTPReader{Endpoint: upstream.URL, Client: upstream.Client(), Outbound: newProviderQuotaScheduler(t)},
 	})
 	server := &Server{deps: Dependencies{Catalog: service}}
 	request := httptest.NewRequest(http.MethodPost, "/catalog/providers/mikan/2026-summer/refresh", nil)
@@ -92,6 +100,9 @@ func TestRefreshMikanCatalogReturnsTypedQuota(t *testing.T) {
 		AND upstream_cooldown_until > statement_timestamp())`).Scan(&recorded); err != nil || !recorded {
 		t.Fatalf("Mikan catalog rate limit persisted = %v, err = %v", recorded, err)
 	}
+	response = httptest.NewRecorder()
+	server.RefreshCatalogProvider(response, httptest.NewRequest(http.MethodPost, request.URL.Path, nil), "mikan", "2026-summer")
+	assertLocalProviderCooldown(t, response, hits.Load())
 }
 
 func assertProviderQuotaResponse(t *testing.T, response *httptest.ResponseRecorder, wait string) {
@@ -100,5 +111,14 @@ func assertProviderQuotaResponse(t *testing.T, response *httptest.ResponseRecord
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != 429 || response.Header().Get("Retry-After") != wait ||
 		body.Code != "PROVIDER_RATE_LIMITED" || body.Upstream == nil || body.Upstream.State != "rate_limited" || body.Upstream.CooldownUntil == nil || body.Upstream.RetryAfterSeconds == nil {
 		t.Fatalf("status=%d retry=%q body=%s err=%v", response.Code, response.Header().Get("Retry-After"), response.Body, err)
+	}
+}
+
+func assertLocalProviderCooldown(t *testing.T, response *httptest.ResponseRecorder, hits int32) {
+	t.Helper()
+	var body generated.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != 429 || hits != 1 ||
+		body.Code != "PROVIDER_COOLDOWN" || body.Upstream == nil || body.Upstream.State != "cooldown" || response.Header().Get("Retry-After") == "" {
+		t.Fatalf("status=%d upstream hits=%d retry=%q body=%s err=%v", response.Code, hits, response.Header().Get("Retry-After"), response.Body, err)
 	}
 }

@@ -581,11 +581,13 @@ func runServe(args []string) {
 	// The BGM layer reads the optional bgm connection (endpoint + egress route)
 	// on each call; without one it keeps the public endpoint and a direct client.
 	bgmMatcher := &matcher.BGMMatcher{
+		Outbound:       providerOutbound,
 		Connections:    catalogDBSource,
 		ClientResolver: runtimeConfiguration,
 		Client:         &http.Client{Timeout: 15 * time.Second, Transport: hardeningtransport.DirectTransport()},
 	}
 	tmdbMatcher := &matcher.TMDBMatcher{
+		Outbound:       providerOutbound,
 		Connections:    catalogDBSource,
 		Secrets:        dbSecretStore,
 		ClientResolver: runtimeConfiguration,

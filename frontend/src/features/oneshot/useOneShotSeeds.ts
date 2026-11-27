@@ -297,8 +297,8 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
 
   /** Reads once over the entered groups; of consecutive re-reads only the last one counts. */
   const read = useCallback(
-    async (current: AnimeDraft | undefined, offset: number, span: number, fileSelections?: RSSListFileSelection[]) => {
-      if (!current || !observation || refsRef.current.size === 0) return;
+    async (current: AnimeDraft | undefined, offset: number, span: number, fileSelections?: RSSListFileSelection[]): Promise<boolean> => {
+      if (!current || !observation || refsRef.current.size === 0) return false;
       const seq = ++readSeq.current;
       setPending(true);
       setViewError(undefined);
@@ -320,23 +320,37 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
           result = await request();
         } catch (cause) {
           // One of the entered groups' seed lists went stale meanwhile: the read model rejects the
-//           whole page. Re-fetch those groups' seed lists (entered groups only), then read again.
+          // whole page. Re-fetch those groups' seed lists (entered groups only), then read again.
           if (!(cause instanceof ApiError) || cause.code !== "FEED_SNAPSHOT_REFRESH_REQUIRED") throw cause;
-          for (const ref of [...refsRef.current.values()]) {
-            const fresh = await previewProviderEntryRSS(provider, ref.provider_entry_ref, { group_ref: ref.provider_group_ref });
-            refsRef.current.set(`${ref.provider}:${ref.provider_entry_ref}:${ref.provider_group_ref}`, feedRefOf(fresh));
+          for (const [key, ref] of refsRef.current) {
+            if (seq !== readSeq.current) return false;
+            try {
+              const fresh = await previewProviderEntryRSS(provider, ref.provider_entry_ref, { group_ref: ref.provider_group_ref });
+              if (seq !== readSeq.current) return false;
+              refsRef.current.set(key, feedRefOf(fresh));
+              updateGroupUpstream(key);
+            } catch (refreshCause) {
+              if (seq !== readSeq.current) return false;
+              const status = nonErrorUpstream(refreshCause);
+              if (status?.state !== "rate_limited" && status?.state !== "cooldown") throw refreshCause;
+              updateGroupUpstream(key, status);
+              return false;
+            }
           }
           result = await request();
         }
         if (result === null || typeof result !== "object" || !Array.isArray(result.groups)) throw new Error(t("rss.listBadFormat"));
-        if (seq === readSeq.current) setView(result);
+        if (seq !== readSeq.current) return false;
+        setView(result);
+        return true;
       } catch (cause) {
         if (seq === readSeq.current) setViewError(toUserMessage(cause, t("oneshot.previewFailed")));
       } finally {
         if (seq === readSeq.current) setPending(false);
       }
+      return false;
     },
-    [observation, provider],
+    [observation, provider, updateGroupUpstream],
   );
 
   // The read model lists every observed group; only entered groups carry seeds and the others never expand in step one.
@@ -389,6 +403,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
         });
         refsRef.current.set(group.key, feedRefOf(refreshed));
         updateGroupUpstream(group.key);
+        return await read(current, offset, span);
       } catch (cause) {
         const status = nonErrorUpstream(cause);
         if (status?.state === "rate_limited" || status?.state === "cooldown") updateGroupUpstream(group.key, status);
@@ -400,8 +415,6 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
       } finally {
         setRefreshingGroup(undefined);
       }
-      await read(current, offset, span);
-      return true;
     },
     [provider, read, updateGroupUpstream],
   );
@@ -448,7 +461,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     refreshGroup,
     expand,
     titleSuggestions: view?.title_suggestions,
-    preview: read,
+    preview: async (...args) => { await read(...args); },
     fetchRequired: false,
     fetchBusy: false,
     reload: () => setAttempt((value) => value + 1),

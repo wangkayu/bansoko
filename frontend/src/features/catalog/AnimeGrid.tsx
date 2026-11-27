@@ -213,11 +213,19 @@ export function AnimeGrid() {
   const snapshot = catalog.data?.snapshot;
   const loading = catalog.isLoading;
   const refreshKey = `${tab}:${season}`;
-  const [manualRefresh, setManualRefresh] = useState<{ key: string; request?: symbol; upstream?: UpstreamStatus }>({ key: refreshKey });
+  const observation = catalogObservationStamp(snapshot);
+  const [manualRefresh, setManualRefresh] = useState<{
+    key: string;
+    request?: symbol;
+    notice?: { status: UpstreamStatus; baseline: number };
+  }>({ key: refreshKey });
+  const currentNotice = manualRefresh.key === refreshKey ? manualRefresh.notice : undefined;
+  const manualUpstream = currentNotice && observation <= currentNotice.baseline ? currentNotice.status : undefined;
   if (manualRefresh.key !== refreshKey) setManualRefresh({ key: refreshKey });
+  else if (currentNotice && !manualUpstream) setManualRefresh({ ...manualRefresh, notice: undefined });
   const refreshing = catalog.isFetching || (manualRefresh.key === refreshKey && manualRefresh.request !== undefined);
   const snapshotUpstream = snapshot?.upstream;
-  const upstream = (manualRefresh.key === refreshKey ? manualRefresh.upstream : undefined) ?? (
+  const upstream = manualUpstream ?? (
     snapshotUpstream && (snapshot?.status === "error" || (snapshotUpstream.state !== "available" && snapshotUpstream.state !== "empty"))
       ? snapshotUpstream : undefined
   );
@@ -251,9 +259,10 @@ export function AnimeGrid() {
   async function refresh() {
     if (refreshing || !BROWSABLE_TABS.includes(tab)) return;
     const request = Symbol();
-    setManualRefresh({ key: refreshKey, request, upstream: manualRefresh.upstream });
+    setManualRefresh({ key: refreshKey, request, notice: currentNotice });
     function recordStatus(status?: UpstreamStatus) {
-      setManualRefresh((current) => current.request === request ? { ...current, upstream: status } : current);
+      const notice = status ? { status, baseline: observation } : undefined;
+      setManualRefresh((current) => current.request === request ? { ...current, notice } : current);
     }
     const site = tab === "mikan" ? "Mikan" : "AniBT";
     try {
@@ -1028,6 +1037,12 @@ export function AnimeGrid() {
 // A subscribed entry opening the four-tab dialog lands on RSS (the outcome/operations surface) by default; a draft stays on metadata.
 function defaultAnimeTab(entry: CatalogEntryView): RouteAnimeTab {
   return entry.subscriptionState !== undefined ? "rss" : "metadata";
+}
+
+function catalogObservationStamp(snapshot: CatalogSnapshotView | undefined): number {
+  return Math.max(...[snapshot?.observedAt, snapshot?.lastSuccessAt, snapshot?.upstream?.checked_at]
+    .map((value) => value ? Date.parse(value) : NaN)
+    .filter(Number.isFinite), -Infinity);
 }
 
 // The site data status line (from the top-bar review): "101 titles, updated 10 hours ago"; other states name the state itself.
