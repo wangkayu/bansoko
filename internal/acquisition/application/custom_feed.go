@@ -10,6 +10,7 @@ import (
 
 	"bansoko/internal/acquisition/domain"
 	configurationdomain "bansoko/internal/configuration/domain"
+	provideroutbound "bansoko/internal/provider/outbound"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
 
@@ -30,6 +31,7 @@ type CustomRSSHTTPClientResolver interface {
 // only connection/egress selection and delegates XML normalization, SSRF
 // protection and torrent metadata enrichment to the shared HTTPRSSFetcher.
 type ConfiguredCustomRSSFetcher struct {
+	Outbound             provideroutbound.Coordinator
 	Connections          CustomRSSConnectionSource
 	ClientResolver       CustomRSSHTTPClientResolver
 	AllowPrivateHosts    []string
@@ -56,6 +58,7 @@ func (f ConfiguredCustomRSSFetcher) FetchDetailed(ctx context.Context, locator s
 		torrentReader = HTTPTorrentMetadataReader{Client: client, AllowPrivateHosts: f.AllowPrivateHosts, Resolver: f.Resolver}
 	}
 	return (HTTPRSSFetcher{
+		Outbound:          f.Outbound,
 		Client:            client,
 		MaxSize:           f.MaxSize,
 		Resolver:          f.Resolver,

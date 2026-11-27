@@ -9,6 +9,7 @@ import (
 	configurationdomain "bansoko/internal/configuration/domain"
 	observabilityport "bansoko/internal/observability/port"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 )
 
 type ConnectionSource interface {
@@ -22,6 +23,7 @@ type ConnectionHTTPClientResolver interface {
 // ConfiguredGroupReader resolves the current saved connection on every call,
 // so a successful connection Save affects future refreshes without restart.
 type ConfiguredGroupReader struct {
+	Outbound       outbound.Coordinator
 	Provider       providerdomain.Kind
 	Connections    ConnectionSource
 	ClientResolver ConnectionHTTPClientResolver
@@ -39,7 +41,7 @@ func (r ConfiguredGroupReader) ReadGroups(ctx context.Context, catalogEntryRef s
 	}
 	switch r.Provider {
 	case providerdomain.ProviderAniBT:
-		return (AniBTGroupReader{Endpoint: selected.Endpoint, Client: client}).ReadGroups(ctx, catalogEntryRef)
+		return (AniBTGroupReader{Endpoint: selected.Endpoint, Client: client, Outbound: r.Outbound}).ReadGroups(ctx, catalogEntryRef)
 	case providerdomain.ProviderMikan:
 		return (MikanGroupReader{Endpoint: selected.Endpoint, Client: client, Recorder: r.Recorder}).ReadGroups(ctx, catalogEntryRef)
 	default:

@@ -12,6 +12,7 @@ import (
 	"bansoko/internal/catalog/domain"
 	configurationdomain "bansoko/internal/configuration/domain"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/provider/outbound"
 )
 
 type ConnectionSource interface {
@@ -28,6 +29,7 @@ type ConnectionHTTPClientResolver interface {
 // direct client apply. A saved enabled connection still overrides the
 // default, including its base URL and egress route.
 type ConfiguredReader struct {
+	Outbound          outbound.Coordinator
 	Provider          string
 	Connections       ConnectionSource
 	ClientResolver    ConnectionHTTPClientResolver
@@ -91,7 +93,7 @@ func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints d
 	}
 	switch r.Provider {
 	case application.ProviderAniBT:
-		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).ReadSeason(ctx, season, hints)
+		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client, Outbound: r.Outbound}).ReadSeason(ctx, season, hints)
 	case application.ProviderMikan:
 		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).ReadSeason(ctx, season, hints)
 	default:

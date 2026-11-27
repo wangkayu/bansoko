@@ -8,6 +8,7 @@ import (
 	acquisitionapplication "bansoko/internal/acquisition/application"
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/acquisition/torrent"
+	provideroutbound "bansoko/internal/provider/outbound"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
 
@@ -69,6 +70,7 @@ func NewTorrentPayloadFetcher(allowPrivateHosts []string, resolvers ...func(cont
 // size validation at every hop). Test-only private host allowances must be
 // injected explicitly; production wiring passes none.
 type HTTPFeedFetcher struct {
+	Outbound          provideroutbound.Coordinator
 	Client            *http.Client
 	MaxSize           int64
 	AllowPrivateHosts []string
@@ -77,6 +79,7 @@ type HTTPFeedFetcher struct {
 
 func (f HTTPFeedFetcher) Fetch(ctx context.Context, locatorURL string) (FeedResult, error) {
 	result, err := (acquisitionapplication.HTTPRSSFetcher{
+		Outbound:          f.Outbound,
 		Client:            f.Client,
 		MaxSize:           f.MaxSize,
 		Resolver:          f.Resolver,

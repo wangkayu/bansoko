@@ -1029,6 +1029,14 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "provider_outbound_health",
+    "privileges": ["INSERT", "UPDATE"],
+    "reason": "persist outbound cooldown evidence across server restarts",
+    "direct_access": ["internal/provider/outbound/persistence/query.sql"],
+    "closure_slice": "provider outbound health",
+    "exit_condition": "retain while PostgreSQL is the outbound health store"
+  },
+  {
     "table": "provider_group_snapshots",
     "privileges": [
       "DELETE"

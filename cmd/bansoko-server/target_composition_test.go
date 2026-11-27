@@ -51,7 +51,7 @@ func TestProductionCompositionWiresTargetAcquisition(t *testing.T) {
 	}
 
 	coreGraph, err := provideCoreApplicationGraph(
-		db, workStore, httpConfigService, configService,
+		db, nil, workStore, httpConfigService, configService,
 		nil, nil, eventHub, logger, animeService, fileMaintenanceGraph,
 	)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestProductionCompositionWiresTargetAcquisition(t *testing.T) {
 		t.Fatal("production artifact inspection has no media prober: file.resolution, file.video_codec, file.audio_codec and file.container would always be empty")
 	}
 	applicationGraph, err := provideApplicationGraph(
-		db, workStore, nil, configService, eventHub, logger, nil, nil,
+		db, nil, workStore, nil, configService, eventHub, logger, nil, nil,
 		animeService, ownershipService, draftService, coreGraph.rssService, coreGraph.downloadService, coreGraph.artifactService,
 		coreGraph.fileOperationService, fileMaintenanceGraph.replacementDecisions,
 		fileMaintenanceGraph.cleanupService, fileMaintenanceGraph.placementService,

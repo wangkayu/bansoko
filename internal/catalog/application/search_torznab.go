@@ -16,6 +16,7 @@ import (
 	"bansoko/internal/acquisition/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/jackett"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/redact"
 	"bansoko/internal/runtime/buildinfo"
 )
@@ -78,6 +79,7 @@ func (e *TorznabError) Unwrap() error { return ErrTorznabError }
 // with the error so the transport can answer with the same header instead of
 // inventing a retry time.
 type ProviderRateLimited struct {
+	Cause        error
 	Upstream     string
 	RetryAfter   time.Duration
 	Status       int
@@ -91,12 +93,18 @@ func (e *ProviderRateLimited) Error() string {
 // ErrProviderRateLimited is the sentinel every rate-limited search wraps.
 var ErrProviderRateLimited = errors.New("provider rate limited keyword search")
 
-func (e *ProviderRateLimited) Unwrap() error { return ErrProviderRateLimited }
+func (e *ProviderRateLimited) Unwrap() []error {
+	if e.Cause == nil {
+		return []error{ErrProviderRateLimited}
+	}
+	return []error{ErrProviderRateLimited, e.Cause}
+}
 
 // HTTPAniBTTorznabSearcher queries the anonymous AniBT Torznab endpoint with one
 // free-text keyword. The endpoint and the client are resolved by the caller from
 // typed connection configuration, never from a request.
 type HTTPAniBTTorznabSearcher struct {
+	Outbound          outbound.Coordinator
 	Endpoint          string
 	Client            *http.Client
 	AllowPrivateHosts []string
@@ -144,9 +152,13 @@ func (s HTTPAniBTTorznabSearcher) SearchAniBTKeywords(ctx context.Context, query
 	}
 	request.Header.Set("Accept", "application/xml, application/rss+xml;q=0.9")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("catalog"))
-	response, err := clientCopy.Do(request)
+	response, err := outbound.Do(&clientCopy, s.Outbound, outbound.AniBTTorznab, request)
 	if err != nil {
-		return SeedSearchResult{}, fmt.Errorf("%w: fetch Torznab search: %v", ErrProviderUpstream, redact.URLError(err))
+		var throttled *outbound.ThrottleError
+		if errors.As(err, &throttled) {
+			return SeedSearchResult{}, &ProviderRateLimited{Upstream: "AniBT", RetryAfter: throttled.RetryAfter, Status: throttled.StatusCode, Descriptions: http.StatusText(throttled.StatusCode), Cause: err}
+		}
+		return SeedSearchResult{}, fmt.Errorf("%w: fetch Torznab search: %w", ErrProviderUpstream, redact.URLError(err))
 	}
 	defer response.Body.Close()
 	retryAfter := parseRetryAfter(response.Header.Get("Retry-After"), time.Now().UTC())

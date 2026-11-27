@@ -14,6 +14,7 @@ import (
 
 	accessdomain "bansoko/internal/accesscontrol/domain"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/provider/outbound"
 )
 
 type contextKey string
@@ -213,7 +214,7 @@ func (s *Server) withCommonMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := normalizeRequestID(r.Header.Get("X-Request-ID"))
 		w.Header().Set("X-Request-ID", requestID)
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx := context.WithValue(outbound.WithPriority(r.Context(), outbound.PriorityInteractive), requestIDKey, requestID)
 		logger := s.deps.RuntimeLogger
 		if logger == nil {
 			logger = defaultRuntimeLogger

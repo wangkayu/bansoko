@@ -28,6 +28,7 @@ import (
 	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
+	"bansoko/internal/provider/outbound"
 	reconciliationapplication "bansoko/internal/reconciliation/application"
 	facts "bansoko/internal/release/facts"
 	rssapplication "bansoko/internal/rss/application"
@@ -71,6 +72,7 @@ func initializeFileMaintenanceGraph(
 
 func initializeCoreApplicationGraph(
 	db *sql.DB,
+	providerOutbound outbound.Coordinator,
 	workStore *workitems.Store,
 	httpConfigService *configurationapplication.HTTPService,
 	runtimeConfiguration *configurationapplication.Service,
@@ -87,6 +89,7 @@ func initializeCoreApplicationGraph(
 
 func initializeAutomationGraph(
 	db *sql.DB,
+	providerOutbound outbound.Coordinator,
 	workStore *workitems.Store,
 	eventHub *events.Hub,
 	catalogDBSource catalogadapter.DBConnectionSource,
@@ -104,6 +107,7 @@ func initializeAutomationGraph(
 
 func initializeApplicationGraph(
 	db *sql.DB,
+	providerOutbound outbound.Coordinator,
 	workStore *workitems.Store,
 	dbSecretStore *configurationapplication.DatabaseSecretStore,
 	runtimeConfiguration *configurationapplication.Service,

@@ -28,6 +28,7 @@ import (
 	application5 "bansoko/internal/observability/application"
 	"bansoko/internal/observability/port"
 	"bansoko/internal/plugintarget/application"
+	"bansoko/internal/provider/outbound"
 	application11 "bansoko/internal/reconciliation/application"
 	"bansoko/internal/release/facts"
 	application4 "bansoko/internal/rss/application"
@@ -57,24 +58,24 @@ func initializeFileMaintenanceGraph(db *sql.DB, workStore *workitems.Store, draf
 	return mainFileMaintenanceGraph, nil
 }
 
-func initializeCoreApplicationGraph(db *sql.DB, workStore *workitems.Store, httpConfigService *application8.HTTPService, runtimeConfiguration *application8.Service, fixtureAllowlist []string, fixtureResolver func(context.Context, string) ([]net.IP, error), eventHub *events.Hub, logger port.RuntimeLogger, animeService *application9.Service, fileMaintenanceGraph2 *fileMaintenanceGraph) (*coreApplicationGraph, error) {
-	mainCoreApplicationGraph, err := provideCoreApplicationGraph(db, workStore, httpConfigService, runtimeConfiguration, fixtureAllowlist, fixtureResolver, eventHub, logger, animeService, fileMaintenanceGraph2)
+func initializeCoreApplicationGraph(db *sql.DB, providerOutbound outbound.Coordinator, workStore *workitems.Store, httpConfigService *application8.HTTPService, runtimeConfiguration *application8.Service, fixtureAllowlist []string, fixtureResolver func(context.Context, string) ([]net.IP, error), eventHub *events.Hub, logger port.RuntimeLogger, animeService *application9.Service, fileMaintenanceGraph2 *fileMaintenanceGraph) (*coreApplicationGraph, error) {
+	mainCoreApplicationGraph, err := provideCoreApplicationGraph(db, providerOutbound, workStore, httpConfigService, runtimeConfiguration, fixtureAllowlist, fixtureResolver, eventHub, logger, animeService, fileMaintenanceGraph2)
 	if err != nil {
 		return nil, err
 	}
 	return mainCoreApplicationGraph, nil
 }
 
-func initializeAutomationGraph(db *sql.DB, workStore *workitems.Store, eventHub *events.Hub, catalogDBSource adapter2.DBConnectionSource, metadataMatcher *matcher.Matcher, observabilityService *application5.Service, logger port.RuntimeLogger, animeService *application9.Service, ownershipService *application7.Service, draftService *application6.Service, configService *application8.Service) (*automationGraph, error) {
-	mainAutomationGraph, err := provideAutomationGraph(db, workStore, eventHub, catalogDBSource, configService, metadataMatcher, observabilityService, logger, animeService, ownershipService, draftService)
+func initializeAutomationGraph(db *sql.DB, providerOutbound outbound.Coordinator, workStore *workitems.Store, eventHub *events.Hub, catalogDBSource adapter2.DBConnectionSource, metadataMatcher *matcher.Matcher, observabilityService *application5.Service, logger port.RuntimeLogger, animeService *application9.Service, ownershipService *application7.Service, draftService *application6.Service, configService *application8.Service) (*automationGraph, error) {
+	mainAutomationGraph, err := provideAutomationGraph(db, providerOutbound, workStore, eventHub, catalogDBSource, configService, metadataMatcher, observabilityService, logger, animeService, ownershipService, draftService)
 	if err != nil {
 		return nil, err
 	}
 	return mainAutomationGraph, nil
 }
 
-func initializeApplicationGraph(db *sql.DB, workStore *workitems.Store, dbSecretStore *application8.DatabaseSecretStore, runtimeConfiguration *application8.Service, eventHub *events.Hub, logger port.RuntimeLogger, fixtureAllowlist []string, fixtureResolver func(context.Context, string) ([]net.IP, error), animeService *application9.Service, ownershipService *application7.Service, draftService *application6.Service, rssService *application4.Service, downloadService *application2.Service, artifactService *application10.Service, fileOperationService *application3.Service, replacementDecisions *filemaintenance.ReplacementDecisionService, cleanupService *filemaintenance.CleanupService, placementService *filemaintenance.PlacementService, replacementTrigger *filemaintenance.ReplacementTriggerService, fileMaintenanceGraph2 *fileMaintenanceGraph, targetStore target.Store) (*applicationGraph, error) {
-	mainApplicationGraph, err := provideApplicationGraph(db, workStore, dbSecretStore, runtimeConfiguration, eventHub, logger, fixtureAllowlist, fixtureResolver, animeService, ownershipService, draftService, rssService, downloadService, artifactService, fileOperationService, replacementDecisions, cleanupService, placementService, replacementTrigger, fileMaintenanceGraph2, targetStore)
+func initializeApplicationGraph(db *sql.DB, providerOutbound outbound.Coordinator, workStore *workitems.Store, dbSecretStore *application8.DatabaseSecretStore, runtimeConfiguration *application8.Service, eventHub *events.Hub, logger port.RuntimeLogger, fixtureAllowlist []string, fixtureResolver func(context.Context, string) ([]net.IP, error), animeService *application9.Service, ownershipService *application7.Service, draftService *application6.Service, rssService *application4.Service, downloadService *application2.Service, artifactService *application10.Service, fileOperationService *application3.Service, replacementDecisions *filemaintenance.ReplacementDecisionService, cleanupService *filemaintenance.CleanupService, placementService *filemaintenance.PlacementService, replacementTrigger *filemaintenance.ReplacementTriggerService, fileMaintenanceGraph2 *fileMaintenanceGraph, targetStore target.Store) (*applicationGraph, error) {
+	mainApplicationGraph, err := provideApplicationGraph(db, providerOutbound, workStore, dbSecretStore, runtimeConfiguration, eventHub, logger, fixtureAllowlist, fixtureResolver, animeService, ownershipService, draftService, rssService, downloadService, artifactService, fileOperationService, replacementDecisions, cleanupService, placementService, replacementTrigger, fileMaintenanceGraph2, targetStore)
 	if err != nil {
 		return nil, err
 	}

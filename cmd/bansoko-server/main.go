@@ -51,6 +51,8 @@ import (
 	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/parser/titleparser"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
+	"bansoko/internal/provider/outbound"
+	outboundpersistence "bansoko/internal/provider/outbound/persistence"
 	retentionapplication "bansoko/internal/recordretention/application"
 	"bansoko/internal/rtruntime"
 	"bansoko/internal/runtime/bootsecrets"
@@ -335,9 +337,15 @@ func runServe(args []string) {
 		})
 	}
 
+	providerOutbound, err := outbound.New(ctx, outbound.DefaultPolicies(), nil, outboundpersistence.New(db))
+	if err != nil {
+		fatalStartup(runtimeLogger, "provider outbound health restore failed", "provider_outbound_restore_failed")
+	}
+
 	fixtureAllowlist, fixtureResolver := cfg.TestFixtureNetwork()
 
 	animeService, err := animeapplication.NewService(db, workStore, animeapplication.HTTPFeedFetcher{
+		Outbound:          providerOutbound,
 		AllowPrivateHosts: fixtureAllowlist,
 		Resolver:          fixtureResolver,
 	})
@@ -370,6 +378,7 @@ func runServe(args []string) {
 
 	coreGraph, err := initializeCoreApplicationGraph(
 		db,
+		providerOutbound,
 		workStore,
 		httpConfigService,
 		runtimeConfiguration,
@@ -416,6 +425,7 @@ func runServe(args []string) {
 
 	applicationGraph, err := initializeApplicationGraph(
 		db,
+		providerOutbound,
 		workStore,
 		dbSecretStore,
 		runtimeConfiguration,
@@ -622,6 +632,7 @@ func runServe(args []string) {
 	}
 	automationGraph, err := initializeAutomationGraph(
 		db,
+		providerOutbound,
 		workStore,
 		eventHub,
 		catalogDBSource,

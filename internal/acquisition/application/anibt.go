@@ -15,6 +15,7 @@ import (
 	"bansoko/internal/acquisition/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/observability/outbound"
+	outboundscheduler "bansoko/internal/provider/outbound"
 	"bansoko/internal/redact"
 	"bansoko/internal/runtime/buildinfo"
 )
@@ -23,6 +24,7 @@ import (
 // The adapter keeps provider declarations as source facts; episode identity is
 // still produced by the parser in the acquisition service.
 type HTTPAniBTRSSFetcher struct {
+	Outbound          outboundscheduler.Coordinator
 	Endpoint          string
 	Client            *http.Client
 	AllowPrivateHosts []string
@@ -86,7 +88,7 @@ func (f HTTPAniBTRSSFetcher) FetchAnimeDetailed(ctx context.Context, bgmID, grou
 	request.Header.Set("Accept", "application/rss+xml, application/xml;q=0.9")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("acquisition"))
 	applyFeedValidators(ctx, request)
-	response, err := clientCopy.Do(request)
+	response, err := outboundscheduler.Do(&clientCopy, f.Outbound, outboundscheduler.AniBTRSS, request)
 	if err != nil {
 		return RSSFetchResult{}, outbound.WithFailure(fmt.Errorf("fetch AniBT RSS source: %w", redact.URLError(err)), outbound.Describe(err, request, nil, outbound.ViaOf(&clientCopy, request)))
 	}

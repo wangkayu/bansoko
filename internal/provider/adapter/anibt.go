@@ -13,6 +13,7 @@ import (
 	"time"
 
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 
 	"github.com/PuerkitoBio/goquery"
@@ -45,6 +46,7 @@ const maxAniBTGroupNameLength = 256
 var aniBTIslandGroupPattern = regexp.MustCompile(`_id:"([A-Za-z0-9_]+)"[\s\S]{0,400}?name:"((?:[^"\\]|\\.)+)"[\s\S]{0,200}?slug:"([a-z0-9-]+)"`)
 
 type AniBTGroupReader struct {
+	Outbound outbound.Coordinator
 	Endpoint string
 	Client   *http.Client
 	Now      func() time.Time
@@ -68,7 +70,7 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("provider"))
-	response, err := httpClient(r.Client).Do(request)
+	response, err := outbound.Do(httpClient(r.Client), r.Outbound, outbound.AniBTMetadata, request)
 	if err != nil {
 		return providerdomain.GroupReadResult{}, fmt.Errorf("fetch AniBT groups: %w", err)
 	}
@@ -162,7 +164,7 @@ func (r AniBTGroupReader) ReadGroupCatalog(ctx context.Context) ([]providerdomai
 	}
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("provider"))
-	response, err := httpClient(r.Client).Do(request)
+	response, err := outbound.Do(httpClient(r.Client), r.Outbound, outbound.AniBTGroupDirectory, request)
 	if err != nil {
 		return nil, fmt.Errorf("fetch AniBT group directory: %w", err)
 	}

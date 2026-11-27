@@ -56,6 +56,7 @@ import (
 	plugintargetapplication "bansoko/internal/plugintarget/application"
 	provideradapter "bansoko/internal/provider/adapter"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	reconciliationapplication "bansoko/internal/reconciliation/application"
 	retentionpersistence "bansoko/internal/recordretention/adapter/persistence"
 	retentionapplication "bansoko/internal/recordretention/application"
@@ -452,6 +453,7 @@ type applicationGraph struct {
 
 func provideApplicationGraph(
 	db *sql.DB,
+	providerOutbound outbound.Coordinator,
 	workStore *workitems.Store,
 	dbSecretStore *configurationapplication.DatabaseSecretStore,
 	runtimeConfiguration *configurationapplication.Service,
@@ -498,18 +500,19 @@ func provideApplicationGraph(
 	replacementTrigger.SetDiagnostics(observabilityService, logger)
 
 	catalogReaders := map[string]catalogapplication.Reader{
-		catalogapplication.ProviderAniBT: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver},
+		catalogapplication.ProviderAniBT: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver, Outbound: providerOutbound},
 		catalogapplication.ProviderMikan: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver},
 	}
 	catalogService := catalogapplication.NewProviderService(db, catalogReaders, catalogapplication.NewSubscriptionItemReader(db))
 	catalogService.SetEventHub(eventHub)
 	catalogService.SetGroupReaders(map[string]catalogapplication.GroupReader{
-		"anibt": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration},
+		"anibt": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, Outbound: providerOutbound},
 		"mikan": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration},
 	})
 	// Preview never prefetches torrents: the list carries RSS-native facts only,
 	// and a seed's bytes are fetched lazily when the user expands it.
 	catalogService.SetProviderFeedFetcher(acquisitionapplication.ConfiguredProviderFeedFetcher{
+		Outbound:             providerOutbound,
 		Connections:          catalogDBSource,
 		ClientResolver:       runtimeConfiguration,
 		ParseTorrentMetadata: false,
@@ -524,7 +527,7 @@ func provideApplicationGraph(
 	// provider adapters, so a saved provider connection applies to it as well.
 	catalogService.SetGroupDirectory(groupDirectory{})
 	catalogService.SetGroupResolver(configuredGroupResolver{
-		lookup: provideradapter.ConfiguredGroupLookup{Connections: catalogDBSource, ClientResolver: runtimeConfiguration},
+		lookup: provideradapter.ConfiguredGroupLookup{Connections: catalogDBSource, ClientResolver: runtimeConfiguration, Outbound: providerOutbound},
 	})
 	catalogService.SetGroupDictionaryStore(catalogrecordretentionpersistence.NewGroupDictionaryRepository(db))
 	catalogService.SetFeedSnapshotStore(catalogrecordretentionpersistence.NewRepository(db))
@@ -548,6 +551,7 @@ func provideApplicationGraph(
 	// the one saved connection per provider, and the fallback is the official
 	// public base, exactly like a catalog refresh.
 	seedSearch := catalogapplication.SeedSearchApplication{
+		AniBT:             catalogapplication.HTTPAniBTTorznabSearcher{Outbound: providerOutbound},
 		Service:           catalogService,
 		Endpoints:         catalogSearchEndpoints{connections: catalogDBSource, clients: runtimeConfiguration, secrets: dbSecretStore},
 		Resolver:          fixtureResolver,
@@ -555,7 +559,7 @@ func provideApplicationGraph(
 	}
 	// Custom-source previews follow the same lazy rule as provider previews: a
 	// snapshot stores the RSS facts, and expansion fetches the torrent on demand.
-	catalogService.SetCustomSnapshotApplication(catalogapplication.CustomSnapshotApplication{Revisions: draftService, Owners: draftService, Fetcher: customSnapshotNetworkFetcher{fetcher: acquisitionapplication.ConfiguredCustomRSSFetcher{Connections: catalogDBSource, ClientResolver: runtimeConfiguration, ParseTorrentMetadata: false, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver}}, Snapshots: catalogrecordretentionpersistence.NewRepository(db)})
+	catalogService.SetCustomSnapshotApplication(catalogapplication.CustomSnapshotApplication{Revisions: draftService, Owners: draftService, Fetcher: customSnapshotNetworkFetcher{fetcher: acquisitionapplication.ConfiguredCustomRSSFetcher{Outbound: providerOutbound, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, ParseTorrentMetadata: false, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver}}, Snapshots: catalogrecordretentionpersistence.NewRepository(db)})
 	provisioner := animeapplication.NewProvisioner(fileMaintenanceGraph.parserPolicies)
 	// One seed preview source serves both feed and keyword-search snapshots: the
 	// exact snapshot read and the seed's verified bytes, for both kinds. A search
@@ -653,6 +657,7 @@ func provideEpisodeTitleQueries(db *sql.DB, runtimeConfiguration *configurationa
 
 func provideCoreApplicationGraph(
 	db *sql.DB,
+	providerOutbound outbound.Coordinator,
 	workStore *workitems.Store,
 	httpConfigService *configurationapplication.HTTPService,
 	runtimeConfiguration *configurationapplication.Service,
@@ -673,6 +678,7 @@ func provideCoreApplicationGraph(
 		return nil, err
 	}
 	rssService, err := rssapplication.NewService(db, workStore, rssapplication.ConfiguredSourceFetcher{
+		Outbound:             providerOutbound,
 		Connections:          runtimeConfiguration,
 		ClientResolver:       runtimeConfiguration,
 		ParseTorrentMetadata: true,
@@ -782,6 +788,7 @@ type automationGraph struct {
 
 func provideAutomationGraph(
 	db *sql.DB,
+	providerOutbound outbound.Coordinator,
 	workStore *workitems.Store,
 	eventHub *events.Hub,
 	catalogDBSource catalogadapter.DBConnectionSource,
@@ -806,7 +813,7 @@ func provideAutomationGraph(
 		WorkItems:    workStore,
 		PolicyReader: selectionService,
 		GroupReaders: map[string]automationapplication.GroupReader{
-			"anibt": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderAniBT, Connections: catalogDBSource, ClientResolver: configService},
+			"anibt": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderAniBT, Connections: catalogDBSource, ClientResolver: configService, Outbound: providerOutbound},
 			"mikan": provideradapter.ConfiguredGroupReader{Provider: providerdomain.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: configService},
 		},
 		Connections:     catalogDBSource,

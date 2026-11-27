@@ -16,6 +16,7 @@ import (
 	"bansoko/internal/catalog/domain"
 	"bansoko/internal/events"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 
 	"golang.org/x/sync/singleflight"
@@ -47,6 +48,7 @@ type ProviderItemReader interface {
 }
 
 type HTTPReader struct {
+	Outbound outbound.Coordinator
 	Endpoint string
 	Client   *http.Client
 }
@@ -86,7 +88,7 @@ func (r HTTPReader) ReadSeason(ctx context.Context, season string, hints domain.
 	if strings.TrimSpace(hints.LastModified) != "" {
 		request.Header.Set("If-Modified-Since", hints.LastModified)
 	}
-	response, err := client.Do(request)
+	response, err := outbound.Do(client, r.Outbound, outbound.AniBTMetadata, request)
 	if err != nil {
 		return domain.ReadResult{}, fmt.Errorf("fetch AniBT catalog: %w", err)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"bansoko/internal/apperrors"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 )
 
 // maxGroupLookupQueryLength bounds the free-form query of one resolution.
@@ -40,6 +41,7 @@ var (
 // provider: Mikan confirms an id with one read of that group's page, and AniBT
 // confirms a slug with one read of its single group directory page.
 type ConfiguredGroupLookup struct {
+	Outbound       outbound.Coordinator
 	Connections    ConnectionSource
 	ClientResolver ConnectionHTTPClientResolver
 }
@@ -95,7 +97,7 @@ func (l ConfiguredGroupLookup) Resolve(ctx context.Context, provider, query stri
 	if kind == providerdomain.ProviderMikan {
 		return resolveMikanGroup(ctx, selected.Endpoint, client, key)
 	}
-	return resolveAniBTGroup(ctx, selected.Endpoint, client, key)
+	return resolveAniBTGroup(ctx, selected.Endpoint, client, key, l.Outbound)
 }
 
 func lookupProviderKind(provider string) (providerdomain.Kind, error) {
@@ -135,8 +137,8 @@ func resolveMikanGroup(ctx context.Context, endpoint string, client *http.Client
 // resolveAniBTGroup reads the single AniBT group directory page and confirms
 // one slug against it: the exact slug resolves to its entry, and a slug the
 // directory does not list is an empty answer. One request.
-func resolveAniBTGroup(ctx context.Context, endpoint string, client *http.Client, slug string) ([]providerdomain.GroupEntry, error) {
-	catalog, err := (AniBTGroupReader{Endpoint: endpoint, Client: client}).ReadGroupCatalog(ctx)
+func resolveAniBTGroup(ctx context.Context, endpoint string, client *http.Client, slug string, coordinator outbound.Coordinator) ([]providerdomain.GroupEntry, error) {
+	catalog, err := (AniBTGroupReader{Endpoint: endpoint, Client: client, Outbound: coordinator}).ReadGroupCatalog(ctx)
 	if err != nil {
 		return nil, lookupUnavailable(err)
 	}

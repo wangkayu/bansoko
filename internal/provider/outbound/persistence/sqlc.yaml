@@ -1,0 +1,12 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: ../../../../db/migrations/*.sql
+    queries: query.sql
+    gen:
+      go:
+        package: generated
+        out: generated
+        sql_package: database/sql
+        emit_empty_slices: true
+        omit_unused_structs: true

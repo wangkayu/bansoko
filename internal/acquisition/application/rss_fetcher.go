@@ -14,6 +14,7 @@ import (
 	"bansoko/internal/acquisition/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/observability/outbound"
+	provideroutbound "bansoko/internal/provider/outbound"
 	"bansoko/internal/redact"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
@@ -37,6 +38,7 @@ type RSSFetchResult struct {
 }
 
 type HTTPRSSFetcher struct {
+	Outbound          provideroutbound.Coordinator
 	Client            *http.Client
 	MaxSize           int64
 	Resolver          func(context.Context, string) ([]net.IP, error)
@@ -94,7 +96,9 @@ func (f HTTPRSSFetcher) FetchDetailed(ctx context.Context, locator subscriptiond
 	request.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml;q=0.9")
 	request.Header.Set("User-Agent", browserDisguiseUserAgent)
 	applyFeedValidators(ctx, request)
-	response, err := client.Do(request)
+	// A configured feed URL may point at a host a shared outbound policy
+	// covers; that host's bucket is charged, every other host is not.
+	response, err := provideroutbound.DoRSS(client, f.Outbound, request)
 	if err != nil {
 		return RSSFetchResult{}, outbound.WithFailure(fmt.Errorf("fetch RSS source: %w", redact.URLError(err)), outbound.Describe(err, request, nil, outbound.ViaOf(client, request)))
 	}

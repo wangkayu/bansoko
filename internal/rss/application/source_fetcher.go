@@ -10,6 +10,7 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
 
@@ -17,6 +18,7 @@ import (
 // provider/custom acquisition adapters. It does not infer credentials or route
 // settings from the locator URL.
 type ConfiguredSourceFetcher struct {
+	Outbound             outbound.Coordinator
 	Connections          acquisitionapplication.CustomRSSConnectionSource
 	ClientResolver       acquisitionapplication.CustomRSSHTTPClientResolver
 	ParseTorrentMetadata bool
@@ -28,6 +30,7 @@ func (f ConfiguredSourceFetcher) FetchSource(ctx context.Context, source SourceL
 	switch source.Kind {
 	case animedomain.SourceKindCustomRss:
 		return (acquisitionapplication.ConfiguredCustomRSSFetcher{
+			Outbound:             f.Outbound,
 			Connections:          f.Connections,
 			ClientResolver:       f.ClientResolver,
 			ParseTorrentMetadata: f.ParseTorrentMetadata,
@@ -45,6 +48,7 @@ func (f ConfiguredSourceFetcher) FetchSource(ctx context.Context, source SourceL
 			return nil, fmt.Errorf("provider group source is invalid: %w", err)
 		}
 		return (acquisitionapplication.ConfiguredProviderFeedFetcher{
+			Outbound:             f.Outbound,
 			Connections:          f.Connections,
 			ClientResolver:       f.ClientResolver,
 			ParseTorrentMetadata: f.ParseTorrentMetadata,
@@ -66,6 +70,7 @@ func (f ConfiguredSourceFetcher) FetchSourceTorrent(ctx context.Context, source 
 	switch source.Kind {
 	case animedomain.SourceKindCustomRss:
 		return (acquisitionapplication.ConfiguredCustomRSSFetcher{
+			Outbound:          f.Outbound,
 			Connections:       f.Connections,
 			ClientResolver:    f.ClientResolver,
 			AllowPrivateHosts: f.AllowPrivateHosts,

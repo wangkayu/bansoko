@@ -10,6 +10,7 @@ import (
 	"bansoko/internal/acquisition/domain"
 	configurationdomain "bansoko/internal/configuration/domain"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 )
 
 type ProviderFeedConnectionSource interface {
@@ -21,6 +22,7 @@ type ProviderFeedHTTPClientResolver interface {
 }
 
 type ConfiguredProviderFeedFetcher struct {
+	Outbound       outbound.Coordinator
 	Connections    ProviderFeedConnectionSource
 	ClientResolver ProviderFeedHTTPClientResolver
 	Resolver       func(context.Context, string) ([]net.IP, error)
@@ -56,7 +58,7 @@ func (f ConfiguredProviderFeedFetcher) FetchProviderFeedDetailed(ctx context.Con
 		if f.ParseTorrentMetadata {
 			reader = HTTPTorrentMetadataReader{Client: client, AllowPrivateHosts: f.AllowPrivateHosts, Resolver: f.Resolver}
 		}
-		return (HTTPAniBTRSSFetcher{Endpoint: connection.Endpoint, Client: client, AllowPrivateHosts: f.AllowPrivateHosts, Resolver: f.Resolver, TorrentReader: reader}).FetchAnimeDetailed(ctx, locator.CatalogEntryRef, locator.Group.ExternalID)
+		return (HTTPAniBTRSSFetcher{Endpoint: connection.Endpoint, Client: client, AllowPrivateHosts: f.AllowPrivateHosts, Resolver: f.Resolver, TorrentReader: reader, Outbound: f.Outbound}).FetchAnimeDetailed(ctx, locator.CatalogEntryRef, locator.Group.ExternalID)
 	case providerdomain.ProviderMikan:
 		var reader TorrentMetadataReader
 		if f.ParseTorrentMetadata {
