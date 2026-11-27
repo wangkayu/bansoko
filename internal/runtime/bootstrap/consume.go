@@ -164,7 +164,7 @@ type consumeFX struct {
 	CheckMigration    func(releaseID string) error
 	RunMigrate        func(releaseID string) error
 	RestoreDatabase   func(backupID string) error
-	PinBackup         func(embeddedupdate.Record) (string, string, error)
+	PinBackup         func(embeddedupdate.Record) (string, embeddedupdate.LiveDatabase, error)
 	PrepareRecovery   func(embeddedupdate.Record) (embeddedupdate.DatabaseRecovery, error)
 	ReconcileRecovery func(embeddedupdate.Record) error
 	RemoveRelease     func(releaseID string) error
@@ -633,12 +633,12 @@ func runConsume(j *embeddedupdate.FileJournal, record embeddedupdate.Record,
 // overlay migration.
 func (f *consumeFlow) phasePendingMigration() consumeOutcome {
 	if f.fx.PinBackup != nil {
-		digest, id, err := f.fx.PinBackup(f.record)
-		if err != nil || f.record.InstallID != "" && id != f.record.InstallID {
+		digest, live, err := f.fx.PinBackup(f.record)
+		if err != nil || f.record.LiveDatabase != nil && live != *f.record.LiveDatabase || f.record.InstallID != "" && live.InstallID != f.record.InstallID {
 			return f.parkActive(embeddedupdate.StepPendingMigration, "operation backup or install identity is unproven")
 		}
-		if f.record.BackupDigest == "" && !f.advance(embeddedupdate.StepPendingMigration, "", "pinning backup before owner migration", func(r *embeddedupdate.Record) {
-			r.BackupDigest, r.InstallID = digest, id
+		if (f.record.BackupDigest == "" || f.record.LiveDatabase == nil) && !f.advance(embeddedupdate.StepPendingMigration, "", "pinning backup and live database before owner migration", func(r *embeddedupdate.Record) {
+			r.BackupDigest, r.InstallID, r.LiveDatabase = digest, live.InstallID, &live
 		}) {
 			return f.parkActive(embeddedupdate.StepPendingMigration, "cannot persist operation backup identity")
 		}
@@ -1303,7 +1303,7 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 			}
 			return nil
 		},
-		PinBackup: func(r embeddedupdate.Record) (string, string, error) {
+		PinBackup: func(r embeddedupdate.Record) (string, embeddedupdate.LiveDatabase, error) {
 			return restore.pinBackup(r, db)
 		},
 		PrepareRecovery: func(r embeddedupdate.Record) (embeddedupdate.DatabaseRecovery, error) {

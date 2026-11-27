@@ -67,10 +67,25 @@ func (r *Repository) requireDB() error {
 	return nil
 }
 
+// SequenceFloor returns the sequence floor used by admission.
+func (r *Repository) SequenceFloor(ctx context.Context) (int64, error) {
+	if err := r.requireDB(); err != nil {
+		return 0, err
+	}
+	return sequenceFloor(ctx, generated.New(r.db))
+}
+
+func sequenceFloor(ctx context.Context, queries *generated.Queries) (int64, error) {
+	floor, err := queries.ReadSequenceFloor(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return floor, err
+}
+
 // Acquire checks the persisted sequence floor and inserts the active singleton
-// row in one transaction. The floor skips failed attempts, so a release whose
-// previous attempt failed stays admissible; the partial unique index remains
-// the concurrent cross-channel mutex.
+// row in one transaction. Failed attempts stay admissible. The partial unique
+// index arbitrates concurrent admissions.
 func (r *Repository) Acquire(ctx context.Context, operationID, admittedBy string, sequence int64, manifestDigest string) error {
 	if err := r.requireDB(); err != nil {
 		return err
@@ -82,10 +97,8 @@ func (r *Repository) Acquire(ctx context.Context, operationID, admittedBy string
 	defer func() { _ = tx.Rollback() }()
 
 	queries := generated.New(tx)
-	floor, err := queries.ReadSequenceFloor(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		floor = 0
-	} else if err != nil {
+	floor, err := sequenceFloor(ctx, queries)
+	if err != nil {
 		return err
 	}
 	if sequence <= floor {

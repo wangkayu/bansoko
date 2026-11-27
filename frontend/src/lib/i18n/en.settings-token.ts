@@ -123,6 +123,8 @@ export const enSettingsTokenCopy = {
       accepted: "Update accepted, preparing",
       pending_migration: "Waiting to restart and upgrade the database",
       migration_succeeded: "Database upgrade completed",
+      migration_started: "Upgrading the database",
+      base_ready: "Image build verified; switching releases",
       promoted: "New version enabled",
       readiness_failed: "New version failed its startup check",
       rollback_started: "Rolling back",

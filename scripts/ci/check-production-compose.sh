@@ -137,13 +137,6 @@ if grep -nE 'BANSOKO_P(U|G)ID' "$compose"; then
   fail "production compose must use the standard PUID/PGID names"
 fi
 
-# The identity injected into the running app must default to the exact image
-# digest selected by the release bundle. An independently required base digest
-# would allow Compose and /readyz to describe different images.
-if ! grep -qE 'BANSOKO_BASE_IMAGE_DIGEST:[[:space:]]*\$\{BANSOKO_BUNDLE_IMAGE_DIGEST:\?' "$compose"; then
-  fail "production compose must derive BANSOKO_BASE_IMAGE_DIGEST from BANSOKO_BUNDLE_IMAGE_DIGEST"
-fi
-
 # The image ENTRYPOINT is the embedded-update bootstrap wrapper, which
 # migrates the selected tree before serving: no separate migration job and no
 # entrypoint override.

@@ -4667,9 +4667,6 @@ type DeploymentIdentity struct {
 	Anchor    *DeploymentIdentityAnchor `json:"anchor,omitempty"`
 	BaseBuild *DeploymentBuild          `json:"base_build,omitempty"`
 
-	// BaseImageDigest Immutable base image digest layer, when the deployment provides it.
-	BaseImageDigest *string `json:"base_image_digest,omitempty"`
-
 	// PayloadDigest Signed payload digest of the selected release (empty when not provable).
 	PayloadDigest *string `json:"payload_digest,omitempty"`
 
@@ -8558,7 +8555,7 @@ type ReadinessReport struct {
 	CheckedAt time.Time                 `json:"checked_at"`
 	Checks    map[string]ReadinessCheck `json:"checks"`
 
-	// DeploymentIdentity Three-layer deployment identity of the running process (base image digest / selected release and source / payload digest / update operation). Present only when the process was launched through the update-aware bootstrap wrapper; null otherwise.
+	// DeploymentIdentity Deployment identity of the running process, including the attested base build, selected build, and any overlay payload and operation. Present when bootstrap supplied deployment identity.
 	DeploymentIdentity *DeploymentIdentity `json:"deployment_identity"`
 	Ready              bool                `json:"ready"`
 

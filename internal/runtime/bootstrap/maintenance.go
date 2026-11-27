@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"bansoko/internal/runtime/config"
+	"bansoko/internal/runtime/deploymentidentity"
+	"bansoko/internal/runtime/readiness"
 	"bansoko/internal/transport/httpapi/generated"
 	embeddedupdate "bansoko/internal/update/journal"
 )
@@ -38,14 +40,13 @@ func maintenanceHandler(journalPath string, fallbackStep, fallbackOperation stri
 				return
 			}
 			detail := maintenanceDetail(journalPath, fallbackStep, fallbackOperation)
-			code := "maintenance"
-			report := generated.ReadinessReport{
+			report := readiness.Report{
 				Ready:              false,
 				Reason:             "not_ready:maintenance",
 				CheckedAt:          now(),
-				DeploymentIdentity: nil,
-				Checks: map[string]generated.ReadinessCheck{
-					"maintenance": {Ok: false, Code: &code, Detail: &detail},
+				DeploymentIdentity: maintenanceIdentity(journalPath),
+				Checks: map[string]readiness.CheckOutcome{
+					"maintenance": {Code: "maintenance", Detail: detail},
 				},
 			}
 			writeMaintenanceJSON(w, http.StatusServiceUnavailable, report)
@@ -53,6 +54,18 @@ func maintenanceHandler(journalPath string, fallbackStep, fallbackOperation stri
 			http.NotFound(w, r)
 		}
 	})
+}
+
+func maintenanceIdentity(journalPath string) *deploymentidentity.Identity {
+	r, found, err := embeddedupdate.Snapshot(journalPath)
+	if err != nil || !found || r.Takeover == nil {
+		return nil
+	}
+	return &deploymentidentity.Identity{
+		BaseBuild: &r.Takeover.Anchor.Build, Anchor: deploymentidentity.AnchorDocker,
+		TakeoverOperationID: r.OperationID,
+		SelectionReasonCode: "takeover_resuming", SelectionReason: string(r.Step),
+	}
 }
 
 func maintenanceDetail(journalPath, fallbackStep, fallbackOperation string) string {

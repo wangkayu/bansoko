@@ -87,14 +87,18 @@ WHERE r.rolname = current_user`, database).Scan(&super, &createdb, &owner)
 // createLike creates an empty database with the encoding and collation of the
 // deployment database.
 func createLike(ctx context.Context, admin *sql.DB, name, like string) error {
+	return createLikeWithConnections(ctx, admin, name, like, true)
+}
+
+func createLikeWithConnections(ctx context.Context, admin *sql.DB, name, like string, allow bool) error {
 	var encoding, collate, ctype string
 	if err := admin.QueryRowContext(ctx, `
 SELECT pg_encoding_to_char(encoding), datcollate, datctype FROM pg_database WHERE datname = $1`, like).
 		Scan(&encoding, &collate, &ctype); err != nil {
 		return err
 	}
-	_, err := admin.ExecContext(ctx, fmt.Sprintf(`CREATE DATABASE %s TEMPLATE template0 ENCODING %s LC_COLLATE %s LC_CTYPE %s`,
-		quoteIdent(name), quoteLiteral(encoding), quoteLiteral(collate), quoteLiteral(ctype)))
+	_, err := admin.ExecContext(ctx, fmt.Sprintf(`CREATE DATABASE %s TEMPLATE template0 ENCODING %s LC_COLLATE %s LC_CTYPE %s ALLOW_CONNECTIONS %t`,
+		quoteIdent(name), quoteLiteral(encoding), quoteLiteral(collate), quoteLiteral(ctype), allow))
 	return err
 }
 

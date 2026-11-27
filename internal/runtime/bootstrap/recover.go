@@ -130,9 +130,8 @@ func (s fileRecoveryStatus) Status(ctx context.Context) (map[string]any, error) 
 	if s.db != nil && found && record.Channel == updatefence.AdmittedByEmbedded {
 		row, rowFound, err := updatefence.New(s.db).Lookup(ctx, record.OperationID)
 		if err != nil {
-			return nil, err
-		}
-		if rowFound && row.OperationID == record.OperationID && row.ManifestDigest == record.ManifestDigest &&
+			result["fence_state"] = "unknown"
+		} else if rowFound && row.OperationID == record.OperationID && row.ManifestDigest == record.ManifestDigest &&
 			row.Sequence == record.TargetReleaseSequence && row.AdmittedBy == updatefence.AdmittedByEmbedded {
 			result["fence_state"] = row.State
 		}

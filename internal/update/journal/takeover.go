@@ -20,24 +20,23 @@ type BaseAnchor struct {
 	Platform       string              `json:"platform"`
 	Architecture   string              `json:"architecture"`
 	ExecutableHash string              `json:"executable_sha256"`
-	ImageDigest    string              `json:"image_digest"`
 	Build          buildinfo.BuildInfo `json:"build"`
 }
 
 func (a BaseAnchor) Fingerprint() string {
 	b, _ := json.Marshal(struct {
-		Platform, Architecture, ExecutableHash, ImageDigest    string
-		Order                                                  buildinfo.Order
-		ReleaseID, Version, Commit, Schema, API, Compatibility string
-	}{a.Platform, a.Architecture, a.ExecutableHash, a.ImageDigest, a.Build.Order,
-		a.Build.BuildID, a.Build.Version, a.Build.Commit, a.Build.SchemaVersion, a.Build.APIVersion, a.Build.BaseCompatibilityVersion})
+		Platform, Architecture, ExecutableHash string
+		Order                                  buildinfo.Order
+		ReleaseID, Version, Commit             string
+	}{a.Platform, a.Architecture, a.ExecutableHash, a.Build.Order,
+		a.Build.BuildID, a.Build.Version, a.Build.Commit})
 	sum := sha256.Sum256(append([]byte("bansoko-base-anchor-v1\x00"), b...))
 	return hex.EncodeToString(sum[:])
 }
 
 func (a BaseAnchor) Valid() bool {
 	return a.Platform == "linux" && (a.Architecture == "amd64" || a.Architecture == "arm64") &&
-		bareSHA(a.ExecutableHash) && strings.HasPrefix(a.ImageDigest, "sha256:") && bareSHA(strings.TrimPrefix(a.ImageDigest, "sha256:")) &&
+		bareSHA(a.ExecutableHash) &&
 		validOrderedBuild(a.Build) && !a.Build.Dirty && a.Build.APIVersion != "" && a.Build.BaseCompatibilityVersion != ""
 }
 
@@ -62,6 +61,20 @@ type DatabaseRecovery struct {
 	LiveOID  uint32 `json:"live_oid"`
 	ReadyOID uint32 `json:"ready_oid"`
 	OwnerOID uint32 `json:"owner_oid"`
+}
+
+// LiveDatabase is the deployment database pinned before any takeover effect.
+// It is the catalog identity the operation re-proves before each rename, so a
+// dropped and recreated database with the same name can never be adopted.
+type LiveDatabase struct {
+	Name      string `json:"name"`
+	OID       uint32 `json:"oid"`
+	OwnerOID  uint32 `json:"owner_oid"`
+	InstallID string `json:"install_id"`
+}
+
+func (l LiveDatabase) Valid() bool {
+	return l.Name != "" && len(l.Name) <= 63 && l.OID != 0 && l.OwnerOID != 0 && l.InstallID != "" && len(l.InstallID) <= 128
 }
 
 var takeoverTransitions = map[Step][]Step{
@@ -98,7 +111,7 @@ func bareSHA(value string) bool {
 }
 
 func validOrderedBuild(b buildinfo.BuildInfo) bool {
-	return b.Ordered() && b.Series == buildinfo.CISeries && safeID(b.BuildID) && b.Version != "" && b.Version != "dev" &&
+	return b.Ordered() && buildinfo.KnownSeries(b.Series) && safeID(b.BuildID) && b.Version != "" && b.Version != "dev" &&
 		b.Commit != "" && b.Commit != "unknown" && b.SchemaVersion != ""
 }
 
@@ -107,7 +120,15 @@ func validateEnvelope(env envelope) error {
 	if env.SchemaVersion == 1 && r == nil {
 		return nil
 	}
-	if env.SchemaVersion == 1 && r != nil && r.SchemaVersion == 1 && r.OperationKind == "" && r.Takeover == nil && r.DatabaseRecovery == nil && r.BackupDigest == "" && r.InstallID == "" {
+	if env.SchemaVersion == 1 && r != nil && r.SchemaVersion == 1 && r.OperationKind == "" && r.Takeover == nil && r.DatabaseRecovery == nil && r.LiveDatabase == nil && r.BackupDigest == "" && r.InstallID == "" {
+		// V1 active records remain visible for diagnosis; no v2 writer may
+		// advance them. Terminal records must still carry full closure proof.
+		if r.Active() || r.Step == StepRollbackBlocked {
+			if !safeID(r.OperationID) || !safeID(r.TargetReleaseID) || r.Channel != "embedded" || r.Version < 0 {
+				return errors.New("invalid legacy journal identity")
+			}
+			return nil
+		}
 		return validateRecord(*r)
 	}
 	if env.SchemaVersion != FormatVersion || r != nil && r.SchemaVersion != FormatVersion {
@@ -120,6 +141,14 @@ func validateEnvelope(env envelope) error {
 }
 
 func validateOperation(r Record) error {
+	if l := r.LiveDatabase; l != nil {
+		if !l.Valid() || r.InstallID != "" && l.InstallID != r.InstallID {
+			return errors.New("invalid pinned live database identity")
+		}
+		if p := r.DatabaseRecovery; p != nil && (p.Live != l.Name || p.LiveOID != l.OID || p.OwnerOID != l.OwnerOID) {
+			return errors.New("database cutover does not match the pinned live database")
+		}
+	}
 	if (r.BackupDigest == "") != (r.InstallID == "") || len(r.InstallID) > 128 || r.BackupDigest != "" && (!bareSHA(r.BackupDigest) || !ValidID(r.BackupID)) {
 		return errors.New("invalid pinned backup")
 	}
@@ -186,6 +215,12 @@ func validateOperation(r Record) error {
 }
 
 func validateOperationAdvance(before, after Record) error {
+	if before.LiveDatabase != nil && (after.LiveDatabase == nil || *before.LiveDatabase != *after.LiveDatabase) {
+		return errors.New("pinned live database identity is immutable")
+	}
+	if before.LiveDatabase == nil && after.LiveDatabase != nil && (before.OperationKind == KindBaseTakeover || before.Step != StepPendingMigration || after.Step != StepPendingMigration) {
+		return errors.New("live database identity must be pinned before migration")
+	}
 	if before.SchemaVersion != after.SchemaVersion || before.OperationKind != after.OperationKind || before.Step != StepRollbackStarted && before.DatabaseRecovery == nil && after.DatabaseRecovery != nil {
 		return errors.New("operation format or database recovery changed outside its checkpoint")
 	}

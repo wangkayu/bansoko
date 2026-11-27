@@ -14,10 +14,6 @@ func validDigest() string {
 	return hex
 }
 
-func validBaseDigest() string {
-	return "sha256:" + validDigest()
-}
-
 func TestNotProvidedWhenEnvironmentEmpty(t *testing.T) {
 	if got := (Identity{}).Provided(); got {
 		t.Error("zero identity must not be provided")
@@ -27,15 +23,8 @@ func TestNotProvidedWhenEnvironmentEmpty(t *testing.T) {
 	}
 }
 
-func TestBaseImageDigestAloneIsValid(t *testing.T) {
-	identity := Identity{BaseImageDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
-	if err := identity.Validate(nil); err != nil {
-		t.Fatalf("base image digest alone must validate: %v", err)
-	}
-}
-
 func TestValidateForRuntimeRejectsPartialIdentityWhenSourceRequired(t *testing.T) {
-	identity := Identity{BaseImageDigest: validBaseDigest()}
+	identity := Identity{Anchor: AnchorDocker}
 	if err := identity.ValidateForRuntime(nil, true); !errors.Is(err, ErrRuntimeSourceRequired) {
 		t.Fatalf("partial runtime identity error = %v, want %v", err, ErrRuntimeSourceRequired)
 	}
@@ -56,32 +45,32 @@ func TestValidateRules(t *testing.T) {
 	}{
 		{
 			name:     "base with no overlay facts",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceBase},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceBase},
 			wantErr:  nil,
 		},
 		{
-			name:     "base with unknown image digest",
+			name:     "base without a recognized anchor",
 			identity: Identity{SelectedSource: SourceBase},
-			wantErr:  ErrBaseImageRequired,
+			wantErr:  ErrBaseAnchorRequired,
 		},
 		{
 			name:     "base carrying payload digest is inconsistent",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceBase, PayloadDigest: validDigest()},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceBase, PayloadDigest: validDigest()},
 			wantErr:  ErrPayloadOnBase,
 		},
 		{
 			name:     "base carrying release id is inconsistent",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceBase, SelectedReleaseID: "release-1"},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceBase, SelectedReleaseID: "release-1"},
 			wantErr:  ErrPayloadOnBase,
 		},
 		{
 			name:     "overlay without release id is inconsistent",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceOverlay},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceOverlay},
 			wantErr:  ErrReleaseRequired,
 		},
 		{
 			name:     "overlay with malformed payload digest is inconsistent",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: "not-hex"},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: "not-hex"},
 			wantErr:  ErrPayloadDigestFormat,
 		},
 		{
@@ -96,25 +85,25 @@ func TestValidateRules(t *testing.T) {
 		},
 		{
 			name:     "overlay release matches readable pointer",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "build-1", ProcessBuildID: "build-1"},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "build-1", ProcessBuildID: "build-1"},
 			pointer:  &PointerState{Token: "release-1", Readable: true, Presented: true},
 			wantErr:  nil,
 		},
 		{
 			name:     "overlay release drifts from pointer",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "build-1", ProcessBuildID: "build-1"},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "build-1", ProcessBuildID: "build-1"},
 			pointer:  &PointerState{Token: "release-2", Readable: true, Presented: true},
 			wantErr:  ErrPointerMismatch,
 		},
 		{
 			name:     "base serving while pointer selects overlay is inconsistent",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceBase},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceBase},
 			pointer:  &PointerState{Token: "release-2", Readable: true, Presented: true},
 			wantErr:  ErrPointerOnBase,
 		},
 		{
 			name:     "missing pointer contradicts overlay selection",
-			identity: Identity{BaseImageDigest: validBaseDigest(), SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "build-1", ProcessBuildID: "build-1"},
+			identity: Identity{Anchor: AnchorDocker, SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "build-1", ProcessBuildID: "build-1"},
 			pointer:  &PointerState{Readable: false, Presented: false},
 			wantErr:  ErrPointerMissing,
 		},
@@ -131,7 +120,7 @@ func TestValidateRules(t *testing.T) {
 
 func TestFromEnvReadsAllKeys(t *testing.T) {
 	env := map[string]string{
-		EnvBaseImageDigest:   "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		EnvAnchorKind:        AnchorDocker,
 		EnvSelectedReleaseID: "release-9",
 		EnvSource:            SourceOverlay,
 		EnvPayloadDigest:     validDigest(),
@@ -139,7 +128,7 @@ func TestFromEnvReadsAllKeys(t *testing.T) {
 		"BANSOKO_UNRELATED":  "x",
 	}
 	identity := FromEnv(func(key string) string { return env[key] })
-	if identity.BaseImageDigest != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" || identity.SelectedReleaseID != "release-9" ||
+	if identity.Anchor != AnchorDocker || identity.SelectedReleaseID != "release-9" ||
 		identity.SelectedSource != SourceOverlay || identity.PayloadDigest != validDigest() ||
 		identity.UpdateOperationID != "update-1" {
 		t.Fatalf("unexpected identity: %+v", identity)
@@ -149,14 +138,8 @@ func TestFromEnvReadsAllKeys(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsInvalidBaseDigest(t *testing.T) {
-	if err := (Identity{BaseImageDigest: "sha256:short"}).Validate(nil); !errors.Is(err, ErrBaseImageDigestFormat) {
-		t.Fatalf("Validate() = %v, want %v", err, ErrBaseImageDigestFormat)
-	}
-}
-
 func TestValidateRejectsBuildIDMismatch(t *testing.T) {
-	identity := Identity{BaseImageDigest: "sha256:" + validDigest(), SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "signed-build", ProcessBuildID: "running-build"}
+	identity := Identity{Anchor: AnchorDocker, SelectedSource: SourceOverlay, SelectedReleaseID: "release-1", PayloadDigest: validDigest(), UpdateOperationID: "update-1", ExpectedProcessBuildID: "signed-build", ProcessBuildID: "running-build"}
 	if err := identity.Validate(nil); !errors.Is(err, ErrProcessBuildMismatch) {
 		t.Fatalf("Validate() = %v, want %v", err, ErrProcessBuildMismatch)
 	}

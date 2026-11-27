@@ -10,6 +10,18 @@ import (
 
 const pendingInstallID = "pending-install-id"
 
+// ReadInstallID verifies an initialized install without taking a write lock.
+func ReadInstallID(ctx context.Context, db *sql.DB) (string, error) {
+	var id string
+	if err := db.QueryRowContext(ctx, `SELECT install_id FROM public.instance_bootstrap WHERE singleton_id = 1`).Scan(&id); err != nil {
+		return "", fmt.Errorf("read install identity: %w", err)
+	}
+	if id == "" || id == pendingInstallID {
+		return "", fmt.Errorf("install identity is not initialized")
+	}
+	return id, nil
+}
+
 func EnsureInstallID(ctx context.Context, db *sql.DB) (string, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

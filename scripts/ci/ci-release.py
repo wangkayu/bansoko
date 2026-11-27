@@ -333,12 +333,23 @@ def identity(lane="stable"):
     }
 
 
-SERIES = "bansoko-ci-v1"
+LEGACY_SERIES = "bansoko-ci-v1"
+UPSTREAM_REPOSITORY = "wangkayu/bansoko"
+
+
+def release_series():
+    repo = os.environ.get("GITHUB_REPOSITORY", UPSTREAM_REPOSITORY).lower()
+    series = "gh:" + repo + ":v1"
+    if len(series) > 128 or not re.fullmatch(r"gh:[a-z0-9][a-z0-9-]*/[a-z0-9._-]+:v1", series):
+        fail("invalid GitHub repository for release series")
+    return series
+
+
 MAX_SEQUENCE = (1 << 63) - 1
 
 
 def release_identity(ident):
-    return dict(series=SERIES, lane=ident["lane"], release_sequence=ident["sequence"],
+    return dict(series=release_series(), lane=ident["lane"], release_sequence=ident["sequence"],
                 release_id=ident["release_id"], version=ident["version"], source_commit=ident["sha"])
 
 
@@ -350,7 +361,7 @@ def frozen_identity(lane):
     if lane == "test":
         expected_version += r"-test\." + str(sequence)
     if (os.environ.get("GITHUB_EVENT_NAME") != "push" or os.environ.get("GITHUB_REF") != ref
-            or frozen["lane"] != lane or frozen["series"] != SERIES
+            or frozen["lane"] != lane or frozen["series"] != release_series()
             or type(sequence) is not int or not 0 < sequence <= MAX_SEQUENCE
             or str(sequence) != required("GITHUB_RUN_NUMBER") or not re.fullmatch(expected_version, version)
             or frozen["release_id"] != "v" + version
@@ -366,12 +377,14 @@ def frozen_identity(lane):
     return ident
 
 
-def verify_binary_identity(raw, ident, architecture):
+def verify_binary_identity(raw, ident, architecture, *, container=False):
     actual = decode_json(raw)
     expected = release_identity(ident)
     expected["build_id"] = expected.pop("release_id")
     expected["commit"] = expected.pop("source_commit")
-    expected.update(platform="linux", architecture=architecture, dirty=False)
+    expected = {**expected, "platform": "linux", "architecture": architecture, "dirty": False}
+    if container and actual.get("container_anchor") != "docker-v1":
+        fail("image binary does not attest the immutable container anchor")
     if any(actual.get(key) != value for key, value in expected.items()):
         fail("binary identity differs from frozen release for linux/" + architecture)
     return actual
@@ -382,12 +395,47 @@ def read_image_version(ref, architecture):
                "--entrypoint", "/app/bansoko-server", ref, "version", "--json")
 
 
+def read_moving_image_identity(pinned, architecture):
+    raw = read_image_version(pinned, architecture)
+    config = decode_json(run("docker", "image", "inspect", "--format", "{{json .}}", pinned))
+    if (config.get("Os"), config.get("Architecture")) != ("linux", architecture):
+        fail("moving tag image config is on the wrong platform")
+    labels = config["Config"].get("Labels") or {}
+    try:
+        actual = json.loads(raw)
+    except json.JSONDecodeError:
+        # This is the four-line version command shipped before ordered builds.
+        legacy = re.fullmatch(
+            r"bansoko (\S+) \(commit ([0-9a-f]{40})\)\n"
+            r"target schema version: [a-z0-9_.-]+\nembedded frontend: (?:true|false)\n"
+            r"platform: linux/" + re.escape(architecture), raw,
+        )
+        if legacy is None or labels.get("org.opencontainers.image.source") != "https://github.com/" + UPSTREAM_REPOSITORY:
+            fail("cannot prove pre-sequence moving tag identity")
+        actual = {"version": legacy[1], "commit": legacy[2], "lane": "unordered"}
+    else:
+        if not isinstance(actual, dict) or (actual.get("platform"), actual.get("architecture")) != ("linux", architecture):
+            fail("moving tag binary is on the wrong platform")
+    if (actual.get("version"), actual.get("commit")) != (
+        labels.get("org.opencontainers.image.version"), labels.get("org.opencontainers.image.revision")
+    ) or not actual.get("version") or not re.fullmatch(r"[0-9a-f]{40}", actual.get("commit") or ""):
+        fail("moving tag binary identity differs from its pinned OCI config")
+    return actual
+
+
 def guard_moving_identity(actual, ident):
     sequence = actual.get("release_sequence")
-    if sequence is None and actual.get("lane", "unordered") == "unordered":
-        return  # One-time upgrade from a pre-sequence image.
     expected = release_identity(ident)
-    if (actual.get("series"), actual.get("lane")) != (expected["series"], expected["lane"]):
+    upstream = expected["series"] == "gh:" + UPSTREAM_REPOSITORY + ":v1"
+    if sequence is None and actual.get("lane") == "unordered" and not actual.get("series"):
+        version = actual.get("version", "")
+        stable = r"[0-9]+\.[0-9]+\.[0-9]+"
+        pattern = stable if ident["lane"] == "stable" else stable + r"-test\.[1-9][0-9]*"
+        if upstream and re.fullmatch(pattern, version):
+            return  # One-time switch from a proven pre-sequence image.
+        fail("moving tag has no compatible pre-sequence identity")
+    series = actual.get("series")
+    if actual.get("lane") != expected["lane"] or (series != expected["series"] and not (upstream and series == LEGACY_SERIES)):
         fail("moving tag is on a different series or lane")
     if type(sequence) is not int or not 0 < sequence <= MAX_SEQUENCE or sequence > ident["sequence"]:
         fail("moving tag sequence would regress")
@@ -474,7 +522,7 @@ def build_native_assets(ident, destination):
         os.environ,
         BANSOKO_RELEASE_VERSION=ident["version"],
         BANSOKO_RELEASE_ID=ident["release_id"],
-        BANSOKO_RELEASE_SERIES=SERIES,
+        BANSOKO_RELEASE_SERIES=release_series(),
         BANSOKO_RELEASE_CHANNEL=ident["lane"],
         BANSOKO_RELEASE_SEQUENCE=str(ident["sequence"]),
         BANSOKO_NATIVE_OUTPUT_DIR=str(destination),
@@ -552,7 +600,7 @@ def decode_json(value):
 
 def inspect_image(ref, ident, scratch):
     for architecture in ("amd64", "arm64"):
-        verify_binary_identity(read_image_version(ref, architecture), ident, architecture)
+        verify_binary_identity(read_image_version(ref, architecture), ident, architecture, container=True)
     run("docker", "pull", "--platform", "linux/amd64", ref)
     info = decode_json(run("docker", "image", "inspect", ref))[0]
     labels = info["Config"].get("Labels", {})
@@ -677,7 +725,7 @@ def image(ident):
             "BUILD_ID": ident["release_id"],
             "BUILD_TIME": timestamp,
             "BUILD_DIRTY": "false",
-            "RELEASE_SERIES": SERIES,
+            "RELEASE_SERIES": release_series(),
             "RELEASE_LANE": ident["lane"],
             "RELEASE_SEQUENCE": str(ident["sequence"]),
         }.items():
@@ -761,7 +809,7 @@ def publish(ident):
             os.environ,
             BANSOKO_RELEASE_VERSION=ident["version"],
             BANSOKO_RELEASE_ID=ident["release_id"],
-            BANSOKO_RELEASE_SERIES=SERIES,
+            BANSOKO_RELEASE_SERIES=release_series(),
             BANSOKO_RELEASE_SEQUENCE=str(ident["sequence"]),
             BANSOKO_RELEASE_CHANNEL=lane_of(ident)["manifest"],
             BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=bootstrap,

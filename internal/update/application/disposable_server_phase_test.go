@@ -135,10 +135,17 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 		blockPayload:   blockPayload,
 		payloadStarted: make(chan struct{}),
 	}
+	lane := LaneStable
+	branch := stableChannelBranch
+	if manifest.Channel == hardeningdomain.ReleaseChannelTest || manifest.Channel == hardeningdomain.ReleaseChannelNightly {
+		lane, branch = LaneTest, testChannelBranch
+	}
+	documentPath := "/" + branch + "/channel-v1.json"
+	manifestPath := strings.Replace(disposableManifestPath, "/"+stableChannelBranch+"/", "/"+branch+"/", 1)
 	testDone := t.Context().Done()
 	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fixture.record(r.URL.Path)
-		if r.URL.Path == disposableChannelDocumentPath {
+		if r.URL.Path == documentPath {
 			manifestDigest, err := fixture.manifest.CanonicalDigest()
 			if err != nil {
 				t.Errorf("canonical manifest digest: %v", err)
@@ -147,11 +154,11 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 			}
 			document := channel.Document{
 				SchemaVersion:   channel.SchemaVersion,
-				Channel:         "stable",
+				Channel:         lane,
 				ReleaseID:       fixture.manifest.ReleaseID,
 				Version:         fixture.manifest.Version,
 				ReleaseSequence: fixture.manifest.ReleaseSequence,
-				ManifestURL:     fixture.server.URL + disposableManifestPath,
+				ManifestURL:     fixture.server.URL + manifestPath,
 				ManifestDigest:  manifestDigest,
 				SourceCommit:    fixture.manifest.SourceCommit,
 				PublishedAt:     disposableClockInstant,
@@ -160,7 +167,7 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 			_ = json.NewEncoder(w).Encode(document)
 			return
 		}
-		if r.URL.Path == disposableManifestPath {
+		if r.URL.Path == manifestPath {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(fixture.manifest)
 			return

@@ -9527,10 +9527,9 @@ components:
           format: date-time
         deployment_identity:
           description: >
-            Three-layer deployment identity of the running process (base image
-            digest / selected release and source / payload digest / update
-            operation). Present only when the process was launched through the
-            update-aware bootstrap wrapper; null otherwise.
+            Deployment identity of the running process, including the attested
+            base build, selected build, and any overlay payload and operation.
+            Present when bootstrap supplied deployment identity.
           allOf:
             - $ref: '#/components/schemas/DeploymentIdentity'
           nullable: true
@@ -9558,9 +9557,6 @@ components:
         selection_reason_code: {type: string}
         selection_reason: {type: string}
         takeover_operation_id: {type: string}
-        base_image_digest:
-          type: string
-          description: Immutable base image digest layer, when the deployment provides it.
         selected_release_id:
           type: string
           description: Overlay release id this process serves (empty for base launches).

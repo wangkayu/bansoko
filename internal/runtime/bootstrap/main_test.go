@@ -617,7 +617,7 @@ func TestSafeRelPathAndReleaseTokens(t *testing.T) {
 func TestDeploymentIdentityEnvClearsOverlayFactsOnBase(t *testing.T) {
 	t.Setenv(deploymentidentity.EnvSelectedReleaseID, "stale-release")
 	t.Setenv(deploymentidentity.EnvPayloadDigest, "stale-digest")
-	t.Setenv(deploymentidentity.EnvBaseImageDigest, "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv(deploymentidentity.EnvTakeoverOperationID, "stale-takeover")
 
 	env := deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "")
 	if env[deploymentidentity.EnvSource] != deploymentidentity.SourceBase {
@@ -626,19 +626,14 @@ func TestDeploymentIdentityEnvClearsOverlayFactsOnBase(t *testing.T) {
 	if env[deploymentidentity.EnvSelectedReleaseID] != "" || env[deploymentidentity.EnvPayloadDigest] != "" {
 		t.Error("base identity must clear overlay facts explicitly")
 	}
-	if env[deploymentidentity.EnvBaseImageDigest] != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
-		t.Error("base image digest must be passed through")
+	if env[deploymentidentity.EnvTakeoverOperationID] != "" {
+		t.Error("steady selection must clear the inherited takeover operation")
 	}
 }
 
-func TestDeploymentIdentityEnvUsesBaseDigestAndClearsExpectedBuild(t *testing.T) {
-	baseDigest := "sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-	t.Setenv(deploymentidentity.EnvBaseImageDigest, baseDigest)
+func TestDeploymentIdentityEnvClearsExpectedBuildOnBase(t *testing.T) {
 	t.Setenv(deploymentidentity.EnvExpectedProcessBuild, "stale-build")
 	env := deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "")
-	if env[deploymentidentity.EnvBaseImageDigest] != baseDigest {
-		t.Fatalf("base digest = %q, want %q", env[deploymentidentity.EnvBaseImageDigest], baseDigest)
-	}
 	if env[deploymentidentity.EnvExpectedProcessBuild] != "" {
 		t.Fatalf("base expected build = %q, want empty", env[deploymentidentity.EnvExpectedProcessBuild])
 	}

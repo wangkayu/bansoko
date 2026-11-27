@@ -67,7 +67,7 @@ if old_port not in text:
     raise SystemExit("app port anchor missing")
 text = text.replace(old_port, '- "127.0.0.1:${BANSOKO_APP_PORT:-8000}:${BANSOKO_PORT:-8080}"')
 if proxy:
-    anchor = "      BANSOKO_BASE_IMAGE_DIGEST:"
+    anchor = "      BANSOKO_UPDATE_MODE:"
     index = next((i for i, line in enumerate(text.splitlines(True)) if line.startswith(anchor)), None)
     if index is None:
         raise SystemExit("app environment anchor missing")
@@ -190,15 +190,15 @@ ready_body="$E2E_WORKDIR/proof-ready.json"
 ready_code="$(api -o "$ready_body" -w '%{http_code}' "$base_url/api/v1/readyz")"
 [ "$ready_code" = "200" ] || fail "readyz returned $ready_code after success"
 
-evidence="$(python3 - "$ready_body" "$admit_body" "$expected_release" "$E2E_BASE_IMAGE_DIGEST" "$baked_channel" <<'PY'
+evidence="$(python3 - "$ready_body" "$admit_body" "$expected_release" "$baked_channel" <<'PY'
 import json, pathlib, sys
-ready_path, admit_path, expected_release, base_digest, baked_channel = sys.argv[1:]
+ready_path, admit_path, expected_release, baked_channel = sys.argv[1:]
 ready = json.loads(pathlib.Path(ready_path).read_text())
 admit = json.loads(pathlib.Path(admit_path).read_text())
 identity = ready.get("deployment_identity") or {}
 observations = {
     "baked_channel_url": baked_channel,
-    "base_image_digest": identity.get("base_image_digest", ""),
+    "base_build": identity.get("base_build") or {},
     "selected_source": identity.get("selected_source", ""),
     "selected_release_id": identity.get("selected_release_id", ""),
     "payload_digest": identity.get("payload_digest", ""),
@@ -209,8 +209,8 @@ if observations["selected_source"] != "overlay":
     raise SystemExit(f"selected_source is {observations['selected_source']!r}, want overlay")
 if observations["selected_release_id"] != expected_release:
     raise SystemExit(f"selected_release_id is {observations['selected_release_id']!r}, want {expected_release}")
-if observations["base_image_digest"] != base_digest:
-    raise SystemExit("base_image_digest changed across the update")
+if not observations["base_build"].get("build_id"):
+    raise SystemExit("readyz did not report the attested base build")
 if observations["update_operation_id"] and admit.get("operation_id") \
         and observations["update_operation_id"] != admit["operation_id"]:
     raise SystemExit("readyz operation id does not match the admission")
@@ -228,7 +228,7 @@ pathlib.Path(out).write_text(json.dumps({
     "passed": True,
     "description": "published immutable image updated through its baked GitHub raw channel",
     "channel_mode": "baked-image-default",
-    "base_image_digest": base_digest,
+    "fixture_image_ref": "wangkayu/bansoko-builds@" + base_digest,
     "target_release_id": expected_release,
     "final_step": "succeeded",
     "deployment_identity": json.loads(evidence),

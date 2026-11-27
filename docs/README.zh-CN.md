@@ -52,11 +52,12 @@ volumes:
 
 ### 方案二：复用外置 PostgreSQL
 
-需使用 PostgreSQL 17（目前仅验证过该版本），并提前准备专属库及库所有者账号（账号需具备 `CREATEROLE` 权限；启用应用内更新时还需 `CREATEDB`）：
+需使用 PostgreSQL 17（目前仅验证过该版本），并提前准备专属库及具备 `CREATEROLE` 权限的库所有者账号。应用内更新和镜像接管还要求 `CREATEDB` 及终止运行时会话的权限。非超级用户的库所有者需要 `pg_signal_backend`。
 
 ```sql
 CREATE ROLE <user> LOGIN PASSWORD '<password>' CREATEROLE CREATEDB;
 CREATE DATABASE <db> OWNER <user>;
+GRANT pg_signal_backend TO <user>;
 -- 示例:
 -- CREATE ROLE bansoko LOGIN PASSWORD 'your-password' CREATEROLE CREATEDB;
 -- CREATE DATABASE bansoko OWNER bansoko;

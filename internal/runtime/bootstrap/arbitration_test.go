@@ -30,7 +30,7 @@ func TestArbitrateBaseVsOverlay(t *testing.T) {
 		{"native anchor", func(f *selectionFacts) { f.imageAnchor = false }, arbitration{modeOverlay, "anchor_unsupported"}},
 		{"unordered base", func(f *selectionFacts) { f.base.Order = buildinfo.Order{} }, arbitration{modeOverlay, "base_unordered"}},
 		{"legacy overlay", func(f *selectionFacts) { f.overlay.Order = buildinfo.Order{} }, arbitration{modeOverlay, "overlay_unordered"}},
-		{"other series", func(f *selectionFacts) { f.overlay.Series = "another-series" }, arbitration{modeOverlay, "series_mismatch"}},
+		{"other series", func(f *selectionFacts) { f.overlay.Series = "gh:other/bansoko:v1" }, arbitration{modeOverlay, "series_mismatch"}},
 		{"other lane", func(f *selectionFacts) { f.overlay.Lane = "test" }, arbitration{modeOverlay, "lane_mismatch"}},
 		{"incompatible", func(f *selectionFacts) { f.compatible = false }, arbitration{modeOverlay, "takeover_incompatible"}},
 		{"newer overlay", func(f *selectionFacts) { f.overlay.ReleaseSequence = 12 }, arbitration{modeOverlay, "overlay_newer"}},

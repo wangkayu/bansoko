@@ -51,7 +51,7 @@ RUN schema_version="${SCHEMA_VERSION}"; \
     fi; \
     [ -n "$schema_version" ] || { echo "no migrations found" >&2; exit 1; }; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false \
-    -ldflags="-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=${VERSION} -X bansoko/internal/runtime/buildinfo.Commit=${SOURCE_COMMIT} -X bansoko/internal/runtime/buildinfo.BuildID=${BUILD_ID} -X bansoko/internal/runtime/buildinfo.BuildTime=${BUILD_TIME} -X bansoko/internal/runtime/buildinfo.BuildDirty=${BUILD_DIRTY} -X bansoko/internal/runtime/buildinfo.APIVersion=${API_VERSION} -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=${BASE_COMPATIBILITY_VERSION} -X bansoko/internal/runtime/buildinfo.Series=${RELEASE_SERIES} -X bansoko/internal/runtime/buildinfo.Lane=${RELEASE_LANE} -X bansoko/internal/runtime/buildinfo.ReleaseSequence=${RELEASE_SEQUENCE}" \
+    -ldflags="-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=${VERSION} -X bansoko/internal/runtime/buildinfo.Commit=${SOURCE_COMMIT} -X bansoko/internal/runtime/buildinfo.BuildID=${BUILD_ID} -X bansoko/internal/runtime/buildinfo.BuildTime=${BUILD_TIME} -X bansoko/internal/runtime/buildinfo.BuildDirty=${BUILD_DIRTY} -X bansoko/internal/runtime/buildinfo.APIVersion=${API_VERSION} -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=${BASE_COMPATIBILITY_VERSION} -X bansoko/internal/runtime/buildinfo.Series=${RELEASE_SERIES} -X bansoko/internal/runtime/buildinfo.Lane=${RELEASE_LANE} -X bansoko/internal/runtime/buildinfo.ReleaseSequence=${RELEASE_SEQUENCE} -X bansoko/internal/runtime/buildinfo.ContainerAnchor=docker-v1" \
     -o /out/bansoko-server ./cmd/bansoko-server
 
 # Provenance the image carries. GPL-3.0-only section 6 asks a distributor who
@@ -189,7 +189,7 @@ RUN apk upgrade --no-cache && \
     'so:libldap.so.2' 'so:liblz4.so.1' 'so:libssl.so.3' 'so:libz.so.1' 'so:libzstd.so.1'
 WORKDIR /app
 
-COPY --from=go-builder /out/bansoko-server /app/bansoko-server
+COPY --chmod=0555 --from=go-builder /out/bansoko-server /app/bansoko-server
 COPY --from=go-builder /src/db/migrations /app/db/migrations
 COPY --from=go-builder /src/deployment/defaults /app/deployment/defaults
 COPY --from=go-builder /src/frontend/dist /app/frontend/dist

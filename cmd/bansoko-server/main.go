@@ -118,7 +118,7 @@ func main() {
 	case "bootstrap":
 		os.Exit(bootstrapcmd.Main(args))
 	case bootstrapcmd.PrivateReadinessCommand:
-		os.Exit(runPrivateReadiness())
+		os.Exit(runServe(nil, true))
 	case "migrate":
 		migratecmd.Main(args)
 		return
@@ -133,7 +133,7 @@ func main() {
 	case "doctor":
 		os.Exit(runDoctor(args, os.Stdout))
 	default:
-		runServe(args)
+		os.Exit(runServe(args, false))
 	}
 }
 
@@ -187,7 +187,7 @@ func runtimeCommand(args []string) (string, []string) {
 	}
 }
 
-func runServe(args []string) {
+func runServe(args []string, probe bool) int {
 	runtimeLogger := observabilityapplication.NewTeedRuntimeLogger(os.Stderr)
 	// Native standalone serving (no start wrapper): load the serving facts the
 	// deployment start persisted in the config directory. The load is read-only
@@ -208,10 +208,10 @@ func runServe(args []string) {
 	// Once the configuration root is known, the same logger also writes the
 	// bounded on-disk history read by the owner-only log dialog. An unwritable
 	// directory degrades to the in-memory tail without blocking startup.
-	runtimeLogger = observabilityapplication.NewPersistentRuntimeLogger(os.Stderr, filepath.Join(cfg.ConfigDir, observabilityapplication.RuntimeLogDirName))
-	defer func() {
-		_ = runtimeLogger.Close()
-	}()
+	if !probe {
+		runtimeLogger = observabilityapplication.NewPersistentRuntimeLogger(os.Stderr, filepath.Join(cfg.ConfigDir, observabilityapplication.RuntimeLogDirName))
+	}
+	defer func() { _ = runtimeLogger.Close() }()
 	// Keep the deployment path in the operator's console, outside the
 	// redacted application log exposed by the Web UI.
 	fmt.Fprintf(os.Stderr, "[startup] resolved config_dir=%q\n", cfg.ConfigDir)
@@ -226,9 +226,11 @@ func runServe(args []string) {
 
 	// A restore interrupted by a crash may have the live database renamed
 	// aside; settle it before the serving pool connects.
-	recoverInterruptedRestore(ctx, cfg.DatabaseURL, runtimeLogger)
+	if !probe {
+		recoverInterruptedRestore(ctx, cfg.DatabaseURL, runtimeLogger)
+	}
 
-	db, err := database.Open(ctx, database.Config{DSN: cfg.DatabaseURL})
+	db, err := database.Open(ctx, database.Config{DSN: cfg.DatabaseURL, ReadOnly: probe})
 	if err != nil {
 		fatalStartup(runtimeLogger, "database open failed", "database_open_failed")
 	}
@@ -240,7 +242,7 @@ func runServe(args []string) {
 	// schema-owner connection would hold DDL/trigger privileges the runtime is
 	// never allowed to have, so the server refuses to serve instead of silently
 	// running with the owner's capability.
-	if cfg.Environment == "production" {
+	if probe || cfg.Environment == "production" {
 		if err := database.AssertRuntimeRoleSeparated(ctx, db); err != nil {
 			fatalStartup(runtimeLogger, "runtime database role separation violated", "runtime_role_separation_violated")
 		}
@@ -252,7 +254,11 @@ func runServe(args []string) {
 	// smoke parse). A manually placed or superseded build is never executed; a
 	// refused file is a state to report, never a startup failure: the builtin
 	// parser keeps working.
-	rtClient, rtInfo := rtruntime.Probe(ctx, cfg.ConfigDir, reltitletags.BuiltinVersion())
+	var rtClient *rtruntime.Client
+	var rtInfo rtruntime.Info
+	if !probe {
+		rtClient, rtInfo = rtruntime.Probe(ctx, cfg.ConfigDir, reltitletags.BuiltinVersion())
+	}
 	switch {
 	case rtClient != nil:
 		if adoptErr := reltitletags.AdoptExternal(rtClient); adoptErr != nil {
@@ -278,7 +284,12 @@ func runServe(args []string) {
 		})
 	}
 
-	installID, err := identity.EnsureInstallID(ctx, db)
+	var installID string
+	if probe {
+		installID, err = identity.ReadInstallID(ctx, db)
+	} else {
+		installID, err = identity.EnsureInstallID(ctx, db)
+	}
 	if err != nil {
 		fatalStartup(runtimeLogger, "install id failed", "install_id_failed")
 	}
@@ -334,15 +345,17 @@ func runServe(args []string) {
 	// overwrites a user's existing rows. Mikan/AniBT adapters also fall back
 	// to the official endpoint when no row exists, so a failed seed does not
 	// block startup.
-	if err := configService.SeedDefaultConnections(ctx); err != nil {
-		runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
-			Message:    "default connection seed failed (provider fallback remains available)",
-			Component:  "runtime",
-			Operation:  "startup",
-			Outcome:    "warning",
-			ReasonCode: "connection_seed_failed",
-			ErrorClass: "connection_seed",
-		})
+	if !probe {
+		if err := configService.SeedDefaultConnections(ctx); err != nil {
+			runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
+				Message:    "default connection seed failed (provider fallback remains available)",
+				Component:  "runtime",
+				Operation:  "startup",
+				Outcome:    "warning",
+				ReasonCode: "connection_seed_failed",
+				ErrorClass: "connection_seed",
+			})
+		}
 	}
 
 	providerOutbound, err := outbound.New(ctx, outbound.DefaultPolicies(), nil, outboundpersistence.New(db))
@@ -714,7 +727,13 @@ func runServe(args []string) {
 		func(ctx context.Context) { runConfigWaitSweep(ctx, db, runtimeLogger) },
 	}
 	backgroundRuntime := NewBackgroundRuntime(maintenanceGate, buildWorker, producers, runtimeLogger)
-	if cfg.WorkerDisabled {
+	if probe {
+		if !cfg.WorkerDisabled && !maintenanceGate.RejectWrites() {
+			if _, err := buildWorker(); err != nil {
+				fatalStartup(runtimeLogger, "worker validation failed", "background_runtime_start_failed")
+			}
+		}
+	} else if cfg.WorkerDisabled {
 		runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
 			Message:    "worker disabled; no WorkItem consumption",
 			Component:  "runtime",
@@ -746,34 +765,36 @@ func runServe(args []string) {
 	// deployment-identity check consumes the bootstrap-injected three-layer
 	// identity plus one live updates-volume pointer read (design §6).
 	updatesRootForIdentity := deploymentidentity.UpdatesRoot(os.Getenv)
+	provider := deploymentIdentityProvider{
+		updatesRoot:   updatesRootForIdentity,
+		requireSource: probe || cfg.Environment == "production" && cfg.UpdateMode == "embedded",
+	}
+	var deployment readiness.DeploymentIdentityProvider = provider
+	if probe {
+		deployment = privateDeploymentIdentity{provider}
+	}
 	readinessChecker := readiness.New(readiness.Dependencies{
-		DB:         db,
-		Migrations: migrations.Runner{DB: db, Dir: cfg.SchemaDir},
-		Build:      buildinfo.Current(),
-		Bootstrap:  access,
-		Secrets:    secretAvailable{store: dbSecretStore},
-		Workers:    workerLanes{kinds: workerRegistry.Kinds()},
-		Gate:       maintenanceGate,
-		QB:         qbHealthProbe{connections: configService},
-		Deployment: deploymentIdentityProvider{
-			updatesRoot: updatesRootForIdentity,
-			// The update-chain source requirement only exists where an update
-			// chain runs: manual deployments pulled by tag carry no immutable
-			// digest and stay "not provided" rather than unready.
-			requireSource: cfg.Environment == "production" && cfg.UpdateMode == "embedded",
-		},
+		DB:                           db,
+		Migrations:                   migrations.Runner{DB: db, Dir: cfg.SchemaDir},
+		Build:                        buildinfo.Current(),
+		Bootstrap:                    access,
+		Secrets:                      secretAvailable{store: dbSecretStore},
+		Workers:                      workerLanes{kinds: workerRegistry.Kinds()},
+		WorkersIntentionallyDisabled: probe,
+		Gate:                         maintenanceGate,
+		QB:                           qbHealthProbe{connections: configService},
+		Deployment:                   deployment,
 	})
 
 	// Embedded self-update channel (Sub B Step 3, BANSOKO_UPDATE_MODE=embedded).
-	// The channels are mutually exclusive by assembly: only the deployment's
-	// selected mode constructs its service. Any other mode leaves the surface
-	// unwired and the API degrades to SERVICE_NOT_CONFIGURED.
+	// Manual mode reads durable status but does not wire update networking or handoff.
+	updatesRoot := deploymentidentity.UpdatesRoot(os.Getenv)
+	var updateAPI httpapi.EmbeddedUpdateService = updateapplication.NewStatusReader(updatesRoot)
 	var embeddedUpdateService interface {
 		httpapi.EmbeddedUpdateService
 		ExitRequested() <-chan struct{}
 	}
 	if cfg.UpdateMode == "embedded" {
-		updatesRoot := deploymentidentity.UpdatesRoot(os.Getenv)
 		if err := updateapplication.CheckRetiredSourceEnv(os.Getenv); err != nil {
 			fatalStartup(runtimeLogger, err.Error(), "embedded_update_retired_env")
 		}
@@ -796,6 +817,7 @@ func runServe(args []string) {
 			fatalStartup(runtimeLogger, "embedded update service failed", "embedded_update_service_failed")
 		}
 		embeddedUpdateService = updateSvc
+		updateAPI = updateSvc
 		configService.SetUpdateSourceProbe(updateSvc)
 	}
 	// The draft service remains the candidate/subscribe mutation API; owner
@@ -820,7 +842,7 @@ func runServe(args []string) {
 		observabilityService,
 		observabilityService,
 		observabilityService,
-		embeddedUpdateService,
+		updateAPI,
 		reconciliationService,
 		fileMaintenanceService,
 		serverEnvironment(cfg.Environment),
@@ -877,6 +899,10 @@ func runServe(args []string) {
 		Source:     rtInfo.Source,
 		Lane:       rtLane,
 	}))
+
+	if probe {
+		return bootstrapcmd.RunPrivateReadiness(readinessChecker.Report)
+	}
 
 	// The local command talks to the updater in this actual base/overlay
 	// process. It never derives a second updater from /app or the current
@@ -988,6 +1014,7 @@ func runServe(args []string) {
 		select {}
 	default:
 	}
+	return 0
 }
 
 // qbSyncDispatchEvent describes one dispatch pass. The pass only reads the

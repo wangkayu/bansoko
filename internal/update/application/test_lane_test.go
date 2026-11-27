@@ -39,9 +39,13 @@ func newLaneCandidate(t *testing.T, version string, channel hardeningdomain.Rele
 func (c laneCandidate) service(t *testing.T, floor int64, runningVersion string, admit bool) (*Service, *disposableFixture) {
 	t.Helper()
 	fixture := newDisposableFixture(t, c.manifest, admit)
+	lane := LaneStable
+	if c.manifest.Channel == hardeningdomain.ReleaseChannelNightly {
+		lane = LaneTest
+	}
 	return disposableService(t, Deps{
 		DB:          disposableFloorDB(t, floor, nil),
-		UpdatesRoot: t.TempDir(), Lane: LaneStable, ChannelBase: fixture.channelBase(),
+		UpdatesRoot: t.TempDir(), Lane: lane, ChannelBase: fixture.channelBase(),
 		HTTPClient: fixture.client(), BuildReleaseID: "v" + runningVersion, BuildVersion: runningVersion,
 		BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 	}), fixture
@@ -79,11 +83,10 @@ func TestMovingBetweenLanesFollowsTheSequenceFloor(t *testing.T) {
 	t.Run("an older formal release is refused over a newer test build", func(t *testing.T) {
 		// An instance that installed test build 130 is pointed back at the
 		// formal channel, whose newest release was published earlier
-		// (sequence 125). The check still names it, but admission refuses it:
-		// the instance waits for the next formal release.
+		// (sequence 125). Neither check nor admission offers the old build.
 		older := newLaneCandidate(t, "0.1.0", hardeningdomain.ReleaseChannelStable, 125, nil)
 		service, _ := older.service(t, 130, "0.1.0-test.130", false)
-		if check, err := service.CheckUpdate(context.Background()); err != nil || check.Status != "update_available" {
+		if check, err := service.CheckUpdate(context.Background()); err != nil || check.Status != "up_to_date" || check.Candidate != nil {
 			t.Fatalf("check = %+v, %v", check, err)
 		}
 		_, created, err := older.admit(t, service, "lane-older-stable")

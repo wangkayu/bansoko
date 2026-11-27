@@ -127,9 +127,6 @@ func toGeneratedReadiness(report readiness.Report) generated.ReadinessReport {
 		if value := identity.TakeoverOperationID; value != "" {
 			result.DeploymentIdentity.TakeoverOperationId = &value
 		}
-		if value := identity.BaseImageDigest; value != "" {
-			result.DeploymentIdentity.BaseImageDigest = &value
-		}
 		if value := identity.SelectedReleaseID; value != "" {
 			result.DeploymentIdentity.SelectedReleaseId = &value
 		}

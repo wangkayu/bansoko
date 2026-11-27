@@ -88,11 +88,6 @@ services:
       # no credential surface to configure; the update client is always
       # anonymous.
       BANSOKO_UPDATE_LANE: ${BANSOKO_UPDATE_LANE:-stable}
-      # This must identify the exact immutable image digest running this
-      # service. Derive it directly from the bundle image selector; a second
-      # independently supplied base digest would let readiness describe a
-      # different image than Compose actually starts.
-      BANSOKO_BASE_IMAGE_DIGEST: ${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
       # Container HTTP listening port (default 8080).
       BANSOKO_PORT: ${BANSOKO_PORT:-8080}
       # Updates default to /config/updates inside the /config mount; no

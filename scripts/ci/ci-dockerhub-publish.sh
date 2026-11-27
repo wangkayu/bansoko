@@ -35,7 +35,7 @@ identity="$(python3 - "$lane" <<'PY'
 import runpy, sys
 release = runpy.run_path('scripts/ci/ci-release.py')
 ident = release['frozen_identity'](sys.argv[1])
-print(ident['version'], ident['release_id'], ident['sequence'], release['SERIES'])
+print(ident['version'], ident['release_id'], ident['sequence'], release['release_series']())
 PY
 )"
 read -r version build_id release_sequence release_series <<<"$identity"
@@ -234,7 +234,7 @@ import runpy, sys
 release = runpy.run_path('scripts/ci/ci-release.py')
 ident = release['frozen_identity'](sys.argv[1])
 for arch in ('amd64', 'arm64'):
-    release['verify_binary_identity'](release['read_image_version'](sys.argv[2], arch), ident, arch)
+    release['verify_binary_identity'](release['read_image_version'](sys.argv[2], arch), ident, arch, container=True)
 PY
 
 boot_smoke amd64 120
@@ -263,14 +263,7 @@ for entry in json.loads(probe.stdout).get('manifests', []):
         raise RuntimeError('invalid moving tag platform or digest')
     arches.add(arch)
     pinned = ref.rsplit(':', 1)[0] + '@' + digest
-    raw = release['read_image_version'](pinned, arch)
-    try:
-        actual = json.loads(raw)
-    except json.JSONDecodeError:
-        # Old images print a single version even when given --json.
-        if not re.fullmatch(r'v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', raw):
-            raise RuntimeError('cannot read existing moving tag build') from None
-        actual = {}
+    actual = release['read_moving_image_identity'](pinned, arch)
     release['guard_moving_identity'](actual, ident)
 if arches != {'amd64', 'arm64'}:
     raise RuntimeError('moving tag must contain both architectures')

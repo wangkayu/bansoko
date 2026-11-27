@@ -92,19 +92,14 @@ const (
 // deploymentIdentityEnv builds the BANSOKO_DEPLOYMENT_* / base-digest environment
 // overrides injected into the exec'd target (design §6). Every key is always
 // present so inherited values can never leak across a base/overlay switch:
-// unknown fields are cleared by writing them empty. The base image digest is
-// passed through from the deployment environment (the container image itself
-// is the source of that layer).
+// unknown fields are cleared by writing them empty.
 //
 // The bootstrap version is this binary's own constant, not an inherited value:
 // the running /app/bansoko-server is the only authority for what the base image
 // contains, so the updater's comparison can never be satisfied by deployment
 // environment text alone.
 func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string) map[string]string {
-	baseDigest := strings.TrimSpace(os.Getenv(deploymentidentity.EnvBaseImageDigest))
-	// A native deployment has no container image to anchor against: mark the
-	// anchor honestly instead of fabricating a sha256 digest. The key is always
-	// written so an inherited anchor can never leak into a container launch.
+	// The anchor kind is derived from the executable on every launch.
 	build, docker := readImageAnchor()
 	anchor := deploymentidentity.AnchorDocker
 	if !docker {
@@ -120,7 +115,6 @@ func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string)
 		deploymentidentity.EnvSelectedReleaseID:    releaseID,
 		deploymentidentity.EnvPayloadDigest:        payloadDigest,
 		deploymentidentity.EnvUpdateOperationID:    operationID,
-		deploymentidentity.EnvBaseImageDigest:      baseDigest,
 		deploymentidentity.EnvAnchorKind:           anchor,
 		deploymentidentity.EnvExpectedProcessBuild: "",
 		deploymentidentity.EnvBootstrapVersion:     embeddedBootstrapVersion,
@@ -361,8 +355,9 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 	facts.rollbackBlocked = found && record.Step == embeddedupdate.StepRollbackBlocked
 	facts.consumeFamily = consumeFamilySteps[record.Step]
 	facts.activeTakeover = facts.active && record.OperationKind == embeddedupdate.KindBaseTakeover
-	if found && record.Takeover != nil && record.Step == embeddedupdate.StepSucceeded {
-		facts.previousTakeover, out.takeoverOp = "succeeded", record.OperationID
+	if facts.active && record.SchemaVersion == 1 {
+		out.reasonCode = "legacy_journal_read_only"
+		return maintenancePlan(out, record.OperationID, string(record.Step), "legacy journal requires operator review")
 	}
 	if facts.active || facts.rollbackBlocked {
 		out.maintenanceOp, out.maintenanceStep = record.OperationID, string(record.Step)
@@ -381,6 +376,12 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 	if !facts.pending && !facts.active && !facts.rollbackBlocked && !facts.unusable {
 		pointer := deploymentidentity.ReadCurrentPointer(updatesRoot)
 		facts.pointerPresent = pointer.Presented
+		if !pointer.Presented && facts.imageAnchor && record.Takeover != nil && record.Step == embeddedupdate.StepSucceeded {
+			anchor := currentBaseAnchor(facts.base)
+			if anchor.Valid() && record.CurrentReleaseID == "" && record.ManifestDigest == anchor.Fingerprint() {
+				facts.previousTakeover, out.takeoverOp = "succeeded", record.OperationID
+			}
+		}
 		if !pointer.Presented && found && record.CurrentReleaseID != "" {
 			facts.evidenceConflict = true
 		}
@@ -462,8 +463,15 @@ func compatibleImageAnchor(base buildinfo.BuildInfo, overlay hardeningdomain.Rel
 }
 
 func readImageAnchor() (buildinfo.BuildInfo, bool) {
+	if os.Getenv(nativeAnchorEnv) != "" || runtime.GOOS != "linux" {
+		return buildinfo.BuildInfo{}, false
+	}
 	info, err := os.Lstat(baseServerPath)
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o222 != 0 {
+		return buildinfo.BuildInfo{}, false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 {
 		return buildinfo.BuildInfo{}, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -471,11 +479,17 @@ func readImageAnchor() (buildinfo.BuildInfo, bool) {
 	cmd := exec.CommandContext(ctx, baseServerPath, "version", "--json")
 	cmd.Env = []string{}
 	data, err := cmd.Output()
-	var build buildinfo.BuildInfo
-	if err != nil || json.Unmarshal(data, &build) != nil || build.Version == "" || build.BuildID == "" {
-		return buildinfo.BuildInfo{}, true
+	var attested struct {
+		buildinfo.BuildInfo
+		Platform        string `json:"platform"`
+		Architecture    string `json:"architecture"`
+		ContainerAnchor string `json:"container_anchor"`
 	}
-	return build, true
+	if err != nil || json.Unmarshal(data, &attested) != nil || attested.BuildID == "" || attested.Version == "" ||
+		attested.Platform != runtime.GOOS || attested.Architecture != runtime.GOARCH || attested.ContainerAnchor != "docker-v1" {
+		return buildinfo.BuildInfo{}, false
+	}
+	return attested.BuildInfo, true
 }
 
 // baseServerBinary resolves the immutable image binary or the native lifecycle anchor.
@@ -625,9 +639,25 @@ func prepareDeploymentEnvironment(getenv func(string) string, setenv func(string
 // connection and converges the runtime login role. Its structured output goes
 // to the container log.
 func runMigrationChild(command processCommand, env []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), migrateTimeout)
+	return runMigrationChildContext(context.Background(), command, env)
+}
+
+func isolateChildProcessGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+}
+
+func runMigrationChildContext(parent context.Context, command processCommand, env []string) error {
+	ctx, cancel := context.WithTimeout(parent, migrateTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, command.path, command.args...)
+	isolateChildProcessGroup(cmd)
 	cmd.Env = env
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -845,6 +875,8 @@ func Main(args []string) int {
 	if len(args) == 1 && args[0] == "native-handoff" && filepath.IsAbs(os.Getenv(nativeAnchorEnv)) {
 		return run("server")
 	}
+	// Only the explicit native lifecycle handoff may select a native anchor.
+	_ = os.Unsetenv(nativeAnchorEnv)
 	if err := establishProcessPrivileges(os.Getenv, os.Setenv, bootprepare.OSPrivilegeSystem{}); err != nil {
 		logf("MAINTENANCE fail-closed: process ownership could not be established, nothing was started: %v", err)
 		return 1

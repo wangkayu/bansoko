@@ -14,7 +14,8 @@ image_platform="${BANSOKO_RELEASE_IMAGE_PLATFORM:-$goos/$goarch}"
 # manifest, so they are required and validated fail-closed instead of being
 # defaulted.
 release_sequence="${BANSOKO_RELEASE_SEQUENCE:-}"
-release_series="${BANSOKO_RELEASE_SERIES:-bansoko-ci-v1}"
+release_repository="$(printf '%s' "${GITHUB_REPOSITORY:-wangkayu/bansoko}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+release_series="${BANSOKO_RELEASE_SERIES:-gh:${release_repository}:v1}"
 bootstrap_min_version="${BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION:-}"
 base_image_min_version="${BANSOKO_BASE_IMAGE_MIN_VERSION:-}"
 api_version="${BANSOKO_API_VERSION:-v1}"

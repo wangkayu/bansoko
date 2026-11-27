@@ -3,27 +3,18 @@ package bootstrap
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"bansoko/internal/runtime/bootsecrets"
 	"bansoko/internal/runtime/deploymentidentity"
 )
 
-func TestDeploymentIdentityEnvMarksNativeAnchorWithoutImageDigest(t *testing.T) {
-	// No BANSOKO_BASE_IMAGE_DIGEST: a native base is anchored by kind instead
-	// of a fabricated digest.
+func TestDeploymentIdentityEnvMarksNativeAnchor(t *testing.T) {
+	t.Setenv(nativeAnchorEnv, "1")
+	t.Setenv(deploymentidentity.EnvAnchorKind, deploymentidentity.AnchorDocker)
 	env := deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "")
 	if env[deploymentidentity.EnvAnchorKind] != deploymentidentity.AnchorNative {
 		t.Fatalf("native anchor = %q, want %q", env[deploymentidentity.EnvAnchorKind], deploymentidentity.AnchorNative)
-	}
-}
-
-func TestDeploymentIdentityEnvDoesNotInferDockerFromDigest(t *testing.T) {
-	t.Setenv(deploymentidentity.EnvBaseImageDigest, "sha256:"+strings.Repeat("ab", 32))
-	env := deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "")
-	if _, docker := readImageAnchor(); !docker && env[deploymentidentity.EnvAnchorKind] != deploymentidentity.AnchorNative {
-		t.Fatalf("native anchor = %q despite no image executable", env[deploymentidentity.EnvAnchorKind])
 	}
 }
 

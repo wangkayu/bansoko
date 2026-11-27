@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/google/uuid"
 
@@ -23,9 +25,8 @@ import (
 )
 
 func currentBaseAnchor(build buildinfo.BuildInfo) embeddedupdate.BaseAnchor {
-	a := embeddedupdate.BaseAnchor{Platform: runtime.GOOS, Architecture: runtime.GOARCH, Build: build,
-		ImageDigest: strings.TrimSpace(os.Getenv(deploymentidentity.EnvBaseImageDigest))}
-	if !a.Build.Ordered() || a.ImageDigest == "" || a.Platform != "linux" {
+	a := embeddedupdate.BaseAnchor{Platform: runtime.GOOS, Architecture: runtime.GOARCH, Build: build}
+	if !a.Build.Ordered() || a.Platform != "linux" {
 		return a
 	}
 	a.ExecutableHash, _ = hashFileSHA256(baseServerPath)
@@ -59,7 +60,9 @@ func matchesTakeoverPair(r embeddedupdate.Record, a embeddedupdate.BaseAnchor, p
 	return r.Takeover != nil && r.Takeover.Anchor.Fingerprint() == a.Fingerprint() && r.Takeover.Previous == p
 }
 
-func createTakeoverIntent(j *embeddedupdate.FileJournal, root string, db *sql.DB, prior embeddedupdate.Record, found bool) (embeddedupdate.Record, error) {
+var errTakeoverIncompatible = errors.New("takeover restore prerequisites are not met")
+
+func createTakeoverIntent(parent context.Context, j *embeddedupdate.FileJournal, root, ownerURL string, db *sql.DB, prior embeddedupdate.Record, found bool) (embeddedupdate.Record, error) {
 	var none embeddedupdate.Record
 	if same, err := isCurrentExecutable(baseServerPath); err != nil || !same {
 		return none, errors.New("takeover initiation must run from the immutable image binary")
@@ -86,11 +89,22 @@ func createTakeoverIntent(j *embeddedupdate.FileJournal, root string, db *sql.DB
 	if err != nil || priorOutcome.OperationID != "" {
 		return none, errors.New("cannot initiate a takeover without new, proven evidence")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+	ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 	defer cancel()
 	store := updatefence.New(db)
 	if rows, err := store.ListOpenAll(ctx); err != nil || len(rows) != 0 {
 		return none, errors.New("an unresolved database fence prevents takeover")
+	}
+	restore, err := newOperationRestore(root, ownerURL)
+	if err != nil {
+		return none, fmt.Errorf("%w: %v", errTakeoverIncompatible, err)
+	}
+	if err := pgexec.CheckTools(pgexec.DefaultCandidatePaths); err != nil {
+		return none, fmt.Errorf("%w: %v", errTakeoverIncompatible, err)
+	}
+	live, err := restore.pinDatabase(ctx, db)
+	if err != nil {
+		return none, fmt.Errorf("%w: %v", errTakeoverIncompatible, err)
 	}
 	if found {
 		if prior.Active() || prior.Step == embeddedupdate.StepRollbackBlocked {
@@ -118,7 +132,7 @@ func createTakeoverIntent(j *embeddedupdate.FileJournal, root string, db *sql.DB
 		Channel: updatefence.AdmittedByEmbedded, Step: embeddedupdate.StepPrepared, TargetReleaseID: build.BuildID,
 		TargetVersion: build.Version, TargetSchemaVersion: build.SchemaVersion, TargetLane: build.Lane,
 		TargetReleaseSequence: build.ReleaseSequence, ManifestDigest: a.Fingerprint(), PreviousReleaseID: p.ReleaseID,
-		CurrentReleaseID: p.ReleaseID, RollbackSourceCaptured: true,
+		CurrentReleaseID: p.ReleaseID, RollbackSourceCaptured: true, LiveDatabase: &live,
 		Takeover: &embeddedupdate.TakeoverEvidence{TargetSource: "base", PreviousSource: "overlay", Anchor: a, Previous: p}})
 	if err == nil {
 		updateapp.ApplyFixtureStop(string(embeddedupdate.StepPrepared))
@@ -126,12 +140,12 @@ func createTakeoverIntent(j *embeddedupdate.FileJournal, root string, db *sql.DB
 	return r, err
 }
 
-func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
+func newRealTakeoverFX(parent context.Context, root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 	restore, err := newOperationRestore(root, ownerURL)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+	ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 	defer cancel()
 	if err := pgexec.CheckTools(pgexec.DefaultCandidatePaths); err != nil {
 		return nil, err
@@ -153,6 +167,7 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 		return nil
 	}
 	return &takeoverFX{
+		Interrupted: func() bool { return parent.Err() != nil },
 		VerifyEvidence: func(r embeddedupdate.Record) error {
 			base, docker := readImageAnchor()
 			if a := currentBaseAnchor(base); !docker || !a.Valid() || a.Fingerprint() != r.ManifestDigest {
@@ -166,22 +181,22 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 		},
 		VerifyOverlay: verifyOverlay,
 		AcquireFence: func(r embeddedupdate.Record) error {
-			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+			ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 			defer cancel()
 			return store.Acquire(ctx, r.OperationID, updatefence.AdmittedByEmbedded, r.TargetReleaseSequence, r.ManifestDigest)
 		},
 		LookupFence: func(op string) (updatefence.Row, bool, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+			ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 			defer cancel()
 			return store.Lookup(ctx, op)
 		},
 		CaptureBackup: func(r embeddedupdate.Record) (string, string, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+			ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 			defer cancel()
-			id, err := readRestoreInstallID(ctx, db)
-			if err != nil {
+			if err := proveRestoreSource(ctx, db, r); err != nil {
 				return "", "", err
 			}
+			id := r.LiveDatabase.InstallID
 			r.InstallID = id
 			schema, err := restore.previousSchema(r)
 			if err != nil {
@@ -197,8 +212,11 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 			return digest, id, err
 		},
 		CheckMigration: func(r embeddedupdate.Record) error {
-			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+			ctx, cancel := context.WithTimeout(parent, pgToolTimeout)
 			defer cancel()
+			if err := proveRestoreSource(ctx, db, r); err != nil {
+				return err
+			}
 			if _, _, err := restore.verifyDump(ctx, r.BackupID, r.BackupDigest); err != nil {
 				return err
 			}
@@ -210,7 +228,7 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 			return varspreflight.CheckPending(ctx, db)
 		},
 		Migrate: func(embeddedupdate.Record) error {
-			if err := runMigrationChild(commandFor(baseServerPath, "migrate"), envWithOverrides(map[string]string{envSchemaDir: baseSchemaDir, "BANSOKO_DATABASE_URL": ownerURL})); err != nil {
+			if err := runMigrationChildContext(parent, commandFor(baseServerPath, "migrate"), envWithOverrides(map[string]string{envSchemaDir: baseSchemaDir, "BANSOKO_DATABASE_URL": ownerURL})); err != nil {
 				return errors.New("owner migration failed for the verified image base")
 			}
 			return nil
@@ -228,7 +246,7 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 				if !docker || currentBaseAnchor(base).Fingerprint() != r.ManifestDigest {
 					return errors.New("private probe base anchor changed")
 				}
-				return runPrivateProbe(root, privateProbeTarget{binary: baseServerPath, schema: baseSchemaDir, frontend: baseFrontendDir,
+				return runPrivateProbe(parent, root, privateProbeTarget{binary: baseServerPath, schema: baseSchemaDir, frontend: baseFrontendDir,
 					build: base, env: deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "")})
 			}
 			if err := verifyOverlay(r); err != nil {
@@ -236,7 +254,7 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 			}
 			dir := relDirOf(root, r.PreviousReleaseID)
 			pinned := r.Takeover.Previous
-			return runPrivateProbe(root, privateProbeTarget{binary: releaseServerBin(dir), schema: releaseSchemaDir(dir), frontend: releaseFrontendDir(dir),
+			return runPrivateProbe(parent, root, privateProbeTarget{binary: releaseServerBin(dir), schema: releaseSchemaDir(dir), frontend: releaseFrontendDir(dir),
 				build: pinned.Build, env: deploymentIdentityEnvWithBuild(deploymentidentity.SourceOverlay, pinned.ReleaseID, strings.TrimPrefix(pinned.PayloadDigest, "sha256:"), pinned.ProducingOp, pinned.Build.BuildID)})
 		},
 		DropCurrent: func(previous string) error {
@@ -255,10 +273,13 @@ func newRealTakeoverFX(root, ownerURL string, db *sql.DB) (*takeoverFX, error) {
 			updateapp.ApplyFixtureStop("takeover_pointer_unlinked")
 			return nil
 		},
-		RestoreCurrent:  func(previous string) error { return restoreOwnedPointer(root, "", previous) },
-		PrepareRecovery: restore.prepare, ReconcileRecovery: restore.reconcile,
+		RestoreCurrent: func(previous string) error { return restoreOwnedPointer(root, "", previous) },
+		PrepareRecovery: func(r embeddedupdate.Record) (embeddedupdate.DatabaseRecovery, error) {
+			return restore.prepareContext(parent, r)
+		},
+		ReconcileRecovery: func(r embeddedupdate.Record) error { return restore.reconcileContext(parent, r) },
 		SettleExact: func(r embeddedupdate.Record, terminal string) error {
-			ctx, cancel := context.WithTimeout(context.Background(), dbCallTimeout)
+			ctx, cancel := context.WithTimeout(parent, dbCallTimeout)
 			defer cancel()
 			return store.ReconcileExactCurrentStateOrProveClosed(ctx, r.OperationID, updatefence.AdmittedByEmbedded, r.ManifestDigest, r.TargetReleaseSequence, terminal)
 		},
@@ -286,16 +307,38 @@ func restoreOwnedPointer(root, target, previous string) error {
 // runTakeoverEntry uses the same lock and terminal serving path as consume.
 // Constructing sql.DB lazily is essential after the first database rename.
 func runTakeoverEntry(root string, initiate bool) int {
+	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	stop, err := startMaintenanceResponder(root, "", "")
 	if err != nil {
 		logf("MAINTENANCE responder failed: %v", err)
 		return 1
 	}
-	if outcome, err := consumeTakeover(root, initiate); err != nil || outcome.kind == outcomeParked {
+	defer func() { _ = stop() }()
+	outcome, err := consumeTakeover(ctx, root, initiate)
+	if ctx.Err() != nil {
+		return 1
+	}
+	if errors.Is(err, errTakeoverIncompatible) {
+		// Re-arbitrate after dropping the writer lock: a replacement marker or
+		// unresolved journal must not be bypassed by the fallback.
+		chosen := planLaunch("server", root)
+		if chosen.mode == modeTakeover && chosen.reasonCode == "base_newer_verified" {
+			tree := relDirOf(root, chosen.releaseID)
+			chosen = overlayPlan(chosen, chosen.releaseID, releaseServerBin(tree), releaseServerBin(tree), releaseSchemaDir(tree), releaseFrontendDir(tree))
+			chosen.reasonCode = "takeover_incompatible"
+			logf("takeover_incompatible: %v", err)
+			if err := stop(); err != nil {
+				return 1
+			}
+			return launchPlan(chosen, root)
+		}
+	}
+	if err != nil || outcome.kind == outcomeParked {
 		if err != nil {
 			logf("MAINTENANCE takeover parked: %v", err)
 		}
-		blockForever()
+		<-ctx.Done()
 		return 124
 	} else {
 		if err := stop(); err != nil {
@@ -306,7 +349,7 @@ func runTakeoverEntry(root string, initiate bool) int {
 	}
 }
 
-func consumeTakeover(root string, initiate bool) (consumeOutcome, error) {
+func consumeTakeover(ctx context.Context, root string, initiate bool) (consumeOutcome, error) {
 	var none consumeOutcome
 	if same, err := isCurrentExecutable(baseServerPath); err != nil || !same {
 		return none, errors.New("takeover must run from the immutable image binary")
@@ -336,18 +379,18 @@ func consumeTakeover(root string, initiate bool) (consumeOutcome, error) {
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(2)
-	fx, err := newRealTakeoverFX(root, dsn, db)
-	if err != nil {
-		return none, err
-	}
 	if !found || !r.Active() {
 		if !initiate {
 			return none, errors.New("takeover no longer has an active journal")
 		}
-		r, err = createTakeoverIntent(j, root, db, r, found)
+		r, err = createTakeoverIntent(ctx, j, root, dsn, db, r, found)
 		if err != nil {
 			return none, err
 		}
+	}
+	fx, err := newRealTakeoverFX(ctx, root, dsn, db)
+	if err != nil {
+		return none, err
 	}
 	return runTakeover(j, r, fx, root), nil
 }

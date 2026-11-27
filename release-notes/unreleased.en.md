@@ -32,5 +32,7 @@
 
 ## Important
 
+- One-time Docker update change: install this release by pulling the new image and recreating the container, rather than using the previous image's in-app updater. Keep the config volume and database. A legacy update already in progress is shown by bansoko-server recover status but is not resumed by the new image; finish it with the previous image before switching.
+
 - On 0.2.3, run bansoko-server migrate check-vars (optionally with --json), replace every naming or notification template that still uses vars.*, and let affected in-flight work finish. The upgrade preflight blocks the upgrade while references remain and never rewrites historical frozen evidence.
 - If you previously placed a custom-compiled reltitle component in the rt/ directory under your config directory (for example with a custom dictionary), that file is no longer loaded and title parsing falls back to the builtin parser. Check your saved title-tag filter rules to make sure they do not rely on values only the custom dictionary provided.

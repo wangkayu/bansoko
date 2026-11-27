@@ -161,11 +161,17 @@ func TestLegacyActiveRecordStaysInPlaceWithoutExecutor(t *testing.T) {
 	if err := os.WriteFile(path, []byte(legacyJournalJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(path); !errors.Is(err, ErrJournalCorrupted) {
-		t.Fatalf("legacy active record accepted: %v", err)
+	writer, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, found, err := Snapshot(path); found || !errors.Is(err, ErrJournalCorrupted) {
-		t.Fatalf("legacy active record exposed: found=%v err=%v", found, err)
+	defer writer.Close()
+	r, found, err := Snapshot(path)
+	if err != nil || !found || r.SchemaVersion != 1 || !r.Active() {
+		t.Fatalf("legacy journal diagnosis: %+v, %v, %v", r, found, err)
+	}
+	if _, err := writer.Advance(r.OperationID, r.Version, StepMigrationSucceeded, "", "", nil); err == nil {
+		t.Fatal("v2 writer advanced a v1 operation")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil || string(raw) != legacyJournalJSON {

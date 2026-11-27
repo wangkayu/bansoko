@@ -20,7 +20,7 @@ func takeoverTestRecord() embeddedupdate.Record {
 			APIVersion: "v2", BaseCompatibilityVersion: "base-v1",
 			Order: buildinfo.Order{Series: buildinfo.CISeries, Lane: "stable", ReleaseSequence: sequence}}
 	}
-	a := embeddedupdate.BaseAnchor{Platform: "linux", Architecture: "amd64", ImageDigest: "sha256:" + strings.Repeat("a", 64),
+	a := embeddedupdate.BaseAnchor{Platform: "linux", Architecture: "amd64",
 		ExecutableHash: strings.Repeat("b", 64), Build: build("base", 2)}
 	return embeddedupdate.Record{OperationID: "takeover-op", Channel: updatefence.AdmittedByEmbedded,
 		Step: embeddedupdate.StepPrepared, OperationKind: embeddedupdate.KindBaseTakeover,
@@ -148,12 +148,12 @@ func TestTakeoverCheckpoints(t *testing.T) {
 				if err := j.ArchiveTerminalProven(); err != nil {
 					t.Fatal(err)
 				}
-				for _, variant := range []string{"exact", "new-image", "new-overlay"} {
+				for _, variant := range []string{"exact", "new-binary", "new-overlay"} {
 					t.Run(variant, func(t *testing.T) {
 						anchor, prev := r.Takeover.Anchor, r.Takeover.Previous
 						switch variant {
-						case "new-image":
-							anchor.ImageDigest = "sha256:" + strings.Repeat("f", 64)
+						case "new-binary":
+							anchor.ExecutableHash = strings.Repeat("f", 64)
 						case "new-overlay":
 							prev.ProducingOp = "replacement-op"
 						}

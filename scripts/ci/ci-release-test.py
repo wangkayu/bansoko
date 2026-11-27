@@ -1175,26 +1175,43 @@ class FormalReleaseTests(unittest.TestCase):
 
 class FrozenIdentityTests(unittest.TestCase):
     def test_binary_readback_requires_exact_identity_on_each_platform(self):
-        ident = dict(lane="test", version="0.1.0-test.42", release_id="v0.1.0-test.42", sha="a" * 40, sequence=42)
+        ident = {"lane": "test", "version": "0.1.0-test.42", "release_id": "v0.1.0-test.42", "sha": "a" * 40, "sequence": 42}
         for arch in ("amd64", "arm64"):
-            actual = dict(release.release_identity(ident), platform="linux", architecture=arch, dirty=False)
+            actual = {**release.release_identity(ident), "platform": "linux", "architecture": arch, "dirty": False}
             actual["build_id"] = actual.pop("release_id")
             actual["commit"] = actual.pop("source_commit")
             release.verify_binary_identity(json.dumps(actual), ident, arch)
-            for wrong in (dict(release_sequence=41), dict(commit="b" * 40), dict(architecture="unknown"), dict(dirty=True)):
+            for wrong in ({"release_sequence": 41}, {"commit": "b" * 40}, {"architecture": "unknown"}, {"dirty": True}):
                 with self.subTest(arch=arch, wrong=wrong), self.assertRaises(RuntimeError):
-                    release.verify_binary_identity(json.dumps(dict(actual, **wrong)), ident, arch)
+                    release.verify_binary_identity(json.dumps({**actual, **wrong}), ident, arch)
 
     def test_moving_tag_only_advances_or_repeats_the_same_release(self):
-        ident = dict(lane="stable", version="0.1.0", release_id="v0.1.0", sha="a" * 40, sequence=42)
-        actual = dict(series=release.SERIES, lane="stable", release_sequence=42, version=ident["version"],
-                      build_id=ident["release_id"], commit=ident["sha"])
-        for earlier in ({}, dict(actual, release_sequence=41), actual):
+        ident = {"lane": "stable", "version": "0.1.0", "release_id": "v0.1.0", "sha": "a" * 40, "sequence": 42}
+        actual = {"series": release.release_series(), "lane": "stable", "release_sequence": 42,
+                  "version": ident["version"], "build_id": ident["release_id"], "commit": ident["sha"]}
+        for earlier in ({**actual, "release_sequence": 41}, actual):
             release.guard_moving_identity(earlier, ident)
-        for wrong in (dict(release_sequence=43), dict(release_sequence=0), dict(lane="test"),
-                      dict(series="other"), dict(commit="b" * 40), dict(version="0.2.0")):
+        for wrong in ({"release_sequence": 43}, {"release_sequence": 0}, {"lane": "test"},
+                      {"series": "gh:other/bansoko:v1"}, {"commit": "b" * 40}, {"version": "0.2.0"}):
             with self.subTest(wrong=wrong), self.assertRaises(RuntimeError):
-                release.guard_moving_identity(dict(actual, **wrong), ident)
+                release.guard_moving_identity({**actual, **wrong}, ident)
+
+    def test_multiline_legacy_image_matches_pinned_config(self):
+        commit = "a" * 40
+        ident = {"lane": "stable", "version": "0.3.0", "release_id": "v0.3.0", "sha": "b" * 40, "sequence": 42}
+        raw = (f"bansoko 0.2.3 (commit {commit})\n"
+               "target schema version: 001_baseline\nembedded frontend: false\nplatform: linux/arm64")
+        labels = {"org.opencontainers.image.version": "0.2.3", "org.opencontainers.image.revision": commit,
+                  "org.opencontainers.image.source": "https://github.com/" + release.UPSTREAM_REPOSITORY}
+        for revision in (commit, "c" * 40):
+            image = {"Os": "linux", "Architecture": "arm64",
+                     "Config": {"Labels": {**labels, "org.opencontainers.image.revision": revision}}}
+            with patch.object(release, "read_image_version", return_value=raw), patch.object(release, "run", return_value=json.dumps(image)):
+                if revision == commit:
+                    release.guard_moving_identity(release.read_moving_image_identity("repo@sha256:digest", "arm64"), ident)
+                else:
+                    with self.assertRaises(RuntimeError):
+                        release.read_moving_image_identity("repo@sha256:digest", "arm64")
 
 
 if __name__ == "__main__":

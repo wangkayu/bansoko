@@ -9,6 +9,7 @@ import (
 )
 
 type takeoverFX struct {
+	Interrupted       func() bool
 	VerifyEvidence    func(embeddedupdate.Record) error
 	AcquireFence      func(embeddedupdate.Record) error
 	LookupFence       func(string) (updatefence.Row, bool, error)
@@ -37,6 +38,9 @@ type takeoverFlow struct {
 func runTakeover(j *embeddedupdate.FileJournal, record embeddedupdate.Record, fx *takeoverFX, root string) consumeOutcome {
 	f := takeoverFlow{journal: j, record: record, fx: fx, root: root}
 	for {
+		if f.interrupted() {
+			return f.park("takeover interrupted; checkpoint retained")
+		}
 		switch f.record.Step {
 		case embeddedupdate.StepPrepared:
 			row, found, err := fx.LookupFence(record.OperationID)
@@ -187,7 +191,14 @@ func (f *takeoverFlow) checkMigration() error {
 	return f.fx.CheckMigration(f.record)
 }
 
+func (f *takeoverFlow) interrupted() bool {
+	return f.fx.Interrupted != nil && f.fx.Interrupted()
+}
+
 func (f *takeoverFlow) advance(to embeddedupdate.Step, lastErr, detail string, mutate func(*embeddedupdate.Record)) bool {
+	if f.interrupted() {
+		return false
+	}
 	r, err := f.journal.AdvanceExpected(f.record.OperationID, f.record.Version, f.record.Step, to, lastErr, detail, mutate)
 	if err != nil {
 		logf("takeover checkpoint %s -> %s refused: %v", f.record.Step, to, err)
@@ -239,6 +250,9 @@ func (f *takeoverFlow) close(target embeddedupdate.Step, lastErr string) consume
 }
 
 func (f *takeoverFlow) finish(target embeddedupdate.Step) consumeOutcome {
+	if f.interrupted() {
+		return f.park("takeover interrupted before fence closure")
+	}
 	terminal := string(embeddedupdate.StepFailed)
 	if target == embeddedupdate.StepSucceeded {
 		terminal = string(target)

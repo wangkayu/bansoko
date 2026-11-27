@@ -22,6 +22,70 @@ import (
 	"bansoko/internal/update/adapter/pgexec"
 )
 
+func TestRestoreAdmissionPG17(t *testing.T) {
+	base, _ := newCutoverCluster(t)
+	ctx := t.Context()
+	open := func(role string) *sql.DB {
+		t.Helper()
+		u := base
+		u.User = url.User(role)
+		db, err := sql.Open("pgx", u.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		return db
+	}
+	execute := func(db *sql.DB, query string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin := open(base.User.Username())
+	const live, ready, aside, operation = `Live "恢复"`, `Ready "恢复"`, `Aside "恢复"`, "admission-fixture"
+	const liveSQL, readySQL = `"Live ""恢复"""`, `"Ready ""恢复"""`
+	execute(admin, `CREATE ROLE fixture_owner LOGIN CREATEDB CREATEROLE`)
+	execute(admin, `CREATE DATABASE `+liveSQL+` OWNER fixture_owner`)
+	owner := open("fixture_owner")
+	if _, err := backupapp.CheckRestorePrerequisites(ctx, owner, live); err == nil {
+		t.Fatal("owner without session termination authority admitted")
+	}
+	execute(admin, `GRANT pg_signal_backend TO fixture_owner`)
+	pinned, err := backupapp.CheckRestorePrerequisites(ctx, owner, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute(owner, `CREATE DATABASE `+readySQL)
+	for _, claim := range []string{"", "bansoko.restore-claim:other-operation"} {
+		if claim != "" {
+			execute(owner, `COMMENT ON DATABASE `+readySQL+` IS '`+claim+`'`)
+		}
+		if err := backupapp.EnsureOperationRestoreDatabase(ctx, owner, live, ready, aside, operation); err == nil {
+			t.Fatalf("adopted ready database with claim %q", claim)
+		}
+	}
+	execute(owner, `DROP DATABASE `+readySQL)
+	if err := backupapp.EnsureOperationRestoreDatabase(ctx, owner, live, ready, aside, operation); err != nil {
+		t.Fatal(err)
+	}
+	cutover, err := backupapp.PinRestoreCutover(ctx, owner, live, ready, aside, operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute(owner, `DROP DATABASE `+liveSQL)
+	execute(owner, `CREATE DATABASE `+liveSQL)
+	if err := backupapp.ProveLiveDatabase(ctx, owner, pinned); err == nil {
+		t.Fatal("accepted a replacement database with the same name and owner")
+	}
+	if err := backupapp.ReconcileRestoreCutover(ctx, owner, cutover, operation, nil, nil); err == nil {
+		t.Fatal("renamed a replacement database with the same name and owner")
+	}
+	if _, err := backupapp.CheckRestorePrerequisites(ctx, owner, live); err != nil {
+		t.Fatalf("replacement must still be online: %v", err)
+	}
+}
+
 func TestRestoreCutoverPG17(t *testing.T) {
 	base, restart := newCutoverCluster(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -81,13 +145,13 @@ func TestRestoreCutoverPG17(t *testing.T) {
 				t.Fatal(err)
 			}
 			exec(t, old, `CREATE TABLE public.added_by_failed_migration (value text)`)
-			if err := backupapp.CreateEmptyRestoreDatabase(ctx, admin, live, ready); err != nil {
+			if err := backupapp.EnsureOperationRestoreDatabase(ctx, admin, live, ready, aside, id); err != nil {
 				t.Fatal(err)
 			}
 			if err := tools.RestoreInto(ctx, dump, ready); err != nil {
 				t.Fatal(err)
 			}
-			pinned, err := backupapp.PinRestoreCutover(ctx, admin, live, ready, aside)
+			pinned, err := backupapp.PinRestoreCutover(ctx, admin, live, ready, aside, id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,13 +180,13 @@ func TestRestoreCutoverPG17(t *testing.T) {
 			}
 			defer recoveryDB.Close()
 			for range 2 {
-				if err := backupapp.ReconcileRestoreCutover(ctx, recoveryDB, recovered, nil); err != nil {
+				if err := backupapp.ReconcileRestoreCutover(ctx, recoveryDB, recovered, id, nil, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
 			foreign := recovered
 			foreign.ReadyOID++
-			if err := backupapp.ReconcileRestoreCutover(ctx, recoveryDB, foreign, nil); err == nil {
+			if err := backupapp.ReconcileRestoreCutover(ctx, recoveryDB, foreign, id, nil, nil); err == nil {
 				t.Fatal("accepted unproved database identity")
 			}
 

@@ -121,6 +121,8 @@ export const settingsTokenCopy = {
       accepted: "已接受更新，正在准备",
       pending_migration: "等待重启并升级数据库",
       migration_succeeded: "数据库升级完成",
+      migration_started: "正在升级数据库",
+      base_ready: "镜像版本通过检查，正在切换",
       promoted: "新版本已启用",
       readiness_failed: "新版本启动检查未通过",
       rollback_started: "正在回滚",

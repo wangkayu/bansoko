@@ -1,13 +1,6 @@
-// Package deploymentidentity models the three-layer release identity of a
-// running instance (task Sub B Step 5, design §6): the immutable base image
-// digest, the selected overlay release (source=base|overlay) with its payload
-// digest, and the durable update operation that produced the selection.
-//
-// BuildInfo keeps answering "which binary is this process running" untouched;
-// this identity answers "where did that binary's tree come from". The values
-// are injected once by the bootstrap wrapper through BANSOKO_DEPLOYMENT_* /
-// BANSOKO_BASE_IMAGE_DIGEST environment variables before exec; base launches carry
-// no payload identity by design ("缺失时留空").
+// Package deploymentidentity models the attested base build, the selected
+// build and tree, and any overlay payload and durable update operation.
+// Bootstrap injects the deployment facts before exec.
 package deploymentidentity
 
 import (
@@ -27,7 +20,6 @@ import (
 // Environment variable names injected by the unified binary's bootstrap mode before exec of the
 // target server. They are read once at process start.
 const (
-	EnvBaseImageDigest      = "BANSOKO_BASE_IMAGE_DIGEST"
 	EnvUpdatesRoot          = "BANSOKO_UPDATES_ROOT"
 	EnvSelectedReleaseID    = "BANSOKO_DEPLOYMENT_SELECTED_RELEASE_ID"
 	EnvSource               = "BANSOKO_DEPLOYMENT_SOURCE"
@@ -41,10 +33,7 @@ const (
 	// readiness must keep treating a dev process without bootstrap facts as
 	// not_provided, while the updater compares the version itself.
 	EnvBootstrapVersion = "BANSOKO_BOOTSTRAP_VERSION"
-	// EnvAnchorKind marks how the base of this deployment is anchored. The
-	// container writes nothing (the immutable image digest is the anchor); a
-	// native single-binary start writes AnchorNative so the identity can
-	// remain honest instead of carrying a fabricated sha256 image digest.
+	// EnvAnchorKind distinguishes the attested container base from a native deployment.
 	EnvAnchorKind = "BANSOKO_DEPLOYMENT_ANCHOR"
 	// AnchorNative marks a native (non-container) base anchor.
 	AnchorNative            = "native"
@@ -56,7 +45,6 @@ const (
 	DefaultUpdatesRoot      = "/config/updates"
 	currentPointerFileName  = "current"
 	payloadDigestHexPattern = `^[0-9a-f]{64}$`
-	imageDigestPattern      = `^sha256:[0-9a-f]{64}$`
 	releaseIDPattern        = `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`
 )
 
@@ -67,7 +55,6 @@ var (
 	SourceOverlay = "overlay"
 
 	payloadDigestRE = regexp.MustCompile(payloadDigestHexPattern)
-	imageDigestRE   = regexp.MustCompile(imageDigestPattern)
 	releaseIDRE     = regexp.MustCompile(releaseIDPattern)
 )
 
@@ -79,7 +66,6 @@ type Identity struct {
 	SelectionReasonCode string               `json:"selection_reason_code,omitempty"`
 	SelectionReason     string               `json:"selection_reason,omitempty"`
 	TakeoverOperationID string               `json:"takeover_operation_id,omitempty"`
-	BaseImageDigest     string               `json:"base_image_digest,omitempty"`
 	SelectedReleaseID   string               `json:"selected_release_id,omitempty"`
 	SelectedSource      string               `json:"selected_source,omitempty"` // "base" | "overlay"
 	PayloadDigest       string               `json:"payload_digest,omitempty"`
@@ -107,7 +93,6 @@ func FromEnv(getenv func(string) string) Identity {
 		}
 	}
 	return Identity{
-		BaseImageDigest:        trim(EnvBaseImageDigest),
 		SelectedReleaseID:      trim(EnvSelectedReleaseID),
 		SelectedSource:         trim(EnvSource),
 		PayloadDigest:          trim(EnvPayloadDigest),
@@ -125,8 +110,8 @@ func FromEnv(getenv func(string) string) Identity {
 // bootstrap identity at all. Bare-metal dev servers report none: readiness
 // treats that as absent rather than inconsistent.
 func (i Identity) Provided() bool {
-	return i.BaseImageDigest != "" || i.SelectedReleaseID != "" ||
-		i.SelectedSource != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" || i.Anchor != ""
+	return i.BaseBuild != nil || i.SelectedReleaseID != "" || i.SelectedSource != "" ||
+		i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" || i.Anchor != ""
 }
 
 // Consistency breach classes surfaced as readyz failure detail. Each maps to
@@ -137,13 +122,12 @@ var (
 	ErrPayloadOnBase         = errors.New("base launch must not carry overlay release or payload identity")
 	ErrReleaseRequired       = errors.New("overlay launch is missing the selected release id")
 	ErrPayloadDigestFormat   = errors.New("payload digest is not a lowercase sha256 hex digest")
-	ErrBaseImageDigestFormat = errors.New("base image digest is not a sha256:<64hex> digest")
 	ErrProcessBuildMismatch  = errors.New("running process build id does not match signed overlay metadata")
 	ErrPointerMismatch       = errors.New("updates volume current pointer no longer matches the injected release selection")
 	ErrPointerOnBase         = errors.New("base launch is active while the updates volume still selects an overlay release")
 	ErrPointerMissing        = errors.New("overlay identity has no current release pointer")
 	ErrPointerCorrupt        = errors.New("updates volume current pointer is corrupt")
-	ErrBaseImageRequired     = errors.New("deployment identity is missing the immutable base image digest")
+	ErrBaseAnchorRequired    = errors.New("deployment identity is missing a recognized base anchor")
 	ErrProcessBuildRequired  = errors.New("deployment identity is missing the expected process build id")
 	ErrRuntimeSourceRequired = errors.New("production deployment identity requires an explicit source")
 )
@@ -172,31 +156,23 @@ func UpdatesRoot(getenv func(string) string) string {
 // Validate checks the intra-identity consistency rules plus the live pointer
 // agreement rule. A nil pointer state means "not probed".
 func (i Identity) Validate(pointer *PointerState) error {
-	if i.BaseImageDigest != "" && !imageDigestRE.MatchString(i.BaseImageDigest) {
-		return ErrBaseImageDigestFormat
-	}
 	switch {
 	case i.SelectedSource == "":
 		if i.SelectedReleaseID != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" {
 			return ErrSourceMissing
 		}
-		// Only a base image digest was provided (image-only deployments):
-		// nothing else to contradict.
 		return nil
 	case i.SelectedSource != SourceBase && i.SelectedSource != SourceOverlay:
 		return ErrSourceInvalid
 	}
+	if i.Anchor != AnchorNative && i.Anchor != AnchorDocker {
+		return ErrBaseAnchorRequired
+	}
 	if i.SelectedSource == SourceBase {
-		if i.BaseImageDigest == "" && i.Anchor != AnchorNative && i.Anchor != AnchorDocker {
-			return ErrBaseImageRequired
-		}
 		if i.SelectedReleaseID != "" || i.PayloadDigest != "" || i.UpdateOperationID != "" || i.ExpectedProcessBuildID != "" {
 			return ErrPayloadOnBase
 		}
 	} else {
-		if i.BaseImageDigest == "" && i.Anchor != AnchorNative && i.Anchor != AnchorDocker {
-			return ErrBaseImageRequired
-		}
 		if i.SelectedReleaseID == "" {
 			return ErrReleaseRequired
 		}
@@ -239,7 +215,7 @@ func (i Identity) Validate(pointer *PointerState) error {
 
 // ValidateForRuntime applies the stricter production/bootstrap contract. A
 // native development process may remain entirely not_provided, but a process
-// carrying only a base digest or expected build facts is not a complete runtime
+// carrying only anchor or expected build facts is not a complete runtime
 // identity and must not be reported ready by a production composition root.
 func (i Identity) ValidateForRuntime(pointer *PointerState, requireSource bool) error {
 	if requireSource && i.SelectedSource == "" {

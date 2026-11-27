@@ -3541,7 +3541,7 @@ export interface components {
             };
             /** Format: date-time */
             checked_at: string;
-            /** @description Three-layer deployment identity of the running process (base image digest / selected release and source / payload digest / update operation). Present only when the process was launched through the update-aware bootstrap wrapper; null otherwise.
+            /** @description Deployment identity of the running process, including the attested base build, selected build, and any overlay payload and operation. Present when bootstrap supplied deployment identity.
              *      */
             deployment_identity?: components["schemas"]["DeploymentIdentity"] | null;
         };
@@ -3562,8 +3562,6 @@ export interface components {
             selection_reason_code?: string;
             selection_reason?: string;
             takeover_operation_id?: string;
-            /** @description Immutable base image digest layer, when the deployment provides it. */
-            base_image_digest?: string;
             /** @description Overlay release id this process serves (empty for base launches). */
             selected_release_id?: string;
             /**

@@ -36,17 +36,13 @@ type privateProbeTarget struct {
 
 // The only listener in the child is inherited from this supervisor. The
 // public maintenance listener is never handed to the candidate.
-func runPrivateProbe(root string, target privateProbeTarget) error {
+func runPrivateProbe(parent context.Context, root string, target privateProbeTarget) error {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return errors.New("cannot generate private readiness credential")
 	}
-	dir, err := os.MkdirTemp("", "bsk-probe-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "ready.sock")
+	// Linux abstract sockets disappear with the last descriptor, even after SIGKILL.
+	path := "@bsk-probe-" + hex.EncodeToString(secret[:16])
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
 		return err
@@ -57,9 +53,11 @@ func runPrivateProbe(root string, target privateProbeTarget) error {
 		return err
 	}
 	defer file.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), privateProbeDeadline)
+	ctx, cancel := context.WithTimeout(parent, privateProbeDeadline)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, target.binary, PrivateReadinessCommand)
+	isolateChildProcessGroup(cmd)
+	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{file}
 	env := target.env
 	env[privateProbeTokenEnv] = hex.EncodeToString(secret[:])
@@ -117,7 +115,7 @@ func matchesProbeIdentity(got *deploymentidentity.Identity, target privateProbeT
 		got.SelectedBuild.APIVersion == target.build.APIVersion &&
 		(want.SelectedSource != deploymentidentity.SourceBase || *got.SelectedBuild == target.build) &&
 		got.ProcessBuildID == target.build.BuildID && got.SelectedSource == want.SelectedSource &&
-		got.BaseImageDigest == want.BaseImageDigest && got.SelectedReleaseID == want.SelectedReleaseID &&
+		got.SelectedReleaseID == want.SelectedReleaseID &&
 		got.PayloadDigest == want.PayloadDigest && got.UpdateOperationID == want.UpdateOperationID
 }
 
@@ -136,7 +134,7 @@ func RunPrivateReadiness(report func(context.Context) readiness.Report) int {
 		return 2
 	}
 	defer listener.Close()
-	if addr, ok := listener.Addr().(*net.UnixAddr); !ok || !strings.HasSuffix(addr.Name, "/ready.sock") {
+	if addr, ok := listener.Addr().(*net.UnixAddr); !ok || !strings.HasPrefix(addr.Name, "@bsk-probe-") {
 		return 2
 	}
 	server := &http.Server{ReadHeaderTimeout: 2 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -171,7 +169,7 @@ func VerifyPrivateBasePointer(root string, build buildinfo.BuildInfo, pointer de
 	r, found, err := embeddedupdate.Snapshot(filepath.Join(root, journalFileName))
 	if err != nil || !found || r.Takeover == nil || r.Step != embeddedupdate.StepMigrationSucceeded ||
 		!pointer.Readable || pointer.Corrupt || pointer.Token != r.PreviousReleaseID ||
-		r.Takeover.Anchor.Build != build || r.Takeover.Anchor.ImageDigest != os.Getenv(deploymentidentity.EnvBaseImageDigest) {
+		r.Takeover.Anchor.Build != build || r.ManifestDigest != currentBaseAnchor(build).Fingerprint() {
 		return errors.New("private base probe cannot prove the previous pointer against the active takeover")
 	}
 	return nil

@@ -245,6 +245,19 @@ var requiredColumns = map[string][]string{
 }
 
 func (r Runner) Verify(ctx context.Context) error {
+	return r.verify(ctx, true)
+}
+
+// VerifyMigrationSet proves the database carries exactly this migration set
+// with its checksummed history, without asserting the *running* binary's
+// relation inventory. A rollback restores an older release's database, so it
+// must be judged by that release's own schema contract; the columns a newer
+// binary needs do not exist yet and are not evidence of corruption.
+func (r Runner) VerifyMigrationSet(ctx context.Context) error {
+	return r.verify(ctx, false)
+}
+
+func (r Runner) verify(ctx context.Context, inventory bool) error {
 	if r.DB == nil {
 		return errors.New("migration database is nil")
 	}
@@ -252,7 +265,7 @@ func (r Runner) Verify(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return verifyInstalled(ctx, r.DB, migrations)
+	return verifyInstalled(ctx, r.DB, migrations, inventory)
 }
 
 func (r Runner) Apply(ctx context.Context) error {
@@ -318,7 +331,7 @@ CREATE TABLE schema_migrations (
 			return fmt.Errorf("migration record failed: %w", &MigrationApplyError{Operation: "record", Version: item.version, Err: err})
 		}
 	}
-	if err := verifyInstalled(ctx, tx, migrations); err != nil {
+	if err := verifyInstalled(ctx, tx, migrations, true); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -428,7 +441,7 @@ func TargetVersion() string {
 	return migrations[len(migrations)-1].version
 }
 
-func verifyInstalled(ctx context.Context, db queryer, migrations []migration) error {
+func verifyInstalled(ctx context.Context, db queryer, migrations []migration, inventory bool) error {
 	relations, err := publicRelations(ctx, db)
 	if err != nil {
 		return fmt.Errorf("inspect installed schema: %w", err)
@@ -445,6 +458,9 @@ func verifyInstalled(ctx context.Context, db queryer, migrations []migration) er
 	}
 	if applied != len(migrations) {
 		return fmt.Errorf("%w: only %d of %d migrations are installed", ErrUnsupportedSchema, applied, len(migrations))
+	}
+	if !inventory {
+		return nil
 	}
 	for name, kind := range knownRelations {
 		actual, ok := relations[name]

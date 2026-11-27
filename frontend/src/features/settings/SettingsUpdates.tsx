@@ -28,6 +28,8 @@ const ACTIVE_STEPS: Record<string, true> = {
   pending_backup: true,
   pending_migration: true,
   migration_succeeded: true,
+  migration_started: true,
+  base_ready: true,
   promoted: true,
   readiness_failed: true,
   rollback_started: true,

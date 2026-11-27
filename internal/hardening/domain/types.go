@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"bansoko/internal/runtime/buildinfo"
 )
 
 type ReleaseChannel string
@@ -157,6 +159,9 @@ func (m ReleaseManifest) ValidateForRelease() error {
 	}
 	switch m.Channel {
 	case ReleaseChannelStable, ReleaseChannelTest:
+		if m.Series != "" && !(buildinfo.Order{Series: m.Series, Lane: string(m.Channel), ReleaseSequence: m.ReleaseSequence}).Ordered() {
+			return errors.New("ordered release manifest requires a recognized series and positive sequence")
+		}
 	case ReleaseChannelBeta, ReleaseChannelNightly:
 		if m.Series != "" {
 			return fmt.Errorf("unsupported ordered release channel %q", m.Channel)

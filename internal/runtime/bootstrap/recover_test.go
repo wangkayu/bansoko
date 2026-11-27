@@ -3,8 +3,12 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	embeddedupdate "bansoko/internal/update/journal"
@@ -51,6 +55,42 @@ func TestRunRecoverStatusReportsRollbackBlocked(t *testing.T) {
 	}
 	if fake.calls != 1 || payload["rollback_blocked"] != true || payload["step"] != string(embeddedupdate.StepRollbackBlocked) {
 		t.Fatalf("calls=%d payload=%v", fake.calls, payload)
+	}
+}
+
+// The recover status reader must diagnose from the journal alone: an
+// unreachable database may only degrade the fence column, never the record.
+func TestFileRecoveryStatusSurvivesAnUnavailableDatabase(t *testing.T) {
+	root := t.TempDir()
+	store, err := embeddedupdate.Open(filepath.Join(root, journalFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.Create(embeddedupdate.Record{OperationID: "diagnose-op", Channel: "embedded", Step: embeddedupdate.StepMigrationSucceeded,
+		TargetReleaseID: "target", TargetReleaseSequence: 4, ManifestDigest: strings.Repeat("a", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	unreachable, err := sql.Open("pgx", "postgres://127.0.0.1:1/unreachable?sslmode=disable&connect_timeout=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unreachable.Close()
+	for _, reader := range []fileRecoveryStatus{{updatesRoot: root}, {updatesRoot: root, db: unreachable}} {
+		status, err := reader.Status(context.Background())
+		if err != nil {
+			t.Fatalf("status without a live database: %v", err)
+		}
+		if status["operation_id"] != "diagnose-op" || fmt.Sprint(status["step"]) != "migration_succeeded" {
+			t.Fatalf("journal facts lost while diagnosing: %v", status)
+		}
+		want := ""
+		if reader.db != nil {
+			want = "unknown"
+		}
+		if got, _ := status["fence_state"].(string); got != want {
+			t.Fatalf("fence_state = %q, want %q", got, want)
+		}
 	}
 }
 

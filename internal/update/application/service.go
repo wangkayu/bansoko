@@ -25,6 +25,7 @@ import (
 	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/runtime/buildinfo"
+	updatefence "bansoko/internal/update/fence"
 	"bansoko/internal/update/journal"
 )
 
@@ -117,6 +118,11 @@ type Service struct {
 	doneOnce                                                           sync.Once
 	diagnostics                                                        observabilityport.Recorder
 	logger                                                             observabilityport.RuntimeLogger
+}
+
+// NewStatusReader exposes durable update status without a configured source.
+func NewStatusReader(updatesRoot string) *Service {
+	return &Service{updatesRoot: updatesRoot, clock: time.Now}
 }
 
 func NewService(deps Deps) (*Service, error) {
@@ -321,16 +327,10 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 	if !advancesRunningRelease(s.runningOrder, manifest) {
 		return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_STALE", Message: "The update target does not advance beyond the running release."})
 	}
-	if s.db != nil {
-		// Mirrors the fence's own floor: an attempt that failed does not fence
-		// its sequence, so the release it targeted can be retried.
-		var floor int64
-		if e = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence), 0) FROM embedded_update_locks WHERE state IN ('active', 'settled')").Scan(&floor); e != nil {
-			return fail(fmt.Errorf("read update release sequence floor: %w", e))
-		}
-		if manifest.ReleaseSequence <= floor {
-			return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_STALE", Message: "The update target does not advance beyond a release this instance already installed."})
-		}
+	if installs, err := s.advancesFenceFloor(ctx, manifest.ReleaseSequence); err != nil {
+		return fail(err)
+	} else if !installs {
+		return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_STALE", Message: "The update target does not advance beyond a release this instance already installed."})
 	}
 	opID := "embedded-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	now := s.clock().UTC()
@@ -486,6 +486,17 @@ func (s *Service) recordIndexReachability(ctx context.Context, result Check, err
 	})(ctx)
 }
 
+func (s *Service) advancesFenceFloor(ctx context.Context, sequence int64) (bool, error) {
+	if s.db == nil {
+		return sequence > 0, nil
+	}
+	floor, err := updatefence.New(s.db).SequenceFloor(ctx)
+	if err != nil {
+		return false, fmt.Errorf("read update release sequence floor: %w", err)
+	}
+	return sequence > floor, nil
+}
+
 func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 	checked := s.clock().UTC()
 	result := Check{CheckedAt: checked, Current: Current{ReleaseID: s.buildID, Version: s.buildVersion, ImageCompatibility: s.buildCompatibilityVersion, ReleaseNotes: s.currentReleaseNotes()}, Compatibility: Compatibility{Kind: "incompatible", Reason: "No compatible candidate has been checked."}}
@@ -540,6 +551,14 @@ func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 		result.Status = "check_failed"
 		return result, &apperrors.Business{Status: 422, Code: "BOOTSTRAP_COMPATIBILITY_INVALID", Message: bootstrap.ManifestInvalid.Error()}
 	}
+	advances := manifest.ReleaseID != s.buildID && advancesRunningRelease(s.runningOrder, manifest)
+	if advances && compatible && bootstrap.Satisfied {
+		advances, err = s.advancesFenceFloor(ctx, manifest.ReleaseSequence)
+		if err != nil {
+			result.Status = "check_failed"
+			return result, err
+		}
+	}
 	switch {
 	case !compatible || !bootstrap.Satisfied:
 		result.Status = "base_image_required"
@@ -549,7 +568,7 @@ func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 		} else {
 			result.Compatibility.Reason = "A newer base image is required."
 		}
-	case manifest.ReleaseID == s.buildID || !advancesRunningRelease(s.runningOrder, manifest):
+	case !advances:
 		result.Status = "up_to_date"
 		result.Candidate = nil
 		result.Compatibility.Kind = "overlay"

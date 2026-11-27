@@ -89,7 +89,7 @@ func TestGetReadyzReturnsJSON503WithIdentityReason(t *testing.T) {
 		Gate:      maintenance.NewGate(),
 		Deployment: systemTestDeployment{
 			identity: deploymentidentity.Identity{
-				BaseImageDigest:   "sha256:" + validDigest,
+				Anchor:            deploymentidentity.AnchorDocker,
 				SelectedSource:    deploymentidentity.SourceOverlay,
 				SelectedReleaseID: "release-1",
 				PayloadDigest:     validDigest,
@@ -138,7 +138,7 @@ func TestGetReadyzIncludesDeploymentVerificationFailureDetail(t *testing.T) {
 		Workers:   systemTestWorkers{},
 		Gate:      maintenance.NewGate(),
 		Deployment: systemTestDeployment{
-			identity: deploymentidentity.Identity{BaseImageDigest: "sha256:" + strings.Repeat("a", 64), SelectedSource: deploymentidentity.SourceBase},
+			identity: deploymentidentity.Identity{Anchor: deploymentidentity.AnchorDocker, SelectedSource: deploymentidentity.SourceBase},
 			err:      errors.New("descriptor metadata changed"),
 		},
 	})

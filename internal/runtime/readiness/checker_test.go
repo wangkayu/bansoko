@@ -119,7 +119,7 @@ func (strictIdentityProvider) RequireSource() bool { return true }
 func TestProductionIdentityRejectsPartialFacts(t *testing.T) {
 	deps := healthyDeps()
 	deps.DB = nil
-	deps.Deployment = strictIdentityProvider{identity: deploymentidentity.Identity{BaseImageDigest: "sha256:" + strings.Repeat("a", 64)}}
+	deps.Deployment = strictIdentityProvider{identity: deploymentidentity.Identity{Anchor: deploymentidentity.AnchorDocker}}
 	report := New(deps).Report(context.Background())
 	if report.Checks["deployment_identity"].OK || report.Checks["deployment_identity"].Code != "unverified" {
 		t.Fatalf("partial identity report = %+v, want unverified", report.Checks["deployment_identity"])
@@ -191,7 +191,7 @@ func (realDeploymentIdentityProvider) RequireSource() bool { return true }
 
 func overlayIdentityForReadiness(expected string) deploymentidentity.Identity {
 	return deploymentidentity.Identity{
-		BaseImageDigest:        "sha256:" + strings.Repeat("a", 64),
+		Anchor:                 deploymentidentity.AnchorDocker,
 		SelectedSource:         deploymentidentity.SourceOverlay,
 		SelectedReleaseID:      "release-1",
 		PayloadDigest:          strings.Repeat("b", 64),
@@ -208,7 +208,7 @@ func TestDeploymentIdentityRealProviderFillsProcessBuildIDFromBuildInfo(t *testi
 	if err := os.WriteFile(filepath.Join(root, "current"), []byte("release-1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(deploymentidentity.EnvBaseImageDigest, overlayIdentityForReadiness("actual-build").BaseImageDigest)
+	t.Setenv(deploymentidentity.EnvAnchorKind, deploymentidentity.AnchorDocker)
 	t.Setenv(deploymentidentity.EnvSource, deploymentidentity.SourceOverlay)
 	t.Setenv(deploymentidentity.EnvSelectedReleaseID, "release-1")
 	t.Setenv(deploymentidentity.EnvPayloadDigest, strings.Repeat("b", 64))
@@ -234,7 +234,7 @@ func TestDeploymentIdentityRealProviderRejectsBuildInfoMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	identity := overlayIdentityForReadiness("expected-build")
-	t.Setenv(deploymentidentity.EnvBaseImageDigest, identity.BaseImageDigest)
+	t.Setenv(deploymentidentity.EnvAnchorKind, identity.Anchor)
 	t.Setenv(deploymentidentity.EnvSource, identity.SelectedSource)
 	t.Setenv(deploymentidentity.EnvSelectedReleaseID, identity.SelectedReleaseID)
 	t.Setenv(deploymentidentity.EnvPayloadDigest, identity.PayloadDigest)
@@ -265,7 +265,7 @@ func TestDeploymentIdentityConsistentAttachesReport(t *testing.T) {
 	deps := healthyDeps()
 	deps.DB = nil
 	identity := deploymentidentity.Identity{
-		BaseImageDigest:        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Anchor:                 deploymentidentity.AnchorDocker,
 		SelectedSource:         deploymentidentity.SourceOverlay,
 		SelectedReleaseID:      "release-1",
 		PayloadDigest:          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -292,7 +292,7 @@ func TestDeploymentIdentityInconsistencyMakesNotReady(t *testing.T) {
 	deps.DB = nil
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest:        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Anchor:                 deploymentidentity.AnchorDocker,
 			SelectedSource:         deploymentidentity.SourceOverlay,
 			SelectedReleaseID:      "release-1",
 			PayloadDigest:          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -323,7 +323,7 @@ func TestDeploymentIdentityVerificationFailureMakesNotReady(t *testing.T) {
 	deps.DB = nil
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest:   "sha256:" + strings.Repeat("a", 64),
+			Anchor:            deploymentidentity.AnchorDocker,
 			SelectedSource:    deploymentidentity.SourceOverlay,
 			SelectedReleaseID: "release-1",
 			PayloadDigest:     strings.Repeat("a", 64),
@@ -353,7 +353,7 @@ func TestDeploymentIdentityProcessBuildMismatch(t *testing.T) {
 	deps.Build = buildinfo.BuildInfo{Version: "test", Commit: "abc123", BuildID: "actual-build"}
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest:        "sha256:" + strings.Repeat("a", 64),
+			Anchor:                 deploymentidentity.AnchorDocker,
 			SelectedSource:         deploymentidentity.SourceOverlay,
 			SelectedReleaseID:      "release-1",
 			PayloadDigest:          strings.Repeat("b", 64),
@@ -384,7 +384,7 @@ func TestDeploymentIdentityPointerAbsentForOverlay(t *testing.T) {
 	deps.Build = buildinfo.BuildInfo{Version: "test", Commit: "abc123", BuildID: "test-build"}
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest:        "sha256:" + strings.Repeat("a", 64),
+			Anchor:                 deploymentidentity.AnchorDocker,
 			SelectedSource:         deploymentidentity.SourceOverlay,
 			SelectedReleaseID:      "release-1",
 			PayloadDigest:          strings.Repeat("b", 64),
@@ -410,8 +410,8 @@ func TestDeploymentIdentityBaseWithOverlayPointer(t *testing.T) {
 	deps.DB = nil
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest: "sha256:" + strings.Repeat("a", 64),
-			SelectedSource:  deploymentidentity.SourceBase,
+			Anchor:         deploymentidentity.AnchorDocker,
+			SelectedSource: deploymentidentity.SourceBase,
 			// No payload facts
 		},
 		pointer: deploymentidentity.PointerState{Token: "release-1", Readable: true, Presented: true},
@@ -434,7 +434,7 @@ func TestDeploymentIdentityCorruptPointer(t *testing.T) {
 	deps.Build = buildinfo.BuildInfo{Version: "test", Commit: "abc123", BuildID: "test-build"}
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest:        "sha256:" + strings.Repeat("a", 64),
+			Anchor:                 deploymentidentity.AnchorDocker,
 			SelectedSource:         deploymentidentity.SourceOverlay,
 			SelectedReleaseID:      "release-1",
 			PayloadDigest:          strings.Repeat("b", 64),
@@ -454,14 +454,14 @@ func TestDeploymentIdentityCorruptPointer(t *testing.T) {
 }
 
 // TestDeploymentIdentityBaseConsistency verifies that a base launch with
-// matching base image digest and no overlay facts passes readiness (design §6 B5).
+// recognized base anchor and no overlay facts passes readiness.
 func TestDeploymentIdentityBaseConsistency(t *testing.T) {
 	deps := healthyDeps()
 	deps.DB = nil
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest: "sha256:" + strings.Repeat("a", 64),
-			SelectedSource:  deploymentidentity.SourceBase,
+			Anchor:         deploymentidentity.AnchorDocker,
+			SelectedSource: deploymentidentity.SourceBase,
 			// No payload/release/operation facts
 		},
 		pointer: deploymentidentity.PointerState{Readable: false, Presented: false}, // no pointer is valid for base
@@ -483,8 +483,8 @@ func TestDeploymentIdentityValidationError(t *testing.T) {
 	deps.DB = nil
 	deps.Deployment = fakeDeploymentIdentity{
 		identity: deploymentidentity.Identity{
-			BaseImageDigest: "sha256:" + strings.Repeat("a", 64),
-			SelectedSource:  deploymentidentity.SourceBase,
+			Anchor:         deploymentidentity.AnchorDocker,
+			SelectedSource: deploymentidentity.SourceBase,
 		},
 		pointer: deploymentidentity.PointerState{},
 		err:     errors.New("signed descriptor metadata changed"),

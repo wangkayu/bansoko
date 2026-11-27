@@ -336,9 +336,13 @@ type Record struct {
 	BackupDigest     string            `json:"backup_digest,omitempty"`
 	InstallID        string            `json:"install_id,omitempty"`
 	DatabaseRecovery *DatabaseRecovery `json:"database_recovery,omitempty"`
-	SchemaVersion    int               `json:"schema_version"`
-	OperationID      string            `json:"operation_id"`
-	Channel          string            `json:"channel"`
+	// LiveDatabase is pinned before the operation backs up or migrates the
+	// deployment database. Every later rename re-proves it, so a database
+	// recreated under the same name is never adopted.
+	LiveDatabase  *LiveDatabase `json:"live_database,omitempty"`
+	SchemaVersion int           `json:"schema_version"`
+	OperationID   string        `json:"operation_id"`
+	Channel       string        `json:"channel"`
 
 	Step    Step  `json:"step"`
 	Version int64 `json:"version"`
@@ -742,6 +746,9 @@ func (j *FileJournal) advance(operationID string, expectedVersion int64, expecte
 		return Record{}, ErrNotFound
 	}
 	record := *env.Record
+	if env.SchemaVersion != FormatVersion {
+		return Record{}, fmt.Errorf("%w: legacy journal is read-only", ErrInvalidTransition)
+	}
 	if record.OperationID != operationID {
 		return Record{}, ErrNotFound
 	}
@@ -769,6 +776,10 @@ func (j *FileJournal) advance(operationID string, expectedVersion int64, expecte
 		if record.DatabaseRecovery != nil {
 			pin := *record.DatabaseRecovery
 			record.DatabaseRecovery = &pin
+		}
+		if record.LiveDatabase != nil {
+			pin := *record.LiveDatabase
+			record.LiveDatabase = &pin
 		}
 		mutate(&record)
 	}

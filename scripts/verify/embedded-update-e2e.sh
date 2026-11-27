@@ -307,7 +307,7 @@ p=pathlib.Path(sys.argv[1]); scenario, ac, digest, project=sys.argv[2:]
 try: data=json.loads(p.read_text())
 except Exception as exc: data={"passed":False,"scope":"harness","blocked":True,"reason":f"invalid evidence JSON: {exc}"}
 data.update({"acceptance":ac,"scenario":scenario,"project":project,
-             "update_mode":"embedded","base_image_digest":digest})
+             "update_mode":"embedded","fixture_image_ref":"wangkayu/bansoko-builds@"+digest if digest else ""})
 if data.get("scope") != "real" or data.get("passed") is not True:
     data["passed"]=False; data["blocked"]=True
     data.setdefault("reason","evidence must explicitly assert scope=real and passed=true")
@@ -340,7 +340,8 @@ for name in names:
     else: missing.append(name)
 passed=bool(rows) and not missing and failed==0 and all(r.get('passed') is True and r.get('scope')=='real' for r in rows)
 summary={'kind':'embedded-update-e2e','scope':'real' if passed else 'harness','project':project,
-         'base_image_digest':digest,'requested_scenario':requested,'scenarios':rows,'passed':passed,
+         'fixture_image_ref':'wangkayu/bansoko-builds@'+digest if digest else '',
+         'requested_scenario':requested,'scenarios':rows,'passed':passed,
          'blocked':[r for r in rows if r.get('blocked')]}
 if missing: summary['missing_evidence']=missing
 json.dump(summary,out.open('w'),indent=2,sort_keys=True)

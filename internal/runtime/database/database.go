@@ -7,13 +7,15 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 var ErrDSNRequired = errors.New("database DSN is required")
 
 type Config struct {
 	DSN             string
+	ReadOnly        bool
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
@@ -32,10 +34,14 @@ func Open(ctx context.Context, cfg Config) (*sql.DB, error) {
 	if cfg.ConnMaxLifetime <= 0 {
 		cfg.ConnMaxLifetime = time.Hour
 	}
-	db, err := sql.Open("pgx", cfg.DSN)
+	connConfig, err := pgx.ParseConfig(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+	if cfg.ReadOnly {
+		connConfig.RuntimeParams["default_transaction_read_only"] = "on"
+	}
+	db := stdlib.OpenDB(*connConfig)
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.MaxIdleConns)
 	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)

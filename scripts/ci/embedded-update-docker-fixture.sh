@@ -363,7 +363,7 @@ def set_env(text,values):
         elif key not in found: out.append(f"      {key}: {values[key]}\n"); found.add(key)
     missing=[key for key in values if key not in found]
     if missing:
-        index=next((i for i,line in enumerate(out) if line.startswith("      BANSOKO_BASE_IMAGE_DIGEST:")),None)
+        index=next((i for i,line in enumerate(out) if line.startswith("      BANSOKO_UPDATE_MODE:")),None)
         if index is None: raise SystemExit("app update environment anchor missing")
         out[index+1:index+1]=[f"      {key}: {values[key]}\n" for key in missing]
     return "".join(out)

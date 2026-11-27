@@ -37,9 +37,10 @@ func runVersion(stdout io.Writer, args ...string) int {
 		}
 		if err := json.NewEncoder(stdout).Encode(struct {
 			buildinfo.BuildInfo
-			Platform     string `json:"platform"`
-			Architecture string `json:"architecture"`
-		}{buildinfo.Current(), runtime.GOOS, runtime.GOARCH}); err != nil {
+			Platform        string `json:"platform"`
+			Architecture    string `json:"architecture"`
+			ContainerAnchor string `json:"container_anchor,omitempty"`
+		}{buildinfo.Current(), runtime.GOOS, runtime.GOARCH, buildinfo.ContainerAnchor}); err != nil {
 			return 1
 		}
 		return 0

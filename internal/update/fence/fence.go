@@ -53,6 +53,14 @@ func New(db *sql.DB) *Store {
 	return &Store{adapter: persistence.NewRepository(db)}
 }
 
+// SequenceFloor reports the largest sequence with an active or settled fence.
+func (s *Store) SequenceFloor(ctx context.Context) (int64, error) {
+	if err := s.validateAvailable(); err != nil {
+		return 0, err
+	}
+	return s.adapter.SequenceFloor(ctx)
+}
+
 // Acquire atomically checks the publisher-owned monotonic sequence and inserts
 // the open singleton row. The partial unique index arbitrates concurrent
 // admissions from separate processes after both have read the sequence floor.

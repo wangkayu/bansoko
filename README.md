@@ -56,12 +56,14 @@ volumes:
 ### Option 2: External PostgreSQL
 
 Requires PostgreSQL 17 (the only version verified). Prepare a dedicated database
-and owner role (`CREATEROLE` required; `CREATEDB` also required for embedded
-updates):
+and owner role with `CREATEROLE`. Embedded updates and image takeover also
+require `CREATEDB` and the ability to terminate runtime sessions
+(`pg_signal_backend` for a non-superuser database owner):
 
 ```sql
 CREATE ROLE <user> LOGIN PASSWORD '<password>' CREATEROLE CREATEDB;
 CREATE DATABASE <db> OWNER <user>;
+GRANT pg_signal_backend TO <user>;
 -- Example:
 -- CREATE ROLE bansoko LOGIN PASSWORD 'your-password' CREATEROLE CREATEDB;
 -- CREATE DATABASE bansoko OWNER bansoko;

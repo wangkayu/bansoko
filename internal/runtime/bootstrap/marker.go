@@ -203,7 +203,11 @@ func consumePendingMarker(updatesRoot string) error {
 	if err != nil || digest != marker.ManifestDigest {
 		return errors.New("pending marker digest differs from signed manifest")
 	}
-	current := deploymentCurrentID(updatesRoot)
+	pointer := deploymentidentity.ReadCurrentPointer(updatesRoot)
+	if pointer.Presented && (!pointer.Readable || pointer.Corrupt) {
+		return errors.New("pending marker cannot consume an unreadable current pointer")
+	}
+	current := pointer.Token
 	if current != marker.PreviousReleaseID {
 		return fmt.Errorf("pending marker previous release %q differs from current release %q", marker.PreviousReleaseID, current)
 	}
@@ -353,16 +357,23 @@ func discardUnreferencedWork(updatesRoot string) error {
 		previous = record.PreviousReleaseID
 	}
 	root := filepath.Join(updatesRoot, releasesDirName)
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, os.ErrNotExist) {
+	// A release directory name must be a real entry inside the updates volume.
+	// Removing through a symlinked parent could delete a tree the deployment
+	// does not own, so the parent is required to be a real directory.
+	if info, err := os.Lstat(root); errors.Is(err, os.ErrNotExist) {
 		return nil
+	} else if err != nil || !info.IsDir() {
+		return errors.New("release workspace is not a real directory; refusing cleanup")
 	}
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		return fmt.Errorf("read release workspace: %w", err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if name == current || name == previous || !entry.IsDir() {
+		// Symlinks are never release trees: DirectoryEntry.IsDir does not
+		// follow them, and a token check keeps the removal inside releases/.
+		if name == current || name == previous || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !validReleaseToken(name) {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
@@ -373,6 +384,9 @@ func discardUnreferencedWork(updatesRoot string) error {
 		return fmt.Errorf("sync release workspace cleanup: %w", err)
 	}
 	for _, dir := range []string{"staging", "downloads"} {
+		if info, err := os.Lstat(filepath.Join(updatesRoot, dir)); err == nil && !info.IsDir() {
+			return fmt.Errorf("workspace %s is not a real directory; refusing cleanup", dir)
+		}
 		if err := os.RemoveAll(filepath.Join(updatesRoot, dir)); err != nil {
 			return fmt.Errorf("discard unreferenced %s workspace: %w", dir, err)
 		}
