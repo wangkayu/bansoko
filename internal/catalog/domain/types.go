@@ -207,6 +207,7 @@ type ReadResult struct {
 }
 
 type Snapshot struct {
+	UpstreamStatus  providerdomain.Status
 	ID              string
 	Season          string
 	Status          SnapshotStatus

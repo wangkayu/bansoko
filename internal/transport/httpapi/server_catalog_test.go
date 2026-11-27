@@ -135,8 +135,9 @@ func TestSearchProviderCatalogUnsupported(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("search status=%d", recorder.Code)
 	}
-	if string(recorder.Body.Bytes()) != "[]\n" && string(recorder.Body.Bytes()) != "[]" {
-		t.Fatalf("empty search must serialize to an empty array, got %s", recorder.Body.String())
+	var result generated.CatalogKeywordSearchResult
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil || result.Items == nil || len(result.Items) != 0 || result.Upstream == nil || result.Upstream.State != "empty" {
+		t.Fatalf("empty search outcome: %s, err=%v", recorder.Body, err)
 	}
 }
 

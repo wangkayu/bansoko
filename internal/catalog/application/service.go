@@ -16,6 +16,7 @@ import (
 	"bansoko/internal/catalog/domain"
 	"bansoko/internal/events"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 
@@ -99,7 +100,7 @@ func (r HTTPReader) ReadSeason(ctx context.Context, season string, hints domain.
 		return domain.ReadResult{ETag: etag, LastModified: lastModified, Cursor: hints.Cursor, ContractVersion: anibtSeasonContractVersion, NotModified: true}, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return domain.ReadResult{}, fmt.Errorf("AniBT catalog returned HTTP %d", response.StatusCode)
+		return domain.ReadResult{}, providerdomain.HTTPReadFailure(response, fmt.Errorf("AniBT catalog returned HTTP %d", response.StatusCode), time.Now().UTC())
 	}
 	var payload struct {
 		OK   bool `json:"ok"`
@@ -203,7 +204,7 @@ func (r HTTPReader) Search(ctx context.Context, query string, hints domain.ReadH
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return domain.ReadResult{}, fmt.Errorf("%w: AniBT search returned HTTP %d", ErrProviderUpstream, response.StatusCode)
+		return domain.ReadResult{}, providerdomain.HTTPReadFailure(response, fmt.Errorf("%w: AniBT search returned HTTP %d", ErrProviderUpstream, response.StatusCode), time.Now().UTC())
 	}
 	var payload struct {
 		OK   bool `json:"ok"`

@@ -333,5 +333,5 @@ export const enErrorCopy = {
   FILE_MANAGER_MATCH_NOT_RENDERABLE: "The naming rules can't produce a name for this file",
   FILE_MANAGER_MATCH_INVALID: "The season or episode is out of range",
   TMDB_BINDING_REQUIRED: "This anime isn't linked to TMDB yet",
-  METADATA_PROVIDER_UNAVAILABLE: "Couldn't reach the metadata service. Try again later.",
+  METADATA_PROVIDER_UNAVAILABLE: "The metadata service is temporarily unavailable or timed out. Try again later.",
 } as const satisfies CopyShape<typeof errorCopy>;

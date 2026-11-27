@@ -78,13 +78,14 @@ func (d *Dispatcher) SetEventHub(hub *events.Hub) {
 }
 
 type dispatchCounts struct {
-	groupStatus providerdomain.Status
-	targetCount int
-	enqueued    int
-	merged      int
-	skipped     int
-	errors      int
-	completed   int // Confirmed inline actions, not WorkItems.
+	groupReadResult *providerdomain.GroupReadResult
+	groupStatus     providerdomain.Status
+	targetCount     int
+	enqueued        int
+	merged          int
+	skipped         int
+	errors          int
+	completed       int // Confirmed inline actions, not WorkItems.
 }
 
 type discoveryPolicy = selectiondomain.DiscoveryPolicy
@@ -519,9 +520,10 @@ WHERE s.managed_anime_id = $1`, managedAnimeID).Scan(
 		}, nil
 	}
 	if discoveredCount == 0 {
-		return animeapp.DiscoverResult{Outcome: "no_groups", Reason: "No groups were found.", UpstreamStatus: counts.groupStatus}, nil
+		return animeapp.DiscoverResult{Groups: counts.groupReadResult.Groups, Outcome: "no_groups", Reason: "No groups were found.", UpstreamStatus: counts.groupStatus}, nil
 	}
 	return animeapp.DiscoverResult{
+		Groups:          counts.groupReadResult.Groups,
 		Outcome:         "discovered",
 		Reason:          fmt.Sprintf("Discovered %d group(s).", discoveredCount),
 		DiscoveredCount: discoveredCount,
@@ -562,6 +564,7 @@ func (d *Dispatcher) discoverOneMode(ctx context.Context, managedAnimeID, subscr
 	if err != nil {
 		return counts, fmt.Errorf("read groups: %w", err)
 	}
+	counts.groupReadResult = &result
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return counts, err

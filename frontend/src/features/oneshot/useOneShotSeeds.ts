@@ -18,7 +18,9 @@ import {
   type RSSListView,
   type SeedSearchSnapshotView,
   type TitleSuggestion,
+  type UpstreamStatus,
 } from "../../lib/api/client";
+import { nonErrorUpstream } from "../../ui/UpstreamStatusBlock";
 import { createEmptyDraft } from "../../lib/draft";
 import type { CatalogEntryView, SearchProviderKey } from "../../lib/providers/viewmodels";
 import type { CustomSnapshotRequest } from "../catalog/CustomSnapshotFetchButton";
@@ -73,6 +75,7 @@ export type OneShotSeedSource = {
   /** A read-model re-read in flight. */
   pending: boolean;
   error?: string;
+  upstream?: UpstreamStatus;
   /** search only: the snapshot identity expired. The only way forward is a new search, so no retry is offered. */
   stale?: boolean;
   /** The group whose seed list is being fetched. */
@@ -195,6 +198,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
   const [discovered, setDiscovered] = useState<DiscoveredGroup[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string>();
+  const [upstream, setUpstream] = useState<UpstreamStatus>();
   const [attempt, setAttempt] = useState(0);
   // Re-runs only the initial draft load (a new seed set starts the form over) without re-discovering.
   const [draftAttempt, setDraftAttempt] = useState(0);
@@ -225,13 +229,15 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     if (!enabled) return;
     let active = true;
     setDiscovering(true);
+    setUpstream(undefined);
     setDiscoveryError(undefined);
     setObservation(undefined);
     setDiscovered([]);
     void discoverProviderEntryGroups(provider, providerEntryRef)
       .then((result) => {
         if (!active) return;
-        setObservation({
+        setUpstream(result.upstream);
+        if (result.snapshot_version !== undefined) setObservation({
           provider: result.provider,
           provider_entry_ref: result.provider_entry_ref,
           snapshot_version: result.snapshot_version,
@@ -245,7 +251,10 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
         );
       })
       .catch((cause) => {
-        if (active) setDiscoveryError(toUserMessage(cause, t("oneshot.loadSeedsFailed")));
+        if (!active) return;
+        const status = nonErrorUpstream(cause);
+        if (status) setUpstream(status);
+        else setDiscoveryError(toUserMessage(cause, t("oneshot.loadSeedsFailed")));
       })
       .finally(() => {
         if (active) setDiscovering(false);
@@ -404,6 +413,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     loading: discovering || (!businessReady && discoveryError === undefined),
     pending,
     error: discoveryError ?? viewError,
+    upstream,
     openingGroup,
     openError,
     openGroup,

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"net/http"
 	"time"
 
 	"bansoko/internal/provider/outbound"
@@ -71,6 +72,20 @@ func (e *ReadFailure) Error() string {
 }
 
 func (e *ReadFailure) Unwrap() error { return e.Err }
+
+// HTTPReadFailure classifies a non-success response from an uncoordinated read.
+func HTTPReadFailure(response *http.Response, err error, checkedAt time.Time) *ReadFailure {
+	status := Status{State: StateError, ReasonCode: ReasonUpstreamStatus, CheckedAt: checkedAt}
+	if response.StatusCode == http.StatusTooManyRequests {
+		status.State, status.ReasonCode = StateRateLimited, ReasonRateLimited
+	}
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable {
+		if wait, ok := outbound.ParseRetryAfter(response.Header.Get("Retry-After"), checkedAt); ok {
+			status.RetryAfter, status.CooldownUntil = wait, checkedAt.Add(wait)
+		}
+	}
+	return &ReadFailure{Status: status, Err: err}
+}
 
 // GroupReadStatus requires completeness before treating an empty result as success.
 func GroupReadStatus(result GroupReadResult) Status {

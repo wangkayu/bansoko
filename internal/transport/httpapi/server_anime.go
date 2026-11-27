@@ -249,6 +249,9 @@ func (s *Server) DiscoverAnimeSubgroups(w http.ResponseWriter, r *http.Request, 
 		writeError(w, r, err)
 		return
 	}
+	if writeUpstreamFailure(w, r, result.UpstreamStatus, "PROVIDER_GROUP_DISCOVERY_FAILED", "The provider group read failed.") {
+		return
+	}
 	mapped, err := mapDiscoverSubgroupsResult(result)
 	if err != nil {
 		writeError(w, r, err)

@@ -129,9 +129,13 @@ func TestSearchProviderCatalogSpecialCharactersEndToEnd(t *testing.T) {
 			if upstream.lastRaw != tc.wantRaw {
 				t.Fatalf("upstream request URI = %s, want %s", upstream.lastRaw, tc.wantRaw)
 			}
-			var items []generated.CatalogItem
-			if err := json.Unmarshal(recorder.Body.Bytes(), &items); err != nil {
-				t.Fatalf("response is not a CatalogItem array: %v; body=%s", err, recorder.Body.String())
+			var result generated.CatalogKeywordSearchResult
+			if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+				t.Fatalf("invalid search response: %v; body=%s", err, recorder.Body.String())
+			}
+			items := result.Items
+			if result.Upstream == nil || result.Upstream.State != "available" {
+				t.Fatalf("upstream = %+v", result.Upstream)
 			}
 			if len(items) != 1 || items[0].BgmId == nil || *items[0].BgmId != "400602" {
 				t.Fatalf("items = %+v", items)
@@ -141,7 +145,7 @@ func TestSearchProviderCatalogSpecialCharactersEndToEnd(t *testing.T) {
 }
 
 // TestSearchProviderCatalogUpstreamFailureIsStructured proves that an
-// upstream/provider failure surfaces as the structured contract 422
+// upstream/provider failure surfaces as the structured contract 503
 // SEARCH_UPSTREAM_FAILED — never a generic 500 INTERNAL — even when the failure
 // is triggered by special characters in the query.
 func TestSearchProviderCatalogUpstreamFailureIsStructured(t *testing.T) {
@@ -150,14 +154,26 @@ func TestSearchProviderCatalogUpstreamFailureIsStructured(t *testing.T) {
 
 	recorder := serveCatalogSearch(server, "q=a%26b")
 
-	if recorder.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422; body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", recorder.Code, recorder.Body.String())
 	}
 	assertErrorResponseCode(t, recorder.Body.Bytes(), "SEARCH_UPSTREAM_FAILED")
 	var parsed generated.ErrorResponse
 	_ = json.Unmarshal(recorder.Body.Bytes(), &parsed)
-	if parsed.Details == nil || len(*parsed.Details) == 0 || (*parsed.Details)[0].Code != "PROVIDER_UPSTREAM" {
-		t.Fatalf("details must carry PROVIDER_UPSTREAM, got %v", parsed.Details)
+	if parsed.Upstream == nil || parsed.Upstream.State != "error" {
+		t.Fatalf("upstream = %+v", parsed.Upstream)
+	}
+}
+
+func TestSearchProviderCatalogEmptyIsSuccessful(t *testing.T) {
+	upstream := newSearchUpstreamFixture(t, http.StatusOK, `{"ok":true,"data":[]}`)
+	recorder := serveCatalogSearch(newCatalogSearchServer(t, upstream.connectionSource()), "q=none")
+	var result generated.CatalogKeywordSearchResult
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || result.Items == nil || len(result.Items) != 0 || result.Upstream == nil || result.Upstream.State != "empty" {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body)
 	}
 }
 

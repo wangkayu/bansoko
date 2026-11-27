@@ -9,6 +9,8 @@ import (
 
 	catalogapplication "bansoko/internal/catalog/application"
 	catalogdomain "bansoko/internal/catalog/domain"
+	catalogtransport "bansoko/internal/catalog/transport"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -92,16 +94,16 @@ func (s *Server) SearchProviderCatalog(w http.ResponseWriter, r *http.Request, p
 			}}))
 			return
 		}
-		// Provider/upstream failures (unreachable upstream, non-2xx status,
-		// unreadable payload) are structured provider outcomes, never an
-		// INTERNAL 500. Status stays within the endpoint's declared response
-		// set (200/401/422), mirroring the issue #10 boundary-validation fix.
-		if errors.Is(err, catalogapplication.ErrProviderUpstream) {
-			writeError(w, r, unprocessable("SEARCH_UPSTREAM_FAILED", "The provider search failed at or behind the upstream endpoint.", []generated.ErrorDetail{{
-				Code:    "PROVIDER_UPSTREAM",
-				Message: "The provider upstream returned no usable search response.",
-			}}))
-			return
+		var failure *providerdomain.ReadFailure
+		var network interface{ Timeout() bool }
+		if errors.Is(err, catalogapplication.ErrProviderUpstream) || errors.As(err, &failure) || errors.As(err, &network) {
+			status := providerdomain.ClassifyReadError(err, time.Now().UTC())
+			if status.ReasonCode == providerdomain.ReasonGroupReadFailed {
+				status.ReasonCode = "SEARCH_UPSTREAM_FAILED"
+			}
+			if writeUpstreamFailure(w, r, status, "SEARCH_UPSTREAM_FAILED", "The provider search failed.") {
+				return
+			}
 		}
 		writeError(w, r, err)
 		return
@@ -111,7 +113,9 @@ func (s *Server) SearchProviderCatalog(w http.ResponseWriter, r *http.Request, p
 		items = append(items, mapSearchEntry(string(provider), entry))
 	}
 	s.proxyCatalogCovers(r.Context(), items)
-	writeJSON(w, r.Context(), http.StatusOK, items)
+	writeJSON(w, r.Context(), http.StatusOK, generated.CatalogKeywordSearchResult{
+		Items: items, Upstream: catalogtransport.SuccessfulUpstream(len(items), time.Now().UTC()),
+	})
 }
 
 // mapSearchEntry projects one provider search hit onto the catalog item shape,
@@ -153,6 +157,9 @@ func (s *Server) RefreshCatalogProvider(w http.ResponseWriter, r *http.Request, 
 	snapshot, err := catalog.RefreshProviderSeason(r.Context(), string(provider), string(season))
 	if err != nil {
 		writeError(w, r, err)
+		return
+	}
+	if writeUpstreamFailure(w, r, snapshot.UpstreamStatus, "CATALOG_UPSTREAM_FAILED", "The provider catalog refresh failed.") {
 		return
 	}
 	writeJSON(w, r.Context(), http.StatusOK, mapCatalogSnapshot(snapshot))
@@ -262,6 +269,7 @@ func mapCatalogWorkspace(ws catalogdomain.Workspace) generated.CatalogWorkspace 
 		items = append(items, mapCatalogItem(item))
 	}
 	return generated.CatalogWorkspace{
+		Upstream: catalogtransport.UpstreamStatus(ws.Snapshot.UpstreamStatus),
 		Items:    items,
 		Season:   ws.Season,
 		Snapshot: mapCatalogSnapshot(ws.Snapshot),
@@ -270,6 +278,7 @@ func mapCatalogWorkspace(ws catalogdomain.Workspace) generated.CatalogWorkspace 
 
 func mapCatalogSnapshot(snap catalogdomain.Snapshot) generated.CatalogSnapshot {
 	return generated.CatalogSnapshot{
+		Upstream:        catalogtransport.UpstreamStatus(snap.UpstreamStatus),
 		ContractVersion: snap.ContractVersion,
 		Cursor:          stringToPtr(snap.Cursor),
 		ErrorCode:       stringToPtr(snap.ErrorCode),

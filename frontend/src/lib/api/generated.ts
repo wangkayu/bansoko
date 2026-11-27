@@ -5569,10 +5569,19 @@ export interface components {
         /** @enum {string} */
         DiscoverSubgroupsOutcome: "discovered" | "no_groups" | "provider_error" | "config_error";
         DiscoverSubgroupsResult: {
+            upstream?: components["schemas"]["UpstreamStatus"];
+            groups?: components["schemas"]["DiscoveredSubgroup"][];
             managed_anime_id: components["schemas"]["ID"];
             outcome: components["schemas"]["DiscoverSubgroupsOutcome"];
             subgroups: components["schemas"]["SubgroupsOwnerResult"];
             reason?: string;
+        };
+        DiscoveredSubgroup: {
+            provider: components["schemas"]["ProviderKind"];
+            group_ref: string;
+            display_name: string;
+            /** Format: date-time */
+            observed_at: string;
         };
         ProviderGroupDiscoveryGroup: {
             provider: components["schemas"]["ProviderKind"];
@@ -5584,13 +5593,14 @@ export interface components {
             observed_at: string;
         };
         ProviderGroupDiscoveryResult: {
+            upstream?: components["schemas"]["UpstreamStatus"];
             provider: components["schemas"]["ProviderKind"];
             provider_entry_ref: string;
             /** Format: date-time */
             observed_at: string;
-            source_version: string;
-            schema_version: string;
-            snapshot_version: components["schemas"]["Version"];
+            source_version?: string;
+            schema_version?: string;
+            snapshot_version?: components["schemas"]["Version"];
             groups: components["schemas"]["ProviderGroupDiscoveryGroup"][];
         };
         /** @description One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: AniBT and Mikan answer at most 100 keyword results and Nyaa at most 75, so that window is also the complete result set. */
@@ -5645,6 +5655,7 @@ export interface components {
         };
         /** @description One immutable keyword search snapshot and its complete seed window. `total_seeds` counts the complete result set the snapshot identity covers, and `seeds` renders all of it. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
         SeedSearchSnapshotView: {
+            upstream?: components["schemas"]["UpstreamStatus"];
             /** @enum {string} */
             provider: "anibt" | "mikan" | "nyaa" | "jackett";
             scope_ref: string;
@@ -6680,7 +6691,18 @@ export interface components {
             /** @description Absolute browsable directory holding the anime's files. */
             path: string;
         };
+        UpstreamStatus: {
+            /** @enum {string} */
+            state: "available" | "empty" | "not_indexed" | "rate_limited" | "cooldown" | "error";
+            reason_code?: string;
+            retry_after_seconds?: number;
+            /** Format: date-time */
+            cooldown_until?: string;
+            /** Format: date-time */
+            checked_at: string;
+        };
         ErrorResponse: {
+            upstream?: components["schemas"]["UpstreamStatus"];
             code: string;
             message: string;
             request_id?: string;
@@ -6691,6 +6713,7 @@ export interface components {
             details?: components["schemas"]["ErrorDetail"][];
         };
         CatalogSnapshot: {
+            upstream?: components["schemas"]["UpstreamStatus"];
             id: string;
             season: string;
             /** @enum {string} */
@@ -6817,7 +6840,12 @@ export interface components {
              */
             subscription_version: number;
         };
+        CatalogKeywordSearchResult: {
+            upstream?: components["schemas"]["UpstreamStatus"];
+            items: components["schemas"]["CatalogItem"][];
+        };
         CatalogWorkspace: {
+            upstream?: components["schemas"]["UpstreamStatus"];
             season: string;
             snapshot: components["schemas"]["CatalogSnapshot"];
             items: components["schemas"]["CatalogItem"][];
@@ -7773,6 +7801,7 @@ export interface components {
             score: number;
         };
         MetadataSearchResult: {
+            upstream?: components["schemas"]["UpstreamStatus"];
             /** @enum {string} */
             provider: "bgm" | "tmdb";
             query: string;
@@ -8765,7 +8794,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description This client is being rate limited (LOGIN_RATE_LIMITED for sign-in, PROVIDER_RATE_LIMITED when the provider answered 429/503). Retry after the Retry-After seconds; when the provider supplied its own wait it is that value. */
+        /** @description This client is being rate limited (LOGIN_RATE_LIMITED for sign-in, PROVIDER_RATE_LIMITED when the provider refused the request, or PROVIDER_COOLDOWN when shared quota deferred the request). Wait for the number of seconds in Retry-After before retrying. */
         TooManyRequests: {
             headers: {
                 /** @description Seconds before another attempt is accepted. */
@@ -10466,7 +10495,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Group discovery outcome with refreshed subgroups owner. Provider and configuration failures are returned as typed outcomes. */
+            /** @description Group discovery with the subgroups owner and upstream status. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10479,6 +10508,8 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
         };
     };
     patchAnimeRules: {
@@ -11942,17 +11973,19 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Search results projected to catalog items. */
+            /** @description Search results and upstream outcome, including an empty match list. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatalogItem"][];
+                    "application/json": components["schemas"]["CatalogKeywordSearchResult"];
                 };
             };
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
         };
     };
     fetchSeedSearchSnapshot: {
@@ -12012,6 +12045,8 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
         };
     };
     readCatalogPreference: {
@@ -12166,7 +12201,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The discovered provider groups with snapshot identity. */
+            /** @description Discovered groups or a confirmed not-indexed outcome. Snapshot identity is present only after authoritative discovery. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -12177,6 +12212,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -13337,7 +13373,10 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
         };
     };
     searchMetadataAutomatically: {
@@ -13362,8 +13401,11 @@ export interface operations {
                     "application/json": components["schemas"]["MetadataSearchResult"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
         };
     };
     previewMediaRecognition: {

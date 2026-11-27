@@ -19,6 +19,7 @@ func ProviderGroupDiscoveryResult(value catalogdomain.ProviderGroupDiscoveryResu
 		})
 	}
 	return generated.ProviderGroupDiscoveryResult{
+		Upstream:         UpstreamStatus(value.UpstreamStatus),
 		Groups:           groups,
 		ObservedAt:       value.ObservedAt,
 		Provider:         generated.ProviderKind(value.Provider),

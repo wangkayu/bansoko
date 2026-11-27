@@ -6,7 +6,9 @@ import {
   toUserMessage,
   type ProviderGroupDiscoveryGroup,
   type RSSListObservationRef,
+  type UpstreamStatus,
 } from "../../lib/api/client";
+import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { Button } from "../../ui";
 import { HelpTip } from "../../ui/base";
 import { t } from "../../lib/i18n";
@@ -31,30 +33,38 @@ export function DraftSubgroupRefresh({
   showHint?: boolean;
 }) {
   const [discovering, setDiscovering] = useState(false);
+  const [upstream, setUpstream] = useState<UpstreamStatus>();
 
   async function discover() {
     setDiscovering(true);
+    setUpstream(undefined);
     try {
       const result = await discoverProviderEntryGroups(provider, providerEntryRef);
-      onDiscovered(result.groups, {
+      setUpstream(result.upstream);
+      if (result.snapshot_version !== undefined) onDiscovered(result.groups, {
         provider: result.provider,
         provider_entry_ref: result.provider_entry_ref,
         snapshot_version: result.snapshot_version,
       });
+      if (result.upstream && result.upstream.state !== "available") return;
       if (result.groups.length === 0) {
         toast.info(t("config.discovery.none"));
       } else {
         toast.success(t("config.discovery.found", { n: result.groups.length }));
       }
     } catch (cause) {
-      toast.error(toUserMessage(cause, t("config.discovery.failed")));
+      const status = nonErrorUpstream(cause);
+      if (status) setUpstream(status);
+      else toast.error(toUserMessage(cause, t("config.discovery.failed")));
     } finally {
       setDiscovering(false);
     }
   }
 
   return (
+    <div className="tw:min-w-0">
     <span className="tw:inline-flex tw:items-center tw:gap-1.5">
+      {(!upstream || upstream.state === "available") && (
       <Button size="sm" variant="secondary" disabled={discovering} onClick={() => void discover()}>
         {discovering ? (
           <LoaderCircle className="draft-refresh-icon" />
@@ -63,11 +73,14 @@ export function DraftSubgroupRefresh({
         )}
         {discovering ? t("act.refreshing") : t("config.discovery.refresh")}
       </Button>
+      )}
       {showHint && (
         <HelpTip label={t("anime.draftRefresh")}>
           {t("anime.draftRefresh")}
         </HelpTip>
       )}
     </span>
+    <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={() => void discover()} />
+    </div>
   );
 }

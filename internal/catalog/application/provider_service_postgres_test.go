@@ -12,6 +12,8 @@ import (
 	"bansoko/internal/catalog/adapter/persistence"
 	"bansoko/internal/catalog/domain"
 	"bansoko/internal/persistence/txscope"
+	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/testutil/disposabledb"
 )
 
@@ -70,17 +72,27 @@ func TestProviderCatalogKeepsMikanIdentityAndLastGoodEntries(t *testing.T) {
 		t.Fatalf("unexpected Mikan workspace: %+v err=%v", workspace, err)
 	}
 
-	service.SetProviderReader(ProviderMikan, catalogProviderReader{err: errors.New("temporary outage")})
+	deadline := time.Now().UTC().Truncate(time.Second).Add(time.Minute)
+	service.SetProviderReader(ProviderMikan, catalogProviderReader{err: &outbound.CooldownError{CooldownUntil: deadline, CheckedAt: deadline.Add(-time.Minute), RetryAfter: time.Minute, ReasonCode: outbound.ReasonBucketCooldown}})
 	outage, err := service.RefreshProviderSeason(ctx, ProviderMikan, season)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outage.Status != domain.StatusOutage {
+	if outage.Status != domain.StatusOutage || outage.UpstreamStatus.State != providerdomain.StateCooldown {
 		t.Fatalf("failed refresh did not publish outage health: %+v", outage)
 	}
 	retained, err := service.WorkspaceProvider(ctx, ProviderMikan, season)
 	if err != nil || len(retained.Items) != 1 || retained.Items[0].ProviderEntryRef != "12345" {
 		t.Fatalf("outage discarded last-good Mikan entries: %+v err=%v", retained, err)
+	}
+	if retained.Snapshot.UpstreamStatus.State != providerdomain.StateCooldown || !retained.Snapshot.UpstreamStatus.CooldownUntil.Equal(deadline) {
+		t.Fatalf("workspace lost cooldown: %+v", retained.Snapshot.UpstreamStatus)
+	}
+
+	service.SetProviderReader(ProviderMikan, catalogProviderReader{result: domain.ReadResult{NotModified: true}})
+	recovered, err := service.RefreshProviderSeason(ctx, ProviderMikan, season)
+	if err != nil || recovered.UpstreamStatus.State != providerdomain.StateAvailable || !recovered.UpstreamStatus.CooldownUntil.IsZero() || len(recovered.Entries) != 1 {
+		t.Fatalf("304 recovery lost last-good data or kept cooldown: %+v, %v", recovered, err)
 	}
 
 	service.SetProviderReader(ProviderMikan, catalogProviderReader{result: domain.ReadResult{ContractVersion: mikanSeasonContractVersion}})

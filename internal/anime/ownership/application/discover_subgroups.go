@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"bansoko/internal/apperrors"
+	providerdomain "bansoko/internal/provider/domain"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
 
@@ -129,6 +130,8 @@ type DiscoverSubgroupsOwnerResult struct {
 // DiscoverSubgroupsResult is the transport-neutral result of synchronous
 // provider-backed subgroup discovery.
 type DiscoverSubgroupsResult struct {
+	Groups         []providerdomain.GroupSnapshotEntry
+	UpstreamStatus providerdomain.Status
 	ManagedAnimeID string
 	Outcome        DiscoverSubgroupsOutcome
 	Reason         *string
@@ -205,7 +208,13 @@ func (s *Service) DiscoverAnimeSubgroups(ctx context.Context, managedAnimeID str
 			reason = "No groups were found."
 		}
 	}
-	return s.buildDiscoverResult(ctx, managedAnimeID, target, outcome, reason)
+	if result.UpstreamStatus.State == providerdomain.StateNotIndexed {
+		outcome, reason = DiscoverSubgroupsOutcomeNoGroups, "The provider has not indexed this work."
+	}
+	response, err := s.buildDiscoverResult(ctx, managedAnimeID, target, outcome, reason)
+	response.UpstreamStatus = result.UpstreamStatus
+	response.Groups = result.Groups
+	return response, err
 }
 
 func (s *Service) buildDiscoverResult(ctx context.Context, managedAnimeID string, target discoverTarget, outcome DiscoverSubgroupsOutcome, reason string) (DiscoverSubgroupsResult, error) {

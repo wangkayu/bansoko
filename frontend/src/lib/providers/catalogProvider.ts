@@ -205,6 +205,7 @@ export function mapSnapshotView(snap: CatalogSnapshot): CatalogSnapshotView {
   return {
     // A refresh not successful for over 24 hours (the server's `stale`) displays as stale; a site outage still displays as an error.
     status: snap.stale && status !== "error" ? "stale" : status,
+    upstream: snap.upstream,
     season: snap.season,
     observedAt: snap.observed_at,
     lastSuccessAt: snap.last_success_at ?? undefined,

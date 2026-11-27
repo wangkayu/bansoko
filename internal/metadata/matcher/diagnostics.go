@@ -9,6 +9,7 @@ import (
 
 	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
+	providerdomain "bansoko/internal/provider/domain"
 )
 
 const (
@@ -47,6 +48,9 @@ func requestFailure(client *http.Client, req *http.Request, err error) error {
 // it: a server error or a refused credential. A 404 or any other answer
 // carries no fact and is never diagnosed.
 func statusFailure(base error, client *http.Client, req *http.Request, resp *http.Response) error {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return providerdomain.HTTPReadFailure(resp, base, time.Now().UTC())
+	}
 	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return outbound.WithFailure(base, outbound.Describe(nil, req, resp, outbound.ViaOf(client, req)))
 	}

@@ -42,6 +42,7 @@ type GroupDiscoveryProvider interface {
 
 // DiscoverResult is the outcome of a per-anime group discovery run.
 type DiscoverResult struct {
+	Groups          []providerdomain.GroupSnapshotEntry
 	UpstreamStatus  providerdomain.Status
 	Outcome         string // "discovered", "no_groups", "provider_error", "config_error"
 	Reason          string

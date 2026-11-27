@@ -20,7 +20,6 @@ import (
 	"bansoko/internal/events"
 	"bansoko/internal/parser/reltitletags"
 	providerdomain "bansoko/internal/provider/domain"
-	"bansoko/internal/provider/outbound"
 )
 
 // Keyword search is the one non-subscribable catalog surface. Its product rule is
@@ -480,9 +479,9 @@ func mapSeedSearchError(err error) error {
 	}
 	if errors.Is(err, ErrProviderUpstream) {
 		business := &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_UPSTREAM_FAILED", Message: safeProviderReason(err.Error())}
-		var cooldown *outbound.CooldownError
-		if errors.As(err, &cooldown) {
-			return &providerdomain.ReadFailure{Status: providerdomain.ClassifyReadError(err, time.Now().UTC()), Err: errors.Join(business, err)}
+		status := providerdomain.ClassifyReadError(err, time.Now().UTC())
+		if status.State == providerdomain.StateCooldown || status.State == providerdomain.StateRateLimited {
+			return &providerdomain.ReadFailure{Status: status, Err: errors.Join(business, err)}
 		}
 		return business
 	}

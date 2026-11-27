@@ -8,9 +8,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	identitymetadataadapter "bansoko/internal/identitymetadata/adapter"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
+	"bansoko/internal/metadata/matcher"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -21,18 +24,49 @@ type metadataSearchSpy struct {
 	limit     int
 	autoInput identitymetadatadomain.AutomaticSearchInput
 	auto      []identitymetadatadomain.SearchCandidate
+	err       error
 }
 
 func (s *metadataSearchSpy) SearchMetadata(ctx context.Context, provider, query string, limit int) ([]identitymetadatadomain.SearchCandidate, error) {
 	s.calls++
 	s.provider, s.query, s.limit = provider, query, limit
-	return []identitymetadatadomain.SearchCandidate{}, nil
+	return []identitymetadatadomain.SearchCandidate{}, s.err
 }
 
 func (s *metadataSearchSpy) SearchMetadataAutomatically(_ context.Context, input identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error) {
 	s.calls++
 	s.autoInput = input
-	return s.auto, nil
+	return s.auto, s.err
+}
+
+func TestMetadataSearchProviderFailures(t *testing.T) {
+	for _, test := range []struct {
+		name               string
+		cause              error
+		status             int
+		code, state, retry string
+	}{
+		{"timeout", context.DeadlineExceeded, 503, "METADATA_PROVIDER_UNAVAILABLE", "error", ""},
+		{"throttled", &providerdomain.ReadFailure{Status: providerdomain.Status{
+			State: providerdomain.StateRateLimited, ReasonCode: providerdomain.ReasonRateLimited, RetryAfter: 9 * time.Second,
+		}}, 429, "PROVIDER_RATE_LIMITED", "rate_limited", "9"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := &Server{deps: Dependencies{MetadataSearch: &metadataSearchSpy{err: &matcher.MatchError{Kind: matcher.ErrorProvider, Layer: "bgm", Err: test.cause}}}}
+			for _, automatic := range []bool{false, true} {
+				recorder := httptest.NewRecorder()
+				if automatic {
+					server.SearchMetadataAutomatically(recorder, httptest.NewRequest(http.MethodPost, "/metadata/search/automatic", strings.NewReader("{\"provider\":\"bgm\",\"title\":\"Test\"}")))
+				} else {
+					server.SearchMetadata(recorder, httptest.NewRequest(http.MethodGet, "/metadata/search", nil), generated.SearchMetadataParams{Provider: "bgm", Query: "Test"})
+				}
+				var body generated.ErrorResponse
+				if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil || recorder.Code != test.status || body.Code != test.code || body.Upstream == nil || string(body.Upstream.State) != test.state || recorder.Header().Get("Retry-After") != test.retry {
+					t.Fatalf("automatic=%v status=%d body=%s retry=%q", automatic, recorder.Code, recorder.Body, recorder.Header().Get("Retry-After"))
+				}
+			}
+		})
+	}
 }
 
 func (s *metadataSearchSpy) TMDBWorkSeasons(context.Context, string) ([]identitymetadatadomain.SearchSeason, error) {

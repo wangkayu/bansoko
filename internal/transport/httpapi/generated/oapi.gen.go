@@ -2674,6 +2674,16 @@ const (
 	UpdateCompatibilityKindOverlay           UpdateCompatibilityKind = "overlay"
 )
 
+// Defines values for UpstreamStatusState.
+const (
+	UpstreamStatusStateUpstreamAvailable   UpstreamStatusState = "available"
+	UpstreamStatusStateUpstreamCooldown    UpstreamStatusState = "cooldown"
+	UpstreamStatusStateUpstreamEmpty       UpstreamStatusState = "empty"
+	UpstreamStatusStateUpstreamError       UpstreamStatusState = "error"
+	UpstreamStatusStateUpstreamNotIndexed  UpstreamStatusState = "not_indexed"
+	UpstreamStatusStateUpstreamRateLimited UpstreamStatusState = "rate_limited"
+)
+
 // Defines values for WebhookAdapterConfigAdapterKind.
 const (
 	WebhookAdapterConfigAdapterKindWebhook WebhookAdapterConfigAdapterKind = "webhook"
@@ -4402,6 +4412,12 @@ type CatalogItemInstance struct {
 // CatalogItemInstanceLifecycleState The referenced owner's managed lifecycle boundary. It is not a Subscription.state value: a retired association stays listable for historical inspection but admits no start/stop/config/unsubscribe mutation. Only the provider browse action (assembling a brand-new candidate and owner) remains available.
 type CatalogItemInstanceLifecycleState string
 
+// CatalogKeywordSearchResult defines model for CatalogKeywordSearchResult.
+type CatalogKeywordSearchResult struct {
+	Items    []CatalogItem   `json:"items"`
+	Upstream *UpstreamStatus `json:"upstream,omitempty"`
+}
+
 // CatalogPreference defines model for CatalogPreference.
 type CatalogPreference struct {
 	RefreshEnabled bool      `json:"refresh_enabled"`
@@ -4441,10 +4457,11 @@ type CatalogSnapshot struct {
 	SourceVersion string                  `json:"source_version"`
 
 	// Stale True when last_success_at is null or older than 24 hours. Time based only; independent of status and health_state.
-	Stale   bool                  `json:"stale"`
-	Status  CatalogSnapshotStatus `json:"status"`
-	TraceId *string               `json:"trace_id"`
-	Version int64                 `json:"version"`
+	Stale    bool                  `json:"stale"`
+	Status   CatalogSnapshotStatus `json:"status"`
+	TraceId  *string               `json:"trace_id"`
+	Upstream *UpstreamStatus       `json:"upstream,omitempty"`
+	Version  int64                 `json:"version"`
 }
 
 // CatalogSnapshotHealthState defines model for CatalogSnapshot.HealthState.
@@ -4477,6 +4494,7 @@ type CatalogWorkspace struct {
 	Items    []CatalogItem   `json:"items"`
 	Season   string          `json:"season"`
 	Snapshot CatalogSnapshot `json:"snapshot"`
+	Upstream *UpstreamStatus `json:"upstream,omitempty"`
 }
 
 // CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. A file manager operation replaces a file only on the owner's explicit `overwrite` choice, and then only a plain file that no subscription manages.
@@ -4766,10 +4784,20 @@ type DiscoverSubgroupsOutcome string
 
 // DiscoverSubgroupsResult defines model for DiscoverSubgroupsResult.
 type DiscoverSubgroupsResult struct {
+	Groups         *[]DiscoveredSubgroup    `json:"groups,omitempty"`
 	ManagedAnimeId ID                       `json:"managed_anime_id"`
 	Outcome        DiscoverSubgroupsOutcome `json:"outcome"`
 	Reason         *string                  `json:"reason,omitempty"`
 	Subgroups      SubgroupsOwnerResult     `json:"subgroups"`
+	Upstream       *UpstreamStatus          `json:"upstream,omitempty"`
+}
+
+// DiscoveredSubgroup defines model for DiscoveredSubgroup.
+type DiscoveredSubgroup struct {
+	DisplayName string       `json:"display_name"`
+	GroupRef    string       `json:"group_ref"`
+	ObservedAt  time.Time    `json:"observed_at"`
+	Provider    ProviderKind `json:"provider"`
 }
 
 // DownloadAdoptionProvenance Safe provenance showing that this owner independently adopted one external downloader fact; it is not owner identity and carries no prior local outcome.
@@ -4906,7 +4934,8 @@ type ErrorResponse struct {
 	RequestId      *string        `json:"request_id,omitempty"`
 
 	// RequiredScope Present on 403 TOKEN_SCOPE_INSUFFICIENT: the scope the bearer is missing for this operation.
-	RequiredScope *ApiTokenScope `json:"required_scope,omitempty"`
+	RequiredScope *ApiTokenScope  `json:"required_scope,omitempty"`
+	Upstream      *UpstreamStatus `json:"upstream,omitempty"`
 }
 
 // EventActionAttempt defines model for EventActionAttempt.
@@ -6302,6 +6331,7 @@ type MetadataSearchResult struct {
 	Candidates []MetadataSearchCandidate    `json:"candidates"`
 	Provider   MetadataSearchResultProvider `json:"provider"`
 	Query      string                       `json:"query"`
+	Upstream   *UpstreamStatus              `json:"upstream,omitempty"`
 }
 
 // MetadataSearchResultProvider defines model for MetadataSearchResult.Provider.
@@ -7637,9 +7667,10 @@ type ProviderGroupDiscoveryResult struct {
 	ObservedAt       time.Time                     `json:"observed_at"`
 	Provider         ProviderKind                  `json:"provider"`
 	ProviderEntryRef string                        `json:"provider_entry_ref"`
-	SchemaVersion    string                        `json:"schema_version"`
-	SnapshotVersion  Version                       `json:"snapshot_version"`
-	SourceVersion    string                        `json:"source_version"`
+	SchemaVersion    string                        `json:"schema_version,omitempty"`
+	SnapshotVersion  Version                       `json:"snapshot_version,omitempty"`
+	SourceVersion    string                        `json:"source_version,omitempty"`
+	Upstream         *UpstreamStatus               `json:"upstream,omitempty"`
 }
 
 // ProviderGroupOffsetDraft defines model for ProviderGroupOffsetDraft.
@@ -9131,6 +9162,7 @@ type SeedSearchSnapshotView struct {
 	SnapshotId       ID                       `json:"snapshot_id"`
 	SnapshotVersion  Version                  `json:"snapshot_version"`
 	TotalSeeds       int                      `json:"total_seeds"`
+	Upstream         *UpstreamStatus          `json:"upstream,omitempty"`
 }
 
 // SeedSearchSnapshotViewFreshness defines model for SeedSearchSnapshotView.Freshness.
@@ -10140,6 +10172,18 @@ type UpdateCurrent struct {
 	ReleaseNotes *ReleaseNotesEntry `json:"release_notes,omitempty"`
 	Version      string             `json:"version"`
 }
+
+// UpstreamStatus defines model for UpstreamStatus.
+type UpstreamStatus struct {
+	CheckedAt         time.Time           `json:"checked_at"`
+	CooldownUntil     *time.Time          `json:"cooldown_until,omitempty"`
+	ReasonCode        *string             `json:"reason_code,omitempty"`
+	RetryAfterSeconds *int                `json:"retry_after_seconds,omitempty"`
+	State             UpstreamStatusState `json:"state"`
+}
+
+// UpstreamStatusState defines model for UpstreamStatus.State.
+type UpstreamStatusState string
 
 // Version defines model for Version.
 type Version = int64

@@ -2084,7 +2084,8 @@ paths:
               $ref: '#/components/schemas/DiscoverSubgroupsInput'
       responses:
         '200':
-          description: Group discovery outcome with refreshed subgroups owner. Provider and configuration failures are returned as typed outcomes.
+          description: >-
+            Group discovery with the subgroups owner and upstream status.
           content:
             application/json:
               schema:
@@ -2097,6 +2098,10 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /anime/{managed_anime_id}/rules:
     patch:
       tags: [Anime]
@@ -4236,17 +4241,20 @@ paths:
             maxLength: 256
       responses:
         '200':
-          description: Search results projected to catalog items.
+          description: >-
+            Search results and upstream outcome, including an empty match list.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CatalogItem'
+                $ref: '#/components/schemas/CatalogKeywordSearchResult'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /catalog/providers/{provider}/seed-search-snapshots:fetch:
     post:
       tags: [Catalog]
@@ -4332,6 +4340,10 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /catalog/providers/{provider}/seasons/{season}/preference:
     get:
       tags: [Catalog]
@@ -4497,7 +4509,9 @@ paths:
         - $ref: '#/components/parameters/CatalogProviderEntryRef'
       responses:
         '200':
-          description: The discovered provider groups with snapshot identity.
+          description: >-
+            Discovered groups or a confirmed not-indexed outcome. Snapshot
+            identity is present only after authoritative discovery.
           content:
             application/json:
               schema:
@@ -4508,6 +4522,8 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '503':
           $ref: '#/components/responses/Unavailable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /catalog/providers/{provider}/entries/{provider_entry_ref}/rss:
     get:
       tags: [Catalog]
@@ -6060,6 +6076,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /metadata/search/automatic:
     post:
       tags: [Metadata]
@@ -6088,6 +6110,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /media-recognition/previews:
     post:
       tags: [Releases]
@@ -7875,9 +7903,9 @@ components:
     TooManyRequests:
       description: >-
         This client is being rate limited (LOGIN_RATE_LIMITED for sign-in,
-        PROVIDER_RATE_LIMITED when the provider answered 429/503). Retry after
-        the Retry-After seconds; when the provider supplied its own wait it is
-        that value.
+        PROVIDER_RATE_LIMITED when the provider refused the request, or
+        PROVIDER_COOLDOWN when shared quota deferred the request). Wait for the
+        number of seconds in Retry-After before retrying.
       headers:
         Retry-After:
           description: Seconds before another attempt is accepted.
@@ -14309,6 +14337,12 @@ components:
       additionalProperties: false
       required: [managed_anime_id, outcome, subgroups]
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredSubgroup'
         managed_anime_id:
           $ref: '#/components/schemas/ID'
         outcome:
@@ -14319,6 +14353,24 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+    DiscoveredSubgroup:
+      type: object
+      additionalProperties: false
+      required: [provider, group_ref, display_name, observed_at]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderKind'
+        group_ref:
+          type: string
+          minLength: 1
+          maxLength: 256
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        observed_at:
+          type: string
+          format: date-time
     ProviderGroupDiscoveryGroup:
       type: object
       additionalProperties: false
@@ -14349,8 +14401,10 @@ components:
     ProviderGroupDiscoveryResult:
       type: object
       additionalProperties: false
-      required: [provider, provider_entry_ref, observed_at, source_version, schema_version, snapshot_version, groups]
+      required: [provider, provider_entry_ref, observed_at, groups]
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
         provider:
           $ref: '#/components/schemas/ProviderKind'
         provider_entry_ref:
@@ -14361,15 +14415,19 @@ components:
           type: string
           format: date-time
         source_version:
+          x-go-type-skip-optional-pointer: true
           type: string
           minLength: 1
           maxLength: 128
         schema_version:
+          x-go-type-skip-optional-pointer: true
           type: string
           minLength: 1
           maxLength: 128
         snapshot_version:
-          $ref: '#/components/schemas/Version'
+          x-go-type-skip-optional-pointer: true
+          allOf:
+            - $ref: '#/components/schemas/Version'
         groups:
           type: array
           items:
@@ -14524,6 +14582,8 @@ components:
         short-lived (24 hours), is never a group or a subscription source, and is
         refreshed only by fetching the same query again.
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
         provider:
           type: string
           enum: [anibt, mikan, nyaa, jackett]
@@ -17028,11 +17088,40 @@ components:
           type: string
           description: Absolute browsable directory holding the anime's files.
           maxLength: 4096
+    UpstreamStatus:
+      type: object
+      additionalProperties: false
+      required: [state, checked_at]
+      properties:
+        state:
+          type: string
+          enum: [available, empty, not_indexed, rate_limited, cooldown, error]
+          x-enum-varnames:
+            - UpstreamAvailable
+            - UpstreamEmpty
+            - UpstreamNotIndexed
+            - UpstreamRateLimited
+            - UpstreamCooldown
+            - UpstreamError
+        reason_code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*$'
+        retry_after_seconds:
+          type: integer
+          minimum: 0
+        cooldown_until:
+          type: string
+          format: date-time
+        checked_at:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       additionalProperties: false
       required: [code, message]
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
         code:
           type: string
           pattern: '^[A-Z][A-Z0-9_]*$'
@@ -17060,6 +17149,8 @@ components:
       additionalProperties: false
       required: [id, season, status, provider, observed_at, source_version, contract_version, health_state, health_checked_at, version, stale]
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
         id:
           type: string
         season:
@@ -17342,11 +17433,24 @@ components:
             Subscription/owner row, never to the external provider entry, so a
             consumer acting on one of several owners always sends that owner's
             own version.
+    CatalogKeywordSearchResult:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogItem'
     CatalogWorkspace:
       type: object
       additionalProperties: false
       required: [season, snapshot, items]
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
         season:
           type: string
         snapshot:
@@ -19433,6 +19537,8 @@ components:
       additionalProperties: false
       required: [provider, query, candidates]
       properties:
+        upstream:
+          $ref: '#/components/schemas/UpstreamStatus'
         provider:
           type: string
           enum: [bgm, tmdb]

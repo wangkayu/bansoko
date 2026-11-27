@@ -158,6 +158,14 @@ export const zhCN = {
   // 设置区域：c2 的 settingsCopy 打底；四个分文件各自持有的命名空间覆盖同名键。
   settings: { ...settingsCopy, ...settingsConnectionsCopy, ...settingsProviderCopy, ...settingsNotificationsCopy, ...settingsTokenCopy, ...settingsBackupCopy, ...settingsTitleParserCopy },
   grid: gridCopy,
+  upstream: {
+    notIndexed: "站点尚未收录这部番剧",
+    rateLimited: "站点正在限制请求",
+    cooldown: "正在等待站点请求额度恢复",
+    waitSeconds: "{n} 秒后可重试",
+    retryLater: "重试",
+    error: "站点暂时不可用",
+  },
   act: actCopy,
   addPreset: addPresetCopy,
   globalSearch: globalSearchCopy,

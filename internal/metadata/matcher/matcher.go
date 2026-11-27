@@ -50,6 +50,26 @@ func IsMatchErrorKind(err error, kind MatchErrorKind) bool {
 	return errors.As(err, &matchErr) && matchErr.Kind == kind
 }
 
+// MatchErrorForLayer extracts the failure of the requested provider, including
+// when another layer failed first and MatchRequest joined the two errors.
+func MatchErrorForLayer(err error, layer string) *MatchError {
+	switch e := err.(type) {
+	case *MatchError:
+		if e.Layer == layer {
+			return e
+		}
+	case interface{ Unwrap() []error }:
+		for _, child := range e.Unwrap() {
+			if found := MatchErrorForLayer(child, layer); found != nil {
+				return found
+			}
+		}
+	case interface{ Unwrap() error }:
+		return MatchErrorForLayer(e.Unwrap(), layer)
+	}
+	return nil
+}
+
 // MatchResult is the combined output of all three matching layers.
 type MatchResult struct {
 	BgmID         *string // bangumi subject id (numeric string)

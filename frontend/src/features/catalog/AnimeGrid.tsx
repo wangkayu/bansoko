@@ -25,6 +25,7 @@ import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { isOneOf, ROUTE_ANIME_TABS, ROUTE_RECORD_LIST, useRouteDialogs, type RouteAnimeTab } from "../../shell/routeDialogs";
 import { CATALOG_FILTER_QUERY_KEY, rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
 import { StateBlock } from "../../ui/StateBlock";
+import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
@@ -250,7 +251,8 @@ export function AnimeGrid() {
       else if (outcome === "zero_result") toast.info(t("grid.refreshZeroResult", { site }));
       else toast.success(t("grid.refreshed"));
     } catch (cause) {
-      toast.error(toUserMessage(cause, t("grid.refreshFailed", { site })));
+      await invalidateCatalog();
+      if (!nonErrorUpstream(cause)) toast.error(toUserMessage(cause, t("grid.refreshFailed", { site })));
     }
   }
 
@@ -799,7 +801,10 @@ export function AnimeGrid() {
         />
       )}
 
-      {snapshot?.status === "error" && (
+      {snapshot?.upstream && snapshot.status === "error" && (
+        <UpstreamStatusBlock status={snapshot.upstream} errorTitle={snapshot.errorMessage ?? t("grid.siteRefreshFailed")} onRetry={() => void refresh()} />
+      )}
+      {snapshot?.status === "error" && !snapshot.upstream && (
         <StateBlock
           kind="error"
           title={snapshot.errorMessage ?? t("grid.siteRefreshFailed")}

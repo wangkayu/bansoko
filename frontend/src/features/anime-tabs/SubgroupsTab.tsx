@@ -9,7 +9,9 @@ import {
   toUserMessage,
   type AnimeWorkspace,
   type GroupAction,
+  type UpstreamStatus,
 } from "../../lib/api/client";
+import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { subgroupsChangeCount, subgroupsEditFromWorkspace, valuesEqual, type SubgroupsEdit } from "../../lib/draft";
 import { SelectionOverrideFields, type ServerSelectionFact } from "../anime-forms/SourcesFields";
 import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
@@ -136,6 +138,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   const { edit, setEdit, baseline, markSaved } = useOwnerEdit<SubgroupsEdit>(saved, valuesEqual);
   const [busy, setBusy] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [upstream, setUpstream] = useState<UpstreamStatus>();
   const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
@@ -193,12 +196,15 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
 
   async function discover() {
     setDiscovering(true);
+    setUpstream(undefined);
     setError(undefined);
     setConflict(undefined);
     try {
       const result = await discoverAnimeSubgroups(animeID, {
         expected_version: subgroupsVersion,
       });
+      setUpstream(result.upstream);
+      if (result.upstream?.state === "not_indexed") return;
       if (result.outcome === "discovered") {
         // The discovery response carries the complete SubgroupsOwnerResult: it is injected into
         // the edit state directly so the list reflects the newly discovered groups at once. Relying
@@ -211,7 +217,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         setPendingActions([]);
         toast.success(t("config.discovery.found", { n: result.subgroups.subgroups.entries.length }));
       } else if (result.outcome === "no_groups") {
-        toast.info(t("config.discovery.none"));
+        if (!result.upstream) toast.info(t("config.discovery.none"));
       } else {
         toast.error(result.reason ? (reasonLabel(result.reason) ?? t("config.discovery.failed")) : t("config.discovery.failed"));
       }
@@ -220,7 +226,9 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
       if (isVersionConflict(cause)) {
         setConflict(cause.currentVersion);
       }
-      setError(toUserMessage(cause, t("config.discovery.failed")));
+      const status = nonErrorUpstream(cause);
+      if (status) setUpstream(status);
+      else setError(toUserMessage(cause, t("config.discovery.failed")));
     } finally {
       setDiscovering(false);
     }
@@ -274,6 +282,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
       )}
       {conflict === undefined && error && <StateBlock kind="error" title={error} />}
+      <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={() => void discover()} />
       <SelectionOverrideFields
         value={edit.subgroups}
         onChange={(subgroups) => setEdit({ ...edit, subgroups })}

@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { fetchSeedSearchSnapshot, listConnections, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
+import { fetchSeedSearchSnapshot, listConnections, searchProviderCatalog, toUserMessage, type CatalogItem, type UpstreamStatus } from "../../lib/api/client";
 import { blacklistKey, useBlacklist } from "../../lib/blacklist";
 import { getCatalogProvider, providerLabel, searchProviderLabel } from "../../lib/providers/registry";
 import { BrowseCard } from "./card";
@@ -13,6 +13,7 @@ import { catalogKeys } from "./queries";
 import { animeKeys } from "../../lib/queryKeys";
 import { configKeys } from "../../lib/queryKeys";
 import { StateBlock } from "../../ui/StateBlock";
+import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { Dialog, Input, Segmented } from "../../ui/base";
 import { Button } from "../../ui/base/controls";
@@ -88,6 +89,8 @@ export function GlobalSearchDialog({
   // 番剧 mode: idle (never searched) and empty (searched, no results) are two distinct empty states.
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string>();
+  const [programUpstream, setProgramUpstream] = useState<UpstreamStatus>();
+  const [seedUpstream, setSeedUpstream] = useState<UpstreamStatus>();
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [searched, setSearched] = useState(false);
 
@@ -118,6 +121,8 @@ export function GlobalSearchDialog({
     setSeedSearching(false);
     setError(undefined);
     setSeedError(undefined);
+    setProgramUpstream(undefined);
+    setSeedUpstream(undefined);
     setSeedNoMatch(false);
   }, [open, configTarget, seedTarget, searchSeedTarget]);
 
@@ -129,6 +134,8 @@ export function GlobalSearchDialog({
     setSearched(false);
     setSeedSearching(false);
     setSeedError(undefined);
+    setProgramUpstream(undefined);
+    setSeedUpstream(undefined);
     setSeedNoMatch(false);
   }
 
@@ -151,16 +158,20 @@ export function GlobalSearchDialog({
     if (mode === "program") {
       setSearching(true);
       setError(undefined);
+      setProgramUpstream(undefined);
       try {
         const result = await searchProviderCatalog(site === "mikan" ? "mikan" : "anibt", q);
         if (seq !== requestSeq.current) return;
-        setItems(result);
+        setItems(result.items);
+        setProgramUpstream(result.upstream);
         setSearched(true);
       } catch (cause) {
         if (seq !== requestSeq.current) return;
         setItems([]);
         setSearched(true);
-        setError(toUserMessage(cause, t("grid.searchFailed")));
+        const status = nonErrorUpstream(cause);
+        if (status) setProgramUpstream(status);
+        else setError(toUserMessage(cause, t("grid.searchFailed")));
       } finally {
         if (seq === requestSeq.current) setSearching(false);
       }
@@ -170,6 +181,7 @@ export function GlobalSearchDialog({
     // persisted snapshot (the site's whole search window, at most 100 rows) through the read model.
     setSeedSearching(true);
     setSeedError(undefined);
+    setSeedUpstream(undefined);
     setSeedNoMatch(false);
     try {
       const view = await fetchSeedSearchSnapshot(site, { query: q });
@@ -185,7 +197,9 @@ export function GlobalSearchDialog({
       onOpenChange(false);
     } catch (cause) {
       if (seq !== requestSeq.current) return;
-      setSeedError(toUserMessage(cause, t("grid.searchFailed")));
+      const status = nonErrorUpstream(cause);
+      if (status) setSeedUpstream(status);
+      else setSeedError(toUserMessage(cause, t("grid.searchFailed")));
     } finally {
       if (seq === requestSeq.current) setSeedSearching(false);
     }
@@ -322,6 +336,8 @@ export function GlobalSearchDialog({
               <StateBlock kind="busy" skeleton="cards" title={t("grid.searchingNow")} />
             ) : !searched ? (
               <StateBlock kind="empty" title={t("globalSearch.start")} />
+            ) : programUpstream && programUpstream.state !== "available" ? (
+              <UpstreamStatusBlock status={programUpstream} onRetry={() => void runSearch()} />
             ) : shownItems.length === 0 ? (
               <StateBlock kind="empty" title={t("search.noMatch")} description={t("grid.searchRetryHint")} />
             ) : (
@@ -355,6 +371,8 @@ export function GlobalSearchDialog({
               />
             ) : seedSearching ? (
               <StateBlock kind="busy" skeleton="list" title={t("grid.searchingNow")} />
+            ) : seedUpstream ? (
+              <UpstreamStatusBlock status={seedUpstream} emptyTitle={t("globalSearch.noMatchSeed")} onRetry={() => void runSearch()} />
             ) : seedNoMatch ? (
               <StateBlock kind="empty" title={t("globalSearch.noMatchSeed")} description={t("grid.searchRetryHint")} />
             ) : (

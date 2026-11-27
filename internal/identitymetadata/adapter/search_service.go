@@ -80,15 +80,18 @@ func (s *SearchService) SearchMetadataAutomatically(ctx context.Context, input i
 		LoadTmdbDetails: input.Provider == "tmdb",
 		SkipTmdb:        input.Provider == "bgm",
 	})
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if providerErr := matcher.MatchErrorForLayer(err, input.Provider); providerErr != nil {
+		return nil, providerErr
+	}
 	candidate := automaticSearchCandidate(input, result)
 	if candidate == nil {
 		if err != nil {
 			return nil, err
 		}
 		return []identitymetadatadomain.SearchCandidate{}, nil
-	}
-	if err != nil {
-		return nil, err
 	}
 	candidates := []identitymetadatadomain.SearchCandidate{*candidate}
 	s.recordTitles(ctx, candidates, nil)

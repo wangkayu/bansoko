@@ -17,6 +17,9 @@ func (s *Server) DiscoverProviderEntryGroups(w http.ResponseWriter, r *http.Requ
 	catalog := s.catalogService()
 	result, err := catalog.DiscoverProviderEntryGroups(r.Context(), string(provider), string(providerEntryRef))
 	if err != nil {
+		if writeUpstreamFailure(w, r, result.UpstreamStatus, "PROVIDER_GROUP_DISCOVERY_FAILED", "The provider group read failed.") {
+			return
+		}
 		writeError(w, r, err)
 		return
 	}

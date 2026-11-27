@@ -8,6 +8,8 @@ import (
 
 	"bansoko/internal/apperrors"
 	catalogapplication "bansoko/internal/catalog/application"
+	catalogtransport "bansoko/internal/catalog/transport"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -89,6 +91,7 @@ func mapSeedSearchPreview(preview catalogapplication.SearchSeedPreview) generate
 		seeds = append(seeds, row)
 	}
 	view := generated.SeedSearchSnapshotView{
+		Upstream:         catalogtransport.SuccessfulUpstream(preview.TotalSeeds, preview.FetchedAt),
 		Provider:         generated.SeedSearchSnapshotViewProvider(preview.Provider),
 		ScopeRef:         preview.ScopeRef,
 		QueryRef:         preview.QueryRef,
@@ -125,10 +128,17 @@ func mapSeedSearchPreview(preview catalogapplication.SearchSeedPreview) generate
 func writeSeedSearchError(w http.ResponseWriter, r *http.Request, err error) {
 	var limited *catalogapplication.ProviderRateLimited
 	if errors.As(err, &limited) {
-		if limited.RetryAfter > 0 {
-			w.Header().Set("Retry-After", retryAfterSeconds(limited.RetryAfter))
-		}
-		writeError(w, r, &APIError{Status: http.StatusTooManyRequests, Code: "PROVIDER_RATE_LIMITED", Message: limited.Error()})
+		now := time.Now().UTC()
+		status := providerdomain.ClassifyReadError(limited, now)
+		// The seed-search contract historically includes upstream refusals with
+		// Retry-After in its 429 response, including Torznab 503.
+		status.State, status.ReasonCode = providerdomain.StateRateLimited, providerdomain.ReasonRateLimited
+		status.RetryAfter = limited.RetryAfter
+		writeUpstreamFailure(w, r, status, "SEARCH_UPSTREAM_FAILED", "The provider search failed.")
+		return
+	}
+	var failure *providerdomain.ReadFailure
+	if errors.As(err, &failure) && writeUpstreamFailure(w, r, failure.Status, "SEARCH_UPSTREAM_FAILED", "The provider search failed.") {
 		return
 	}
 	if errors.Is(err, catalogapplication.ErrSearchQueryInvalid) {

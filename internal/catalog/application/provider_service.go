@@ -14,6 +14,7 @@ import (
 
 	"bansoko/internal/catalog/domain"
 	"bansoko/internal/events"
+	providerdomain "bansoko/internal/provider/domain"
 
 	"github.com/google/uuid"
 )
@@ -244,7 +245,7 @@ func (s *Service) providerRefreshHints(ctx context.Context, provider, season str
 	err := s.db.QueryRowContext(ctx, `
 SELECT COALESCE(etag, ''), COALESCE(last_modified, ''), COALESCE(cursor, '')
 FROM provider_catalog_snapshots
-WHERE provider = $1 AND season = $2 AND status <> 'running'
+WHERE provider = $1 AND season = $2 AND status NOT IN ('running', 'outage')
 ORDER BY version DESC LIMIT 1`, provider, season).Scan(&hints.ETag, &hints.LastModified, &hints.Cursor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return hints, nil
@@ -288,38 +289,51 @@ func (s *Service) persistProviderRefresh(ctx context.Context, provider, season s
 		if err != nil {
 			return domain.Snapshot{}, fmt.Errorf("read unchanged provider snapshot: %w", err)
 		}
-		now := s.now()
-		if result.ETag != "" {
-			snapshot.ETag = result.ETag
+		if snapshot.Status == domain.StatusOutage {
+			// A recovered conditional read must supersede the latest outage.
+			for _, entry := range snapshot.Entries {
+				if entry.State == domain.EntryPresent {
+					result.Entries = append(result.Entries, entry)
+				}
+			}
+			result.NotModified = false
 		}
-		if result.LastModified != "" {
-			snapshot.LastModified = result.LastModified
-		}
-		if result.Cursor != "" {
-			snapshot.Cursor = result.Cursor
-		}
-		if result.ContractVersion != "" {
-			snapshot.ContractVersion = result.ContractVersion
-		}
-		if _, err := tx.ExecContext(ctx, `
+		if result.NotModified {
+			now := s.now()
+			if result.ETag != "" {
+				snapshot.ETag = result.ETag
+			}
+			if result.LastModified != "" {
+				snapshot.LastModified = result.LastModified
+			}
+			if result.Cursor != "" {
+				snapshot.Cursor = result.Cursor
+			}
+			if result.ContractVersion != "" {
+				snapshot.ContractVersion = result.ContractVersion
+			}
+			if _, err := tx.ExecContext(ctx, `
 UPDATE provider_catalog_snapshots
 SET observed_at = $2, etag = NULLIF($3, ''), last_modified = NULLIF($4, ''), cursor = NULLIF($5, ''),
     contract_version = $6, health_state = 'ready', health_code = NULL, health_message = NULL,
     health_checked_at = $2, error_code = NULL, error_message = NULL,
+    upstream_state = $7, upstream_reason_code = NULL, upstream_cooldown_until = NULL,
     retention_until = CURRENT_TIMESTAMP + INTERVAL '30 days'
-WHERE id = $1`, snapshot.ID, now, snapshot.ETag, snapshot.LastModified, snapshot.Cursor, snapshot.ContractVersion); err != nil {
-			return domain.Snapshot{}, fmt.Errorf("refresh unchanged provider snapshot: %w", err)
+WHERE id = $1`, snapshot.ID, now, snapshot.ETag, snapshot.LastModified, snapshot.Cursor, snapshot.ContractVersion, catalogReadStatus(countPresentEntries(snapshot.Entries), nil, now).State); err != nil {
+				return domain.Snapshot{}, fmt.Errorf("refresh unchanged provider snapshot: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM provider_catalog_snapshots WHERE id = $1 AND status = 'running'`, claim.ID); err != nil {
+				return domain.Snapshot{}, fmt.Errorf("abandon unchanged provider refresh claim: %w", err)
+			}
+			snapshot.ObservedAt, snapshot.HealthCheckedAt = now, now
+			snapshot.HealthState, snapshot.HealthCode, snapshot.HealthMessage = domain.HealthReady, "", ""
+			snapshot.UpstreamStatus = catalogReadStatus(countPresentEntries(snapshot.Entries), nil, now)
+			snapshot.RefreshID, snapshot.TraceID = claim.ID, claim.TraceID
+			if err := tx.Commit(); err != nil {
+				return domain.Snapshot{}, fmt.Errorf("commit unchanged provider refresh: %w", err)
+			}
+			return snapshot, nil
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM provider_catalog_snapshots WHERE id = $1 AND status = 'running'`, claim.ID); err != nil {
-			return domain.Snapshot{}, fmt.Errorf("abandon unchanged provider refresh claim: %w", err)
-		}
-		snapshot.ObservedAt, snapshot.HealthCheckedAt = now, now
-		snapshot.HealthState, snapshot.HealthCode, snapshot.HealthMessage = domain.HealthReady, "", ""
-		snapshot.RefreshID, snapshot.TraceID = claim.ID, claim.TraceID
-		if err := tx.Commit(); err != nil {
-			return domain.Snapshot{}, fmt.Errorf("commit unchanged provider refresh: %w", err)
-		}
-		return snapshot, nil
 	}
 	previous, err := s.previousProviderEntriesTx(ctx, tx, provider, season)
 	if err != nil {
@@ -358,16 +372,22 @@ WHERE id = $1`, snapshot.ID, now, snapshot.ETag, snapshot.LastModified, snapshot
 		sourceVersion = season
 	}
 	snapshot := domain.Snapshot{ID: claim.ID, Provider: provider, Season: season, Status: status, ObservedAt: now, SourceVersion: sourceVersion, Cursor: result.Cursor, ETag: result.ETag, LastModified: result.LastModified, ContractVersion: contractVersion, HealthState: healthState, HealthCode: errorCode, HealthMessage: errorMessage, HealthCheckedAt: now, ErrorCode: errorCode, ErrorMessage: errorMessage, Version: claim.Version, RefreshID: claim.ID, TraceID: claim.TraceID}
+	snapshot.UpstreamStatus = catalogReadStatus(len(entries), readErr, now)
+	var cooldown *time.Time
+	if !snapshot.UpstreamStatus.CooldownUntil.IsZero() {
+		cooldown = &snapshot.UpstreamStatus.CooldownUntil
+	}
 	completed, err := tx.ExecContext(ctx, `
 UPDATE provider_catalog_snapshots
 SET status = $2, observed_at = $3, source_version = $4, cursor = NULLIF($5, ''),
     etag = NULLIF($6, ''), last_modified = NULLIF($7, ''), contract_version = $8,
     health_state = $9, health_code = NULLIF($10, ''), health_message = NULLIF($11, ''),
     health_checked_at = $3, error_code = NULLIF($10, ''), error_message = NULLIF($11, ''),
-    trace_id = NULLIF($12, ''), retention_until = CURRENT_TIMESTAMP + INTERVAL '30 days'
+    trace_id = NULLIF($12, ''), retention_until = CURRENT_TIMESTAMP + INTERVAL '30 days',
+    upstream_state = $13, upstream_reason_code = NULLIF($14, ''), upstream_cooldown_until = $15
 WHERE id = $1 AND status = 'running'`,
 		snapshot.ID, status, now, sourceVersion, snapshot.Cursor, snapshot.ETag, snapshot.LastModified,
-		contractVersion, healthState, errorCode, errorMessage, claim.TraceID)
+		contractVersion, healthState, errorCode, errorMessage, claim.TraceID, snapshot.UpstreamStatus.State, snapshot.UpstreamStatus.ReasonCode, cooldown)
 	if err != nil {
 		return domain.Snapshot{}, fmt.Errorf("persist provider catalog snapshot: %w", err)
 	}
@@ -416,6 +436,31 @@ WHERE id = $1 AND status = 'running'`,
 	return snapshot, nil
 }
 
+func catalogReadStatus(count int, err error, now time.Time) providerdomain.Status {
+	if err != nil {
+		status := providerdomain.ClassifyReadError(err, now)
+		if status.ReasonCode == providerdomain.ReasonGroupReadFailed {
+			status.ReasonCode = "CATALOG_UPSTREAM_FAILED"
+		}
+		return status
+	}
+	state := providerdomain.StateAvailable
+	if count == 0 {
+		state = providerdomain.StateEmpty
+	}
+	return providerdomain.Status{State: state, CheckedAt: now}
+}
+
+func countPresentEntries(entries []domain.Entry) int {
+	n := 0
+	for _, entry := range entries {
+		if entry.State == domain.EntryPresent {
+			n++
+		}
+	}
+	return n
+}
+
 func validateProviderCatalogEntryRef(provider, ref string) error {
 	ref = strings.TrimSpace(ref)
 	parsed, err := strconv.ParseUint(ref, 10, 64)
@@ -444,7 +489,7 @@ func (s *Service) readLatestProviderSnapshotTx(ctx context.Context, tx *sql.Tx, 
 SELECT id, provider, season, status, observed_at, source_version, COALESCE(cursor, ''), COALESCE(etag, ''),
        COALESCE(last_modified, ''), contract_version, health_state, COALESCE(health_code, ''),
        COALESCE(health_message, ''), health_checked_at, COALESCE(error_code, ''), COALESCE(error_message, ''),
-       version, id, COALESCE(trace_id, '')
+	       version, id, COALESCE(trace_id, ''), COALESCE(upstream_state, ''), COALESCE(upstream_reason_code, ''), upstream_cooldown_until
 FROM provider_catalog_snapshots
 WHERE provider = $1 AND season = $2 AND status <> 'running' ORDER BY version DESC LIMIT 1`, provider, season), tx, provider, season)
 }
@@ -459,12 +504,18 @@ func readProviderSnapshotRow(ctx context.Context, row catalogRowScanner, queryer
 }, provider, season string) (domain.Snapshot, error) {
 	var snapshot domain.Snapshot
 	var status, health string
+	var cooldown sql.NullTime
 	// The refresh identity column position reads the row id: in the merged
 	// model the refresh run IS the snapshot row.
-	if err := row.Scan(&snapshot.ID, &snapshot.Provider, &snapshot.Season, &status, &snapshot.ObservedAt, &snapshot.SourceVersion, &snapshot.Cursor, &snapshot.ETag, &snapshot.LastModified, &snapshot.ContractVersion, &health, &snapshot.HealthCode, &snapshot.HealthMessage, &snapshot.HealthCheckedAt, &snapshot.ErrorCode, &snapshot.ErrorMessage, &snapshot.Version, &snapshot.RefreshID, &snapshot.TraceID); err != nil {
+	if err := row.Scan(&snapshot.ID, &snapshot.Provider, &snapshot.Season, &status, &snapshot.ObservedAt, &snapshot.SourceVersion, &snapshot.Cursor, &snapshot.ETag, &snapshot.LastModified, &snapshot.ContractVersion, &health, &snapshot.HealthCode, &snapshot.HealthMessage, &snapshot.HealthCheckedAt, &snapshot.ErrorCode, &snapshot.ErrorMessage, &snapshot.Version, &snapshot.RefreshID, &snapshot.TraceID, &snapshot.UpstreamStatus.State, &snapshot.UpstreamStatus.ReasonCode, &cooldown); err != nil {
 		return domain.Snapshot{}, err
 	}
 	snapshot.Status, snapshot.HealthState = domain.SnapshotStatus(status), domain.HealthState(health)
+	snapshot.UpstreamStatus.CheckedAt = snapshot.HealthCheckedAt
+	if cooldown.Valid {
+		snapshot.UpstreamStatus.CooldownUntil = cooldown.Time
+		snapshot.UpstreamStatus.RetryAfter = snapshot.UpstreamStatus.RetryAfterAt(time.Now())
+	}
 	entriesSnapshot := snapshot.ID
 	if snapshot.Status == domain.StatusOutage {
 		_ = queryer.QueryRowContext(ctx, `SELECT id FROM provider_catalog_snapshots WHERE provider = $1 AND season = $2 AND status NOT IN ('outage', 'running') ORDER BY version DESC LIMIT 1`, provider, season).Scan(&entriesSnapshot)
@@ -523,7 +574,7 @@ func (s *Service) readProviderWorkspaceSnapshot(ctx context.Context, provider, s
 SELECT id, provider, season, status, observed_at, source_version, COALESCE(cursor, ''), COALESCE(etag, ''),
        COALESCE(last_modified, ''), contract_version, health_state, COALESCE(health_code, ''),
        COALESCE(health_message, ''), health_checked_at, COALESCE(error_code, ''), COALESCE(error_message, ''),
-       version, id, COALESCE(trace_id, '')
+	       version, id, COALESCE(trace_id, ''), COALESCE(upstream_state, ''), COALESCE(upstream_reason_code, ''), upstream_cooldown_until
 FROM provider_catalog_snapshots
 WHERE provider = $1 AND season = $2 AND status <> 'running' ORDER BY version DESC LIMIT 1`, provider, season)
 	snapshot, err := readProviderSnapshotRow(ctx, row, s.db, provider, season)

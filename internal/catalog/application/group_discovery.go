@@ -113,6 +113,9 @@ func (s *Service) DiscoverProviderEntryGroups(ctx context.Context, provider, cat
 	}
 	result, status, err := ReadProviderGroups(ctx, s.db, reader, provider, catalogEntryRef)
 	if err != nil {
+		if status.State == providerdomain.StateNotIndexed {
+			return catalogdomain.ProviderGroupDiscoveryResult{Provider: provider, ProviderEntryRef: catalogEntryRef, ObservedAt: status.CheckedAt, UpstreamStatus: status}, nil
+		}
 		if status.State == "" {
 			return catalogdomain.ProviderGroupDiscoveryResult{}, err
 		}

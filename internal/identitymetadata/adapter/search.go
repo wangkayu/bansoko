@@ -20,6 +20,8 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	identitymetadataport "bansoko/internal/identitymetadata/port"
+	"bansoko/internal/metadata/matcher"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/runtime/buildinfo"
 )
 
@@ -142,7 +144,7 @@ func (s ConfiguredCandidateSearcher) searchTMDB(ctx context.Context, query strin
 		} `json:"results"`
 	}
 	if err := s.getJSON(ctx, client, endpoint, apiKey, &payload); err != nil {
-		return nil, fmt.Errorf("request TMDB candidates: %w", err)
+		return nil, &matcher.MatchError{Kind: matcher.ErrorProvider, Layer: "tmdb", Err: err}
 	}
 	result := make([]identitymetadatadomain.SearchCandidate, 0, len(payload.Results))
 	seen := make(map[struct {
@@ -333,7 +335,7 @@ func (s ConfiguredCandidateSearcher) searchBGM(ctx context.Context, query string
 		} `json:"data"`
 	}
 	if err := s.doJSON(ctx, client, http.MethodPost, endpoint, "", body, &payload); err != nil {
-		return nil, fmt.Errorf("request Bangumi candidates: %w", err)
+		return nil, &matcher.MatchError{Kind: matcher.ErrorProvider, Layer: "bgm", Err: err}
 	}
 	result := make([]identitymetadatadomain.SearchCandidate, 0, minInt(limit, len(payload.List)))
 	for index, item := range payload.List {
@@ -362,7 +364,7 @@ func (s ConfiguredCandidateSearcher) getJSON(ctx context.Context, client *http.C
 
 func (s ConfiguredCandidateSearcher) doJSON(ctx context.Context, client *http.Client, method string, endpoint *url.URL, apiKey string, body []byte, target any) error {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second, Transport: hardeningtransport.DirectTransport()}
+		client = &http.Client{Timeout: 20 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
 	var reader io.Reader
 	if body != nil {
@@ -386,7 +388,7 @@ func (s ConfiguredCandidateSearcher) doJSON(ctx context.Context, client *http.Cl
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("provider returned HTTP %d", response.StatusCode)
+		return providerdomain.HTTPReadFailure(response, fmt.Errorf("provider returned HTTP %d", response.StatusCode), time.Now().UTC())
 	}
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 4<<20))
 	if err := decoder.Decode(target); err != nil {

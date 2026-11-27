@@ -59,7 +59,7 @@ func (s *Scheduler) ObserveThrottle(ctx context.Context, key BucketKey, status i
 	if !b.health.LastLimitedAt.IsZero() && now.Sub(later(b.health.LastLimitedAt, b.health.CooldownUntil)) <= maxBackoff {
 		consecutive = min(b.health.Consecutive+1, 7)
 	}
-	delay, valid := parseRetryAfter(header, now)
+	delay, valid := ParseRetryAfter(header, now)
 	if !valid {
 		delay = min(5*time.Second<<(consecutive-1), maxBackoff)
 	}
@@ -88,7 +88,8 @@ func (s *Scheduler) ObserveThrottle(ctx context.Context, key BucketKey, status i
 	return failure
 }
 
-func parseRetryAfter(header string, now time.Time) (time.Duration, bool) {
+// ParseRetryAfter handles both forms of the standard Retry-After header.
+func ParseRetryAfter(header string, now time.Time) (time.Duration, bool) {
 	value := strings.TrimSpace(header)
 	if value == "" {
 		return 0, false

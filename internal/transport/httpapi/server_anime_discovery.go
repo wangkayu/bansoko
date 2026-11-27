@@ -3,6 +3,8 @@ package httpapi
 import (
 	animedomain "bansoko/internal/anime/domain"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
+	catalogtransport "bansoko/internal/catalog/transport"
+	providerdomain "bansoko/internal/provider/domain"
 	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
 )
@@ -17,9 +19,19 @@ func mapDiscoverSubgroupsResult(value ownershipapplication.DiscoverSubgroupsResu
 		return generated.DiscoverSubgroupsResult{}, err
 	}
 	result := generated.DiscoverSubgroupsResult{
+		Upstream:       catalogtransport.UpstreamStatus(value.UpstreamStatus),
 		ManagedAnimeId: generated.ID(value.ManagedAnimeID),
 		Outcome:        generated.DiscoverSubgroupsOutcome(value.Outcome),
 		Subgroups:      subgroups,
+	}
+	if result.Upstream != nil {
+		groups := make([]generated.DiscoveredSubgroup, 0, len(value.Groups))
+		if value.UpstreamStatus.State == providerdomain.StateAvailable {
+			for _, group := range value.Groups {
+				groups = append(groups, generated.DiscoveredSubgroup{Provider: generated.ProviderKind(group.Ref.Provider), GroupRef: group.Ref.ExternalID, DisplayName: group.DisplayName, ObservedAt: value.UpstreamStatus.CheckedAt})
+			}
+		}
+		result.Groups = &groups
 	}
 	if value.Reason != nil {
 		reason := *value.Reason

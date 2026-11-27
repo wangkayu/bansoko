@@ -33,6 +33,7 @@ export type OperationResponse<Name extends keyof operations> =
 export type ID = Schema<"ID">;
 export type Version = Schema<"Version">;
 export type SystemHealth = Schema<"SystemHealth">;
+export type UpstreamStatus = Schema<"UpstreamStatus">;
 export type ReadinessReport = Schema<"ReadinessReport">;
 export type DeploymentIdentity = Schema<"DeploymentIdentity">;
 export type BootstrapStatus = Schema<"BootstrapStatus">;
@@ -299,6 +300,8 @@ export class ApiError extends Error {
   readonly details?: ErrorDetail[];
   /** Present on 429 responses that carry a Retry-After header. */
   readonly retryAfterSeconds?: number;
+  readonly upstream?: UpstreamStatus;
+  readonly receivedAt = new Date().toISOString();
 
   constructor(input: {
     status: number;
@@ -308,6 +311,7 @@ export class ApiError extends Error {
     currentVersion?: number;
     details?: ErrorDetail[];
     retryAfterSeconds?: number;
+    upstream?: UpstreamStatus;
   }) {
     super(input.message);
     this.name = "ApiError";
@@ -317,6 +321,7 @@ export class ApiError extends Error {
     this.currentVersion = input.currentVersion;
     this.details = input.details;
     this.retryAfterSeconds = input.retryAfterSeconds;
+    this.upstream = input.upstream;
   }
 }
 
@@ -410,6 +415,7 @@ function readErrorPayload(payload: unknown): Partial<Schema<"ErrorResponse">> {
     code: typeof record.code === "string" ? record.code : undefined,
     message: typeof record.message === "string" ? record.message : undefined,
     request_id: typeof record.request_id === "string" ? record.request_id : undefined,
+    upstream: readUpstreamStatus(record.upstream),
     current_version:
       typeof record.current_version === "number" ? record.current_version : undefined,
     details: Array.isArray(record.details)
@@ -425,6 +431,21 @@ function readRetryAfterSeconds(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number.parseInt(value, 10);
   return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+function readUpstreamStatus(value: unknown): UpstreamStatus | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const state = record.state;
+  if (state !== "available" && state !== "empty" && state !== "not_indexed" && state !== "rate_limited" && state !== "cooldown" && state !== "error") return undefined;
+  if (typeof record.checked_at !== "string") return undefined;
+  return {
+    state,
+    checked_at: record.checked_at,
+    reason_code: typeof record.reason_code === "string" ? record.reason_code : undefined,
+    cooldown_until: typeof record.cooldown_until === "string" ? record.cooldown_until : undefined,
+    retry_after_seconds: typeof record.retry_after_seconds === "number" ? record.retry_after_seconds : undefined,
+  };
 }
 
 async function request<Result>(path: string, options: RequestOptions): Promise<Result> {
@@ -487,7 +508,8 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
       requestId: error.request_id,
       currentVersion: error.current_version,
       details: error.details,
-      retryAfterSeconds: readRetryAfterSeconds(response.headers.get("Retry-After")),
+      retryAfterSeconds: readRetryAfterSeconds(response.headers.get("Retry-After")) ?? error.upstream?.retry_after_seconds,
+      upstream: error.upstream,
     });
   }
 
@@ -1118,14 +1140,15 @@ export function readCatalogWorkspace(
   });
 }
 
-export function searchProviderCatalog(
+export async function searchProviderCatalog(
   provider: "anibt" | "mikan",
   q: string,
-): Promise<CatalogItem[]> {
+): Promise<Schema<"CatalogKeywordSearchResult">> {
   const params = new URLSearchParams({ q });
-  return request(`/catalog/providers/${encodePathSegment(provider)}/search?${params.toString()}`, {
+  const result = await request<Schema<"CatalogKeywordSearchResult"> | CatalogItem[]>(`/catalog/providers/${encodePathSegment(provider)}/search?${params.toString()}`, {
     method: "GET",
   });
+  return Array.isArray(result) ? { items: result } : result;
 }
 
 /** One catalog entry's whole synopsis and source-stated facts; read only when the reader opens. */

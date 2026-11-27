@@ -84,6 +84,7 @@ type APIError struct {
 	Message        string
 	Details        []generated.ErrorDetail
 	CurrentVersion *int64
+	Upstream       *generated.UpstreamStatus
 	// ExpectedDependencyFailure keeps a deliberately mapped upstream 5xx out of
 	// the internal-fault diagnostics. The zero value stays fail closed: every
 	// other typed 5xx is internal unless it is an expected 503. This changes
@@ -220,6 +221,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	// (an upstream fetch error) never carries its credential out, whichever
 	// owner built the message.
 	response := generated.ErrorResponse{
+		Upstream:       apiErr.Upstream,
 		Code:           apiErr.Code,
 		Message:        redact.URLsInText(apiErr.Message),
 		RequestId:      &requestID,

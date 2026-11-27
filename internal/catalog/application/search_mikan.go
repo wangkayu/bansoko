@@ -15,6 +15,7 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	catalogdomain "bansoko/internal/catalog/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/redact"
 	"bansoko/internal/runtime/buildinfo"
 
@@ -226,7 +227,7 @@ func (s HTTPMikanSearcher) mikanSearchRequest(ctx context.Context, path, query s
 
 func mikanSearchStatus(response *http.Response, surface string) error {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("%w: Mikan %s returned HTTP %d", ErrProviderUpstream, surface, response.StatusCode)
+		return providerdomain.HTTPReadFailure(response, fmt.Errorf("%w: Mikan %s returned HTTP %d", ErrProviderUpstream, surface, response.StatusCode), time.Now().UTC())
 	}
 	return nil
 }

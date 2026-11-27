@@ -52,7 +52,7 @@ func TestGroupRefreshFailuresKeepLastSuccess(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			service.SetGroupReaders(map[string]GroupReader{"anibt": tc.reader})
 			got, err := service.DiscoverProviderEntryGroups(ctx, "anibt", entry)
-			if err == nil || got.UpstreamStatus.State != tc.state || got.UpstreamStatus.ReasonCode != tc.reason {
+			if (err == nil) != (tc.state == provider.StateNotIndexed) || got.UpstreamStatus.State != tc.state || got.UpstreamStatus.ReasonCode != tc.reason || got.SnapshotVersion != 0 {
 				t.Fatalf("outcome = %+v, %v", got, err)
 			}
 			var state provider.State

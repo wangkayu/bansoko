@@ -333,5 +333,5 @@ export const errorCopy = {
   FILE_MANAGER_MATCH_NOT_RENDERABLE: "命名规则无法生成这个文件的名称",
   FILE_MANAGER_MATCH_INVALID: "季或集超出范围",
   TMDB_BINDING_REQUIRED: "这部番剧还没有绑定 TMDB",
-  METADATA_PROVIDER_UNAVAILABLE: "暂时无法连接元数据服务，请稍后再试",
+  METADATA_PROVIDER_UNAVAILABLE: "元数据服务暂时不可用或响应超时，请稍后重试",
 } as const;

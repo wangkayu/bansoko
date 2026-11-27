@@ -77,7 +77,7 @@ func (m *BGMMatcher) client() *http.Client {
 	if m.Client != nil {
 		return m.Client
 	}
-	return &http.Client{Timeout: 15 * time.Second, Transport: hardeningtransport.DirectTransport()}
+	return &http.Client{Timeout: 20 * time.Second, Transport: hardeningtransport.DirectTransport()}
 }
 
 // resolve returns the endpoint and client for one call. A missing, ambiguous

@@ -1,10 +1,15 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	catalogtransport "bansoko/internal/catalog/transport"
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
+	"bansoko/internal/metadata/matcher"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -13,9 +18,7 @@ func (s *Server) metadataService(w http.ResponseWriter, r *http.Request) Metadat
 }
 
 // metadataSearchInvalid builds the typed 422 used when the search input fails
-// contract validation. The endpoint declares only the Unprocessable error
-// response in api/openapi.yaml, so client mistakes must surface there
-// instead of falling through to a generic 500 INTERNAL.
+// contract validation, independently of upstream failure mapping.
 func metadataSearchInvalid(detail generated.ErrorDetail) *APIError {
 	return unprocessable("METADATA_SEARCH_INVALID", "The metadata search input failed typed validation.", []generated.ErrorDetail{detail})
 }
@@ -51,7 +54,7 @@ func (s *Server) SearchMetadata(w http.ResponseWriter, r *http.Request, params g
 	}
 	result, err := service.SearchMetadata(r.Context(), string(params.Provider), params.Query, limit)
 	if err != nil {
-		writeError(w, r, err)
+		writeMetadataSearchError(w, r, err)
 		return
 	}
 	candidates := mapMetadataCandidates(result)
@@ -60,6 +63,7 @@ func (s *Server) SearchMetadata(w http.ResponseWriter, r *http.Request, params g
 		Provider:   generated.MetadataSearchResultProvider(params.Provider),
 		Query:      params.Query,
 		Candidates: candidates,
+		Upstream:   catalogtransport.SuccessfulUpstream(len(candidates), time.Now().UTC()),
 	})
 }
 
@@ -101,7 +105,7 @@ func (s *Server) SearchMetadataAutomatically(w http.ResponseWriter, r *http.Requ
 	}
 	candidates, err := service.SearchMetadataAutomatically(r.Context(), input)
 	if err != nil {
-		writeError(w, r, err)
+		writeMetadataSearchError(w, r, err)
 		return
 	}
 	mapped := mapMetadataCandidates(candidates)
@@ -110,7 +114,22 @@ func (s *Server) SearchMetadataAutomatically(w http.ResponseWriter, r *http.Requ
 		Provider:   generated.MetadataSearchResultProvider(body.Provider),
 		Query:      input.Title,
 		Candidates: mapped,
+		Upstream:   catalogtransport.SuccessfulUpstream(len(mapped), time.Now().UTC()),
 	})
+}
+
+func writeMetadataSearchError(w http.ResponseWriter, r *http.Request, err error) {
+	var upstream *matcher.MatchError
+	if errors.As(err, &upstream) {
+		status := providerdomain.ClassifyReadError(upstream, time.Now().UTC())
+		if status.ReasonCode == providerdomain.ReasonGroupReadFailed {
+			status.ReasonCode = "METADATA_PROVIDER_UNAVAILABLE"
+		}
+		if writeUpstreamFailure(w, r, status, "METADATA_PROVIDER_UNAVAILABLE", "The metadata service is temporarily unavailable or timed out. Try again later.") {
+			return
+		}
+	}
+	writeError(w, r, err)
 }
 
 // ListTMDBWorkSeasons lists the seasons of a TMDB TV work without requiring a saved binding.

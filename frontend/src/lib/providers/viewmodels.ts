@@ -1,4 +1,4 @@
-import type { MetadataHold } from "../api/client";
+import type { MetadataHold, UpstreamStatus } from "../api/client";
 import type { BroadcastDay } from "../i18n/broadcastDay";
 import type { ReleaseFormat } from "../api/client";
 
@@ -17,6 +17,7 @@ export type SnapshotStatus = "fresh" | "stale" | "error" | "empty";
 
 export interface CatalogSnapshotView {
   status: SnapshotStatus;
+  upstream?: UpstreamStatus;
   season?: string;
   observedAt?: string;
   /** The time of the last successful refresh (including a 304 recheck); absent when never successful. */
