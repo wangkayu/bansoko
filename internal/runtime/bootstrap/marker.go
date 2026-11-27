@@ -230,6 +230,11 @@ func consumePendingMarker(updatesRoot string) error {
 			old.Sequence != record.TargetReleaseSequence || !terminalFenceStateMatches(record.Step, old.State) {
 			return errors.New("previous terminal journal has no exact closed fence proof")
 		}
+		if record.Takeover != nil && record.Step == embeddedupdate.StepSucceeded {
+			if err := retireOverlay(updatesRoot, record); err != nil {
+				return fmt.Errorf("complete overlay retirement before archival: %w", err)
+			}
+		}
 		if err := journal.ArchiveTerminalProven(); err != nil {
 			return fmt.Errorf("archive proven previous terminal journal: %w", err)
 		}
@@ -320,7 +325,7 @@ func discardPreMarkerWork(updatesRoot string) error {
 	if found && (record.Active() || record.Step == embeddedupdate.StepRollbackBlocked) {
 		return nil
 	}
-	if found && record.Step == embeddedupdate.StepSucceeded {
+	if found && record.Step == embeddedupdate.StepSucceeded && record.Takeover == nil {
 		// A crash immediately after the durable success checkpoint may have
 		// interrupted the best-effort cleanup. Retry only that operation's
 		// artifacts; cleanup failure never changes the terminal outcome.
@@ -344,7 +349,7 @@ func discardUnreferencedWork(updatesRoot string) error {
 	previous := ""
 	if record, found, err := embeddedupdate.Snapshot(filepath.Join(updatesRoot, journalFileName)); err != nil {
 		return fmt.Errorf("read rollback source before workspace cleanup: %w", err)
-	} else if found && record.Step != embeddedupdate.StepSucceeded {
+	} else if found && (record.Step != embeddedupdate.StepSucceeded || record.Takeover != nil) {
 		previous = record.PreviousReleaseID
 	}
 	root := filepath.Join(updatesRoot, releasesDirName)
@@ -387,6 +392,10 @@ func deploymentCurrentID(updatesRoot string) string {
 }
 
 func writeVerifiedMarkerBackup(updatesRoot string, marker pendingMarker, dsn string, db *sql.DB) (string, error) {
+	return writeVerifiedOperationBackup(updatesRoot, marker.OperationID, dsn, db, nil)
+}
+
+func writeVerifiedOperationBackup(updatesRoot, operationID, dsn string, db *sql.DB, verifyScratch func(context.Context, string) error) (string, error) {
 	executor, err := pgexec.New(pgexec.DefaultCandidatePaths)
 	if err != nil {
 		return "", err
@@ -399,7 +408,7 @@ func writeVerifiedMarkerBackup(updatesRoot string, marker pendingMarker, dsn str
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", err
 	}
-	backupID := "embedded-" + marker.OperationID
+	backupID := "embedded-" + operationID
 	if !embeddedupdate.ValidID(backupID) {
 		return "", errors.New("marker operation id cannot form a backup id")
 	}
@@ -455,7 +464,10 @@ func writeVerifiedMarkerBackup(updatesRoot string, marker pendingMarker, dsn str
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), pgToolTimeout)
 	defer cancel()
-	if err := proveMarkerBackup(ctx, executor, env, dumpPath, marker.OperationID, db); err != nil {
+	if err := executor.ListContents(ctx, env, dumpPath); err != nil {
+		return "", errors.New("pg_restore could not list the operation backup")
+	}
+	if err := proveOperationBackup(ctx, executor, env, dumpPath, operationID, db, verifyScratch); err != nil {
 		return "", err
 	}
 	return backupID, nil
@@ -471,6 +483,10 @@ func markerBackupNeedsDump(updatesRoot, backupID string) bool {
 }
 
 func proveMarkerBackup(ctx context.Context, executor *pgexec.Executor, env []string, dumpPath, operationID string, db *sql.DB) error {
+	return proveOperationBackup(ctx, executor, env, dumpPath, operationID, db, nil)
+}
+
+func proveOperationBackup(ctx context.Context, executor *pgexec.Executor, env []string, dumpPath, operationID string, db *sql.DB, verifyScratch func(context.Context, string) error) error {
 	name := "embedded_verify_" + strings.ReplaceAll(operationID, "-", "_")
 	if len(name) > 63 {
 		name = name[:63]
@@ -483,7 +499,10 @@ func proveMarkerBackup(ctx context.Context, executor *pgexec.Executor, env []str
 	if _, err := db.ExecContext(createCtx, "CREATE DATABASE "+quoteIdentifier(name)); err != nil {
 		return fmt.Errorf("create scratch restore database: %w", err)
 	}
-	restoreErr := executor.Restore(ctx, env, dumpPath, name)
+	restoreErr := executor.RestoreFresh(ctx, env, dumpPath, name)
+	if restoreErr == nil && verifyScratch != nil {
+		restoreErr = verifyScratch(ctx, name)
+	}
 	dropCtx, cancelDrop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelDrop()
 	dropErr := clearScratchDatabase(dropCtx, db, name)

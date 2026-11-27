@@ -599,7 +599,11 @@ func (s *Service) GetUpdateStatus(ctx context.Context) (Status, bool, error) {
 			lastError = &value
 		}
 		version, schema := record.TargetVersion, record.TargetSchemaVersion
-		return Status{OperationID: record.OperationID, Channel: record.Channel, Step: string(record.Step), TargetReleaseID: record.TargetReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, TargetLane: record.TargetLane, TargetSequence: record.TargetReleaseSequence, PreviousReleaseID: record.PreviousReleaseID, LastError: lastError, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, true, nil
+		kind, source := "overlay_update", "overlay"
+		if record.Takeover != nil {
+			kind, source = string(record.OperationKind), record.Takeover.TargetSource
+		}
+		return Status{OperationKind: kind, TargetSource: source, OperationID: record.OperationID, Channel: record.Channel, Step: string(record.Step), TargetReleaseID: record.TargetReleaseID, TargetVersion: &version, TargetSchemaVersion: &schema, TargetLane: record.TargetLane, TargetSequence: record.TargetReleaseSequence, PreviousReleaseID: record.PreviousReleaseID, LastError: lastError, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, true, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

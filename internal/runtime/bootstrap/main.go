@@ -127,6 +127,7 @@ func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string)
 		deploymentidentity.EnvBaseBuild:            baseBuild,
 		deploymentidentity.EnvSelectionReasonCode:  "overlay_update_active",
 		deploymentidentity.EnvSelectionReason:      "embedded update selected the running tree",
+		deploymentidentity.EnvTakeoverOperationID:  "",
 	}
 }
 
@@ -173,7 +174,7 @@ func verifyOverlayIdentity(updatesRoot, releaseID string) (overlayIdentityProof,
 		PayloadDigest:          provenance.PayloadDigest,
 		OperationID:            provenance.ProducingOperationID,
 		ExpectedProcessBuildID: provenance.ExpectedProcessBuildID,
-		Build:                  buildinfo.BuildInfo{Order: meta.Order, Version: meta.Version, Commit: meta.SourceCommit, BuildID: meta.BuildID, SchemaVersion: meta.TargetSchemaVersion},
+		Build:                  buildinfo.BuildInfo{Order: meta.Order, Version: meta.Version, Commit: meta.SourceCommit, BuildID: meta.BuildID, SchemaVersion: meta.TargetSchemaVersion, APIVersion: manifest.APIContractVersion},
 		Manifest:               manifest,
 	}, nil
 }
@@ -228,6 +229,7 @@ const (
 	modeMaintenance
 	modeConsume
 	modePendingMarker
+	modeTakeover
 )
 
 func (m launchMode) String() string {
@@ -240,6 +242,8 @@ func (m launchMode) String() string {
 		return "consume"
 	case modePendingMarker:
 		return "pending-marker"
+	case modeTakeover:
+		return "start_takeover"
 	default:
 		return "base"
 	}
@@ -262,6 +266,7 @@ type plan struct {
 	baseBuild        buildinfo.BuildInfo
 	maintenanceOp    string // operation id when parked on journal state
 	maintenanceStep  string // journal step string when parked
+	takeoverOp       string
 }
 
 func logf(format string, args ...any) {
@@ -355,6 +360,10 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 	facts.active = found && record.Active()
 	facts.rollbackBlocked = found && record.Step == embeddedupdate.StepRollbackBlocked
 	facts.consumeFamily = consumeFamilySteps[record.Step]
+	facts.activeTakeover = facts.active && record.OperationKind == embeddedupdate.KindBaseTakeover
+	if found && record.Takeover != nil && record.Step == embeddedupdate.StepSucceeded {
+		facts.previousTakeover, out.takeoverOp = "succeeded", record.OperationID
+	}
 	if facts.active || facts.rollbackBlocked {
 		out.maintenanceOp, out.maintenanceStep = record.OperationID, string(record.Step)
 	}
@@ -385,6 +394,19 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 			facts.overlayProven = err == nil
 			facts.overlay = proof.Build
 			facts.compatible = err == nil && compatibleImageAnchor(facts.base, proof.Manifest)
+			if facts.compatible && facts.base.Ordered() && facts.overlay.Ordered() && facts.base.Series == facts.overlay.Series && facts.base.Lane == facts.overlay.Lane && facts.base.ReleaseSequence > facts.overlay.ReleaseSequence {
+				a := currentBaseAnchor(facts.base)
+				facts.compatible = a.Valid() && facts.base.BuildID != pointer.Token
+				if facts.compatible {
+					prior, err := takeoverOutcome(entrypointJournal, record, found, a, previousOverlay(pointer.Token, proof))
+					if err != nil {
+						return park("cannot read prior takeover outcomes")
+					}
+					if prior.OperationID != "" {
+						facts.previousTakeover, out.takeoverOp = string(prior.Step), prior.OperationID
+					}
+				}
+			}
 		}
 	}
 	decision := arbitrateBaseVsOverlay(facts)
@@ -402,6 +424,9 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 		}
 	case modePendingMarker:
 		out.reason = "pending embedded update marker"
+	case modeTakeover:
+		out.reason = decision.reasonCode
+		out.releaseID = target.releaseID
 	case modeMaintenance:
 		out.reason = decision.reasonCode
 	}
@@ -628,6 +653,11 @@ func run(kind string) int {
 		return code
 	}
 	if kind == "server" && (chosen.mode == modeBase || chosen.mode == modeOverlay) {
+		if same, _ := isCurrentExecutable(baseServerPath); same {
+			if err := reconcileRetirement(updatesRoot); err != nil {
+				logf("overlay retirement deferred: %v", err)
+			}
+		}
 		if err := discardPreMarkerWork(updatesRoot); err != nil {
 			logf("MAINTENANCE fail-closed: pre-marker workspace cleanup failed: %v", err)
 			blockForever()
@@ -636,6 +666,8 @@ func run(kind string) int {
 		chosen = planLaunch(kind, updatesRoot)
 	}
 	switch chosen.mode {
+	case modeTakeover:
+		return runTakeoverEntry(updatesRoot, chosen.reasonCode == "base_newer_verified")
 	case modePendingMarker, modeConsume:
 		// The consume flow owns migration (backup, target migrate, handoff,
 		// rollback); the startup migration below never runs for these modes.
@@ -700,6 +732,7 @@ func launchPlan(chosen plan, updatesRoot string) int {
 	}
 	pairs[deploymentidentity.EnvSelectionReasonCode] = chosen.reasonCode
 	pairs[deploymentidentity.EnvSelectionReason] = chosen.reason
+	pairs[deploymentidentity.EnvTakeoverOperationID] = chosen.takeoverOp
 	if chosen.kind == "server" {
 		if chosen.migratePath == "" {
 			logf("MAINTENANCE fail-closed: the selected %s tree has no migration binary", chosen.mode)

@@ -37,7 +37,9 @@ func arbitrateBaseVsOverlay(f selectionFacts) arbitration {
 	case f.pending:
 		return arbitration{modeMaintenance, "embedded_mode_required"}
 	case f.activeTakeover:
-		// This version cannot recover a takeover. Leave its evidence in place.
+		if f.kind == "server" && f.imageAnchor {
+			return arbitration{modeTakeover, "takeover_resuming"}
+		}
 		return arbitration{modeMaintenance, "takeover_resuming"}
 	case f.active && f.mode != "embedded":
 		return arbitration{modeMaintenance, "embedded_mode_required"}
@@ -76,7 +78,9 @@ func arbitrateBaseVsOverlay(f selectionFacts) arbitration {
 		return arbitration{modeOverlay, "takeover_previously_failed"}
 	case f.previousTakeover == "rolled_back":
 		return arbitration{modeOverlay, "takeover_rolled_back"}
-	default:
+	case f.kind != "server":
 		return arbitration{modeOverlay, "base_newer_takeover_not_enabled"}
+	default:
+		return arbitration{modeTakeover, "base_newer_verified"}
 	}
 }

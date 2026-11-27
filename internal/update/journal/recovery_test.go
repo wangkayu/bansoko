@@ -11,10 +11,7 @@ import (
 	"time"
 )
 
-// legacyJournalJSON is a durable record written before manifest persistence
-// existed: it must keep loading unchanged, so that old volumes fail closed at
-// the recovery layer (which refuses a record without a manifest copy) instead
-// of breaking the journal reader itself.
+// A v1 active record must stay on disk but cannot be executed by v2.
 const legacyJournalJSON = `{
   "schema_version": 1,
   "record": {
@@ -159,50 +156,42 @@ func TestSnapshotDistinguishesAbsentFromEmptyJournal(t *testing.T) {
 	}
 }
 
-func TestLegacyRecordWithoutManifestCopyStaysReadable(t *testing.T) {
+func TestLegacyActiveRecordStaysInPlaceWithoutExecutor(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "journal.json")
 	if err := os.WriteFile(path, []byte(legacyJournalJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := Open(path); !errors.Is(err, ErrJournalCorrupted) {
+		t.Fatalf("legacy active record accepted: %v", err)
+	}
+	if _, found, err := Snapshot(path); found || !errors.Is(err, ErrJournalCorrupted) {
+		t.Fatalf("legacy active record exposed: found=%v err=%v", found, err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != legacyJournalJSON {
+		t.Fatalf("legacy record altered: %v", err)
+	}
+}
 
-	journal := mustOpen(t, path)
-	record, found, err := journal.Load()
-	if err != nil || !found {
-		t.Fatalf("load legacy journal: found=%v err=%v", found, err)
-	}
-	if record.OperationID != "embedded-legacy" || record.Step != StepAccepted {
-		t.Fatalf("legacy record = %+v, want the accepted operation", record)
-	}
-	if record.ManifestPath != "" || record.ManifestSize != 0 {
-		t.Fatalf("legacy record decoded manifest copy fields: %+v", record)
-	}
-
-	snapshot, found, err := Snapshot(path)
-	if err != nil || !found {
-		t.Fatalf("snapshot legacy journal: found=%v err=%v", found, err)
-	}
-	if snapshot.ManifestPath != "" || snapshot.ManifestSize != 0 {
-		t.Fatalf("legacy snapshot decoded manifest copy fields: %+v", snapshot)
-	}
-
-	// A record written by the current code binds the copy and round-trips it.
-	updated, err := journal.Advance(record.OperationID, record.Version, StepFetched, "", "legacy",
-		func(r *Record) {
-			r.ManifestPath = "manifests/embedded-legacy.json"
-			r.ManifestSize = 4096
-		})
-	if err != nil {
-		t.Fatal(err)
-	}
-	reloaded, _, err := journal.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloaded.ManifestPath != "manifests/embedded-legacy.json" || reloaded.ManifestSize != 4096 {
-		t.Fatalf("manifest copy fields did not survive the checkpoint: %+v", reloaded)
-	}
-	if updated.Version == record.Version {
-		t.Fatal("checkpoint did not advance the version")
+func TestFutureActiveFormatsStayInPlace(t *testing.T) {
+	for _, data := range []string{
+		`{"schema_version":99,"record":{"step":"prepared","operation_id":["new","shape"]}}`,
+		`{"schema_version":2,"record":{"schema_version":99,"step":"prepared","operation_id":["new","shape"]}}`,
+	} {
+		path := filepath.Join(t.TempDir(), "journal.json")
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(path); !errors.Is(err, ErrJournalCorrupted) {
+			t.Fatalf("open future format: %v", err)
+		}
+		if _, _, err := Snapshot(path); !errors.Is(err, ErrJournalCorrupted) {
+			t.Fatalf("observe future format: %v", err)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != data {
+			t.Fatalf("future journal was not preserved: %s, %v", got, err)
+		}
 	}
 }
 

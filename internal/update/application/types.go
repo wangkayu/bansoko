@@ -14,6 +14,8 @@ type AdmitInput struct {
 
 // Status is the transport-neutral view of embedded update admission or pending-marker handoff.
 type Status struct {
+	OperationKind       string
+	TargetSource        string
 	TargetLane          string
 	TargetSequence      int64
 	PreviousReleaseID   string

@@ -117,6 +117,8 @@ func main() {
 		os.Exit(bootstrapcmd.Start("server"))
 	case "bootstrap":
 		os.Exit(bootstrapcmd.Main(args))
+	case bootstrapcmd.PrivateReadinessCommand:
+		os.Exit(runPrivateReadiness())
 	case "migrate":
 		migratecmd.Main(args)
 		return
@@ -176,6 +178,8 @@ func runtimeCommand(args []string) (string, []string) {
 		return "serve", args
 	}
 	switch args[0] {
+	case bootstrapcmd.PrivateReadinessCommand:
+		return args[0], args[1:]
 	case "bootstrap", "migrate", "serve", "update", "start", "recover", "reset-password", "version", "doctor":
 		return args[0], args[1:]
 	default:

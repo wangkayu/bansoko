@@ -1,0 +1,229 @@
+package application
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"regexp"
+)
+
+// RestoreCutover pins the database catalog identities for a verified empty-DB
+// restore. The caller must persist it before calling ReconcileRestoreCutover
+// and retain the operation lock throughout. Names alone cannot authorize a
+// rename: a same-named database may have been recreated since the checkpoint.
+type RestoreCutover struct {
+	Live     string `json:"live"`
+	Ready    string `json:"ready"`
+	Aside    string `json:"aside"`
+	LiveOID  uint32 `json:"live_oid"`
+	ReadyOID uint32 `json:"ready_oid"`
+	OwnerOID uint32 `json:"owner_oid"`
+}
+
+var restoreDatabaseName = regexp.MustCompile(`^[A-Za-z0-9_]{1,63}$`)
+
+func (p RestoreCutover) validNames() bool {
+	for _, name := range []string{p.Live, p.Ready, p.Aside} {
+		if !restoreDatabaseName.MatchString(name) || name == maintenanceDatabase || name == "template0" || name == "template1" {
+			return false
+		}
+	}
+	return p.Live != p.Ready && p.Live != p.Aside && p.Ready != p.Aside
+}
+
+type catalogDatabase struct {
+	oid, owner        uint32
+	allowsConnections bool
+}
+
+func readCatalogDatabase(ctx context.Context, db *sql.DB, name string) (catalogDatabase, error) {
+	var info catalogDatabase
+	err := db.QueryRowContext(ctx, `SELECT oid::bigint, datdba::bigint, datallowconn FROM pg_catalog.pg_database WHERE datname = $1`, name).Scan(&info.oid, &info.owner, &info.allowsConnections)
+	if errors.Is(err, sql.ErrNoRows) {
+		return catalogDatabase{}, nil
+	}
+	return info, err
+}
+
+func restoreOwner(ctx context.Context, admin *sql.DB) (uint32, error) {
+	var oid uint32
+	if err := admin.QueryRowContext(ctx, `
+SELECT oid::bigint FROM pg_catalog.pg_roles
+WHERE rolname = current_user AND current_user = session_user
+  AND current_database() = 'postgres'
+  AND current_setting('server_version_num')::int BETWEEN 170000 AND 179999
+  AND (rolsuper OR (rolcreatedb AND rolcreaterole))`).Scan(&oid); err != nil {
+		return 0, errors.New("restore requires a PostgreSQL 17 owner connection to postgres with CREATEDB and CREATEROLE")
+	}
+	return oid, nil
+}
+
+// CheckRestoreConnection verifies that the maintenance connection can replay a
+// restore even when the live database name is temporarily absent.
+func CheckRestoreConnection(ctx context.Context, admin *sql.DB) error {
+	_, err := restoreOwner(ctx, admin)
+	return err
+}
+
+// CreateEmptyRestoreDatabase creates an empty database using the live
+// deployment's locale and encoding. The caller owns the name and is
+// responsible for restoring and verifying it before pinning the cutover.
+func CreateEmptyRestoreDatabase(ctx context.Context, admin *sql.DB, live, ready string) error {
+	p := RestoreCutover{Live: live, Ready: ready, Aside: "restore_reserved_validation_name"}
+	if !p.validNames() {
+		return errors.New("invalid database names for empty restore")
+	}
+	owner, err := restoreOwner(ctx, admin)
+	if err != nil {
+		return err
+	}
+	info, err := readCatalogDatabase(ctx, admin, live)
+	if err != nil || info.oid == 0 || info.owner != owner || !info.allowsConnections {
+		return errors.New("empty restore requires an owned live database")
+	}
+	return createLike(ctx, admin, ready, live)
+}
+
+// PinRestoreCutover is read-only. Call it after loading and verifying Ready,
+// before the first rename. It refuses collisions instead of choosing another
+// name: reusing an operation's name without durable evidence is unsafe.
+func PinRestoreCutover(ctx context.Context, admin *sql.DB, live, ready, aside string) (RestoreCutover, error) {
+	p := RestoreCutover{Live: live, Ready: ready, Aside: aside}
+	if !p.validNames() {
+		return RestoreCutover{}, errors.New("invalid database names for restore cutover")
+	}
+	owner, err := restoreOwner(ctx, admin)
+	if err != nil {
+		return RestoreCutover{}, err
+	}
+	a, b, c, err := p.catalog(ctx, admin)
+	if err != nil {
+		return RestoreCutover{}, err
+	}
+	if a.oid == 0 || b.oid == 0 || c.oid != 0 || a.owner != owner || b.owner != owner || !a.allowsConnections || !b.allowsConnections {
+		return RestoreCutover{}, errors.New("restore cutover requires two distinct owned databases and an unused aside name")
+	}
+	p.LiveOID, p.ReadyOID, p.OwnerOID = a.oid, b.oid, owner
+	return p, nil
+}
+
+func (p RestoreCutover) catalog(ctx context.Context, admin *sql.DB) (live, ready, aside catalogDatabase, err error) {
+	for i, name := range []string{p.Live, p.Ready, p.Aside} {
+		info, err := readCatalogDatabase(ctx, admin, name)
+		if err != nil {
+			return live, ready, aside, errors.New("cannot read database identities for restore cutover")
+		}
+		*[]*catalogDatabase{&live, &ready, &aside}[i] = info
+	}
+	return live, ready, aside, nil
+}
+
+// ReconcileRestoreCutover replays a previously pinned cutover, including the
+// window where the live name is absent. An unexpected name or OID stops the
+// operation without reclaiming or modifying foreign databases. The old DB is
+// retained with connections disabled; disposal is a separate effect.
+func ReconcileRestoreCutover(ctx context.Context, admin *sql.DB, p RestoreCutover, onRename func(string)) error {
+	if !p.validNames() || p.LiveOID == 0 || p.ReadyOID == 0 || p.LiveOID == p.ReadyOID || p.OwnerOID == 0 {
+		return errors.New("invalid pinned restore cutover")
+	}
+	owner, err := restoreOwner(ctx, admin)
+	if err != nil || owner != p.OwnerOID {
+		return errors.New("restore cutover maintenance role does not match the pinned owner")
+	}
+	for range 3 {
+		complete, err := advanceRestoreCutover(ctx, admin, p, onRename)
+		if complete || err != nil {
+			return err
+		}
+	}
+	return errors.New("restore cutover did not converge")
+}
+
+func advanceRestoreCutover(ctx context.Context, admin *sql.DB, p RestoreCutover, onRename func(string)) (bool, error) {
+	live, ready, aside, err := p.catalog(ctx, admin)
+	if err != nil {
+		return false, err
+	}
+	owned := func(db catalogDatabase, oid uint32) bool { return db.oid == oid && db.owner == p.OwnerOID }
+	switch {
+	case owned(live, p.LiveOID) && owned(ready, p.ReadyOID) && aside.oid == 0:
+		if err := quarantineRestoreDatabase(ctx, admin, p.Live); err != nil {
+			return false, err
+		}
+		if err := renameDatabase(ctx, admin, p.Live, p.Aside); err != nil {
+			return false, err
+		}
+		if onRename != nil {
+			onRename("restore_live_quarantined")
+		}
+		return false, nil
+	case live.oid == 0 && owned(ready, p.ReadyOID) && owned(aside, p.LiveOID) && !aside.allowsConnections:
+		if err := quarantineRestoreDatabase(ctx, admin, p.Ready); err != nil {
+			return false, err
+		}
+		if err := renameDatabase(ctx, admin, p.Ready, p.Live); err != nil {
+			return false, err
+		}
+		if onRename != nil {
+			onRename("restore_ready_renamed")
+		}
+		return false, nil
+	case owned(live, p.ReadyOID) && ready.oid == 0 && owned(aside, p.LiveOID) && !aside.allowsConnections:
+		if !live.allowsConnections {
+			if _, err := admin.ExecContext(ctx, `ALTER DATABASE `+quoteIdent(p.Live)+` ALLOW_CONNECTIONS true`); err != nil {
+				return false, fmt.Errorf("enable connections to restored database: %w", err)
+			}
+		}
+		return true, nil
+	default:
+		return false, errors.New("database identities do not match the pinned restore cutover")
+	}
+}
+
+func quarantineRestoreDatabase(ctx context.Context, admin *sql.DB, database string) error {
+	if _, err := admin.ExecContext(ctx, `ALTER DATABASE `+quoteIdent(database)+` ALLOW_CONNECTIONS false`); err != nil {
+		return fmt.Errorf("stop new connections for restore cutover: %w", err)
+	}
+	rows, err := admin.QueryContext(ctx, `SELECT pg_catalog.pg_terminate_backend(pid, 5000)
+FROM pg_catalog.pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`, database)
+	if err != nil {
+		return fmt.Errorf("terminate existing connections for restore cutover: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var terminated bool
+		if err := rows.Scan(&terminated); err != nil || !terminated {
+			return errors.New("existing database connection did not terminate before restore cutover")
+		}
+	}
+	return rows.Err()
+}
+
+// EnsureOperationRestoreDatabase admits an operation-reserved ready name
+// while the live database is still in place. The caller must independently
+// verify a previously restored database before pinning it.
+func EnsureOperationRestoreDatabase(ctx context.Context, admin *sql.DB, live, ready, aside string) error {
+	p := RestoreCutover{Live: live, Ready: ready, Aside: aside}
+	if !p.validNames() {
+		return errors.New("invalid operation restore database names")
+	}
+	owner, err := restoreOwner(ctx, admin)
+	if err != nil {
+		return err
+	}
+	a, b, c, err := p.catalog(ctx, admin)
+	if err != nil {
+		return err
+	}
+	if a.oid == 0 || a.owner != owner || !a.allowsConnections || c.oid != 0 {
+		return errors.New("restore requires an owned live database and an unused aside name")
+	}
+	if b.oid == 0 {
+		return createLike(ctx, admin, ready, live)
+	}
+	if b.owner != owner || !b.allowsConnections {
+		return errors.New("operation restore database has unexpected catalog identity")
+	}
+	return nil
+}

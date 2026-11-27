@@ -17,7 +17,9 @@ func TestArbitrateBaseVsOverlay(t *testing.T) {
 		{"pending", func(f *selectionFacts) { f.pending = true }, arbitration{modePendingMarker, "overlay_pending"}},
 		{"pending manual", func(f *selectionFacts) { f.pending, f.mode = true, "manual" }, arbitration{modeMaintenance, "embedded_mode_required"}},
 		{"pending migrate", func(f *selectionFacts) { f.pending, f.kind = true, "migrate" }, arbitration{modeMaintenance, "embedded_mode_required"}},
-		{"active takeover", func(f *selectionFacts) { f.activeTakeover = true }, arbitration{modeMaintenance, "takeover_resuming"}},
+		{"active takeover", func(f *selectionFacts) { f.activeTakeover = true }, arbitration{modeTakeover, "takeover_resuming"}},
+		{"active takeover manual", func(f *selectionFacts) { f.activeTakeover, f.mode = true, "manual" }, arbitration{modeTakeover, "takeover_resuming"}},
+		{"active takeover migrate", func(f *selectionFacts) { f.activeTakeover, f.kind = true, "migrate" }, arbitration{modeMaintenance, "takeover_resuming"}},
 		{"active consume", func(f *selectionFacts) { f.active, f.consumeFamily = true, true }, arbitration{modeConsume, "overlay_update_active"}},
 		{"active other", func(f *selectionFacts) { f.active = true }, arbitration{modeMaintenance, "overlay_update_active"}},
 		{"active manual", func(f *selectionFacts) { f.active, f.consumeFamily, f.mode = true, true, "manual" }, arbitration{modeMaintenance, "embedded_mode_required"}},
@@ -36,8 +38,8 @@ func TestArbitrateBaseVsOverlay(t *testing.T) {
 		{"same sequence different commit", func(f *selectionFacts) { f.overlay = f.base; f.overlay.Commit = "different" }, arbitration{modeOverlay, "release_identity_conflict"}},
 		{"failed", func(f *selectionFacts) { f.previousTakeover = "failed" }, arbitration{modeOverlay, "takeover_previously_failed"}},
 		{"rolled back", func(f *selectionFacts) { f.previousTakeover = "rolled_back" }, arbitration{modeOverlay, "takeover_rolled_back"}},
-		{"newer base", func(f *selectionFacts) {}, arbitration{modeOverlay, "base_newer_takeover_not_enabled"}},
-		{"newer base manual", func(f *selectionFacts) { f.mode = "manual" }, arbitration{modeOverlay, "base_newer_takeover_not_enabled"}},
+		{"newer base", func(f *selectionFacts) {}, arbitration{modeTakeover, "base_newer_verified"}},
+		{"newer base manual", func(f *selectionFacts) { f.mode = "manual" }, arbitration{modeTakeover, "base_newer_verified"}},
 		{"newer base migrate", func(f *selectionFacts) { f.kind = "migrate" }, arbitration{modeOverlay, "base_newer_takeover_not_enabled"}},
 	}
 	for _, tc := range cases {

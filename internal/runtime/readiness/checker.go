@@ -45,14 +45,15 @@ type Report struct {
 // "not_configured" (degraded) rather than hard failures, so a minimal server
 // can still answer /readyz.
 type Dependencies struct {
-	DB         *sql.DB
-	Migrations migrations.Runner
-	Build      buildinfo.BuildInfo
-	Bootstrap  BootstrapProvider
-	Secrets    SecretProvider
-	Workers    WorkerProvider
-	Gate       *maintenance.Gate
-	QB         QBProvider
+	DB                           *sql.DB
+	Migrations                   migrations.Runner
+	Build                        buildinfo.BuildInfo
+	Bootstrap                    BootstrapProvider
+	Secrets                      SecretProvider
+	Workers                      WorkerProvider
+	WorkersIntentionallyDisabled bool
+	Gate                         *maintenance.Gate
+	QB                           QBProvider
 	// Deployment proves the three-layer deployment identity (design §6).
 	// Nil means the process was launched without update-aware bootstrap
 	// identity (bare-metal dev): the check reports "not_provided" and never
@@ -183,7 +184,9 @@ func (c *Checker) Report(ctx context.Context) Report {
 	}
 
 	// 8. Worker lanes.
-	if c.deps.Workers == nil {
+	if c.deps.WorkersIntentionallyDisabled {
+		checks["worker_lanes"] = CheckOutcome{OK: true, Code: "disabled_for_private_probe"}
+	} else if c.deps.Workers == nil {
 		checks["worker_lanes"] = CheckOutcome{OK: false, Code: "not_configured"}
 		hardFailed = orReason(hardFailed, "worker_lanes:not_configured")
 	} else {
@@ -206,7 +209,7 @@ func (c *Checker) Report(ctx context.Context) Report {
 		// The resume gate only gates recovery: a serving instance does not need
 		// it; maintenance/draining do.
 		resumePassed := status.State == maintenance.Serving || status.AutomationResumeGate
-		checks["automation_resume_gate"] = CheckOutcome{OK: resumePassed, Code: resumeGateCode(status, resumePassed)}
+		checks["automation_resume_gate"] = CheckOutcome{OK: resumePassed, Code: resumeGateCode(resumePassed)}
 		if !resumePassed {
 			hardFailed = orReason(hardFailed, "automation_resume_gate:not_passed")
 		}
@@ -293,7 +296,7 @@ func (c *Checker) Report(ctx context.Context) Report {
 	}
 }
 
-func resumeGateCode(status maintenance.Status, passed bool) string {
+func resumeGateCode(passed bool) string {
 	if passed {
 		return "passed"
 	}

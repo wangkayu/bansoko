@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"testing"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/config"
 	"bansoko/internal/runtime/configdir"
 	"bansoko/internal/runtime/deploymentidentity"
@@ -26,6 +29,10 @@ import (
 // release-metadata.json hashes match the written bytes exactly, mirroring the
 // deterministic packager output shape consumed by bootstrap verification.
 func writeReleaseTree(t *testing.T, root, releaseID string) string {
+	return writeReleaseTreeWithOrder(t, root, releaseID, buildinfo.Order{})
+}
+
+func writeReleaseTreeWithOrder(t *testing.T, root, releaseID string, order buildinfo.Order) string {
 	t.Helper()
 	releaseDir := filepath.Join(root, releasesDirName, releaseID)
 	files := map[string][]byte{
@@ -57,6 +64,11 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 		TargetSchemaVersion: "schema-test",
 		Platform:            runtime.GOOS,
 		Architecture:        runtime.GOARCH,
+		Order:               order,
+	}
+	if order.Ordered() {
+		meta.BuildID = releaseID
+		meta.SourceCommit = strings.Repeat("c", 40)
 	}
 	payloadPath := filepath.Join(t.TempDir(), "embedded-update-v1.tar.gz")
 	result, buildErr := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
@@ -94,6 +106,19 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 			BootstrapMinVersion: "embedded-bootstrap-v1", MinImageVersion: "b1", TargetReleaseID: releaseID, TargetVersion: meta.Version,
 			TargetSchemaVersion: meta.TargetSchemaVersion, ReleaseSequence: 10,
 		},
+	}
+	if order.Ordered() {
+		binary := files[packagemaker.ServerEntryPath]
+		sum := sha256.Sum256(binary)
+		digest := hex.EncodeToString(sum[:])
+		manifest.Series = order.Series
+		manifest.Channel = hardeningdomain.ReleaseChannel(order.Lane)
+		manifest.ReleaseSequence = order.ReleaseSequence
+		manifest.EmbeddedUpdate.ReleaseSequence = order.ReleaseSequence
+		manifest.SourceCommit = meta.SourceCommit
+		manifest.ArtifactDigest = digest
+		manifest.Artifacts[0].Digest = digest
+		manifest.Artifacts[0].Size = int64(len(binary))
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

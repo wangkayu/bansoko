@@ -110,9 +110,22 @@ func (s fileRecoveryStatus) Status(ctx context.Context) (map[string]any, error) 
 		result["operation_id"] = record.OperationID
 		result["step"] = record.Step
 		result["manifest_digest"] = record.ManifestDigest
-		result["release_sequence"] = record.TargetReleaseSequence
+		if record.TargetReleaseSequence > 0 {
+			result["release_sequence"] = record.TargetReleaseSequence
+		}
 		result["journal_version"] = record.Version
 		result["rollback_blocked"] = record.Step == embeddedupdate.StepRollbackBlocked
+		if evidence := record.Takeover; evidence != nil {
+			result["operation_kind"] = record.OperationKind
+			result["target_source"] = evidence.TargetSource
+			result["previous_release_id"] = record.PreviousReleaseID
+			result["target_lane"] = record.TargetLane
+			result["base_fingerprint"] = evidence.Anchor.Fingerprint()
+			result["database_cutover_pinned"] = record.DatabaseRecovery != nil
+			if record.FenceClosureTarget != "" {
+				result["fence_closure_target"] = record.FenceClosureTarget
+			}
+		}
 	}
 	if s.db != nil && found && record.Channel == updatefence.AdmittedByEmbedded {
 		row, rowFound, err := updatefence.New(s.db).Lookup(ctx, record.OperationID)

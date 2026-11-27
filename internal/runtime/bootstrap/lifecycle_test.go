@@ -19,11 +19,11 @@ func TestDeploymentIdentityEnvMarksNativeAnchorWithoutImageDigest(t *testing.T) 
 	}
 }
 
-func TestDeploymentIdentityEnvClearsAnchorWhenDigestAnchors(t *testing.T) {
+func TestDeploymentIdentityEnvDoesNotInferDockerFromDigest(t *testing.T) {
 	t.Setenv(deploymentidentity.EnvBaseImageDigest, "sha256:"+strings.Repeat("ab", 32))
 	env := deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", "")
-	if env[deploymentidentity.EnvAnchorKind] != "" {
-		t.Fatalf("container anchor = %q, want empty so an inherited value cannot leak", env[deploymentidentity.EnvAnchorKind])
+	if _, docker := readImageAnchor(); !docker && env[deploymentidentity.EnvAnchorKind] != deploymentidentity.AnchorNative {
+		t.Fatalf("native anchor = %q despite no image executable", env[deploymentidentity.EnvAnchorKind])
 	}
 }
 

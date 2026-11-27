@@ -4,6 +4,9 @@ set -euo pipefail
 umask 077
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 fixture="$root/scripts/ci/embedded-update-docker-fixture.sh"
+if [[ "$#" == 1 && "$1" == --takeover ]]; then
+  exec python3 "$root/scripts/verify/base-takeover-crash-matrix.py"
+fi
 evidence_dir="${BANSOKO_CRASH_MATRIX_EVIDENCE_DIR:-${TMPDIR:-/tmp}/bansoko-update-crash-matrix}"
 run_daemon=0
 self_test=0

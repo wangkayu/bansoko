@@ -159,23 +159,26 @@ func spawnChild(cmd *exec.Cmd) (*childProcess, error) {
 // the state-machine orchestration stays fully unit-testable. Real wiring
 // lives in newRealConsumeFX.
 type consumeFX struct {
-	VerifyBackup     func(backupID string) error
-	VerifyTargetTree func(releaseID string) error
-	CheckMigration   func(releaseID string) error
-	RunMigrate       func(releaseID string) error
-	RestoreDatabase  func(backupID string) error
-	RemoveRelease    func(releaseID string) error
-	CleanupSucceeded func(record embeddedupdate.Record) error
-	PromoteCurrent   func(token string) error
-	ClearCurrent     func() error
-	LaunchTarget     func(binaryPath, schemaDir, frontendDir string, env map[string]string) (*childProcess, error)
-	ProbeReady       func() bool
-	StopMaintenance  func() error
-	StartMaintenance func() error
-	SettleOp         func(operationID string) error
-	ReleaseOp        func(operationID string) error
-	SettleExactOp    func(operationID, manifestDigest string, expectedSequence int64) error
-	ReleaseExactOp   func(operationID, manifestDigest string, expectedSequence int64, terminalState string) error
+	VerifyBackup      func(backupID string) error
+	VerifyTargetTree  func(releaseID string) error
+	CheckMigration    func(releaseID string) error
+	RunMigrate        func(releaseID string) error
+	RestoreDatabase   func(backupID string) error
+	PinBackup         func(embeddedupdate.Record) (string, string, error)
+	PrepareRecovery   func(embeddedupdate.Record) (embeddedupdate.DatabaseRecovery, error)
+	ReconcileRecovery func(embeddedupdate.Record) error
+	RemoveRelease     func(releaseID string) error
+	CleanupSucceeded  func(record embeddedupdate.Record) error
+	PromoteCurrent    func(token string) error
+	ClearCurrent      func() error
+	LaunchTarget      func(binaryPath, schemaDir, frontendDir string, env map[string]string) (*childProcess, error)
+	ProbeReady        func() bool
+	StopMaintenance   func() error
+	StartMaintenance  func() error
+	SettleOp          func(operationID string) error
+	ReleaseOp         func(operationID string) error
+	SettleExactOp     func(operationID, manifestDigest string, expectedSequence int64) error
+	ReleaseExactOp    func(operationID, manifestDigest string, expectedSequence int64, terminalState string) error
 }
 
 // consumeOutcome tells runConsumeFlow how to finish.
@@ -188,6 +191,8 @@ const (
 )
 
 type consumeOutcome struct {
+	takeoverOp        string
+	selectionReason   string
 	kind              consumeOutcomeKind
 	exitCode          int
 	blockedReason     string
@@ -627,6 +632,17 @@ func runConsume(j *embeddedupdate.FileJournal, record embeddedupdate.Record,
 // phasePendingMigration verifies the pre-migration contract, then runs the
 // overlay migration.
 func (f *consumeFlow) phasePendingMigration() consumeOutcome {
+	if f.fx.PinBackup != nil {
+		digest, id, err := f.fx.PinBackup(f.record)
+		if err != nil || f.record.InstallID != "" && id != f.record.InstallID {
+			return f.parkActive(embeddedupdate.StepPendingMigration, "operation backup or install identity is unproven")
+		}
+		if f.record.BackupDigest == "" && !f.advance(embeddedupdate.StepPendingMigration, "", "pinning backup before owner migration", func(r *embeddedupdate.Record) {
+			r.BackupDigest, r.InstallID = digest, id
+		}) {
+			return f.parkActive(embeddedupdate.StepPendingMigration, "cannot persist operation backup identity")
+		}
+	}
 	if backupErr := f.fx.VerifyBackup(f.record.BackupID); backupErr != nil {
 		detail := fmt.Sprintf("backup %s unusable before migration: %v", f.record.BackupID, backupErr)
 		return f.abortBeforeMigration(backupErr, detail)
@@ -814,8 +830,8 @@ func (f *consumeFlow) phaseEnterRollback(carriedReason string) consumeOutcome {
 	return f.phaseRestoreDatabase()
 }
 
-// phaseRestoreDatabase applies pg_restore --clean --if-exists of the verified
-// backup into the main database. Replays are idempotent.
+// phaseRestoreDatabase verifies a fresh restore and journals both database
+// identities before allowing the rename sequence to start.
 func (f *consumeFlow) phaseRestoreDatabase() consumeOutcome {
 	if strings.TrimSpace(f.record.BackupID) == "" {
 		if !f.advance(embeddedupdate.StepRollbackBlocked,
@@ -825,7 +841,23 @@ func (f *consumeFlow) phaseRestoreDatabase() consumeOutcome {
 		}
 		return f.parkBlockedTerminal("rollback has no recorded backup id")
 	}
-	restoreErr := f.fx.RestoreDatabase(f.record.BackupID)
+	var restoreErr error
+	if f.fx.PrepareRecovery == nil {
+		restoreErr = f.fx.RestoreDatabase(f.record.BackupID)
+	} else {
+		if f.record.DatabaseRecovery == nil {
+			var pin embeddedupdate.DatabaseRecovery
+			pin, restoreErr = f.fx.PrepareRecovery(f.record)
+			if restoreErr == nil && !f.advance(embeddedupdate.StepRollbackStarted, f.record.LastError, "pinning verified databases before rename", func(r *embeddedupdate.Record) {
+				r.DatabaseRecovery = &pin
+			}) {
+				return f.parkActive(embeddedupdate.StepRollbackStarted, "cannot persist database cutover identity")
+			}
+		}
+		if restoreErr == nil {
+			restoreErr = f.fx.ReconcileRecovery(f.record)
+		}
+	}
 	if restoreErr != nil {
 		if !f.advance(embeddedupdate.StepRollbackBlocked, restoreErr.Error(),
 			"main-database restore from backup "+f.record.BackupID+" failed", nil) {
@@ -1214,9 +1246,9 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 	if envErr != nil {
 		return nil, envErr
 	}
-	dbName, dbNameErr := updateapp.PostgresDatabaseName(databaseURL)
-	if dbNameErr != nil {
-		return nil, dbNameErr
+	restore, err := newOperationRestore(updatesRoot, databaseURL)
+	if err != nil {
+		return nil, err
 	}
 
 	return &consumeFX{
@@ -1271,14 +1303,16 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 			}
 			return nil
 		},
-		RestoreDatabase: func(backupID string) error {
-			if os.Getenv("BANSOKO_EMBEDDED_FIXTURE_RESTORE_FAILURE") == "1" {
-				return errors.New("embedded fixture: injected restore failure")
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), pgToolTimeout)
-			defer cancel()
-			return executor.Restore(ctx, env, backupsDumpPath(updatesRoot, backupID), dbName)
+		PinBackup: func(r embeddedupdate.Record) (string, string, error) {
+			return restore.pinBackup(r, db)
 		},
+		PrepareRecovery: func(r embeddedupdate.Record) (embeddedupdate.DatabaseRecovery, error) {
+			if os.Getenv("BANSOKO_ENVIRONMENT") == "test" && os.Getenv("BANSOKO_EMBEDDED_FIXTURE_RESTORE_FAILURE") == "1" {
+				return embeddedupdate.DatabaseRecovery{}, errors.New("embedded fixture: injected restore failure")
+			}
+			return restore.prepare(r)
+		},
+		ReconcileRecovery: restore.reconcile,
 		RemoveRelease: func(releaseID string) error {
 			if !validReleaseToken(releaseID) {
 				return fmt.Errorf("refusing to remove invalid release token %q", releaseID)
@@ -1514,6 +1548,11 @@ func execSteadyServe(updatesRoot string, outcome consumeOutcome) int {
 			return 124
 		}
 		identity = deploymentIdentityEnvWithBuild(deploymentidentity.SourceOverlay, outcome.serveOverlayRelID, proof.PayloadDigest, proof.OperationID, proof.ExpectedProcessBuildID)
+	}
+	identity[deploymentidentity.EnvTakeoverOperationID] = outcome.takeoverOp
+	if outcome.selectionReason != "" {
+		identity[deploymentidentity.EnvSelectionReasonCode] = outcome.selectionReason
+		identity[deploymentidentity.EnvSelectionReason] = outcome.selectionReason
 	}
 	for key, value := range identity {
 		pairs[key] = value

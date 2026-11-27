@@ -2,6 +2,7 @@
 
 - 上游诊断分别显示共享额度冷却与目录、字幕组的刷新结果。Mikan 目录与字幕组读取共享冷却；Bangumi 和 TMDB 的手动搜索与自动匹配也各自共享冷却。
 - 自动化摘要区分六类结果。RSS 刷新反复遇到未给出重试时间的限流时，会逐步延长等待，不消耗尝试次数或触发站点熔断。
+- 内置版本更新且兼容的 Docker 镜像可以在两种更新模式下接管已安装的 overlay。新版通过就绪检查前，应用保持维护状态；迁移或就绪检查失败时，先恢复原数据库，再回到旧版 overlay。
 
 - Bansoko 可直接运行在 Linux x86-64、Linux ARM64 和 Apple 芯片 Mac 上。下载包包含 Web 界面、数据库迁移和 MediaInfo，PostgreSQL 17 与 qBittorrent 仍需单独运行。
 - 启动前可用 bansoko-server doctor 检查宿主环境。Linux 的两种架构均支持按需触发应用内更新，macOS 使用手动更新。

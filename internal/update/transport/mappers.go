@@ -29,6 +29,9 @@ func Status(value updateapplication.Status) generated.EmbeddedUpdateStatus {
 	}
 	if value.OperationID != "" {
 		kind, source := generated.EmbeddedUpdateStatusOperationKind("overlay_update"), generated.EmbeddedUpdateStatusTargetSource("overlay")
+		if value.OperationKind == "base_takeover" && value.TargetSource == "base" {
+			kind, source = "base_takeover", "base"
+		}
 		result.OperationKind, result.TargetSource = &kind, &source
 	}
 	if value.TargetLane == "stable" || value.TargetLane == "test" {

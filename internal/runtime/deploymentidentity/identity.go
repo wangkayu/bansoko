@@ -52,6 +52,7 @@ const (
 	EnvBaseBuild            = "BANSOKO_DEPLOYMENT_BASE_BUILD"
 	EnvSelectionReasonCode  = "BANSOKO_DEPLOYMENT_SELECTION_REASON_CODE"
 	EnvSelectionReason      = "BANSOKO_DEPLOYMENT_SELECTION_REASON"
+	EnvTakeoverOperationID  = "BANSOKO_DEPLOYMENT_TAKEOVER_OPERATION_ID"
 	DefaultUpdatesRoot      = "/config/updates"
 	currentPointerFileName  = "current"
 	payloadDigestHexPattern = `^[0-9a-f]{64}$`
@@ -116,6 +117,7 @@ func FromEnv(getenv func(string) string) Identity {
 		BaseBuild:              baseBuild,
 		SelectionReasonCode:    trim(EnvSelectionReasonCode),
 		SelectionReason:        trim(EnvSelectionReason),
+		TakeoverOperationID:    trim(EnvTakeoverOperationID),
 	}
 }
 

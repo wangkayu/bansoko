@@ -41,7 +41,7 @@ import (
 // FormatVersion guards forward-incompatible journal layout changes. An
 // envelope carrying another schema version must be treated as data the local
 // binary cannot consume (fail closed), not as recoverable noise.
-const FormatVersion = 1
+const FormatVersion = 2
 
 // maxJournalBytes bounds any journal read. The file holds one record plus its
 // append-only history; the limit is generous for that shape and turns a
@@ -80,6 +80,8 @@ const (
 	StepAbortPending Step = "abort_pending"
 
 	// Bootstrap-side checkpoints (post-restart consumption).
+	StepMigrationStarted   Step = "migration_started"
+	StepBaseReady          Step = "base_ready"
 	StepMigrationSucceeded Step = "migration_succeeded"
 	StepPromoted           Step = "promoted"
 
@@ -329,9 +331,14 @@ type AttemptCounters struct {
 // active operation per deployment; Channel marks which updater admitted it
 // ("embedded") so future channels cannot collide on the same file.
 type Record struct {
-	SchemaVersion int    `json:"schema_version"`
-	OperationID   string `json:"operation_id"`
-	Channel       string `json:"channel"`
+	OperationKind    string            `json:"operation_kind,omitempty"`
+	Takeover         *TakeoverEvidence `json:"takeover,omitempty"`
+	BackupDigest     string            `json:"backup_digest,omitempty"`
+	InstallID        string            `json:"install_id,omitempty"`
+	DatabaseRecovery *DatabaseRecovery `json:"database_recovery,omitempty"`
+	SchemaVersion    int               `json:"schema_version"`
+	OperationID      string            `json:"operation_id"`
+	Channel          string            `json:"channel"`
 
 	Step    Step  `json:"step"`
 	Version int64 `json:"version"`
@@ -472,7 +479,10 @@ func (r *Record) normalize(now time.Time) error {
 	if r.SchemaVersion != FormatVersion {
 		return fmt.Errorf("unsupported journal record schema version %d", r.SchemaVersion)
 	}
-	return nil
+	if r.OperationKind == KindBaseTakeover && r.Step != StepPrepared {
+		return errors.New("base takeover must begin at prepared")
+	}
+	return validateOperation(*r)
 }
 
 var (
@@ -490,6 +500,32 @@ var (
 type envelope struct {
 	SchemaVersion int     `json:"schema_version"`
 	Record        *Record `json:"record"`
+}
+
+var errUnsupportedJournalFormat = errors.New("unsupported journal format")
+
+// Check the format before decoding the record. A future record can change
+// the type of any field without making its on-disk evidence corrupt.
+func decodeEnvelope(data []byte, env *envelope) error {
+	var header struct {
+		SchemaVersion int             `json:"schema_version"`
+		Record        json.RawMessage `json:"record"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return err
+	}
+	if header.SchemaVersion != 1 && header.SchemaVersion != FormatVersion {
+		return errUnsupportedJournalFormat
+	}
+	if len(header.Record) != 0 {
+		var recordHeader struct {
+			SchemaVersion int `json:"schema_version"`
+		}
+		if err := json.Unmarshal(header.Record, &recordHeader); err == nil && recordHeader.SchemaVersion != 0 && recordHeader.SchemaVersion != header.SchemaVersion {
+			return errUnsupportedJournalFormat
+		}
+	}
+	return json.Unmarshal(data, env)
 }
 
 // FileJournal is the persistent embedded-update journal. Instances hold the
@@ -538,16 +574,19 @@ func Open(path string) (*FileJournal, error) {
 	switch {
 	case readErr == nil:
 		var env envelope
-		if decodeErr := json.Unmarshal(data, &env); decodeErr != nil {
+		if decodeErr := decodeEnvelope(data, &env); decodeErr != nil {
 			_ = j.Close()
+			if errors.Is(decodeErr, errUnsupportedJournalFormat) {
+				return nil, fmt.Errorf("%w: %v", ErrJournalCorrupted, decodeErr)
+			}
 			if isolateErr := quarantine(dir, baseName(path)); isolateErr != nil {
 				return nil, fmt.Errorf("%w (%v); quarantine failed: %v", ErrJournalCorrupted, decodeErr, isolateErr)
 			}
 			return nil, fmt.Errorf("%w: quarantined %s (%v)", ErrJournalCorrupted, path, decodeErr)
 		}
-		if env.Record != nil && env.SchemaVersion != FormatVersion {
+		if err := validateEnvelope(env); err != nil {
 			_ = j.Close()
-			return nil, fmt.Errorf("%w: unsupported envelope schema version %d", ErrJournalCorrupted, env.SchemaVersion)
+			return nil, fmt.Errorf("%w: %v", ErrJournalCorrupted, err)
 		}
 	case errors.Is(readErr, os.ErrNotExist):
 		// Fresh volume: no record yet.
@@ -631,8 +670,8 @@ func Snapshot(path string) (Record, bool, error) {
 	if decodeErr := json.Unmarshal(data, &env); decodeErr != nil {
 		return Record{}, false, fmt.Errorf("%w: decode update journal snapshot: %v", ErrJournalCorrupted, decodeErr)
 	}
-	if env.SchemaVersion != FormatVersion {
-		return Record{}, false, fmt.Errorf("%w: unsupported envelope schema version %d", ErrJournalCorrupted, env.SchemaVersion)
+	if err := validateEnvelope(env); err != nil {
+		return Record{}, false, fmt.Errorf("%w: %v", ErrJournalCorrupted, err)
 	}
 	if env.Record == nil {
 		return Record{}, false, nil
@@ -712,7 +751,7 @@ func (j *FileJournal) advance(operationID string, expectedVersion int64, expecte
 	if expectedStep != "" && record.Step != expectedStep {
 		return Record{}, fmt.Errorf("%w (have %s, expected %s)", ErrStepConflict, record.Step, expectedStep)
 	}
-	if !CanAdvance(record.Step, to) {
+	if !record.canAdvance(to) {
 		return Record{}, fmt.Errorf("%w (%s -> %s)", ErrInvalidTransition, record.Step, to)
 	}
 	at := j.clock()
@@ -722,6 +761,15 @@ func (j *FileJournal) advance(operationID string, expectedVersion int64, expecte
 	record.UpdatedAt = at
 	record.History = append(record.History, TransitionEvent{Step: to, At: at, Error: lastError, Detail: detail})
 	if mutate != nil {
+		// The mutation callback must not change the comparison snapshot.
+		if record.Takeover != nil {
+			evidence := *record.Takeover
+			record.Takeover = &evidence
+		}
+		if record.DatabaseRecovery != nil {
+			pin := *record.DatabaseRecovery
+			record.DatabaseRecovery = &pin
+		}
 		mutate(&record)
 	}
 	// Validate the *result*: a checkpoint that leaves the record in a state its
@@ -743,6 +791,9 @@ func (j *FileJournal) advance(operationID string, expectedVersion int64, expecte
 //   - advancing to a terminal step requires the closure proof that step implies
 //     (succeeded and rolled_back are only ever reached with a proven close).
 func validateAdvancedRecord(before, record Record, to Step) error {
+	if err := validateOperationAdvance(before, record); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTransition, err)
+	}
 	if err := ValidateRecoveryDecision(record); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidTransition, err)
 	}
@@ -758,7 +809,7 @@ func validateAdvancedRecord(before, record Record, to Step) error {
 				ErrInvalidTransition, record.FenceClosureTarget)
 		}
 	}
-	if before.Step == StepFenceClosurePending && to != StepFenceClosurePending {
+	if before.Step == StepFenceClosurePending && to != StepFenceClosurePending && !(before.OperationKind == KindBaseTakeover && to == StepRollbackBlocked) {
 		if record.FenceClosureTarget == "" {
 			return fmt.Errorf("%w: fence closure pending has no recorded target", ErrInvalidTransition)
 		}
@@ -1018,7 +1069,7 @@ func (j *FileJournal) ReadArchive() ([]ArchivedEntry, error) {
 			result = append(result, archived)
 			continue
 		}
-		if env.Record == nil || env.SchemaVersion != FormatVersion {
+		if env.Record == nil || validateEnvelope(env) != nil {
 			archived.Reason = "archive entry carries an invalid envelope"
 			result = append(result, archived)
 			continue
@@ -1054,7 +1105,7 @@ func (j *FileJournal) ArchivedRecords() ([]Record, error) {
 }
 
 func validateRecord(record Record) error {
-	if record.SchemaVersion != FormatVersion {
+	if record.SchemaVersion != FormatVersion && record.SchemaVersion != 1 {
 		return fmt.Errorf("unsupported record schema version %d", record.SchemaVersion)
 	}
 	if !safeID(record.OperationID) {
@@ -1102,16 +1153,19 @@ func (j *FileJournal) readEnvelope() (envelope, error) {
 		return envelope{}, fmt.Errorf("read update journal: %w", err)
 	}
 	var env envelope
-	if err := json.Unmarshal(data, &env); err != nil {
+	if err := decodeEnvelope(data, &env); err != nil {
 		_ = j.Close()
+		if errors.Is(err, errUnsupportedJournalFormat) {
+			return envelope{}, fmt.Errorf("%w: %v", ErrJournalCorrupted, err)
+		}
 		dir := filepath.Dir(j.path)
 		if isolateErr := quarantine(dir, baseName(j.path)); isolateErr != nil {
 			return envelope{}, fmt.Errorf("%w (%v); quarantine failed: %v", ErrJournalCorrupted, err, isolateErr)
 		}
 		return envelope{}, fmt.Errorf("%w: quarantined %s (%v)", ErrJournalCorrupted, j.path, err)
 	}
-	if env.SchemaVersion != FormatVersion {
-		return envelope{}, fmt.Errorf("%w: unsupported envelope schema version %d", ErrJournalCorrupted, env.SchemaVersion)
+	if err := validateEnvelope(env); err != nil {
+		return envelope{}, fmt.Errorf("%w: %v", ErrJournalCorrupted, err)
 	}
 	return env, nil
 }

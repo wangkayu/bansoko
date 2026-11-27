@@ -78,7 +78,8 @@ func updateapplicationIsKnownStep(step embeddedupdate.Step) bool {
 	switch step {
 	case embeddedupdate.StepPrepared, embeddedupdate.StepAccepted, embeddedupdate.StepFetched,
 		embeddedupdate.StepStaged, embeddedupdate.StepMaintenanceEntered, embeddedupdate.StepBackupVerified,
-		embeddedupdate.StepPendingMigration, embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+		embeddedupdate.StepPendingMigration, embeddedupdate.StepMigrationStarted, embeddedupdate.StepMigrationSucceeded,
+		embeddedupdate.StepBaseReady, embeddedupdate.StepPromoted,
 		embeddedupdate.StepReadinessFailed, embeddedupdate.StepRollbackStarted, embeddedupdate.StepDatabaseRestored,
 		embeddedupdate.StepFenceClosurePending, embeddedupdate.StepSucceeded, embeddedupdate.StepFailed,
 		embeddedupdate.StepRolledBack, embeddedupdate.StepRollbackBlocked, embeddedupdate.StepAbortPending:
