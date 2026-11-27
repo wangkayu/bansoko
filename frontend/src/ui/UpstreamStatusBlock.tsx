@@ -52,11 +52,17 @@ export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onR
 
 export function useUpstreamWait(status?: UpstreamStatus): number {
   const waiting = status?.state === "rate_limited" || status?.state === "cooldown";
-  const receivedAtMs = useMemo(() => status?.receivedAtMs ?? Date.now(), [status]);
+  const receipt = status?.receivedAtMs;
+  const checkedAt = status?.checked_at;
+  const cooldownUntil = status?.cooldown_until;
   const seconds = status?.retry_after_seconds;
-  const deadline = seconds !== undefined && Number.isFinite(seconds)
-    ? receivedAtMs + seconds * 1000
-    : status?.cooldown_until ? Date.parse(status.cooldown_until) : 0;
+  const state = status?.state;
+  // A new observation without a receipt time starts a new countdown, even if its duration is unchanged.
+  const deadline = useMemo(() => {
+    if (seconds !== undefined && Number.isFinite(seconds)) return (receipt ?? Date.now()) + seconds * 1000;
+    return cooldownUntil ? Date.parse(cooldownUntil) : 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- checkedAt and state identify the observation.
+  }, [receipt, checkedAt, cooldownUntil, seconds, state]);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!waiting || !Number.isFinite(deadline) || deadline <= Date.now()) return;

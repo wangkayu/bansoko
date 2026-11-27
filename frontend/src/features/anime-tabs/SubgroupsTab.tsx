@@ -14,7 +14,8 @@ import {
 import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { subgroupsChangeCount, subgroupsEditFromWorkspace, valuesEqual, type SubgroupsEdit } from "../../lib/draft";
 import { SelectionOverrideFields, type ServerSelectionFact } from "../anime-forms/SourcesFields";
-import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
+import { DraftSubgroupDiscoveryButton, DraftSubgroupDiscoveryStatus } from "../anime-config/DraftSubgroupRefresh";
+import { useDraftSubgroupDiscovery } from "../anime-config/useDraftSubgroupDiscovery";
 import { StateBlock, Button, ConflictBlock } from "../../ui";
 import { Popconfirm } from "../../ui/base";
 import type { AnimeTabHost, DraftTabHost, OwnerTabHost } from "./host";
@@ -105,8 +106,12 @@ function DraftSubgroupsTab({ host }: { host: DraftTabHost }) {
       ? JSON.stringify([draft.origin, draft.origin_entry_ref, draft.subgroups, host.observation ?? null])
       : undefined,
   );
+  const discovery = useDraftSubgroupDiscovery(
+    host.subgroupDiscovery ? { ...host.subgroupDiscovery, onDiscovered: host.onDiscovered } : undefined,
+  );
   return (
     <div className="subgroups-stack">
+      <DraftSubgroupDiscoveryStatus discovery={discovery} />
       <SelectionOverrideFields
         value={draft.subgroups}
         onChange={(subgroups) => onDraftChange({ ...draft, subgroups })}
@@ -116,15 +121,7 @@ function DraftSubgroupsTab({ host }: { host: DraftTabHost }) {
         selectionPending={selection.pending}
         selectionError={selection.error}
         observed={host.observedGroups}
-        headerAction={
-          host.subgroupDiscovery ? (
-            <DraftSubgroupRefresh
-              provider={host.subgroupDiscovery.provider}
-              providerEntryRef={host.subgroupDiscovery.providerEntryRef}
-              onDiscovered={host.onDiscovered}
-            />
-          ) : undefined
-        }
+        headerAction={<DraftSubgroupDiscoveryButton discovery={discovery} showHint />}
       />
     </div>
   );

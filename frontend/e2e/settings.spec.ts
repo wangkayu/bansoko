@@ -603,7 +603,9 @@ test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
 
   test("上游诊断分别显示额度等待与业务刷新", async ({ page }, testInfo) => {
-    const now = new Date();
+    const clientNow = new Date();
+    await page.clock.setFixedTime(clientNow);
+    const now = new Date(clientNow.getTime() - 3_600_000);
     const until = new Date(now.getTime() + 90_000);
     await page.route("**/api/v1/system/upstream-health", route => route.fulfill({ json: {
       checked_at: now.toISOString(),
@@ -615,7 +617,8 @@ test.describe("settings fixture coverage", () => {
     await expect(page.getByTestId("settings-content").getByRole("heading", { name: "上游诊断", exact: true }).filter({ visible: true }).last()).toBeVisible();
     await expect(page.getByRole("heading", { name: "共享请求额度" })).toBeVisible();
     await expect(page.getByText("anibt:metadata", { exact: true })).toBeVisible();
-    await expect(page.locator('[data-upstream-state="cooldown"]')).toContainText(/\d+\s*秒/);
+    const cooldown = page.locator('[data-upstream-state="cooldown"]');
+    await expect(cooldown).toContainText("预计冷却还剩 90 秒");
     await expect(page.getByRole("heading", { name: "业务刷新" })).toBeVisible();
     await expect(page.getByLabel("结果统计")).toContainText("尚未收录");
     await expect(page.getByText(/上次成功：/)).toBeVisible();
@@ -624,6 +627,10 @@ test.describe("settings fixture coverage", () => {
     if (process.env.BANSOKO_UPSTREAM_VISUAL_QA === "1") {
       await page.screenshot({ path: testInfo.outputPath("upstream-health.png") });
     }
+    await page.clock.setFixedTime(new Date(clientNow.getTime() + 45_000));
+    await expect(cooldown).toContainText("预计冷却还剩 45 秒");
+    await page.clock.setFixedTime(new Date(clientNow.getTime() + 90_000));
+    await expect(cooldown).toHaveCount(0);
   });
 
   test("事件脚本：配置分栏、源码滚动与返回草稿", async ({ page }, testInfo) => {

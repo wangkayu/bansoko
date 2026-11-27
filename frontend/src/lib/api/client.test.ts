@@ -9,6 +9,7 @@ import {
   getOneShotAcquisition,
   getOneShotExecutionAttempt,
   getReadyz,
+  getSystemUpstreamHealth,
   listOneShotExecutionAttempts,
   fetchOwnerCustomSnapshot,
   getAuthSession,
@@ -98,6 +99,17 @@ describe("api client", () => {
       await expect(readCatalogWorkspace("anibt", "202604")).resolves.toMatchObject({
         snapshot: { upstream: { ...upstream, receivedAtMs: 2_000 } },
       });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("preserves the diagnostic server clock and stamps the client receipt time", async () => {
+    const health = { checked_at: "2026-01-01T00:00:00Z", quotas: [], refreshes: [] };
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T01:00:00Z"));
+    try {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, health));
+      await expect(getSystemUpstreamHealth()).resolves.toEqual({ ...health, receivedAtMs: Date.now() });
     } finally {
       clock.mockRestore();
     }

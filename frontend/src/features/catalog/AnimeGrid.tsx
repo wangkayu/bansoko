@@ -3,7 +3,7 @@ import { useLocation, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "../../ui/toast";
 import { AlertTriangle, CheckCircle2, CircleHelp, ListChecks, PackageCheck, Plus, RotateCw, type LucideIcon } from "lucide-react";
-import { isVersionConflict, newUUID, toUserMessage, type SubscribeResult } from "../../lib/api/client";
+import { isVersionConflict, newUUID, toUserMessage, type SubscribeResult, type UpstreamStatus } from "../../lib/api/client";
 import { getCandidateStore } from "../../lib/candidate/serverCandidateStore";
 import { blacklistKey, useBlacklist, useBlacklistActions } from "../../lib/blacklist";
 import { getCatalogProvider, providerLabel } from "../../lib/providers/registry";
@@ -212,7 +212,15 @@ export function AnimeGrid() {
   );
   const snapshot = catalog.data?.snapshot;
   const loading = catalog.isLoading;
-  const refreshing = catalog.isFetching;
+  const refreshKey = `${tab}:${season}`;
+  const [manualRefresh, setManualRefresh] = useState<{ key: string; request?: symbol; upstream?: UpstreamStatus }>({ key: refreshKey });
+  if (manualRefresh.key !== refreshKey) setManualRefresh({ key: refreshKey });
+  const refreshing = catalog.isFetching || (manualRefresh.key === refreshKey && manualRefresh.request !== undefined);
+  const snapshotUpstream = snapshot?.upstream;
+  const upstream = (manualRefresh.key === refreshKey ? manualRefresh.upstream : undefined) ?? (
+    snapshotUpstream && (snapshot?.status === "error" || (snapshotUpstream.state !== "available" && snapshotUpstream.state !== "empty"))
+      ? snapshotUpstream : undefined
+  );
   const error = catalog.error
     ? toUserMessage(
         catalog.error,
@@ -241,18 +249,28 @@ export function AnimeGrid() {
 
   // A manual refresh trusts the refresh endpoint's return: toast per that result, then invalidate the catalog query once to re-read the list.
   async function refresh() {
-    if (!BROWSABLE_TABS.includes(tab)) return;
+    if (refreshing || !BROWSABLE_TABS.includes(tab)) return;
+    const request = Symbol();
+    setManualRefresh({ key: refreshKey, request, upstream: manualRefresh.upstream });
+    function recordStatus(status?: UpstreamStatus) {
+      setManualRefresh((current) => current.request === request ? { ...current, upstream: status } : current);
+    }
     const site = tab === "mikan" ? "Mikan" : "AniBT";
     try {
       const outcome = await getCatalogProvider(tab as "mikan" | "anibt").refreshCatalog(season);
+      recordStatus();
       await invalidateCatalog();
       if (outcome === "outage") toast.error(t("grid.refreshOutage", { site }));
       else if (outcome === "withdrawn") toast.warning(t("grid.refreshWithdrawn", { site }));
       else if (outcome === "zero_result") toast.info(t("grid.refreshZeroResult", { site }));
       else toast.success(t("grid.refreshed"));
     } catch (cause) {
+      const status = nonErrorUpstream(cause);
+      recordStatus(status);
       await invalidateCatalog();
-      if (!nonErrorUpstream(cause)) toast.error(toUserMessage(cause, t("grid.refreshFailed", { site })));
+      if (!status) toast.error(toUserMessage(cause, t("grid.refreshFailed", { site })));
+    } finally {
+      setManualRefresh((current) => current.request === request ? { ...current, request: undefined } : current);
     }
   }
 
@@ -801,10 +819,10 @@ export function AnimeGrid() {
         />
       )}
 
-      {snapshot?.upstream && snapshot.status === "error" && (
-        <UpstreamStatusBlock status={snapshot.upstream} errorTitle={snapshot.errorMessage ?? t("grid.siteRefreshFailed")} onRetry={() => void refresh()} />
+      {upstream && (
+        <UpstreamStatusBlock status={upstream} errorTitle={snapshot?.errorMessage ?? t("grid.siteRefreshFailed")} onRetry={() => void refresh()} retryDisabled={refreshing} />
       )}
-      {snapshot?.status === "error" && !snapshot.upstream && (
+      {snapshot?.status === "error" && !upstream && (
         <StateBlock
           kind="error"
           title={snapshot.errorMessage ?? t("grid.siteRefreshFailed")}

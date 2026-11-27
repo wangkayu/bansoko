@@ -35,11 +35,11 @@ export type Version = Schema<"Version">;
 export type SystemHealth = Schema<"SystemHealth">;
 export type UpstreamStatus = Schema<"UpstreamStatus"> & { receivedAtMs?: number };
 export type ReadinessReport = Schema<"ReadinessReport">;
-export type SystemUpstreamHealth = Schema<"SystemUpstreamHealth">;
+export type SystemUpstreamHealth = Schema<"SystemUpstreamHealth"> & { receivedAtMs: number };
 export type UpstreamOutcomeCounts = Schema<"UpstreamOutcomeCounts">;
 
 export function getSystemUpstreamHealth(): Promise<SystemUpstreamHealth> {
-  return request("/system/upstream-health", { method: "GET" });
+  return request("/system/upstream-health", { method: "GET", includeReceivedAt: true });
 }
 export type DeploymentIdentity = Schema<"DeploymentIdentity">;
 export type BootstrapStatus = Schema<"BootstrapStatus">;
@@ -415,6 +415,7 @@ type RequestOptions = {
   idempotencyKey?: string;
   ifMatchVersion?: number;
   acceptStatuses?: readonly number[];
+  includeReceivedAt?: boolean;
   /** "text" returns the success body as a string instead of parsing JSON. */
   responseType?: "json" | "text";
 };
@@ -511,6 +512,7 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
   for (const status of [payload?.upstream, payload?.snapshot?.upstream]) {
     if (status && typeof status === "object") status.receivedAtMs = receivedAtMs;
   }
+  if (options.includeReceivedAt && payload && typeof payload === "object") payload.receivedAtMs = receivedAtMs;
   if (!response.ok) {
     if (options.acceptStatuses?.includes(response.status)) {
       return payload as Result;

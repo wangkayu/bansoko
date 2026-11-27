@@ -22,8 +22,16 @@ export function UpstreamCounts({ counts }: { counts: UpstreamOutcomeCounts }) {
   );
 }
 
-function QuotaRow({ quota, checkedAt }: { quota: SystemUpstreamHealth["quotas"][number]; checkedAt: string }) {
-  const seconds = useUpstreamWait({ state: "cooldown", checked_at: checkedAt, cooldown_until: quota.cooldown_until });
+function QuotaRow({ quota, checkedAt, receivedAtMs }: {
+  quota: SystemUpstreamHealth["quotas"][number]; checkedAt: string; receivedAtMs: number;
+}) {
+  const durationMs = Date.parse(quota.cooldown_until) - Date.parse(checkedAt);
+  const seconds = useUpstreamWait({
+    state: "cooldown",
+    checked_at: checkedAt,
+    retry_after_seconds: Number.isFinite(durationMs) ? Math.max(0, durationMs / 1000) : 0,
+    receivedAtMs,
+  });
   return (
     <div className="tw:grid tw:min-w-0 tw:gap-1 tw:border-b tw:border-border tw:pb-2">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-3 tw:gap-y-1">
@@ -58,7 +66,7 @@ export function SettingsUpstreamHealth() {
             <h3 className="text-body tw:font-semibold">{t("upstream.health.quotas")}</h3>
             {health.data.quotas.length === 0 && <p className="text-caption">{t("upstream.health.noQuota")}</p>}
             {health.data.quotas.map((quota) => (
-              <QuotaRow key={quota.bucket} quota={quota} checkedAt={health.data.checked_at} />
+              <QuotaRow key={quota.bucket} quota={quota} checkedAt={health.data.checked_at} receivedAtMs={health.data.receivedAtMs} />
             ))}
           </section>
           <section className="tw:grid tw:gap-2">

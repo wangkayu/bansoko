@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   discoverAnimeSubgroups,
+  discoverProviderEntryGroups,
   previewAnimeSubgroupsSelection,
   type AnimeDraft,
   type AnimeWorkspace,
@@ -22,7 +23,7 @@ import { t } from "../../lib/i18n";
 
 vi.mock("../../lib/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api/client")>();
-  return { ...actual, previewAnimeSubgroupsSelection: vi.fn(), discoverAnimeSubgroups: vi.fn() };
+  return { ...actual, previewAnimeSubgroupsSelection: vi.fn(), discoverAnimeSubgroups: vi.fn(), discoverProviderEntryGroups: vi.fn() };
 });
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 const mockedPreview = vi.mocked(previewAnimeSubgroupsSelection);
@@ -77,13 +78,14 @@ function draftFixture(): AnimeDraft {
   } as unknown as AnimeDraft;
 }
 
-function DraftHarness({ previewable = true }: { previewable?: boolean }) {
+function DraftHarness({ previewable = true, discovery }: { previewable?: boolean; discovery?: DraftTabHost["subgroupDiscovery"] }) {
   const [draft, setDraft] = useState(draftFixture);
   const host: DraftTabHost = {
     mode: "draft",
     draft,
     onDraftChange: setDraft,
     previewable,
+    subgroupDiscovery: discovery,
     feedSnapshots: [],
     onFeedSnapshotsChange: () => {},
     observedGroups: [],
@@ -91,6 +93,19 @@ function DraftHarness({ previewable = true }: { previewable?: boolean }) {
   };
   return <SubgroupsTab host={host} />;
 }
+
+it("草稿字幕组冷却状态位于选择区域上方，而非按钮行内", async () => {
+  vi.mocked(discoverProviderEntryGroups).mockImplementationOnce(async () => {
+    throw new ApiError({ status: 429, code: "PROVIDER_COOLDOWN", message: "quota", retryAfterSeconds: 60 });
+  });
+  render(<DraftHarness previewable={false} discovery={{ provider: "anibt", providerEntryRef: "entry-1" }} />);
+  const refresh = screen.getByRole("button", { name: t("config.discovery.refresh") });
+  fireEvent.click(refresh);
+  const notice = (await screen.findByText(t("upstream.cooldown"))).closest("[data-upstream-state]");
+  expect(notice).not.toBeNull();
+  expect(notice?.nextElementSibling).toBe(refresh.closest("section"));
+  expect(refresh).toBeEnabled();
+});
 
 function ownerWorkspace(): AnimeWorkspace {
   const selection = (group_ref: string, selected: boolean) => ({

@@ -25,7 +25,8 @@ import {
 import { fileMaintenanceKeys, rssListKeys } from "../../lib/queryKeys";
 import { Chip, StateBlock, Button, Field, Input } from "../../ui";
 import { Checkbox, Dialog, HelpTip } from "../../ui/base";
-import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
+import { DraftSubgroupDiscoveryButton, DraftSubgroupDiscoveryStatus } from "../anime-config/DraftSubgroupRefresh";
+import { useDraftSubgroupDiscovery } from "../anime-config/useDraftSubgroupDiscovery";
 import { useRecordLink } from "../../shell/recordLinkContext";
 import { refreshEligibleRSSSources, rssActions } from "../workspace/rssActions";
 import { offsetConversionLine } from "../rss-list/offsetConversion";
@@ -151,6 +152,9 @@ function DraftRssTab({
       ? { provider: "custom" as const, providerEntryRef: undefined }
       : undefined;
   const feedLocators = customFeedLocators(host.draft.rss_sources);
+  const discovery = useDraftSubgroupDiscovery(
+    host.subgroupDiscovery ? { ...host.subgroupDiscovery, onDiscovered: host.onDiscovered } : undefined,
+  );
   return (
     <>
       {feedLocators.length > 0 && (
@@ -163,6 +167,7 @@ function DraftRssTab({
       {customSource && !customSource.fetch && (
         <p role="status" className="rss-draft-hint text-caption">{t("rss.customBenchSaveFirst")}</p>
       )}
+      <DraftSubgroupDiscoveryStatus discovery={discovery} />
       {bench && (
         <RssWorkspace
           key={`${bench.provider}:${bench.providerEntryRef ?? ""}`}
@@ -177,16 +182,7 @@ function DraftRssTab({
           autoLoad={active}
           onDraftChange={host.onDraftChange}
           onViewRead={onViewRead}
-          toolbarStart={
-            host.subgroupDiscovery ? (
-              <DraftSubgroupRefresh
-                provider={host.subgroupDiscovery.provider}
-                providerEntryRef={host.subgroupDiscovery.providerEntryRef}
-                onDiscovered={host.onDiscovered}
-                showHint={false}
-              />
-            ) : undefined
-          }
+          toolbarStart={<DraftSubgroupDiscoveryButton discovery={discovery} />}
         />
       )}
     </>

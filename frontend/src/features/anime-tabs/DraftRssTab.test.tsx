@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
   discoverProviderEntryGroups,
   downloadSnapshotSeed,
   expandSnapshotSeed,
@@ -637,6 +638,20 @@ describe("订阅前 RSS 工作区：在本 tab 内发现字幕组", () => {
     fireEvent.click(screen.getByRole("button", { name: t("config.discovery.refresh") }));
     await waitFor(() => expect(onDiscovered).toHaveBeenCalledTimes(1));
     expect(onDiscovered.mock.calls[0][1]).toEqual(OBS_A);
+  });
+
+  it("字幕组限流状态位于 RSS 工作区上方，而非工具栏", async () => {
+    mockedDiscover.mockImplementationOnce(async () => {
+      throw new ApiError({ status: 429, code: "PROVIDER_RATE_LIMITED", message: "quota", retryAfterSeconds: 60 });
+    });
+    renderTab({ active: false });
+    const workspace = screen.getByRole("region", { name: t("rss.listAria") });
+    const refresh = within(workspace).getByRole("button", { name: t("config.discovery.refresh") });
+    fireEvent.click(refresh);
+    const notice = (await screen.findByText(t("upstream.rateLimited"))).closest("[data-upstream-state]");
+    expect(notice).not.toBeNull();
+    expect(notice?.nextElementSibling).toBe(workspace);
+    expect(refresh).toBeEnabled();
   });
 
   it("每一次新的观察自动读一次，同一次观察不重复读", async () => {

@@ -56,3 +56,20 @@ it("immediately omits an expired absolute deadline on an already-mounted block",
   expect(screen.queryByText(t("upstream.waitSeconds", { n: 9 }))).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: t("upstream.retryLater") })).toBeEnabled();
 });
+
+it("does not restart the relative countdown when identical inline status objects are rendered", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-01-02T00:00:00Z"));
+  const notice = () => <UpstreamStatusBlock status={{
+    state: "cooldown", checked_at: "2026-01-01T00:00:00Z", retry_after_seconds: 3,
+  }} />;
+  const wait = (n: number) => t("upstream.waitSeconds", { n });
+  const { rerender } = render(notice());
+  expect(screen.getByText(wait(3))).toBeInTheDocument();
+  act(() => vi.advanceTimersByTime(1000));
+  rerender(notice());
+  expect(screen.getByText(wait(2))).toBeInTheDocument();
+  act(() => vi.advanceTimersByTime(2000));
+  rerender(notice());
+  expect(screen.queryByText(/预计冷却还剩/)).not.toBeInTheDocument();
+});

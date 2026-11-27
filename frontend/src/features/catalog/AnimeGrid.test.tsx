@@ -44,7 +44,6 @@ let searchResult: { status?: number; body: unknown } | { status: number; body: u
   status: 422,
   body: { code: "SEARCH_NOT_SUPPORTED", message: "先搜索" },
 };
-let searchCalled = false;
 
 // The working custom candidate: the target of the delete confirm dialog and store.delete tests.
 //   A custom candidate's origin_entry_ref is always null; the candidate row's id is the server
@@ -98,22 +97,6 @@ const customCandidateFixture = {
   cleanup_eligible_at: null,
   cleanup_reason: null,
 };
-
-function customCandidate(id: string, title: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    ...structuredClone(customCandidateFixture),
-    activated_managed_anime_id: null,
-    status: "working",
-    ...overrides,
-    id,
-    title,
-    draft: {
-      ...structuredClone(customCandidateFixture.draft),
-      ...(asRecord(overrides.draft)),
-      title,
-    },
-  };
-}
 
 const catalogFixtures = {
   mikan: {
@@ -346,7 +329,6 @@ function stubFetch() {
     if (searchURL.pathname.match(/\/catalog\/providers\/[^/]+\/search$/)) {
       expect(searchURL.searchParams.get("q")).toBeTruthy();
       expect(searchURL.searchParams.get("query")).toBeNull();
-      searchCalled = true;
       return new Response(JSON.stringify(searchResult.body), {
         status: searchResult.status ?? 200,
         headers: { "Content-Type": "application/json" },
@@ -667,7 +649,6 @@ describe("AnimeGrid（fixture 目录）", () => {
     deletedManagedAnimeIDs = new Set();
     candidateSaveError = undefined;
     searchResult = { status: 422, body: { code: "SEARCH_NOT_SUPPORTED", message: "先搜索" } };
-    searchCalled = false;
     stubFetch();
     installCatalogFetchRoutes();
   });
@@ -869,6 +850,62 @@ describe("AnimeGrid（fixture 目录）", () => {
     const message = key === "grid.refreshed" ? t(key) : t(key, { site: "Mikan" });
     expect(toast[level]).toHaveBeenCalledWith(message);
     expect(catalogReads() - before).toBe(1);
+  });
+
+  it("已有 fresh 快照时手动刷新收到 429：展示冷却状态块并冻结重试直到请求结束", async () => {
+    const base = fetchMock;
+    let release: ((response: Response) => void) | undefined;
+    let requests = 0;
+    const now = FIXED_NOW.getTime();
+    fetchMock = vi.fn<FetchStub>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/catalog/providers/mikan/seasons/2026-summer/refresh") && init?.method === "POST") {
+        requests++;
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      return base(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { router } = await renderGrid();
+    await flush();
+    // A fresh snapshot is already on screen: the only feedback can be the status block.
+    expect(screen.queryByText(t("upstream.rateLimited"))).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: t("grid.refreshSite", { site: "Mikan" }) }));
+    await act(async () => { release?.(Response.json({
+      code: "PROVIDER_RATE_LIMITED",
+      message: "quota",
+      upstream: { state: "rate_limited", checked_at: new Date(now).toISOString(), retry_after_seconds: 60 },
+    }, { status: 429 })); });
+    await flush();
+
+    expect(screen.getByText(t("upstream.rateLimited"))).toBeInTheDocument();
+    expect(screen.getByText(t("upstream.waitSeconds", { n: 60 }))).toBeInTheDocument();
+    const { toast } = await import("sonner");
+    expect(toast.error).not.toHaveBeenCalled();
+    const retry = screen.getByRole("button", { name: t("upstream.retryLater") });
+    expect(retry).toBeEnabled();
+    const toolbar = screen.getByRole("button", { name: t("grid.refreshSite", { site: "Mikan" }) });
+    expect(toolbar).toBeEnabled();
+    fireEvent.click(retry);
+    expect(retry).toBeDisabled();
+    expect(toolbar).toBeDisabled();
+    fireEvent.click(retry);
+    expect(requests).toBe(2);
+
+    await act(async () => { release?.(Response.json(catalogWorkspace("mikan").snapshot)); });
+    await flush();
+    expect(screen.queryByText(t("upstream.rateLimited"))).not.toBeInTheDocument();
+
+    fireEvent.click(toolbar);
+    expect(requests).toBe(3);
+    await act(async () => { await router.navigate("/?source=mikan&season=2026-spring"); });
+    await act(async () => { release?.(Response.json({ code: "PROVIDER_RATE_LIMITED", message: "quota" }, { status: 429 })); });
+    await flush();
+    expect(screen.queryByText(t("upstream.rateLimited"))).not.toBeInTheDocument();
+    await act(async () => { await router.navigate("/?source=mikan&season=2026-summer"); });
+    await flush();
+    expect(screen.queryByText(t("upstream.rateLimited"))).not.toBeInTheDocument();
   });
 
   it("已隐藏的番剧不出现在列表里，也没有显示它们的开关", async () => {
@@ -1821,7 +1858,6 @@ describe("AnimeGrid 加载失败错误态 + 重试（E1）", () => {
     animeListError = undefined;
     customCandidateFixture.activated_managed_anime_id = null;
     searchResult = { status: 422, body: { code: "SEARCH_NOT_SUPPORTED", message: "先搜索" } };
-    searchCalled = false;
     stubFetch();
     installCatalogFetchRoutes();
   });
