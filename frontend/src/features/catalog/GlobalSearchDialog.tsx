@@ -13,7 +13,7 @@ import { catalogKeys } from "./queries";
 import { animeKeys } from "../../lib/queryKeys";
 import { configKeys } from "../../lib/queryKeys";
 import { StateBlock } from "../../ui/StateBlock";
-import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
+import { isUpstreamNotice, nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { Dialog, Input, Segmented } from "../../ui/base";
 import { Button } from "../../ui/base/controls";
@@ -336,8 +336,8 @@ export function GlobalSearchDialog({
               <StateBlock kind="busy" skeleton="cards" title={t("grid.searchingNow")} />
             ) : !searched ? (
               <StateBlock kind="empty" title={t("globalSearch.start")} />
-            ) : programUpstream && programUpstream.state !== "available" ? (
-              <UpstreamStatusBlock status={programUpstream} onRetry={() => void runSearch()} />
+            ) : isUpstreamNotice(programUpstream) ? (
+              <UpstreamStatusBlock variant="state" status={programUpstream} />
             ) : shownItems.length === 0 ? (
               <StateBlock kind="empty" title={t("search.noMatch")} description={t("grid.searchRetryHint")} />
             ) : (
@@ -371,8 +371,8 @@ export function GlobalSearchDialog({
               />
             ) : seedSearching ? (
               <StateBlock kind="busy" skeleton="list" title={t("grid.searchingNow")} />
-            ) : seedUpstream ? (
-              <UpstreamStatusBlock status={seedUpstream} emptyTitle={t("globalSearch.noMatchSeed")} onRetry={() => void runSearch()} />
+            ) : isUpstreamNotice(seedUpstream) ? (
+              <UpstreamStatusBlock variant="state" status={seedUpstream} />
             ) : seedNoMatch ? (
               <StateBlock kind="empty" title={t("globalSearch.noMatchSeed")} description={t("grid.searchRetryHint")} />
             ) : (

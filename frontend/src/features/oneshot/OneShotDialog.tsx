@@ -23,7 +23,7 @@ import { MetadataFields } from "../anime-forms/MetadataFields";
 import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { draftParserKind, freezeBusinessDraft, withDraftParserKind } from "../anime-config/businessDraft";
 import { Button, Field, Input, StateBlock, StatePill } from "../../ui";
-import { UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
+import { isUpstreamNotice, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { Checkbox, Dialog, HelpTip, REVEAL_MS, SpinnerIcon } from "../../ui/base";
 import { ReasonText } from "../../ui/ReasonText";
 import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles";
@@ -1022,8 +1022,8 @@ export function OneShotDialog({
                   </Button>
                 }
               />
-            ) : source.upstream && source.upstream.state !== "available" && level === "groups" ? (
-              <UpstreamStatusBlock status={source.upstream} emptyTitle={t("oneshot.noGroups")} onRetry={source.reload} />
+            ) : isUpstreamNotice(source.upstream) && level === "groups" ? (
+              <UpstreamStatusBlock variant="state" status={source.upstream} onRetry={source.reload} retryLabel={t("oneshot.refreshSeedsAction")} />
             ) : source.kind === "provider" && !source.loading && source.groupEntries.length === 0 ? (
               <StateBlock
                 kind="empty"

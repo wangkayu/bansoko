@@ -9,7 +9,7 @@ import { matchTitleChoice, type MatchTitleOffer } from "../../lib/metadata/prefe
 import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { SegmentedControl, Button, Field, Input } from "../../ui";
 import { Checkbox, Dialog, Popconfirm, Select, type SelectOption } from "../../ui/base";
-import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
+import { isUpstreamNotice, nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { MetadataEpisodeDialog, type MetadataEpisodeBinding } from "./MetadataEpisodeDialog";
 
 // The metadata binding fact rows: the resting state is only "linked ID with an external link /
@@ -1133,7 +1133,6 @@ function MetadataMatchDialog({
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string>();
   const [upstream, setUpstream] = useState<UpstreamStatus>();
-  const [retryAutomatic, setRetryAutomatic] = useState(false);
   // TMDB season editors (drafts; commit on confirm).
   const [mediaKind, setMediaKind] = useState<"tv" | "movie">("tv");
   const [seasonSelect, setSeasonSelect] = useState("custom");
@@ -1188,7 +1187,6 @@ function MetadataMatchDialog({
       const status = nonErrorUpstream(cause);
       if (status) {
         setUpstream(status);
-        setRetryAutomatic(automatic);
       } else {
         setUpstream(undefined);
         setError(toUserMessage(cause, t("forms.queryFailed")));
@@ -1374,8 +1372,8 @@ function MetadataMatchDialog({
             {error}
           </p>
         )}
-        <UpstreamStatusBlock status={upstream} onRetry={() => void search(query, retryAutomatic)} retryDisabled={searching || query.trim() === ""} />
-        {searched && !searching && !error && !upstream && candidates.length === 0 && (
+        <UpstreamStatusBlock status={upstream} />
+        {searched && !searching && !error && !isUpstreamNotice(upstream) && candidates.length === 0 && (
           <p className="metadata-match-empty">
             {t("forms.noCandidates")}
           </p>

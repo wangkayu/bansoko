@@ -32,14 +32,7 @@ export function DraftSubgroupDiscoveryButton({ discovery, showHint = false }: {
 
 export function DraftSubgroupDiscoveryStatus({ discovery }: { discovery?: DraftSubgroupDiscovery }) {
   if (!discovery) return null;
-  return (
-    <UpstreamStatusBlock
-      status={discovery.upstream}
-      emptyTitle={t("config.discovery.none")}
-      onRetry={() => void discovery.discover()}
-      retryDisabled={discovery.discovering}
-    />
-  );
+  return <UpstreamStatusBlock status={discovery.upstream} />;
 }
 
 export function DraftSubgroupRefresh(props: DraftSubgroupDiscoverySource & {

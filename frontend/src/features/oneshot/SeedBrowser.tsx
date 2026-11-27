@@ -6,7 +6,7 @@ import { reasonLabel } from "../../lib/i18n/reasons";
 import { getLocale, t } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { Button, Input, StateBlock } from "../../ui";
-import { UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
+import { UpstreamRowNotice, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { Checkbox, Reveal, SpinnerIcon } from "../../ui/base";
 import type { OneShotGroupEntry } from "./useOneShotSeeds";
 import { needsExpand, selectableRow, type OneShotSeedGroup, type OneShotSeedRow } from "./seedRows";
@@ -137,6 +137,7 @@ function GroupList({
               <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
                 <span className="break-anywhere tw:text-sm tw:font-medium">{entry.name}</span>
                 {error && <span className="tw:text-xs tw:text-destructive">{error}</span>}
+                {!error && <UpstreamRowNotice status={status} />}
               </span>
               {meta && <span className="tw:flex-none tw:text-xs tw:text-muted-foreground">{meta}</span>}
               {opening ? (
@@ -145,7 +146,6 @@ function GroupList({
                 <ChevronRight className="tw:size-4 tw:flex-none tw:text-muted-foreground tw:transition-transform tw:duration-150 tw:group-hover:translate-x-0.5 tw:motion-reduce:transition-none" />
               )}
             </button>
-            <UpstreamStatusBlock status={status} onRetry={() => onOpen(entry.key)} retryDisabled={openingGroup !== undefined} />
           </li>
         );
       })}
@@ -469,10 +469,12 @@ export function SeedBrowser({
             />
             <div className="tw:grid tw:gap-2 tw:pt-2">
               {refreshError && <StateBlock kind="error" title={refreshError} />}
-              <UpstreamStatusBlock status={activeUpstream} onRetry={onRetryUpstream} retryDisabled={refreshing || openingGroup !== undefined} />
+              {activeGroup && <UpstreamStatusBlock status={activeUpstream} />}
               {activeLoading ? (
                 <SeedListSkeleton />
-              ) : !activeGroup ? null : activeGroup.rows.length === 0 ? (
+              ) : !activeGroup ? (
+                <UpstreamStatusBlock variant="state" status={activeUpstream} onRetry={onRetryUpstream} retryDisabled={refreshing || openingGroup !== undefined} />
+              ) : activeGroup.rows.length === 0 ? (
                 <StateBlock kind="empty" title={t("oneshot.groupEmpty")} />
               ) : rows.length === 0 ? (
                 <StateBlock kind="empty" title={t("oneshot.noMatch")} />

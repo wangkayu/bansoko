@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api/client";
 import { t } from "../lib/i18n";
-import { nonErrorUpstream, UpstreamStatusBlock } from "./UpstreamStatusBlock";
+import { nonErrorUpstream, UpstreamRowNotice, UpstreamStatusBlock } from "./UpstreamStatusBlock";
 
 afterEach(() => vi.useRealTimers());
 
@@ -72,4 +72,15 @@ it("does not restart the relative countdown when identical inline status objects
   act(() => vi.advanceTimersByTime(2000));
   rerender(notice());
   expect(screen.queryByText(/预计冷却还剩/)).not.toBeInTheDocument();
+});
+
+it("renders nothing for normal empty or available outcomes so surfaces keep a single empty state", () => {
+  const { container, rerender } = render(
+    <UpstreamStatusBlock status={{ state: "empty", checked_at: "2026-01-01T00:00:00Z" }} onRetry={vi.fn()} />,
+  );
+  expect(container).toBeEmptyDOMElement();
+  rerender(<UpstreamStatusBlock status={{ state: "available", checked_at: "2026-01-01T00:00:00Z" }} onRetry={vi.fn()} />);
+  expect(container).toBeEmptyDOMElement();
+  rerender(<UpstreamRowNotice status={{ state: "empty", checked_at: "2026-01-01T00:00:00Z" }} />);
+  expect(container).toBeEmptyDOMElement();
 });

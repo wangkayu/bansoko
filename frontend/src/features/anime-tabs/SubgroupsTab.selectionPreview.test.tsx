@@ -143,7 +143,28 @@ function renderOwner(workspace = ownerWorkspace()) {
   );
 }
 
-it("字幕组冷却期间，状态块重试仍需确认未保存编辑", async () => {
+it("已订阅字幕组发现空结果时只保留列表原有空态，不叠第二块说明或重试按钮", async () => {
+  const discover = vi.mocked(discoverAnimeSubgroups);
+  const emptyWorkspace = ownerWorkspace();
+  emptyWorkspace.subgroups.subgroups.entries = [];
+  emptyWorkspace.subgroups.effective_selection = [];
+  try {
+    discover.mockReset().mockResolvedValue({
+      outcome: "no_groups",
+      upstream: { state: "empty", checked_at: new Date().toISOString() },
+    } as Awaited<ReturnType<typeof discoverAnimeSubgroups>>);
+    renderOwner(emptyWorkspace);
+    fireEvent.click(screen.getByRole("button", { name: t("config.discovery.refresh") }));
+    await waitFor(() => expect(discover).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(t("forms.sources.noGroups"))).toBeInTheDocument();
+    expect(screen.queryByText(t("config.discovery.none"))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("act.retry") })).not.toBeInTheDocument();
+  } finally {
+    discover.mockReset();
+  }
+});
+
+it("字幕组冷却期间展示紧凑横幅而不重复加重试按钮，点原刷新按钮仍需确认未保存编辑", async () => {
   const discover = vi.mocked(discoverAnimeSubgroups);
   const now = Date.now();
   try {
@@ -155,18 +176,19 @@ it("字幕组冷却期间，状态块重试仍需确认未保存编辑", async (
     renderOwner();
     const refresh = screen.getByRole("button", { name: t("config.discovery.refresh") });
     fireEvent.click(refresh);
-    const retry = await screen.findByRole("button", { name: t("upstream.retryLater") });
-    expect(retry).toBeEnabled();
+    expect(await screen.findByText(t("upstream.cooldown"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("upstream.retryLater") })).not.toBeInTheDocument();
     expect(refresh).toBeEnabled();
     expect(screen.getByText(t("upstream.waitSeconds", { n: 60 }))).toBeInTheDocument();
     setPolicy("b", t("forms.sources.policyNever"));
-    expect(screen.getByRole("button", { name: t("config.discovery.refresh") })).toBeEnabled();
-    fireEvent.click(retry);
+    const dirtyRefresh = screen.getByRole("button", { name: t("config.discovery.refresh") });
+    expect(dirtyRefresh).toBeEnabled();
+    fireEvent.click(dirtyRefresh);
     expect(await screen.findByText(t("tabs.subgroups.refreshConfirmTitle"))).toBeInTheDocument();
     expect(discover).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: t("tabs.subgroups.refreshConfirm") }));
     expect(discover).toHaveBeenCalledTimes(2);
-    await screen.findByRole("button", { name: t("upstream.retryLater") });
+    expect(await screen.findByText(t("upstream.cooldown"))).toBeInTheDocument();
   } finally {
     discover.mockReset();
   }

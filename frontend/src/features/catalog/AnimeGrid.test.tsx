@@ -883,14 +883,12 @@ describe("AnimeGrid（fixture 目录）", () => {
     expect(screen.getByText(t("upstream.waitSeconds", { n: 60 }))).toBeInTheDocument();
     const { toast } = await import("sonner");
     expect(toast.error).not.toHaveBeenCalled();
-    const retry = screen.getByRole("button", { name: t("upstream.retryLater") });
-    expect(retry).toBeEnabled();
+    expect(screen.queryByRole("button", { name: t("upstream.retryLater") })).not.toBeInTheDocument();
     const toolbar = screen.getByRole("button", { name: t("grid.refreshSite", { site: "Mikan" }) });
     expect(toolbar).toBeEnabled();
-    fireEvent.click(retry);
-    expect(retry).toBeDisabled();
+    fireEvent.click(toolbar);
     expect(toolbar).toBeDisabled();
-    fireEvent.click(retry);
+    fireEvent.click(toolbar);
     expect(requests).toBe(2);
 
     await act(async () => { release?.(Response.json(catalogWorkspace("mikan").snapshot)); });

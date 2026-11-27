@@ -25,7 +25,7 @@ import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { isOneOf, ROUTE_ANIME_TABS, ROUTE_RECORD_LIST, useRouteDialogs, type RouteAnimeTab } from "../../shell/routeDialogs";
 import { CATALOG_FILTER_QUERY_KEY, rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
 import { StateBlock } from "../../ui/StateBlock";
-import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
+import { isUpstreamNotice, nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { LazyPendingBar } from "../../ui/LazyPendingBar";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
@@ -828,10 +828,10 @@ export function AnimeGrid() {
         />
       )}
 
-      {upstream && (
-        <UpstreamStatusBlock status={upstream} errorTitle={snapshot?.errorMessage ?? t("grid.siteRefreshFailed")} onRetry={() => void refresh()} retryDisabled={refreshing} />
+      {isUpstreamNotice(upstream) && rows.length > 0 && (
+        <UpstreamStatusBlock status={upstream} errorTitle={snapshot?.errorMessage ?? t("grid.siteRefreshFailed")} />
       )}
-      {snapshot?.status === "error" && !upstream && (
+      {snapshot?.status === "error" && !isUpstreamNotice(upstream) && (
         <StateBlock
           kind="error"
           title={snapshot.errorMessage ?? t("grid.siteRefreshFailed")}
@@ -851,7 +851,9 @@ export function AnimeGrid() {
       <section aria-live="polite">
         {loading && rows.length === 0 ? (
           <StateBlock kind="busy" skeleton="wall" title={t("grid.loading")} />
-        ) : error ? null : settledEmpty ? (
+        ) : error ? null : isUpstreamNotice(upstream) && rows.length === 0 ? (
+          <UpstreamStatusBlock variant="state" status={upstream} errorTitle={snapshot?.errorMessage ?? t("grid.siteRefreshFailed")} />
+        ) : settledEmpty ? (
           <EmptyHint
             tab={tab}
             onAddPreset={() => setAddOpen(true)}

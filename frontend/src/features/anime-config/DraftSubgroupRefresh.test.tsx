@@ -52,7 +52,21 @@ describe("DraftSubgroupRefresh", () => {
     expect(onDiscovered).not.toHaveBeenCalled();
   });
 
-  it("冷却期间仍可刷新和重试，请求进行中禁用两个按钮", async () => {
+  it("发现空结果时只弹提示，不渲染重复空态块或重试按钮", async () => {
+    mockedDiscover.mockResolvedValue({
+      ...RESULT,
+      groups: [],
+      upstream: { state: "empty", checked_at: "2026-01-01T00:00:00Z" },
+    });
+    const onDiscovered = vi.fn();
+    render(<DraftSubgroupRefresh provider="mikan" providerEntryRef="3001" onDiscovered={onDiscovered} />);
+    fireEvent.click(screen.getByRole("button", { name: t("config.discovery.refresh") }));
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(t("config.discovery.none")));
+    expect(screen.queryByText(t("config.discovery.none"))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("act.retry") })).not.toBeInTheDocument();
+  });
+
+  it("冷却期间保留原刷新按钮可点，不额外叠加重复重试按钮", async () => {
     const quota = (seconds: number) => new ApiError({
       status: 429,
       message: "quota",
@@ -63,15 +77,15 @@ describe("DraftSubgroupRefresh", () => {
     const onDiscovered = vi.fn();
     render(<DraftSubgroupRefresh provider="anibt" providerEntryRef="123" onDiscovered={onDiscovered} />);
 
-    fireEvent.click(screen.getByRole("button", { name: t("config.discovery.refresh") }));
-    const retry = await screen.findByRole("button", { name: t("upstream.retryLater") });
-    expect(retry).toBeEnabled();
-    expect(screen.getByRole("button", { name: t("config.discovery.refresh") })).toBeEnabled();
-    fireEvent.click(retry);
-    expect(retry).toBeDisabled();
+    const refresh = screen.getByRole("button", { name: t("config.discovery.refresh") });
+    fireEvent.click(refresh);
+    expect(await screen.findByText(t("upstream.cooldown"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("upstream.retryLater") })).not.toBeInTheDocument();
+    expect(refresh).toBeEnabled();
+    fireEvent.click(refresh);
     expect(screen.getByRole("button", { name: t("act.refreshing") })).toBeDisabled();
     expect(await screen.findByText(t("upstream.waitSeconds", { n: 15 }))).toBeInTheDocument();
-    expect(retry).toBeEnabled();
+    expect(screen.getByRole("button", { name: t("config.discovery.refresh") })).toBeEnabled();
     expect(mockedDiscover).toHaveBeenCalledTimes(2);
     expect(onDiscovered).not.toHaveBeenCalled();
   });

@@ -215,7 +215,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         setPendingActions([]);
         toast.success(t("config.discovery.found", { n: result.subgroups.subgroups.entries.length }));
       } else if (result.outcome === "no_groups") {
-        if (!result.upstream) toast.info(t("config.discovery.none"));
+        toast.info(t("config.discovery.none"));
       } else {
         toast.error(result.reason ? (reasonLabel(result.reason) ?? t("config.discovery.failed")) : t("config.discovery.failed"));
       }
@@ -283,7 +283,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
       )}
       {conflict === undefined && error && <StateBlock kind="error" title={error} />}
-      <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={requestRefresh} retryDisabled={refreshDisabled} />
+      <UpstreamStatusBlock status={upstream} />
       <SelectionOverrideFields
         value={edit.subgroups}
         onChange={(subgroups) => setEdit({ ...edit, subgroups })}

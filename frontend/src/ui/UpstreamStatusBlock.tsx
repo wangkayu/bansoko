@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, toUserMessage, type UpstreamStatus } from "../lib/api/client";
 import { t } from "../lib/i18n";
-import { Button } from "./base/controls";
+import { Alert, Button } from "./base";
 import { StateBlock } from "./StateBlock";
 
 export function nonErrorUpstream(cause: unknown): UpstreamStatus | undefined {
@@ -22,31 +22,75 @@ export function nonErrorUpstream(cause: unknown): UpstreamStatus | undefined {
   };
 }
 
-export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onRetry, retryDisabled }: {
-  status?: UpstreamStatus;
-  cause?: unknown;
-  emptyTitle?: string;
-  errorTitle?: string;
-  onRetry?: () => void;
-  retryDisabled?: boolean;
-}) {
-  const seconds = useUpstreamWait(status);
-  const waiting = status?.state === "rate_limited" || status?.state === "cooldown";
-  if (!status || status.state === "available") return null;
-  const title = status.state === "empty" ? emptyTitle ?? t("search.noMatch")
-    : status.state === "not_indexed" ? t("upstream.notIndexed")
+/** True only for real upstream interruptions/blocks; normal `available` and `empty` belong to each surface's own UI. */
+export function isUpstreamNotice(status?: UpstreamStatus): status is UpstreamStatus {
+  return Boolean(status && status.state !== "available" && status.state !== "empty");
+}
+
+function noticeTitle(status: UpstreamStatus, cause?: unknown, errorTitle?: string): string {
+  return status.state === "not_indexed" ? t("upstream.notIndexed")
     : status.state === "rate_limited" ? t("upstream.rateLimited")
     : status.state === "cooldown" ? t("upstream.cooldown")
     : toUserMessage(cause, errorTitle ?? t("upstream.error"));
+}
+
+export function UpstreamStatusBlock({ status, cause, errorTitle, variant = "banner", onRetry, retryLabel, retryDisabled }: {
+  status?: UpstreamStatus;
+  cause?: unknown;
+  errorTitle?: string;
+  /** `banner` renders a compact Alert for regions with existing controls or content; `state` replaces an empty region's sole StateBlock. */
+  variant?: "banner" | "state";
+  onRetry?: () => void;
+  retryLabel?: string;
+  retryDisabled?: boolean;
+}) {
+  const seconds = useUpstreamWait(status);
+  if (!isUpstreamNotice(status)) return null;
+  const waiting = status.state === "rate_limited" || status.state === "cooldown";
+  const title = noticeTitle(status, cause, errorTitle);
+  const description = seconds > 0 ? t("upstream.waitSeconds", { n: seconds }) : undefined;
+  const action = onRetry ? (
+    <Button size="sm" disabled={retryDisabled} onClick={onRetry}>
+      {retryLabel ?? (waiting ? t("upstream.retryLater") : t("act.retry"))}
+    </Button>
+  ) : undefined;
+  if (variant === "state") {
+    return (
+      <div data-upstream-state={status.state}>
+        <StateBlock
+          kind={status.state === "error" ? "error" : "empty"}
+          title={title}
+          description={description}
+          action={action}
+        />
+      </div>
+    );
+  }
+  const tone = status.state === "error" ? "error" : waiting ? "warning" : "info";
   return (
     <div data-upstream-state={status.state}>
-      <StateBlock
-        kind={status.state === "error" ? "error" : "empty"}
-        title={title}
-        description={seconds > 0 ? t("upstream.waitSeconds", { n: seconds }) : undefined}
-        action={onRetry && <Button size="sm" disabled={retryDisabled} onClick={onRetry}>{waiting ? t("upstream.retryLater") : t("act.retry")}</Button>}
-      />
+      <Alert tone={tone} title={title} description={description} action={action} />
     </div>
+  );
+}
+
+/** Compact single-line upstream notice for use inside a list row (e.g. a clickable subgroup entry). */
+export function UpstreamRowNotice({ status, cause, errorTitle }: {
+  status?: UpstreamStatus;
+  cause?: unknown;
+  errorTitle?: string;
+}) {
+  const seconds = useUpstreamWait(status);
+  if (!isUpstreamNotice(status)) return null;
+  const title = noticeTitle(status, cause, errorTitle);
+  const text = seconds > 0 ? `${title} · ${t("upstream.waitSeconds", { n: seconds })}` : title;
+  return (
+    <span
+      data-upstream-state={status.state}
+      className={status.state === "error" ? "tw:text-xs tw:text-destructive" : "tw:text-xs tw:text-muted-foreground"}
+    >
+      {text}
+    </span>
   );
 }
 

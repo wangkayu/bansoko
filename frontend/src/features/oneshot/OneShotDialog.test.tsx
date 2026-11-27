@@ -727,9 +727,10 @@ describe("OneShotDialog 第一步：种子目录", () => {
       expect(await screen.findByText(banner)).toBeInTheDocument();
       expect(screen.getByText(t("upstream.waitSeconds", { n: 45 }))).toBeInTheDocument();
       expect(button(t("oneshot.refreshSeedsAction"))).toBeEnabled();
+      expect(screen.queryByRole("button", { name: t("upstream.retryLater") })).not.toBeInTheDocument();
       expect(await findSeed(SEED_A)).toBeChecked();
       expect(screen.getByText(t("oneshot.selectedCount", { n: 1 }))).toBeInTheDocument();
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveAttribute("data-tone", "warning");
       // Exactly one recovery request for the entered group, and no second page read after it.
       expect(calls.filter((call) => call.url.endsWith("/entry-1/rss"))).toHaveLength(2);
       expect(reads()).toHaveLength(2);
@@ -749,10 +750,10 @@ describe("OneShotDialog 第一步：种子目录", () => {
     fireEvent.click(await findSeed(SEED_A));
     fireEvent.click(button(t("oneshot.refreshSeedsAction")));
     expect(await screen.findByText(t("upstream.rateLimited"))).toBeInTheDocument();
-    expect(button(t("upstream.retryLater"))).toBeEnabled();
+    expect(screen.queryByRole("button", { name: t("upstream.retryLater") })).not.toBeInTheDocument();
     expect(button(t("oneshot.refreshSeedsAction"))).toBeEnabled();
     expect(await findSeed(SEED_A)).toBeChecked();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveAttribute("data-tone", "warning");
     expect(calls.filter((call) => call.url.endsWith("/entry-1/rss"))).toHaveLength(1);
   });
 
