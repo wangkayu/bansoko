@@ -231,7 +231,11 @@ func TestRetirementReplayAndRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expires := info.ModTime().Add(retiredRetention)
+	anchorTime := info.ModTime()
+	if r.UpdatedAt.After(anchorTime) {
+		anchorTime = r.UpdatedAt
+	}
+	expires := anchorTime.Add(retiredRetention)
 	for _, tt := range []struct {
 		name    string
 		now     time.Time
