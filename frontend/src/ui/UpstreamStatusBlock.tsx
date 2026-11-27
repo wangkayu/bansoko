@@ -21,12 +21,13 @@ export function nonErrorUpstream(cause: unknown): UpstreamStatus | undefined {
   };
 }
 
-export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onRetry }: {
+export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onRetry, retryDisabled }: {
   status?: UpstreamStatus;
   cause?: unknown;
   emptyTitle?: string;
   errorTitle?: string;
   onRetry?: () => void;
+  retryDisabled?: boolean;
 }) {
   const seconds = useUpstreamWait(status);
   const waiting = status?.state === "rate_limited" || status?.state === "cooldown";
@@ -42,7 +43,7 @@ export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onR
         kind={status.state === "error" ? "error" : "empty"}
         title={title}
         description={seconds > 0 ? t("upstream.waitSeconds", { n: seconds }) : undefined}
-        action={onRetry && <Button size="sm" disabled={seconds > 0} onClick={onRetry}>{waiting ? t("upstream.retryLater") : t("act.retry")}</Button>}
+        action={onRetry && <Button size="sm" disabled={retryDisabled || seconds > 0} onClick={onRetry}>{waiting ? t("upstream.retryLater") : t("act.retry")}</Button>}
       />
     </div>
   );
@@ -64,5 +65,5 @@ export function useUpstreamWait(status?: UpstreamStatus): number {
     tick();
     return () => window.clearInterval(timer);
   }, [deadline, waiting]);
-  return waiting && Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0;
+  return waiting && Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - Math.max(now, Date.now())) / 1000)) : 0;
 }

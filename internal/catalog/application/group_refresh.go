@@ -33,6 +33,7 @@ RETURNING last_attempt_at`, provider, entry).Scan(&attemptedAt); err != nil {
 		}
 	}
 	if err == nil {
+		result.AttemptedAt = attemptedAt
 		return result, providerdomain.GroupReadStatus(result), nil
 	}
 	status := providerdomain.ClassifyReadError(err, time.Now().UTC())

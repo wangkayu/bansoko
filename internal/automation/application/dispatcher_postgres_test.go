@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/events"
+	provideradapter "bansoko/internal/provider/adapter"
 	providerdomain "bansoko/internal/provider/domain"
 	selectionapplication "bansoko/internal/selection/application"
 	"bansoko/internal/testutil/disposabledb"
@@ -290,7 +292,12 @@ FROM provider_group_selections WHERE id = 'manual-alpha'`).Scan(
 func TestGroupDiscoveryRetainsLastGoodStateAfterProviderFailure(t *testing.T) {
 	db := openDispatcherTestDB(t)
 	ctx := context.Background()
+	var unknownStatus atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if unknownStatus.Load() {
+			_, _ = w.Write([]byte(`{"ok":true,"data":{"bgmId":123,"total":1,"groups":[{"slug":"alpha","name":"Alpha","status":"UNRECOGNIZED","totalReleases":1,"lastUpdatedAt":1}]}}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"ok":true,"data":{"bgmId":123,"total":2,"groups":[{"slug":"alpha","name":"Alpha","status":"active","totalReleases":1,"lastUpdatedAt":1},{"slug":"beta","name":"Beta","status":"active","totalReleases":1,"lastUpdatedAt":1}]}}`))
 	}))
 	connections := dispatcherTestConnections{{
@@ -304,7 +311,7 @@ func TestGroupDiscoveryRetainsLastGoodStateAfterProviderFailure(t *testing.T) {
 	dispatcher := &Dispatcher{
 		DB: db, WorkItems: store,
 		GroupReaders: map[string]GroupReader{
-			"anibt": dispatcherTestGroupReader{Endpoint: server.URL, Client: server.Client()},
+			"anibt": provideradapter.AniBTGroupReader{Endpoint: server.URL, Client: server.Client()},
 		},
 		Connections:  connections,
 		PolicyReader: selectionapplication.NewService(db),
@@ -314,9 +321,29 @@ func TestGroupDiscoveryRetainsLastGoodStateAfterProviderFailure(t *testing.T) {
 	if _, err := dispatcher.dispatchGroupDiscovery(ctx); err != nil {
 		t.Fatalf("initial discovery: %v", err)
 	}
+	defer server.Close()
+	var originalSuccess time.Time
+	if err := db.QueryRowContext(ctx, `SELECT last_success_at FROM provider_group_refresh_health WHERE provider='anibt' AND catalog_entry_ref='123'`).Scan(&originalSuccess); err != nil {
+		t.Fatal(err)
+	}
+	unknownStatus.Store(true)
+	counts, err := dispatcher.dispatchGroupDiscovery(ctx)
+	if err != nil || counts.errors != 1 {
+		t.Fatalf("unrecognized status: counts=%+v err=%v", counts, err)
+	}
+	assertDiscoveryRows(t, db, 2, 2, 1)
+	var available, selected int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE available), count(*) FILTER (WHERE effective_selected) FROM provider_group_selections`).Scan(&available, &selected); err != nil || available != 2 || selected != 1 {
+		t.Fatalf("last-good selections: available=%d selected=%d err=%v", available, selected, err)
+	}
+	var incompleteCode string
+	var success time.Time
+	if err := db.QueryRowContext(ctx, `SELECT error_code,last_success_at FROM provider_group_refresh_health WHERE provider='anibt' AND catalog_entry_ref='123'`).Scan(&incompleteCode, &success); err != nil || incompleteCode != string(providerdomain.ReasonObservationIncomplete) || !success.Equal(originalSuccess) {
+		t.Fatalf("incomplete refresh: code=%s success=%v err=%v", incompleteCode, success, err)
+	}
 	server.Close()
 
-	counts, err := dispatcher.dispatchGroupDiscovery(ctx)
+	counts, err = dispatcher.dispatchGroupDiscovery(ctx)
 	if err != nil {
 		t.Fatalf("failed discovery should be recorded per target: %v", err)
 	}

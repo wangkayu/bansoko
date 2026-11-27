@@ -2,6 +2,8 @@ import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
+  discoverAnimeSubgroups,
   previewAnimeSubgroupsSelection,
   type AnimeDraft,
   type AnimeWorkspace,
@@ -20,7 +22,7 @@ import { t } from "../../lib/i18n";
 
 vi.mock("../../lib/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api/client")>();
-  return { ...actual, previewAnimeSubgroupsSelection: vi.fn() };
+  return { ...actual, previewAnimeSubgroupsSelection: vi.fn(), discoverAnimeSubgroups: vi.fn() };
 });
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 const mockedPreview = vi.mocked(previewAnimeSubgroupsSelection);
@@ -125,6 +127,39 @@ function renderOwner(workspace = ownerWorkspace()) {
     <SubgroupsTab host={{ mode: "owner", animeID: "anime-1", workspace, capability: workspaceCapability("active"), onChanged: () => {} }} />,
   );
 }
+
+it("字幕组冷却结束后，状态块重试仍需确认未保存编辑", async () => {
+  const discover = vi.mocked(discoverAnimeSubgroups);
+  const clock = vi.spyOn(Date, "now");
+  const now = Date.now();
+  clock.mockReturnValue(now);
+  try {
+    discover.mockReset().mockRejectedValue(new ApiError({
+      status: 429, message: "quota",
+      upstream: { state: "cooldown", checked_at: new Date(now).toISOString(), cooldown_until: new Date(now + 60_000).toISOString() },
+    }));
+    mockedPreview.mockResolvedValue(preview("owner_draft", ["a"], ["a", "b"]));
+    renderOwner();
+    const refresh = screen.getByRole("button", { name: t("config.discovery.refresh") });
+    fireEvent.click(refresh);
+    const retry = await screen.findByRole("button", { name: t("upstream.retryLater") });
+    expect(retry).toBeDisabled();
+    expect(refresh).toBeDisabled();
+    setPolicy("b", t("forms.sources.policyNever"));
+    clock.mockReturnValue(now + 60_000);
+    await waitFor(() => expect(retry).toBeEnabled());
+    expect(screen.getByRole("button", { name: t("config.discovery.refresh") })).toBeEnabled();
+    fireEvent.click(retry);
+    expect(await screen.findByText(t("tabs.subgroups.refreshConfirmTitle"))).toBeInTheDocument();
+    expect(discover).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: t("tabs.subgroups.refreshConfirm") }));
+    expect(discover).toHaveBeenCalledTimes(2);
+    await screen.findByRole("button", { name: t("upstream.retryLater") });
+  } finally {
+    clock.mockRestore();
+    discover.mockReset();
+  }
+});
 
 describe("字幕组 tab 未保存编辑的选择预览", () => {
   beforeEach(() => {

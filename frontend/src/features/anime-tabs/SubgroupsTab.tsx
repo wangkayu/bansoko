@@ -11,7 +11,7 @@ import {
   type GroupAction,
   type UpstreamStatus,
 } from "../../lib/api/client";
-import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
+import { nonErrorUpstream, UpstreamStatusBlock, useUpstreamWait } from "../../ui/UpstreamStatusBlock";
 import { subgroupsChangeCount, subgroupsEditFromWorkspace, valuesEqual, type SubgroupsEdit } from "../../lib/draft";
 import { SelectionOverrideFields, type ServerSelectionFact } from "../anime-forms/SourcesFields";
 import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
@@ -139,6 +139,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   const [busy, setBusy] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [upstream, setUpstream] = useState<UpstreamStatus>();
+  const refreshDisabled = useUpstreamWait(upstream) > 0 || busy || discovering;
   const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
@@ -195,6 +196,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   useSavePart("subgroups", { count, label: t("tabs.names.subgroups"), busy, save });
 
   async function discover() {
+    if (refreshDisabled) return;
     setDiscovering(true);
     setUpstream(undefined);
     setError(undefined);
@@ -241,16 +243,19 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
     onChanged();
   }
 
+  function requestRefresh() {
+    if (refreshDisabled) return;
+    if (count > 0) setConfirmRefreshOpen(true);
+    else void discover();
+  }
+
   if (!edit) return <StateBlock kind="busy" skeleton="settings" title={t("tabs.subgroups.reading")} />;
   const refreshButton = (
     <Button
       variant="secondary"
       size="sm"
-      disabled={busy || discovering}
-      onClick={() => {
-        if (count > 0) setConfirmRefreshOpen(true);
-        else void discover();
-      }}
+      disabled={refreshDisabled}
+      onClick={requestRefresh}
     >
       {discovering ? t("act.refreshing") : t("config.discovery.refresh")}
     </Button>
@@ -282,7 +287,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
       )}
       {conflict === undefined && error && <StateBlock kind="error" title={error} />}
-      <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={() => void discover()} />
+      <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={requestRefresh} retryDisabled={refreshDisabled} />
       <SelectionOverrideFields
         value={edit.subgroups}
         onChange={(subgroups) => setEdit({ ...edit, subgroups })}

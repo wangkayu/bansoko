@@ -86,6 +86,7 @@ export type OneShotSeedSource = {
   openGroup: (key: string, draft: AnimeDraft | undefined, offset: number, span: number) => Promise<void>;
   refreshingGroup?: string;
   refreshError?: string;
+  groupUpstream?: ReadonlyMap<string, UpstreamStatus>;
   /** Refreshes a single group: re-fetches that group's seed list and returns whether the read back succeeded. */
   refreshGroup: (group: OneShotSeedGroup, draft: AnimeDraft | undefined, offset: number, span: number) => Promise<boolean>;
   /**
@@ -273,13 +274,25 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
   const [openError, setOpenError] = useState<{ key: string; message: string }>();
   const [refreshingGroup, setRefreshingGroup] = useState<string>();
   const [refreshError, setRefreshError] = useState<string>();
+  const [groupUpstream, setGroupUpstream] = useState(new Map<string, UpstreamStatus>());
   const readSeq = useRef(0);
+
+  const updateGroupUpstream = useCallback((key: string, status?: UpstreamStatus) => {
+    setGroupUpstream((current) => {
+      if (!status && !current.has(key)) return current;
+      const next = new Map(current);
+      if (status) next.set(key, status);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
 
   // After a re-discovery the old identities no longer belong to the same observation.
   useEffect(() => {
     refsRef.current = new Map();
     setView(undefined);
     setViewError(undefined);
+    setGroupUpstream(new Map());
   }, [attempt]);
 
   /** Reads once over the entered groups; of consecutive re-reads only the last one counts. */
@@ -342,6 +355,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
       }
       setOpeningGroup(key);
       setOpenError(undefined);
+      updateGroupUpstream(key);
       try {
         // A fresh seed list is used directly (no network); the group is fetched only when there is none or it is stale.
         const persisted = await readProviderEntryRSS(provider, providerEntryRef, group.groupRef);
@@ -350,27 +364,32 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
           : await previewProviderEntryRSS(provider, providerEntryRef, { group_ref: group.groupRef });
         refsRef.current.set(key, feedRefOf(resolved));
       } catch (cause) {
-        setOpenError({ key, message: toUserMessage(cause, t("oneshot.loadSeedsFailed")) });
+        const status = nonErrorUpstream(cause);
+        if (status?.state === "rate_limited" || status?.state === "cooldown") updateGroupUpstream(key, status);
+        else setOpenError({ key, message: toUserMessage(cause, t("oneshot.loadSeedsFailed")) });
         return;
       } finally {
         setOpeningGroup(undefined);
       }
       await read(current, offset, span);
     },
-    [discovered, groups, provider, providerEntryRef, read],
+    [discovered, groups, provider, providerEntryRef, read, updateGroupUpstream],
   );
 
   const refreshGroup = useCallback(
     async (group: OneShotSeedGroup, current: AnimeDraft | undefined, offset: number, span: number) => {
       setRefreshingGroup(group.key);
       setRefreshError(undefined);
+      updateGroupUpstream(group.key);
       try {
         const refreshed = await previewProviderEntryRSS(provider, group.scope.provider_entry_ref, {
           group_ref: group.scope.provider_group_ref,
         });
         refsRef.current.set(group.key, feedRefOf(refreshed));
       } catch (cause) {
-        setRefreshError(toUserMessage(cause, t("rss.refreshSeedsFailed")));
+        const status = nonErrorUpstream(cause);
+        if (status?.state === "rate_limited" || status?.state === "cooldown") updateGroupUpstream(group.key, status);
+        else setRefreshError(toUserMessage(cause, t("rss.refreshSeedsFailed")));
         return false;
       } finally {
         setRefreshingGroup(undefined);
@@ -378,7 +397,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
       await read(current, offset, span);
       return true;
     },
-    [provider, read],
+    [provider, read, updateGroupUpstream],
   );
 
   const groupEntries = useMemo<OneShotGroupEntry[]>(
@@ -419,6 +438,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     openGroup,
     refreshingGroup,
     refreshError,
+    groupUpstream,
     refreshGroup,
     expand,
     titleSuggestions: view?.title_suggestions,

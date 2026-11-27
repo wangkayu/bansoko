@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	catalogdomain "bansoko/internal/catalog/domain"
 	providerdomain "bansoko/internal/provider/domain"
@@ -59,6 +60,9 @@ func PersistGroupObservationTx(ctx context.Context, tx *sql.Tx, result providerd
 	}
 	if _, err := tx.ExecContext(ctx, `SELECT publish_group_observation($1,$2,$3::jsonb)`, string(canonical), digest, raw); err != nil {
 		return snapshot, fmt.Errorf("publish group observation: %w", err)
+	}
+	if err := recordGroupSuccessTx(ctx, tx, result); err != nil {
+		return snapshot, err
 	}
 	return snapshot, nil
 }
@@ -129,17 +133,37 @@ WHERE provider = $1 AND catalog_entry_ref = $2 ORDER BY version DESC LIMIT 1`, r
 	if _, err := tx.ExecContext(ctx, `UPDATE provider_group_snapshots SET retention_until = CURRENT_TIMESTAMP + INTERVAL '30 days' WHERE id = $1`, id); err != nil {
 		return snapshot, false, fmt.Errorf("extend unchanged group observation retention: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO provider_group_refresh_health(provider, catalog_entry_ref, state, last_attempt_at, last_success_at, checked_at, version)
-VALUES ($1, $2, $3, statement_timestamp(), $4, $4, 1)
-ON CONFLICT (provider, catalog_entry_ref) DO UPDATE SET state = EXCLUDED.state,
-    last_success_at = EXCLUDED.last_success_at, checked_at = EXCLUDED.checked_at,
-    error_code = NULL, error_message = NULL, cooldown_until = NULL,
-    version = provider_group_refresh_health.version + 1,
-    updated_at = CURRENT_TIMESTAMP`, result.Provider, result.CatalogEntryRef, providerdomain.GroupReadStatus(result).State, result.ObservedAt); err != nil {
-		return snapshot, false, fmt.Errorf("refresh unchanged group observation health: %w", err)
+	if err := recordGroupSuccessTx(ctx, tx, result); err != nil {
+		return snapshot, false, err
 	}
 	return snapshot, true, nil
+}
+
+func recordGroupSuccessTx(ctx context.Context, tx *sql.Tx, result providerdomain.GroupReadResult) error {
+	attemptedAt := result.AttemptedAt
+	if attemptedAt.IsZero() {
+		attemptedAt = result.ObservedAt.Truncate(time.Microsecond)
+	}
+	// A success can advance last-good freshness, but only the current attempt
+	// owns the latest outcome. In particular, commit time is not attempt time.
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO provider_group_refresh_health AS health
+    (provider, catalog_entry_ref, state, last_attempt_at, last_success_at, checked_at, version)
+VALUES ($1, $2, $3, $4, $5, $5, 1)
+ON CONFLICT (provider, catalog_entry_ref) DO UPDATE SET
+    last_success_at = GREATEST(health.last_success_at, EXCLUDED.last_success_at),
+    state = CASE WHEN health.last_attempt_at <= $4 THEN $3 ELSE health.state END,
+    checked_at = CASE WHEN health.last_attempt_at <= $4 THEN $5 ELSE health.checked_at END,
+    error_code = CASE WHEN health.last_attempt_at <= $4 THEN NULL ELSE health.error_code END,
+    error_message = CASE WHEN health.last_attempt_at <= $4 THEN NULL ELSE health.error_message END,
+    cooldown_until = CASE WHEN health.last_attempt_at <= $4 THEN NULL ELSE health.cooldown_until END,
+    last_attempt_at = GREATEST(health.last_attempt_at, $4),
+    version = health.version + 1, updated_at = statement_timestamp()`, result.Provider, result.CatalogEntryRef,
+		providerdomain.GroupReadStatus(result).State, attemptedAt, result.ObservedAt)
+	if err != nil {
+		return fmt.Errorf("record successful group observation health: %w", err)
+	}
+	return nil
 }
 
 // sameGroupObservationContent compares two observations ignoring the

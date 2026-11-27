@@ -12,6 +12,7 @@ import (
 	configuration "bansoko/internal/configuration/domain"
 	"bansoko/internal/metadata/matcher"
 	observability "bansoko/internal/observability/application"
+	provideradapter "bansoko/internal/provider/adapter"
 	provider "bansoko/internal/provider/domain"
 	"bansoko/internal/provider/outbound"
 	outboundpersistence "bansoko/internal/provider/outbound/persistence"
@@ -65,12 +66,21 @@ func TestScheduledDiscoverySummarizesUpstreamOutcomes(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `INSERT INTO anime_business_configs(managed_anime_id) VALUES ($1) ON CONFLICT (managed_anime_id) DO NOTHING`, owner); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.ExecContext(ctx, `INSERT INTO subscriptions(id, managed_anime_id, origin, origin_entry_ref, state) VALUES ($1, $1, 'anibt', $2, 'active')`, owner, ref); err != nil {
+		origin := "anibt"
+		if i == 126 {
+			origin = "mikan"
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO subscriptions(id, managed_anime_id, origin, origin_entry_ref, state) VALUES ($1, $1, $3, $2, 'active')`, owner, ref, origin); err != nil {
 			t.Fatal(err)
 		}
 		storedsections.Seed(t, db, owner)
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Home/Bangumi/126" {
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
 		ref := r.URL.Query().Get("bgmId")
 		groups := `[]`
 		if ref == "123" {
@@ -92,13 +102,14 @@ func TestScheduledDiscoverySummarizesUpstreamOutcomes(t *testing.T) {
 	groupReader := dispatcherTestGroupReader{Endpoint: upstream.URL, Client: upstream.Client()}
 	dispatcher := &Dispatcher{
 		DB: db, WorkItems: store, Recorder: recorder, PolicyReader: selection.NewService(db),
-		Connections: dispatcherTestConnections{{ID: "anibt-test", Kind: configuration.ConnectionAniBT, Endpoint: upstream.URL, State: configuration.ConnectionConfigured}},
+		Connections: dispatcherTestConnections{
+			{ID: "anibt-test", Kind: configuration.ConnectionAniBT, Endpoint: upstream.URL, State: configuration.ConnectionConfigured},
+			{ID: "mikan-source-conn", Kind: configuration.ConnectionMikan, Endpoint: upstream.URL, State: configuration.ConnectionConfigured},
+		},
 		GroupReaders: map[string]GroupReader{"anibt": readGroupsFunc(func(ctx context.Context, ref string) (provider.GroupReadResult, error) {
 			switch ref {
 			case "125":
 				return provider.GroupReadResult{}, &provider.ReadFailure{Status: provider.Status{State: provider.StateNotIndexed, ReasonCode: provider.ReasonAnimeNotFound}}
-			case "126":
-				return provider.GroupReadResult{}, &outbound.ThrottleError{StatusCode: http.StatusTooManyRequests, CooldownError: outbound.CooldownError{CheckedAt: now, CooldownUntil: deadline}}
 			case "127":
 				return provider.GroupReadResult{}, &outbound.CooldownError{ReasonCode: outbound.ReasonBucketCooldown, CheckedAt: now, CooldownUntil: deadline}
 			case "128":
@@ -106,7 +117,7 @@ func TestScheduledDiscoverySummarizesUpstreamOutcomes(t *testing.T) {
 			default:
 				return groupReader.ReadGroups(ctx, ref)
 			}
-		})},
+		}), "mikan": provideradapter.MikanGroupReader{Endpoint: upstream.URL, Client: upstream.Client(), Now: func() time.Time { return now }}},
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE automation_schedules SET enabled = (kind = 'group_discovery'), next_run_at = CASE WHEN kind = 'group_discovery' THEN CURRENT_TIMESTAMP - INTERVAL '1 minute' ELSE NULL END`); err != nil {
 		t.Fatal(err)
@@ -126,6 +137,11 @@ func TestScheduledDiscoverySummarizesUpstreamOutcomes(t *testing.T) {
 	run, err := service.GetRun(ctx, runID)
 	if err != nil || run.State != "partial" || run.DispatchErrorCount != 1 || !hasCompletedCount(run, 2) || run.UpstreamOutcomes == nil || *run.UpstreamOutcomes != want {
 		t.Fatalf("dispatch run=%+v upstream=%v err=%v", run, run.UpstreamOutcomes, err)
+	}
+	var state, reason string
+	var cooldown time.Time
+	if err := db.QueryRowContext(ctx, `SELECT state,error_code,cooldown_until FROM provider_group_refresh_health WHERE provider='mikan' AND catalog_entry_ref='126'`).Scan(&state, &reason, &cooldown); err != nil || state != "rate_limited" || reason != "PROVIDER_RATE_LIMITED" || !cooldown.Equal(deadline) {
+		t.Fatalf("Mikan refresh state=%q reason=%q cooldown=%v err=%v", state, reason, cooldown, err)
 	}
 	var routineErrors, routineCooldown int
 	if err := db.QueryRowContext(ctx, `SELECT (details->>'error_count')::int, (details->'upstream_outcomes'->>'cooldown')::int FROM routine_activities WHERE kind = 'automation_dispatch' AND scope_id = 'group_discovery'`).Scan(&routineErrors, &routineCooldown); err != nil || routineErrors != 1 || routineCooldown != 1 {
@@ -149,12 +165,14 @@ VALUES ('good', 'anibt', '2026-summer', 'fresh', $1, 'test', $1, 1, 'available')
 		return []outbound.Health{{Bucket: outbound.AniBTMetadata, CooldownUntil: deadline.Add(time.Minute), LastLimitedAt: now}}
 	}}
 	health, err := reader.Read(ctx)
-	if err != nil || len(health.Quotas) != 1 || !health.Quotas[0].CooldownUntil.Equal(deadline.Add(time.Minute)) || len(health.Refreshes) != 3 {
+	if err != nil || len(health.Quotas) != 1 || !health.Quotas[0].CooldownUntil.Equal(deadline.Add(time.Minute)) || len(health.Refreshes) != 4 {
 		t.Fatalf("diagnostics=%+v err=%v", health, err)
 	}
-	groups, catalog, mikan := health.Refreshes[0], health.Refreshes[1], health.Refreshes[2]
+	groups, mikanGroups, catalog, mikan := health.Refreshes[0], health.Refreshes[1], health.Refreshes[2], health.Refreshes[3]
+	want.RateLimited = 0
 	if groups.Kind != "groups" || groups.Outcomes != want || groups.LastSuccessAt.IsZero() ||
 		catalog.Kind != "catalog" || catalog.Outcomes != (provider.Outcomes{Cooldown: 1}) || !catalog.LastSuccessAt.Equal(now) ||
+		mikanGroups.Kind != "groups" || mikanGroups.Provider != "mikan" || mikanGroups.Outcomes != (provider.Outcomes{RateLimited: 1}) || !mikanGroups.LastSuccessAt.IsZero() ||
 		mikan.Provider != "mikan" || mikan.Outcomes != (provider.Outcomes{Empty: 1, Error: 1}) {
 		t.Fatalf("business refreshes=%+v", health.Refreshes)
 	}

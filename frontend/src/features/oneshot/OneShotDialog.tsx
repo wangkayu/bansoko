@@ -1040,6 +1040,12 @@ export function OneShotDialog({
           loadingGroups={source.loading}
           openingGroup={source.openingGroup}
           openError={source.openError}
+          groupUpstream={source.groupUpstream}
+          activeUpstream={activeGroupKey === undefined ? undefined : source.groupUpstream?.get(activeGroupKey)}
+          onRetryUpstream={activeGroupKey === undefined ? undefined : () => {
+            if (activeGroup) void refreshGroup(activeGroup);
+            else openGroup(activeGroupKey);
+          }}
           onOpenGroup={openGroup}
           activeGroup={activeGroup}
           activeTitle={source.kind === "search" ? sourceLabel : (activeGroup?.name ?? activeEntry?.name ?? "")}

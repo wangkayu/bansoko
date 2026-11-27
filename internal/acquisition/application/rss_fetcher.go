@@ -14,6 +14,7 @@ import (
 	"bansoko/internal/acquisition/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/observability/outbound"
+	providerdomain "bansoko/internal/provider/domain"
 	provideroutbound "bansoko/internal/provider/outbound"
 	"bansoko/internal/redact"
 	subscriptiondomain "bansoko/internal/subscription/domain"
@@ -107,7 +108,8 @@ func (f HTTPRSSFetcher) FetchDetailed(ctx context.Context, locator subscriptiond
 		return RSSFetchResult{}, ErrFeedNotModified
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return RSSFetchResult{}, outbound.WithFailure(fmt.Errorf("RSS source returned HTTP %d", response.StatusCode), outbound.Describe(nil, request, response, outbound.ViaOf(client, request)))
+		failure := providerdomain.HTTPReadFailure(response, fmt.Errorf("RSS source returned HTTP %d", response.StatusCode), time.Now().UTC())
+		return RSSFetchResult{}, outbound.WithFailure(failure, outbound.Describe(nil, request, response, outbound.ViaOf(client, request)))
 	}
 	payload, err := io.ReadAll(io.LimitReader(response.Body, f.MaxSize+1))
 	if err != nil {

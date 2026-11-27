@@ -404,6 +404,50 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     test.skip(!fixtureOnly, "fixture UI walkthrough runs only with BANSOKO_E2E_FIXTURES=1");
   });
 
+  test("一次性种子预览限流时等待并可重试", async ({ page }, testInfo) => {
+    await mockSignedIn(page);
+    await mockShellReads(page);
+    await mockDiscovery(page);
+    await mockSeedRead(page);
+    const now = new Date();
+    await page.clock.setFixedTime(now);
+    let previews = 0;
+    await page.route("**/api/v1/catalog/providers/*/entries/*/rss*", async (route) => {
+      if (route.request().method() === "GET") {
+        if (previews > 0) return route.fallback();
+        return ok(route, 200, { provider: "anibt", provider_entry_ref: ENTRY_REF, group_ref: GROUP_REF, freshness: "stale", seeds: [] });
+      }
+      if (++previews > 1) return route.fallback();
+      return route.fulfill({
+        status: 429,
+        headers: { "Retry-After": "60" },
+        json: { code: "PROVIDER_RATE_LIMITED", message: "quota", upstream: {
+          state: "rate_limited", checked_at: now.toISOString(), cooldown_until: new Date(now.getTime() + 60_000).toISOString(),
+        } },
+      });
+    });
+    await page.goto("/");
+    if ((page.viewportSize()?.width ?? 1280) <= 600) {
+      await page.getByRole("navigation", { name: "底部导航" }).getByRole("button", { name: "发现", exact: true }).click();
+      await page.getByRole("radiogroup", { name: "主导航" }).getByRole("radio", { name: "AniBT", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "AniBT", exact: true }).click();
+    }
+    await page.getByRole("button", { name: `浏览《${TITLE}》的种子` }).click();
+    const task = page.getByRole("dialog", { name: "浏览种子" });
+    await expect(task.getByText("站点正在限制请求")).toBeVisible();
+    const retry = task.getByRole("button", { name: "重试", exact: true });
+    await expect(retry).toBeDisabled();
+    expect(previews).toBe(1);
+    expect(await task.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    if (process.env.BANSOKO_UPSTREAM_VISUAL_QA === "1") await task.screenshot({ path: testInfo.outputPath("rss-quota.png") });
+    await page.clock.setFixedTime(new Date(now.getTime() + 61_000));
+    await expect(retry).toBeEnabled();
+    await retry.click();
+    await expect(task.getByRole("checkbox", { name: `[${GROUP}] ${TITLE} - 01 [1080p]` })).toBeVisible();
+    await expect(task.getByText("站点正在限制请求")).toHaveCount(0);
+  });
+
   test("digest-only 种子勾选后进入第二步并提交精确快照身份", async ({ page }) => {
     await mockSignedIn(page);
     await mockShellReads(page);

@@ -20,7 +20,6 @@ import (
 	"bansoko/internal/parserpolicy"
 	"bansoko/internal/persistence/txscope"
 	providerdomain "bansoko/internal/provider/domain"
-	provideroutbound "bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/worker"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
@@ -171,20 +170,16 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 }
 
 func rssQuotaWait(err error) (string, time.Duration, bool) {
-	var throttle *provideroutbound.ThrottleError
-	if errors.As(err, &throttle) {
-		// 503 remains an actual upstream failure. Only later local cooldowns
-		// and explicit HTTP 429 responses are free of the failure budget.
-		if throttle.StatusCode == 429 {
-			return "provider_rate_limited", min(24*time.Hour, max(time.Second, throttle.RetryAfter)), true
-		}
+	status := providerdomain.ClassifyReadError(err, time.Now().UTC())
+	delay := min(24*time.Hour, max(time.Second, status.RetryAfter))
+	switch status.State {
+	case providerdomain.StateRateLimited:
+		return "provider_rate_limited", delay, true
+	case providerdomain.StateCooldown:
+		return "provider_cooldown", delay, true
+	default:
 		return "", 0, false
 	}
-	var cooldown *provideroutbound.CooldownError
-	if errors.As(err, &cooldown) {
-		return "provider_cooldown", min(24*time.Hour, max(time.Second, cooldown.RetryAfter)), true
-	}
-	return "", 0, false
 }
 
 // refreshTriggerIsManual reports whether the WorkItem carries an explicit

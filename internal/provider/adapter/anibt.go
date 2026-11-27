@@ -128,13 +128,20 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 			return providerdomain.GroupReadResult{}, fmt.Errorf("AniBT groups contain duplicate slug %q", ref.ExternalID)
 		}
 		seen[ref.Key()] = struct{}{}
-		active := strings.EqualFold(item.Status, "active")
-		if item.Status == "" {
+		var active *bool
+		switch strings.ToUpper(item.Status) {
+		case "ACTIVE":
+			value := true
+			active = &value
+		case "DISABLED":
+			value := false
+			active = &value
+		default:
 			result.Complete = false
 		}
 		result.Groups = append(result.Groups, providerdomain.GroupSnapshotEntry{
 			Ref: ref, DisplayName: strings.TrimSpace(item.Name), ObservedAt: observedAt,
-			Active:      &active,
+			Active:      active,
 			FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: catalogEntryRef, Group: ref},
 		})
 	}

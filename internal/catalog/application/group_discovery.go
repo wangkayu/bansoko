@@ -353,6 +353,12 @@ func (s *Service) RefreshProviderEntryRSS(ctx context.Context, provider, catalog
 	}
 	items, err := s.feedFetcher.FetchProviderFeed(ctx, locator)
 	if err != nil {
+		if ctx.Err() != nil {
+			return catalogdomain.ProviderRSSPreviewResult{}, ctx.Err()
+		}
+		if status := providerdomain.ClassifyReadError(err, time.Now().UTC()); status.State.Deferred() {
+			return catalogdomain.ProviderRSSPreviewResult{}, &providerdomain.ReadFailure{Status: status, Err: err}
+		}
 		if business := feedFailureBusinessError(err); business != nil {
 			return catalogdomain.ProviderRSSPreviewResult{}, business
 		}

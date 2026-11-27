@@ -7,6 +7,7 @@ import (
 	catalogapplication "bansoko/internal/catalog/application"
 	catalogdomain "bansoko/internal/catalog/domain"
 	catalogtransport "bansoko/internal/catalog/transport"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -103,6 +104,11 @@ func (s *Server) PreviewProviderEntryRSS(w http.ResponseWriter, r *http.Request,
 	}
 	result, err := catalog.PreviewProviderEntryRSS(r.Context(), string(provider), string(providerEntryRef), input.GroupRef)
 	if err != nil {
+		var failure *providerdomain.ReadFailure
+		if errors.As(err, &failure) && failure.Status.State.Deferred() {
+			writeUpstreamFailure(w, r, failure.Status, "", "")
+			return
+		}
 		writeError(w, r, err)
 		return
 	}

@@ -14,6 +14,7 @@ import (
 	"bansoko/internal/catalog/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	observabilityport "bansoko/internal/observability/port"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/runtime/buildinfo"
 
 	"github.com/PuerkitoBio/goquery"
@@ -70,7 +71,8 @@ func (r MikanHTTPReader) ReadSeason(ctx context.Context, season string, hints do
 		return domain.ReadResult{SourceVersion: normalizedSeason, Cursor: hints.Cursor, ETag: etag, LastModified: lastModified, ContractVersion: mikanSeasonContractVersion, NotModified: true}, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return domain.ReadResult{}, &domain.ReadError{Code: domain.ReadFailureHTTPStatus, Err: fmt.Errorf("Mikan catalog returned HTTP %d", response.StatusCode)}
+		failure := &domain.ReadError{Code: domain.ReadFailureHTTPStatus, Err: fmt.Errorf("Mikan catalog returned HTTP %d", response.StatusCode)}
+		return domain.ReadResult{}, providerdomain.HTTPReadFailure(response, failure, time.Now().UTC())
 	}
 	document, err := goquery.NewDocumentFromReader(response.Body)
 	if err != nil {

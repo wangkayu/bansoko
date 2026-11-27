@@ -49,8 +49,12 @@ func (r MikanGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 		return providerdomain.GroupReadResult{}, fmt.Errorf("fetch Mikan groups: %w", err)
 	}
 	defer response.Body.Close()
+	observedAt := time.Now().UTC()
+	if r.Now != nil {
+		observedAt = r.Now().UTC()
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return providerdomain.GroupReadResult{}, fmt.Errorf("Mikan groups returned HTTP %d", response.StatusCode)
+		return providerdomain.GroupReadResult{}, providerdomain.HTTPReadFailure(response, fmt.Errorf("Mikan groups returned HTTP %d", response.StatusCode), observedAt)
 	}
 	payload, err := readBoundedResponse(response)
 	if err != nil {
@@ -59,10 +63,6 @@ func (r MikanGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 	document, err := goquery.NewDocumentFromReader(bytes.NewReader(payload))
 	if err != nil {
 		return providerdomain.GroupReadResult{}, fmt.Errorf("parse Mikan detail HTML: %w", err)
-	}
-	observedAt := time.Now().UTC()
-	if r.Now != nil {
-		observedAt = r.Now().UTC()
 	}
 	result := providerdomain.GroupReadResult{Provider: providerdomain.ProviderMikan, CatalogEntryRef: catalogEntryRef, ObservedAt: observedAt, SourceVersion: response.Header.Get("ETag"), SchemaVersion: mikanGroupSchemaVersion, Groups: make([]providerdomain.GroupSnapshotEntry, 0)}
 	observedSchemaVersion, hasSchemaMarker := mikanGroupSchemaVersionFromResponse(document, response.Header)

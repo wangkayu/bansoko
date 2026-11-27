@@ -86,9 +86,9 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 	case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v1/catalog/providers/anibt/search"):
-		_ = json.NewEncoder(w).Encode([]map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{
 			{"kind": "anibt_entry", "provider": "anibt", "title": "Test Show", "provider_entry_ref": "ref-1", "bgm_id": "400602", "catalog_state": "available", "preference": "neutral", "allowed_actions": []string{"prepare_subscribe"}},
-		})
+		}})
 	case r.Method == "POST" && r.URL.Path == "/api/v1/parse/release-title":
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"parser_version": "parser-v1",

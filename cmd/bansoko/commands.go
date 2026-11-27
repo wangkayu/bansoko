@@ -150,15 +150,15 @@ func cmdSearch(args []string) error {
 		printRaw(raw)
 		return nil
 	}
-	var items []generated.CatalogItem
-	if err := json.Unmarshal(raw, &items); err != nil {
+	var result generated.CatalogKeywordSearchResult
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return err
 	}
-	if len(items) == 0 {
+	if len(result.Items) == 0 {
 		fmt.Fprintln(human(), "no results")
 		return nil
 	}
-	for _, item := range items {
+	for _, item := range result.Items {
 		id := ""
 		if item.BgmId != nil {
 			id = "bgm:" + *item.BgmId

@@ -5,14 +5,70 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"bansoko/internal/catalog/application"
 	"bansoko/internal/catalog/domain"
 	configurationdomain "bansoko/internal/configuration/domain"
+	provider "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 )
 
 type staticCatalogConnectionSource []configurationdomain.Connection
+
+type catalogQuotaClock struct{ now time.Time }
+
+func (c *catalogQuotaClock) Now() time.Time { return c.now }
+func (*catalogQuotaClock) NewTimer(time.Duration) outbound.Timer {
+	panic("unexpected quota wait")
+}
+
+func TestConfiguredAniBTReadersShareCooldown(t *testing.T) {
+	ctx := context.Background()
+	clock := &catalogQuotaClock{now: time.Now().UTC()}
+	scheduler, err := outbound.New(ctx, outbound.DefaultPolicies(), clock, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		wait := map[string]string{"/api/seasons/anime": "5", "/api/bgm/search": "10", "/anime/123": "20"}[r.URL.Path]
+		if wait == "" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Retry-After", wait)
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	reader := ConfiguredReader{
+		Provider: application.ProviderAniBT, Outbound: scheduler, AllowPrivateHosts: []string{"127.0.0.1"},
+		Connections: staticCatalogConnectionSource{{Kind: configurationdomain.ConnectionAniBT, Endpoint: server.URL, State: configurationdomain.ConnectionConfigured}},
+	}
+	reads := []func() error{
+		func() error { _, err := reader.ReadSeason(ctx, "2024-07", domain.ReadHints{}); return err },
+		func() error { _, err := reader.Search(ctx, "Test", domain.ReadHints{}); return err },
+		func() error { _, err := reader.ReadSynopsis(ctx, "123"); return err },
+	}
+	for i, seconds := range []int{5, 10, 20} {
+		wait := time.Duration(seconds) * time.Second
+		status := provider.ClassifyReadError(reads[i](), clock.now)
+		if status.State != provider.StateRateLimited || !status.CooldownUntil.Equal(clock.now.Add(wait)) {
+			t.Fatalf("read %d: %+v", i, status)
+		}
+		for j, read := range reads {
+			if j != i && provider.ClassifyReadError(read(), clock.now).State != provider.StateCooldown {
+				t.Fatalf("read %d did not honor cooldown from read %d", j, i)
+			}
+		}
+		if hits.Load() != int32(i+1) {
+			t.Fatalf("upstream hits=%d, want %d", hits.Load(), i+1)
+		}
+		clock.now = clock.now.Add(wait)
+	}
+}
 
 func (s staticCatalogConnectionSource) ListConnections(context.Context) ([]configurationdomain.Connection, error) {
 	return append([]configurationdomain.Connection(nil), s...), nil

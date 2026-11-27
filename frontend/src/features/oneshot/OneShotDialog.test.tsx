@@ -689,6 +689,25 @@ describe("OneShotDialog 第一步：种子目录", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
+  it("一次性刷新遇到限流时保留当前组种子与已选项", async () => {
+    const now = Date.now();
+    stubFetch({
+      view: viewOf([seedGroup({ feed: { state: "refresh_required" } })]),
+      refresh: { status: 429, body: {
+        code: "PROVIDER_RATE_LIMITED", message: "quota",
+        upstream: { state: "rate_limited", checked_at: new Date(now).toISOString(), cooldown_until: new Date(now + 60_000).toISOString() },
+      } },
+    });
+    await renderAndEnter();
+    fireEvent.click(await findSeed(SEED_A));
+    fireEvent.click(button(t("oneshot.refreshSeedsAction")));
+    expect(await screen.findByText(t("upstream.rateLimited"))).toBeInTheDocument();
+    expect(button(t("upstream.retryLater"))).toBeDisabled();
+    expect(await findSeed(SEED_A)).toBeChecked();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(calls.filter((call) => call.url.endsWith("/entry-1/rss"))).toHaveLength(1);
+  });
+
   it("分组过期：该组可单独刷新，刷新后清空该组已选", async () => {
     stubFetch({ view: viewOf([seedGroup({ feed: { state: "refresh_required" } })]), refresh: { status: 200 } });
     await renderAndEnter();

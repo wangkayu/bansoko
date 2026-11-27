@@ -119,7 +119,7 @@ func (r ConfiguredReader) Search(ctx context.Context, query string, hints domain
 	// still answers ErrSearchNotSupported, which the transport maps to 422.
 	switch r.Provider {
 	case application.ProviderAniBT:
-		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).Search(ctx, query, hints)
+		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client, Outbound: r.Outbound}).Search(ctx, query, hints)
 	case application.ProviderMikan:
 		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).Search(ctx, query, hints)
 	default:
@@ -141,7 +141,7 @@ func (r ConfiguredReader) ReadSynopsis(ctx context.Context, providerEntryRef str
 	}
 	switch r.Provider {
 	case application.ProviderAniBT:
-		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).ReadSynopsis(ctx, providerEntryRef)
+		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client, Outbound: r.Outbound}).ReadSynopsis(ctx, providerEntryRef)
 	case application.ProviderMikan:
 		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).ReadSynopsis(ctx, providerEntryRef)
 	default:

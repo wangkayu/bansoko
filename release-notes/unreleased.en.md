@@ -19,6 +19,8 @@
 
 - Provider searches and group refreshes now distinguish empty results, titles not yet indexed, and rate limits. During a cooldown, the interface shows when you can retry without clearing the last successful catalog or group data.
 - Metadata search reports timeouts and temporary outages. A Bangumi timeout no longer hides a valid TMDB automatic match.
+- Catalog searches display results in the CLI again. One-shot RSS previews show a retry countdown during provider rate limits and keep the current seed selection.
+- Delayed subgroup refreshes preserve newer rate-limit results. Unrecognized AniBT group statuses leave the last complete group list and selections in place.
 
 - When the original title has no match, Bangumi and bangumi-data can use a trailing bracketed year to find a unique match with the same airing year. Unbracketed years stay part of the title.
 - Library scans recognize movies without episode numbers, and importing a movie uses the movie naming rules to build its file path.

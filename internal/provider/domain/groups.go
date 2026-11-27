@@ -181,6 +181,8 @@ type GroupSnapshot struct {
 }
 
 type GroupReadResult struct {
+	// AttemptedAt fences refresh health but is not part of the observation.
+	AttemptedAt          time.Time
 	Provider             Kind
 	CatalogEntryRef      string
 	ObservedAt           time.Time

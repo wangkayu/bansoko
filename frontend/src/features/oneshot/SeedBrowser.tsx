@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, RotateCw } from "lucide-react";
-import type { RSSListFile, RSSListSeedFacts } from "../../lib/api/client";
+import type { RSSListFile, RSSListSeedFacts, UpstreamStatus } from "../../lib/api/client";
 import { formatBytes, formatDateTime } from "../../lib/labels";
 import { reasonLabel } from "../../lib/i18n/reasons";
 import { getLocale, t } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import { Button, Input, StateBlock } from "../../ui";
+import { UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { Checkbox, Reveal, SpinnerIcon } from "../../ui/base";
 import type { OneShotGroupEntry } from "./useOneShotSeeds";
 import { needsExpand, selectableRow, type OneShotSeedGroup, type OneShotSeedRow } from "./seedRows";
@@ -96,12 +97,14 @@ function GroupList({
   loading,
   openingGroup,
   openError,
+  groupUpstream,
   onOpen,
 }: {
   entries: OneShotGroupEntry[];
   loading: boolean;
   openingGroup?: string;
   openError?: { key: string; message: string };
+  groupUpstream?: ReadonlyMap<string, UpstreamStatus>;
   onOpen: (key: string) => void;
 }) {
   if (loading) return <GroupListSkeleton />;
@@ -110,6 +113,7 @@ function GroupList({
       {entries.map((entry, index) => {
         const opening = openingGroup === entry.key;
         const error = openError?.key === entry.key ? openError.message : undefined;
+        const status = entry.count === undefined ? groupUpstream?.get(entry.key) : undefined;
         // Only entered groups know their seed count and newest time; nothing is placeholder-written for the unknown.
         const latest = entry.latestAt ? shortDate(entry.latestAt) : undefined;
         const meta = metaLine([
@@ -126,7 +130,7 @@ function GroupList({
             <button
               type="button"
               aria-label={t("oneshot.openGroup", { name: entry.name })}
-              disabled={openingGroup !== undefined}
+              disabled={openingGroup !== undefined || status !== undefined}
               onClick={() => onOpen(entry.key)}
               className="tw:group tw:flex tw:w-full tw:cursor-pointer tw:items-center tw:gap-3 tw:rounded-control tw:border tw:border-border tw:bg-transparent tw:px-3 tw:py-3 tw:text-left tw:text-foreground tw:transition-[background-color,border-color,transform] tw:duration-150 tw:hover:border-ring/40 tw:hover:bg-muted/40 tw:active:scale-[0.99] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring tw:disabled:cursor-default tw:motion-reduce:transition-none tw:motion-reduce:active:scale-100"
             >
@@ -141,6 +145,7 @@ function GroupList({
                 <ChevronRight className="tw:size-4 tw:flex-none tw:text-muted-foreground tw:transition-transform tw:duration-150 tw:group-hover:translate-x-0.5 tw:motion-reduce:transition-none" />
               )}
             </button>
+            <UpstreamStatusBlock status={status} onRetry={() => onOpen(entry.key)} retryDisabled={openingGroup !== undefined} />
           </li>
         );
       })}
@@ -365,6 +370,9 @@ export function SeedBrowser({
   onRefresh,
   refreshing,
   refreshError,
+  groupUpstream,
+  activeUpstream,
+  onRetryUpstream,
   pending,
   filter,
   onFilterChange,
@@ -393,6 +401,9 @@ export function SeedBrowser({
   onRefresh?: () => void;
   refreshing: boolean;
   refreshError?: string;
+  groupUpstream?: ReadonlyMap<string, UpstreamStatus>;
+  activeUpstream?: UpstreamStatus;
+  onRetryUpstream?: () => void;
   pending: boolean;
   filter: string;
   onFilterChange: (value: string) => void;
@@ -439,7 +450,7 @@ export function SeedBrowser({
         ) : level === "groups" ? (
           <section key={paneKey} className={cn("tw:grid tw:gap-3 tw:py-4", enter)} aria-label={t("oneshot.groupsTitle")}>
             {!loadingGroups && <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("oneshot.groupsCount", { n: groupEntries.length })}</p>}
-            <GroupList entries={groupEntries} loading={loadingGroups} openingGroup={openingGroup} openError={openError} onOpen={onOpenGroup} />
+            <GroupList entries={groupEntries} loading={loadingGroups} openingGroup={openingGroup} openError={openError} groupUpstream={groupUpstream} onOpen={onOpenGroup} />
           </section>
         ) : (
           <section key={paneKey} className={cn("tw:grid tw:content-start", enter)} aria-label={activeTitle}>
@@ -447,7 +458,7 @@ export function SeedBrowser({
               title={activeTitle}
               count={activeGroup?.rows.length}
               onBack={onBack}
-              onRefresh={onRefresh}
+              onRefresh={activeUpstream ? undefined : onRefresh}
               refreshing={refreshing}
               pending={pending && !activeLoading}
               filter={filter}
@@ -458,6 +469,7 @@ export function SeedBrowser({
             />
             <div className="tw:grid tw:gap-2 tw:pt-2">
               {refreshError && <StateBlock kind="error" title={refreshError} />}
+              <UpstreamStatusBlock status={activeUpstream} onRetry={onRetryUpstream} retryDisabled={refreshing || openingGroup !== undefined} />
               {activeLoading ? (
                 <SeedListSkeleton />
               ) : !activeGroup ? null : activeGroup.rows.length === 0 ? (

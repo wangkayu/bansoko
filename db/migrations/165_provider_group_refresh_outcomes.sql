@@ -40,7 +40,6 @@ DECLARE
     v_version BIGINT;
     v_source TEXT;
     v_time TIMESTAMPTZ;
-    v_state TEXT;
 BEGIN
     o := p_canonical::jsonb;
     -- All canonical observation strings prohibit controls, so the existing
@@ -158,12 +157,5 @@ BEGIN
         COALESCE((SELECT jsonb_agg(jsonb_build_object('group_ref',g->>'group_ref','display_name',g->>'display_name',
             'feed_locator',e->'feed_locator','observed_at',g->>'observed_at') ORDER BY g->>'group_ref' COLLATE "C")
         FROM jsonb_array_elements(o->'groups') g JOIN jsonb_array_elements(p_entries) e ON e->>'group_ref'=g->>'group_ref'),'[]'::jsonb));
-    v_state := CASE WHEN jsonb_array_length(o->'groups')=0 THEN 'empty' ELSE 'available' END;
-    INSERT INTO public.provider_group_refresh_health(provider,catalog_entry_ref,state,last_attempt_at,last_success_at,checked_at,version)
-    VALUES (o->'scope'->>'provider',o->'scope'->>'catalog_entry_ref',v_state,statement_timestamp(),v_time,v_time,1)
-    ON CONFLICT (provider,catalog_entry_ref) DO UPDATE SET state=EXCLUDED.state,
-        last_success_at=EXCLUDED.last_success_at,checked_at=EXCLUDED.checked_at,
-        error_code=NULL,error_message=NULL,cooldown_until=NULL,
-        version=provider_group_refresh_health.version+1,updated_at=CURRENT_TIMESTAMP;
 END;
 $_$;

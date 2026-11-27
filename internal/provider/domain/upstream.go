@@ -113,6 +113,9 @@ func HTTPReadFailure(response *http.Response, err error, checkedAt time.Time) *R
 	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable {
 		if wait, ok := outbound.ParseRetryAfter(response.Header.Get("Retry-After"), checkedAt); ok {
 			status.RetryAfter, status.CooldownUntil = wait, checkedAt.Add(wait)
+			if response.StatusCode == http.StatusServiceUnavailable {
+				status.ReasonCode = ReasonRetryAfter
+			}
 		}
 	}
 	return &ReadFailure{Status: status, Err: err}

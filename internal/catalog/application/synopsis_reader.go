@@ -12,6 +12,8 @@ import (
 
 	"bansoko/internal/catalog/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 
 	"github.com/PuerkitoBio/goquery"
@@ -43,7 +45,7 @@ func (r HTTPReader) ReadSynopsis(ctx context.Context, providerEntryRef string) (
 	if err != nil {
 		return domain.EntrySynopsis{}, fmt.Errorf("%w: %v", ErrProviderUpstream, err)
 	}
-	document, err := readSynopsisDocument(ctx, r.Client, sourceURL, "AniBT")
+	document, err := readSynopsisDocument(ctx, r.Client, sourceURL, "AniBT", r.Outbound, outbound.AniBTMetadata)
 	if err != nil {
 		return domain.EntrySynopsis{}, err
 	}
@@ -77,7 +79,7 @@ func (r MikanHTTPReader) ReadSynopsis(ctx context.Context, providerEntryRef stri
 	if err != nil {
 		return domain.EntrySynopsis{}, fmt.Errorf("%w: %v", ErrProviderUpstream, err)
 	}
-	document, err := readSynopsisDocument(ctx, r.Client, sourceURL, "Mikan")
+	document, err := readSynopsisDocument(ctx, r.Client, sourceURL, "Mikan", nil, "")
 	if err != nil {
 		return domain.EntrySynopsis{}, err
 	}
@@ -125,7 +127,7 @@ func synopsisPageURL(endpoint, pagePath string) (string, error) {
 	return base.String(), nil
 }
 
-func readSynopsisDocument(ctx context.Context, client *http.Client, sourceURL, site string) (*goquery.Document, error) {
+func readSynopsisDocument(ctx context.Context, client *http.Client, sourceURL, site string, coordinator outbound.Coordinator, bucket outbound.BucketKey) (*goquery.Document, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
@@ -135,13 +137,13 @@ func readSynopsisDocument(ctx context.Context, client *http.Client, sourceURL, s
 	}
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("catalog"))
-	response, err := client.Do(request)
+	response, err := outbound.Do(client, coordinator, bucket, request)
 	if err != nil {
-		return nil, fmt.Errorf("%w: fetch %s synopsis: %v", ErrProviderUpstream, site, err)
+		return nil, fmt.Errorf("%w: fetch %s synopsis: %w", ErrProviderUpstream, site, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("%w: %s synopsis returned HTTP %d", ErrProviderUpstream, site, response.StatusCode)
+		return nil, providerdomain.HTTPReadFailure(response, fmt.Errorf("%w: %s synopsis returned HTTP %d", ErrProviderUpstream, site, response.StatusCode), time.Now().UTC())
 	}
 	payload, err := readBoundedBody(response.Body, maxSynopsisHTMLSize)
 	if err != nil {

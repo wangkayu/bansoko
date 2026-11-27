@@ -198,7 +198,9 @@ func (r HTTPReader) Search(ctx context.Context, query string, hints domain.ReadH
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", buildinfo.UserAgent("catalog"))
-	response, err := client.Do(request)
+	// Bangumi search has its own higher upstream limit; apply the stricter
+	// shared metadata policy locally so discovery and search honor one cooldown.
+	response, err := outbound.Do(client, r.Outbound, outbound.AniBTMetadata, request)
 	if err != nil {
 		return domain.ReadResult{}, fmt.Errorf("%w: fetch AniBT search: %w", ErrProviderUpstream, err)
 	}
