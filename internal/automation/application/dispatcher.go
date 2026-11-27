@@ -20,6 +20,7 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	providerdomain "bansoko/internal/provider/domain"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/redact"
 	selectiondomain "bansoko/internal/selection/domain"
 	subscriptiondomain "bansoko/internal/subscription/domain"
@@ -78,6 +79,8 @@ func (d *Dispatcher) SetEventHub(hub *events.Hub) {
 }
 
 type dispatchCounts struct {
+	upstream        *providerdomain.Outcomes
+	metadataState   providerdomain.State
 	groupReadResult *providerdomain.GroupReadResult
 	groupStatus     providerdomain.Status
 	targetCount     int
@@ -371,7 +374,7 @@ func (d *Dispatcher) dispatchGroupDiscovery(ctx context.Context) (dispatchCounts
 }
 
 func (d *Dispatcher) dispatchGroupDiscoveryRun(ctx context.Context, scheduled bool) (dispatchCounts, error) {
-	var counts dispatchCounts
+	counts := dispatchCounts{upstream: &providerdomain.Outcomes{}}
 
 	// Cadence: the schedule ticks at the airing cadence (default 6 hours).
 	// An entry that is not airing (absent from the latest successful catalog
@@ -450,6 +453,7 @@ WHERE s.state = 'active'
 				return counts, canceled
 			}
 			counts.errors++
+			counts.upstream.Count(providerdomain.StateError, 1)
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "group discovery policy read failed",
 				Operation:  "group_discovery",
@@ -465,6 +469,12 @@ WHERE s.state = 'active'
 			if canceled := ctx.Err(); canceled != nil {
 				return counts, canceled
 			}
+			if state := c.groupStatus.State; state.Deferred() || state == providerdomain.StateNotIndexed {
+				counts.upstream.Count(state, 1)
+				counts.skipped++
+				continue
+			}
+			counts.upstream.Count(providerdomain.StateError, 1)
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "group discovery failed",
@@ -480,6 +490,7 @@ WHERE s.state = 'active'
 		counts.merged += c.merged
 		counts.skipped += c.skipped
 		counts.completed++
+		counts.upstream.Count(c.groupStatus.State, 1)
 	}
 	return counts, nil
 }
@@ -931,7 +942,7 @@ WHERE s.state = 'active'
 // A checked season is complete, a live refresh is merged, a disabled target
 // is skipped, and an outage is an error.
 func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts, error) {
-	var counts dispatchCounts
+	counts := dispatchCounts{upstream: &providerdomain.Outcomes{}}
 	if d.CatalogRefresher == nil {
 		return counts, errors.New("catalog refresher is not configured")
 	}
@@ -953,6 +964,7 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 				return counts, canceled
 			}
 			counts.errors += len(seasons)
+			counts.upstream.Count(providerdomain.StateError, len(seasons))
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message: "catalog refresh preference read failed", Operation: "catalog_refresh",
 				ReasonCode: "preference_read_failed", OwnerType: "provider", OwnerID: provider, ErrorClass: "catalog_refresh",
@@ -972,11 +984,17 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 				counts.merged++
 				continue
 			}
+			if err == nil && snapshot.UpstreamStatus.State.Deferred() {
+				counts.upstream.Count(snapshot.UpstreamStatus.State, 1)
+				counts.skipped++
+				continue
+			}
 			if err != nil || snapshot.Status == catalogdomain.StatusOutage {
 				if canceled := ctx.Err(); canceled != nil {
 					return counts, canceled
 				}
 				counts.errors++
+				counts.upstream.Count(providerdomain.StateError, 1)
 				d.logWarn(ctx, observabilityport.RuntimeEvent{
 					Message: "catalog season refresh failed", Operation: "catalog_refresh",
 					ReasonCode: "catalog_refresh_failed", OwnerType: "provider", OwnerID: provider + ":" + season, ErrorClass: "catalog_refresh",
@@ -984,6 +1002,7 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 				continue
 			}
 			counts.completed++
+			counts.upstream.Count(snapshot.UpstreamStatus.State, 1)
 		}
 	}
 	return counts, nil
@@ -995,7 +1014,7 @@ func (d *Dispatcher) dispatchCatalogRefresh(ctx context.Context) (dispatchCounts
 // are persisted, stored values are never overwritten), and enqueues
 // release_evaluate WorkItems for waiting_metadata releases once metadata is complete.
 func (d *Dispatcher) dispatchMetadataMatch(ctx context.Context) (dispatchCounts, error) {
-	var counts dispatchCounts
+	counts := dispatchCounts{upstream: &providerdomain.Outcomes{}}
 	if d.MetadataMatcher == nil {
 		return counts, nil
 	}
@@ -1060,7 +1079,13 @@ WHERE m.bgm_work_id IS NULL
 			if canceled := ctx.Err(); canceled != nil {
 				return counts, canceled
 			}
+			if c.metadataState.Deferred() {
+				counts.upstream.Count(c.metadataState, 1)
+				counts.skipped++
+				continue
+			}
 			counts.errors++
+			counts.upstream.Count(providerdomain.StateError, 1)
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
 				Message:    "metadata match dispatch failed",
 				Operation:  "metadata_match",
@@ -1075,6 +1100,7 @@ WHERE m.bgm_work_id IS NULL
 		counts.merged += c.merged
 		counts.skipped += c.skipped
 		counts.completed += c.completed
+		counts.upstream.Count(c.metadataState, 1)
 	}
 	return counts, nil
 }
@@ -1104,10 +1130,14 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 
 	result, err := d.MetadataMatcher.MatchRequest(matcher.WithAffectedAnime(ctx, managedAnimeID), request)
 	if err != nil {
-		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "failure", metadataMatchErrorCode(err), safeDispatchError(err))
+		counts.metadataState = metadataFailureState(err)
+		if !counts.metadataState.Deferred() {
+			d.recordMetadataMatchOutcome(ctx, managedAnimeID, "failure", metadataMatchErrorCode(err), safeDispatchError(err))
+		}
 		return counts, fmt.Errorf("match: %w", err)
 	}
 	if result == nil {
+		counts.metadataState = providerdomain.StateEmpty
 		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "warning", "metadata_match_no_result", "No metadata match was found.")
 		counts.skipped++
 		return counts, nil
@@ -1139,8 +1169,10 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 	}
 	plan := backfill.Merge(stored, result)
 	outcome := backfill.Classify(plan, result)
+	counts.metadataState = providerdomain.StateAvailable
 	if !plan.Changed() {
 		if outcome == backfill.OutcomeNoResult {
+			counts.metadataState = providerdomain.StateEmpty
 			d.recordMetadataMatchOutcome(ctx, managedAnimeID, "warning", "metadata_match_no_result", "No metadata match was found.")
 		} else {
 			d.recordMetadataMatchOutcome(ctx, managedAnimeID, "warning", "metadata_match_partial", "Only part of the required metadata identity was found.")
@@ -1287,6 +1319,35 @@ func (d *Dispatcher) recordMetadataMatchOutcome(ctx context.Context, managedAnim
 			Message: "automation routine write failed", Operation: "observability", ReasonCode: "routine_write_failed",
 			OwnerType: "managed_anime", OwnerID: managedAnimeID, ErrorClass: "observability",
 		})
+	}
+}
+
+// A match can join failures from both providers. A quota response must not
+// hide a real failure from the other provider.
+func metadataFailureState(err error) providerdomain.State {
+	switch failure := err.(type) {
+	case *providerdomain.ReadFailure, *outbound.ThrottleError, *outbound.CooldownError:
+		return providerdomain.ClassifyReadError(err, time.Time{}).State
+	case interface{ Unwrap() []error }:
+		children := failure.Unwrap()
+		if len(children) == 0 {
+			return providerdomain.StateError
+		}
+		state := providerdomain.StateCooldown
+		for _, child := range children {
+			next := metadataFailureState(child)
+			if !next.Deferred() {
+				return providerdomain.StateError
+			}
+			if next == providerdomain.StateRateLimited {
+				state = next
+			}
+		}
+		return state
+	case interface{ Unwrap() error }:
+		return metadataFailureState(failure.Unwrap())
+	default:
+		return providerdomain.StateError
 	}
 }
 

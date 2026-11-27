@@ -21,7 +21,7 @@ const CATEGORY_GROUPS: { group: string; labels: string[] }[] = [
   { group: "服务", labels: ["服务连接", "下载与入库"] },
   { group: "订阅策略", labels: ["默认规则", "同集多版本", "订阅数量与对齐"] },
   { group: "站点", labels: ["AniBT 配置", "Mikan 配置", "隐藏的番剧"] },
-  { group: "系统", labels: ["账户", "自动任务", "通知", "版本与升级", "解析组件", "数据备份", "API 令牌"] },
+  { group: "系统", labels: ["账户", "自动任务", "上游诊断", "通知", "版本与升级", "解析组件", "数据备份", "API 令牌"] },
 ];
 const CATEGORIES = CATEGORY_GROUPS.flatMap((group) => group.labels);
 
@@ -601,6 +601,30 @@ test.describe("settings functional closure", () => {
 // 可达。live 模式不断言这些分区内容（真实实例的更新服务状态不定）。
 test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
+
+  test("上游诊断分别显示额度等待与业务刷新", async ({ page }, testInfo) => {
+    const now = new Date();
+    const until = new Date(now.getTime() + 90_000);
+    await page.route("**/api/v1/system/upstream-health", route => route.fulfill({ json: {
+      checked_at: now.toISOString(),
+      quotas: [{ bucket: "anibt:metadata", reason_code: "PROVIDER_RATE_LIMITED", last_limited_at: now.toISOString(), cooldown_until: until.toISOString() }],
+      refreshes: [{ provider: "anibt", kind: "groups", last_attempt_at: now.toISOString(), last_success_at: now.toISOString(),
+        outcomes: { available: 4, empty: 2, not_indexed: 1, rate_limited: 0, cooldown: 3, error: 1 } }],
+    } }));
+    await openSettings(page, "/#/settings/upstreamHealth");
+    await expect(page.getByTestId("settings-content").getByRole("heading", { name: "上游诊断", exact: true }).filter({ visible: true }).last()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "共享请求额度" })).toBeVisible();
+    await expect(page.getByText("anibt:metadata", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-upstream-state="cooldown"]')).toContainText(/\d+\s*秒/);
+    await expect(page.getByRole("heading", { name: "业务刷新" })).toBeVisible();
+    await expect(page.getByLabel("结果统计")).toContainText("尚未收录");
+    await expect(page.getByText(/上次成功：/)).toBeVisible();
+    const overflow = await page.getByRole("dialog").evaluate(el => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    if (process.env.BANSOKO_UPSTREAM_VISUAL_QA === "1") {
+      await page.screenshot({ path: testInfo.outputPath("upstream-health.png") });
+    }
+  });
 
   test("事件脚本：配置分栏、源码滚动与返回草稿", async ({ page }, testInfo) => {
     const mobile = isMobile(page);

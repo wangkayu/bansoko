@@ -1,12 +1,59 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"time"
 
+	outboundpersistence "bansoko/internal/provider/outbound/persistence"
 	"bansoko/internal/runtime/readiness"
 	"bansoko/internal/transport/httpapi/generated"
 )
+
+type UpstreamHealthReader interface {
+	Read(context.Context) (outboundpersistence.Diagnostics, error)
+}
+
+func (s *Server) SetUpstreamHealthReader(reader UpstreamHealthReader) {
+	s.deps.UpstreamHealth = reader
+}
+
+func (s *Server) GetSystemUpstreamHealth(w http.ResponseWriter, r *http.Request) {
+	if s.deps.UpstreamHealth == nil {
+		writeError(w, r, unavailable("SERVICE_NOT_CONFIGURED", "Upstream diagnostics are not configured."))
+		return
+	}
+	health, err := s.deps.UpstreamHealth.Read(r.Context())
+	if err != nil {
+		writeError(w, r, unavailable("DATABASE_UNAVAILABLE", "Upstream diagnostics could not be read."))
+		return
+	}
+	result := generated.SystemUpstreamHealth{
+		CheckedAt: time.Now().UTC(), Quotas: make([]generated.UpstreamQuotaHealth, 0, len(health.Quotas)),
+		Refreshes: make([]generated.UpstreamRefreshHealth, 0, len(health.Refreshes)),
+	}
+	for _, quota := range health.Quotas {
+		result.Quotas = append(result.Quotas, generated.UpstreamQuotaHealth{
+			Bucket: string(quota.Bucket), CooldownUntil: quota.CooldownUntil, LastLimitedAt: quota.LastLimitedAt, ReasonCode: quota.ReasonCode,
+		})
+	}
+	for _, refresh := range health.Refreshes {
+		counts := refresh.Outcomes
+		row := generated.UpstreamRefreshHealth{
+			Kind: generated.UpstreamRefreshHealthKind(refresh.Kind), Provider: generated.ProviderKind(refresh.Provider),
+			LastAttemptAt: refresh.LastAttemptAt,
+			Outcomes: generated.UpstreamOutcomeCounts{
+				Available: counts.Available, Empty: counts.Empty, NotIndexed: counts.NotIndexed,
+				RateLimited: counts.RateLimited, Cooldown: counts.Cooldown, Error: counts.Error,
+			},
+		}
+		if !refresh.LastSuccessAt.IsZero() {
+			row.LastSuccessAt = &refresh.LastSuccessAt
+		}
+		result.Refreshes = append(result.Refreshes, row)
+	}
+	writeJSON(w, r.Context(), http.StatusOK, result)
+}
 
 // GetLivez proves the process and HTTP runtime are alive. It never touches the
 // database, providers or qBittorrent, so a business dependency failure is not

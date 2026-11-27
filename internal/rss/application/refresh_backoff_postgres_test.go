@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/observability/outbound"
+	quota "bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/worker"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
@@ -84,10 +86,62 @@ VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 
 		return open
 	}
 
+	// A shared pause must not consume even one of the three attempts or
+	// mutate source health. Reclaim the same row past its retry deadline.
+	initialVersion, _ := runtime()
+	deferred := createRSSClaim(t, db, store, owner, workitems.KindRSSRefresh, initialVersion)
+	for i := range 6 {
+		wait := quota.CooldownError{RetryAfter: 12 * time.Second}
+		fetcher.err = &wait
+		wantCode := "provider_cooldown"
+		if i == 0 {
+			fetcher.err = &quota.ThrottleError{CooldownError: wait, StatusCode: http.StatusTooManyRequests}
+			wantCode = "provider_rate_limited"
+		}
+		outcome, err := service.Handle(ctx, deferred)
+		if err != nil || outcome.Kind != worker.OutcomeDeferRSS || outcome.ReasonCode != wantCode || outcome.RetryAfter != wait.RetryAfter || outcome.WriteOwner != nil {
+			t.Fatalf("quota outcome=%+v err=%v", outcome, err)
+		}
+		if err := store.DeferRSSQuota(ctx, deferred, outcome.ReasonCode, outcome.RetryAfter); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.DeferRSSQuota(ctx, deferred, outcome.ReasonCode, outcome.RetryAfter); !errors.Is(err, workitems.ErrStaleClaim) {
+			t.Fatalf("released claim may not refund again: %v", err)
+		}
+		var attempt int
+		var state string
+		var waiting bool
+		if err := db.QueryRowContext(ctx, `SELECT attempt, state, available_at > CURRENT_TIMESTAMP FROM work_items WHERE id = $1`, deferred.ID).Scan(&attempt, &state, &waiting); err != nil || attempt != 0 || state != "available" || !waiting {
+			t.Fatalf("quota transition: attempt=%d state=%s waiting=%t err=%v", attempt, state, waiting, err)
+		}
+		if _, err := schemaOwner.ExecContext(ctx, `UPDATE work_items SET available_at = CURRENT_TIMESTAMP WHERE id = $1`, deferred.ID); err != nil {
+			t.Fatal(err)
+		}
+		next, err := store.ClaimDue(ctx, "rss-test-worker", []string{workitems.KindRSSRefresh}, time.Minute)
+		if err != nil || next.ID != deferred.ID || next.Attempt != 1 || next.FencingToken <= deferred.FencingToken {
+			t.Fatalf("reclaim after quota wait: %+v err=%v", next, err)
+		}
+		deferred = next
+	}
+	if version, failures := runtime(); version != initialVersion || failures != 0 {
+		t.Fatalf("deferred source version=%d failures=%d", version, failures)
+	}
+	if failures, paused := circuit(); failures != 0 || paused || pauseEpisodeOpen() {
+		t.Fatalf("deferred provider failures=%d paused=%t", failures, paused)
+	}
+	// A genuine 503 with Retry-After follows the ordinary failure path.
+	fetcher.err = outbound.WithFailure(&quota.ThrottleError{StatusCode: http.StatusServiceUnavailable}, outbound.Failure{
+		Class: outbound.ClassHTTPStatus, Status: http.StatusServiceUnavailable,
+	})
+
 	wantDelays := []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 40 * time.Minute, 80 * time.Minute}
 	for i, want := range wantDelays {
-		version, _ := runtime()
-		claim := createRSSClaim(t, db, store, owner, workitems.KindRSSRefresh, version)
+		claim := deferred
+		if i != 0 {
+			fetcher.err = outbound.WithFailure(errors.New(upstreamError), outbound.Failure{Class: outbound.ClassHTTPStatus, Status: 503})
+			version, _ := runtime()
+			claim = createRSSClaim(t, db, store, owner, workitems.KindRSSRefresh, version)
+		}
 		outcome, err := service.Handle(ctx, claim)
 		if err != nil || outcome.Kind != worker.OutcomeRetry || outcome.RetryAfter != want {
 			t.Fatalf("failure %d: outcome=%+v err=%v, want retry after %s", i+1, outcome, err, want)

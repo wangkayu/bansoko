@@ -397,6 +397,7 @@ type Dependencies struct {
 	RuntimeLogger      RuntimeLogger
 	MaintenanceGate    MaintenanceGate
 	Readiness          *readiness.Checker
+	UpstreamHealth     UpstreamHealthReader
 	// TitleParser is set after construction (SetTitleParser); the parser
 	// endpoints answer 503 until it is wired.
 	TitleParser ParserComponentService

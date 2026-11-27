@@ -89,6 +89,9 @@ SELECT public.work_item_return_available(sqlc.arg(delay_seconds)::double precisi
 -- name: SynchronizeWorkItemOwnerVersion :one
 SELECT public.work_item_synchronize_owner_version(sqlc.arg(owner_version)::bigint, sqlc.arg(id)::text, sqlc.arg(fencing_token)::bigint, sqlc.arg(current_expected_owner_version)::bigint)::bigint AS affected;
 
+-- name: DeferRSSQuota :one
+SELECT public.work_item_defer_rss_quota(sqlc.arg(id)::text, sqlc.arg(fencing_token)::bigint, sqlc.arg(expected_owner_version)::bigint, sqlc.arg(delay_seconds)::double precision, sqlc.arg(reason_code)::text)::bigint AS affected;
+
 -- name: PurgeExpiredWorkItems :one
 SELECT public.work_item_purge_expired($1::integer)::bigint AS affected;
 

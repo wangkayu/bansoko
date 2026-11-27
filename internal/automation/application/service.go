@@ -5,6 +5,7 @@ package application
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -94,7 +95,7 @@ ORDER BY kind`)
 // latestRunOutcomes returns the most recent dispatch run per kind, keyed by kind.
 func (s *Service) latestRunOutcomes(ctx context.Context) (map[string]RunOutcome, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT DISTINCT ON (kind) kind, state, started_at, finished_at
+SELECT DISTINCT ON (kind) kind, state, started_at, finished_at, upstream_outcomes
 FROM automation_dispatch_runs
 ORDER BY kind, created_at DESC`)
 	if err != nil {
@@ -105,10 +106,16 @@ ORDER BY kind, created_at DESC`)
 	for rows.Next() {
 		var kind, state string
 		var startedAt, finishedAt sql.NullTime
-		if err := rows.Scan(&kind, &state, &startedAt, &finishedAt); err != nil {
+		var upstream []byte
+		if err := rows.Scan(&kind, &state, &startedAt, &finishedAt, &upstream); err != nil {
 			return nil, fmt.Errorf("scan latest automation run outcome: %w", err)
 		}
 		outcome := RunOutcome{State: AutomationStateValue(state)}
+		if len(upstream) > 0 {
+			if err := json.Unmarshal(upstream, &outcome.UpstreamOutcomes); err != nil {
+				return nil, fmt.Errorf("decode latest automation outcomes: %w", err)
+			}
+		}
 		if startedAt.Valid {
 			t := startedAt.Time
 			outcome.StartedAt = &t
@@ -267,17 +274,23 @@ func (s *Service) GetRun(ctx context.Context, runID string) (DispatchRun, error)
 	return s.scanDispatchRun(ctx, s.db.QueryRowContext(ctx, dispatchRunSelect+` WHERE id = $1`, runID))
 }
 
-const dispatchRunSelect = `SELECT id, kind, trigger, state, target_count, enqueued_count, merged_count, skipped_count, dispatch_error_count, started_at, finished_at, retention_until, completed_count FROM automation_dispatch_runs`
+const dispatchRunSelect = `SELECT id, kind, trigger, state, target_count, enqueued_count, merged_count, skipped_count, dispatch_error_count, started_at, finished_at, retention_until, completed_count, upstream_outcomes FROM automation_dispatch_runs`
 
 func (s *Service) scanDispatchRun(ctx context.Context, row *sql.Row) (DispatchRun, error) {
 	var run DispatchRun
 	var kind, trigger, state string
 	var startedAt, finishedAt sql.NullTime
-	if err := row.Scan(&run.ID, &kind, &trigger, &state, &run.TargetCount, &run.EnqueuedCount, &run.MergedCount, &run.SkippedCount, &run.DispatchErrorCount, &startedAt, &finishedAt, &run.RetentionUntil, &run.CompletedCount); err != nil {
+	var upstream []byte
+	if err := row.Scan(&run.ID, &kind, &trigger, &state, &run.TargetCount, &run.EnqueuedCount, &run.MergedCount, &run.SkippedCount, &run.DispatchErrorCount, &startedAt, &finishedAt, &run.RetentionUntil, &run.CompletedCount, &upstream); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DispatchRun{}, &apperrors.NotFound{Resource: "automation_dispatch_run", ID: ""}
 		}
 		return DispatchRun{}, fmt.Errorf("read dispatch run: %w", err)
+	}
+	if len(upstream) > 0 {
+		if err := json.Unmarshal(upstream, &run.UpstreamOutcomes); err != nil {
+			return DispatchRun{}, fmt.Errorf("decode automation outcomes: %w", err)
+		}
 	}
 	run.Kind = AutomationKindValue(kind)
 	run.Trigger = AutomationTriggerValue(trigger)

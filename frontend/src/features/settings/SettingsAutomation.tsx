@@ -24,6 +24,7 @@ import {
 import { formatDateTime } from "../../lib/labels";
 import { automationKeys, configKeys, observabilityKeys } from "../../lib/queryKeys";
 import { SettingsEditDialog } from "./SettingsEditDialog";
+import { UpstreamCounts } from "./SettingsUpstreamHealth";
 import { t } from "../../lib/i18n";
 
 // Automation tasks: four fixed cards (subgroup discovery / RSS refresh / automatic metadata
@@ -226,6 +227,9 @@ function SchedulesCard() {
                   <StatePill tone={lastRunOutcomeColor[item.last_run_outcome.state]}>
                     {lastRunOutcomeLabel()[item.last_run_outcome.state]}
                   </StatePill>
+                )}
+                {item.last_run_outcome?.upstream_outcomes && (
+                  <UpstreamCounts counts={item.last_run_outcome.upstream_outcomes} />
                 )}
               </div>
               <div className="tw:row-span-2 tw:flex tw:items-center tw:justify-end tw:gap-2 tw:phone:row-span-1 tw:phone:row-start-3">

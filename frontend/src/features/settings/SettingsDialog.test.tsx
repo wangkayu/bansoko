@@ -289,6 +289,7 @@ describe("SettingsDialog 新分组结构与 provider 导航页", () => {
     expect(groupLinks("settings.nav.groupSystem")).toEqual([
       t("settings.nav.account"),
       t("settings.nav.automation"),
+      t("upstream.health.title"),
       t("settings.nav.notifications"),
       t("settings.nav.updates"),
       t("settings.nav.titleParser"),

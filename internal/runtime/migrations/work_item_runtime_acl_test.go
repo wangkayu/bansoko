@@ -43,8 +43,8 @@ func TestWorkItemRuntimeOperationsACL(t *testing.T) {
 	// SECURITY DEFINER with a pinned search_path, granted to the runtime role
 	// and never to PUBLIC. A function that silently loses any of those
 	// properties drops out of this count.
-	if count != 48 {
-		t.Fatalf("fixed owner-held functions = %d, want 48", count)
+	if count != 49 {
+		t.Fatalf("fixed owner-held functions = %d, want 49", count)
 	}
 	// Every fixed lock statement must be executable by runtime, including empty results.
 	for _, statement := range []string{
@@ -80,6 +80,9 @@ func TestWorkItemRuntimeOperationsACL(t *testing.T) {
 		}
 	}
 	var affected int64
+	if err := runtime.QueryRowContext(ctx, `SELECT public.work_item_defer_rss_quota('missing',1,1,30,'provider_cooldown')`).Scan(&affected); err != nil || affected != 0 {
+		t.Fatalf("defer missing RSS claim: affected=%d err=%v", affected, err)
+	}
 	if err := runtime.QueryRowContext(ctx, `SELECT public.work_item_request_cancel('missing',0)`).Scan(&affected); err != nil {
 		t.Fatal(err)
 	}

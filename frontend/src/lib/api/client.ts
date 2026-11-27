@@ -35,6 +35,12 @@ export type Version = Schema<"Version">;
 export type SystemHealth = Schema<"SystemHealth">;
 export type UpstreamStatus = Schema<"UpstreamStatus">;
 export type ReadinessReport = Schema<"ReadinessReport">;
+export type SystemUpstreamHealth = Schema<"SystemUpstreamHealth">;
+export type UpstreamOutcomeCounts = Schema<"UpstreamOutcomeCounts">;
+
+export function getSystemUpstreamHealth(): Promise<SystemUpstreamHealth> {
+  return request("/system/upstream-health", { method: "GET" });
+}
 export type DeploymentIdentity = Schema<"DeploymentIdentity">;
 export type BootstrapStatus = Schema<"BootstrapStatus">;
 export type LoginResult = Schema<"LoginResult">;

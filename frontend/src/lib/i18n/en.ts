@@ -156,6 +156,14 @@ export const en = {
   settings: { ...enSettingsCopy, ...enSettingsConnectionsCopy, ...enSettingsProviderCopy, ...enSettingsNotificationsCopy, ...enSettingsTokenCopy, ...enSettingsBackupCopy, ...enSettingsTitleParserCopy },
   grid: enGridCopy,
   upstream: {
+    outcomes: { available: "Available", empty: "Empty", not_indexed: "Not indexed", rate_limited: "Rate-limited", cooldown: "Cooldown", error: "Failed" },
+    health: {
+      title: "Upstream diagnostics", refresh: "Refresh", loading: "Reading upstream diagnostics",
+      failed: "Could not read upstream diagnostics", quotas: "Shared request quotas", refreshes: "Business refreshes",
+      noQuota: "No quota events recorded", noRefresh: "No refreshes recorded", outcomes: "Outcome counts",
+      catalog: "Season catalog", groups: "Subgroup discovery", lastAttempt: "Last attempt: {at}",
+      lastSuccess: "Last success: {at}", lastLimited: "Last rate limit: {at}", cooldownEnded: "Cooldown ended",
+    },
     notIndexed: "This title has not been indexed by the provider",
     rateLimited: "The provider is limiting requests",
     cooldown: "Waiting for provider quota to recover",

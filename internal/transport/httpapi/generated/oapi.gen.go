@@ -2674,6 +2674,12 @@ const (
 	UpdateCompatibilityKindOverlay           UpdateCompatibilityKind = "overlay"
 )
 
+// Defines values for UpstreamRefreshHealthKind.
+const (
+	UpstreamRefreshHealthKindCatalog UpstreamRefreshHealthKind = "catalog"
+	UpstreamRefreshHealthKindGroups  UpstreamRefreshHealthKind = "groups"
+)
+
 // Defines values for UpstreamStatusState.
 const (
 	UpstreamStatusStateUpstreamAvailable   UpstreamStatusState = "available"
@@ -3992,9 +3998,10 @@ type AutomationDispatchRun struct {
 	StartedAt          *time.Time     `json:"started_at"`
 
 	// State Unconfirmed is terminal: the run stopped or was recovered without a reliable outcome. Its counters are not evidence of work performed.
-	State       AutomationState   `json:"state"`
-	TargetCount int               `json:"target_count"`
-	Trigger     AutomationTrigger `json:"trigger"`
+	State            AutomationState        `json:"state"`
+	TargetCount      int                    `json:"target_count"`
+	Trigger          AutomationTrigger      `json:"trigger"`
+	UpstreamOutcomes *UpstreamOutcomeCounts `json:"upstream_outcomes,omitempty"`
 }
 
 // AutomationIntervalUnit defines model for AutomationIntervalUnit.
@@ -4030,7 +4037,8 @@ type AutomationRunOutcome struct {
 	StartedAt  *time.Time `json:"started_at"`
 
 	// State Unconfirmed is terminal: the run stopped or was recovered without a reliable outcome. Its counters are not evidence of work performed.
-	State AutomationState `json:"state"`
+	State            AutomationState        `json:"state"`
+	UpstreamOutcomes *UpstreamOutcomeCounts `json:"upstream_outcomes,omitempty"`
 }
 
 // AutomationSchedule defines model for AutomationSchedule.
@@ -9787,6 +9795,13 @@ type SystemHealthDatabase string
 // SystemHealthStatus defines model for SystemHealth.Status.
 type SystemHealthStatus string
 
+// SystemUpstreamHealth defines model for SystemUpstreamHealth.
+type SystemUpstreamHealth struct {
+	CheckedAt time.Time               `json:"checked_at"`
+	Quotas    []UpstreamQuotaHealth   `json:"quotas"`
+	Refreshes []UpstreamRefreshHealth `json:"refreshes"`
+}
+
 // TMDBBinding defines model for TMDBBinding.
 type TMDBBinding struct {
 	MediaKind TMDBMediaKind `json:"media_kind"`
@@ -10172,6 +10187,36 @@ type UpdateCurrent struct {
 	ReleaseNotes *ReleaseNotesEntry `json:"release_notes,omitempty"`
 	Version      string             `json:"version"`
 }
+
+// UpstreamOutcomeCounts defines model for UpstreamOutcomeCounts.
+type UpstreamOutcomeCounts struct {
+	Available   int `json:"available"`
+	Cooldown    int `json:"cooldown"`
+	Empty       int `json:"empty"`
+	Error       int `json:"error"`
+	NotIndexed  int `json:"not_indexed"`
+	RateLimited int `json:"rate_limited"`
+}
+
+// UpstreamQuotaHealth defines model for UpstreamQuotaHealth.
+type UpstreamQuotaHealth struct {
+	Bucket        string    `json:"bucket"`
+	CooldownUntil time.Time `json:"cooldown_until"`
+	LastLimitedAt time.Time `json:"last_limited_at"`
+	ReasonCode    string    `json:"reason_code"`
+}
+
+// UpstreamRefreshHealth defines model for UpstreamRefreshHealth.
+type UpstreamRefreshHealth struct {
+	Kind          UpstreamRefreshHealthKind `json:"kind"`
+	LastAttemptAt time.Time                 `json:"last_attempt_at"`
+	LastSuccessAt *time.Time                `json:"last_success_at,omitempty"`
+	Outcomes      UpstreamOutcomeCounts     `json:"outcomes"`
+	Provider      ProviderKind              `json:"provider"`
+}
+
+// UpstreamRefreshHealthKind defines model for UpstreamRefreshHealth.Kind.
+type UpstreamRefreshHealthKind string
 
 // UpstreamStatus defines model for UpstreamStatus.
 type UpstreamStatus struct {
@@ -13528,6 +13573,9 @@ type ServerInterface interface {
 
 	// (GET /system/health)
 	GetSystemHealth(w http.ResponseWriter, r *http.Request)
+
+	// (GET /system/upstream-health)
+	GetSystemUpstreamHealth(w http.ResponseWriter, r *http.Request)
 
 	// (GET /template-catalogs/naming)
 	GetNamingTemplateCatalog(w http.ResponseWriter, r *http.Request, params GetNamingTemplateCatalogParams)
@@ -20592,6 +20640,26 @@ func (siw *ServerInterfaceWrapper) GetSystemHealth(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// GetSystemUpstreamHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemUpstreamHealth(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemUpstreamHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetNamingTemplateCatalog operation middleware
 func (siw *ServerInterfaceWrapper) GetNamingTemplateCatalog(w http.ResponseWriter, r *http.Request) {
 
@@ -21175,6 +21243,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/rss-source-runtimes/{rss_source_id}/retry", wrapper.RetryRSSSourceRuntime)
 	m.HandleFunc("POST "+options.BaseURL+"/rss-sources/{rss_source_id}/refresh", wrapper.RefreshRSSSource)
 	m.HandleFunc("GET "+options.BaseURL+"/system/health", wrapper.GetSystemHealth)
+	m.HandleFunc("GET "+options.BaseURL+"/system/upstream-health", wrapper.GetSystemUpstreamHealth)
 	m.HandleFunc("GET "+options.BaseURL+"/template-catalogs/naming", wrapper.GetNamingTemplateCatalog)
 	m.HandleFunc("GET "+options.BaseURL+"/template-catalogs/notification/{trigger_kind}", wrapper.GetNotificationTemplateCatalog)
 	m.HandleFunc("POST "+options.BaseURL+"/template-previews/naming", wrapper.PreviewNamingTemplate)

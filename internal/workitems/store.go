@@ -756,6 +756,30 @@ type RetryOutcome struct {
 	Terminal bool
 }
 
+// DeferRSSQuota releases a fenced RSS claim and refunds its attempt. The source
+// owner and its failure budget are untouched; this transition cannot run effects.
+func (s *Store) DeferRSSQuota(ctx context.Context, claim Claim, code string, delay time.Duration) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockClaim(ctx, tx, claim); err != nil {
+		return err
+	}
+	affected, err := persistence.New(tx).DeferRSSQuota(ctx, persistence.DeferRSSQuotaParams{
+		ID: claim.ID, FencingToken: claim.FencingToken, ExpectedOwnerVersion: claim.ExpectedOwnerVersion,
+		DelaySeconds: delay.Seconds(), ReasonCode: code,
+	})
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrStaleClaim
+	}
+	return tx.Commit()
+}
+
 // RetryWithoutAttemptBudget preserves unresolved effect identity. At the business
 // budget it quarantines rather than terminally failing or re-running Handle.
 // Typed effect reconciliation must resolve the preserved evidence explicitly.

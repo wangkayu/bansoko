@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router-dom";
-import { Bell, Bot, ChevronLeft, Clock, DatabaseBackup, EyeOff, HardDrive, Layers, Plug, Rocket, ScanText, SlidersHorizontal, UserRound, Users, Wand2 } from "lucide-react";
+import { Activity, Bell, Bot, ChevronLeft, Clock, DatabaseBackup, EyeOff, HardDrive, Layers, Plug, Rocket, ScanText, SlidersHorizontal, UserRound, Users, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDirtyConfirm } from "../../ui";
 import { Button, Dialog } from "../../ui/base";
@@ -14,6 +14,7 @@ import { SettingsSaveBar } from "./SettingsSaveBar";
 import { SettingsRules } from "./SettingsRules";
 import { SettingsDownload } from "./SettingsDownload";
 import { SettingsAutomation } from "./SettingsAutomation";
+import { SettingsUpstreamHealth } from "./SettingsUpstreamHealth";
 import { SettingsNotifications } from "./SettingsNotifications";
 import { SettingsUpdates } from "./SettingsUpdates";
 import { SettingsTitleParser } from "./SettingsTitleParser";
@@ -47,6 +48,7 @@ const categories = [
   { key: "replacement", labelKey: "settings.nav.replacement", icon: Layers },
   { key: "account", labelKey: "settings.nav.account", icon: UserRound },
   { key: "automation", labelKey: "settings.nav.automation", icon: Clock },
+  { key: "upstreamHealth", labelKey: "upstream.health.title", icon: Activity },
   { key: "notifications", labelKey: "settings.nav.notifications", icon: Bell },
   { key: "updates", labelKey: "settings.nav.updates", icon: Rocket },
   { key: "titleParser", labelKey: "settings.nav.titleParser", icon: ScanText },
@@ -65,7 +67,7 @@ const categoryGroups: { groupKey: CopyKey; keys: CategoryKey[] }[] = [
   { groupKey: "settings.nav.groupService", keys: ["connections", "download"] },
   { groupKey: "settings.nav.groupDefaults", keys: ["rules", "replacement", "policy"] },
   { groupKey: "settings.nav.groupSite", keys: ["anibt", "mikan", "hidden"] },
-  { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "notifications", "updates", "titleParser", "backup", "ai"] },
+  { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "upstreamHealth", "notifications", "updates", "titleParser", "backup", "ai"] },
 ];
 
 export function SettingsDialog() {
@@ -300,6 +302,8 @@ function renderActive(active: CategoryKey) {
       return <SettingsReplacement />;
     case "automation":
       return <SettingsAutomation />;
+    case "upstreamHealth":
+      return <SettingsUpstreamHealth />;
     case "account":
       return <SettingsAccount />;
     case "notifications":

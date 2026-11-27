@@ -829,6 +829,7 @@ func runServe(args []string) {
 		_ = db.Close()
 		fatalStartup(runtimeLogger, "http server build failed", "http_server_build_failed")
 	}
+	apiServer.SetUpstreamHealthReader(outboundpersistence.HealthReader{Store: outboundpersistence.New(db), Live: providerOutbound.Health})
 	importRetry, err := animeapplication.NewImportRetryService(db)
 	if err != nil {
 		_ = db.Close()

@@ -2,8 +2,20 @@ package transport
 
 import (
 	automationapplication "bansoko/internal/automation/application"
+	provider "bansoko/internal/provider/domain"
 	"bansoko/internal/transport/httpapi/generated"
 )
+
+func upstreamOutcomes(value *provider.Outcomes) *generated.UpstreamOutcomeCounts {
+	if value == nil {
+		return nil
+	}
+	result := generated.UpstreamOutcomeCounts{
+		Available: value.Available, Empty: value.Empty, NotIndexed: value.NotIndexed,
+		RateLimited: value.RateLimited, Cooldown: value.Cooldown, Error: value.Error,
+	}
+	return &result
+}
 
 func Schedule(value automationapplication.Schedule) generated.AutomationSchedule {
 	result := generated.AutomationSchedule{
@@ -17,9 +29,10 @@ func Schedule(value automationapplication.Schedule) generated.AutomationSchedule
 	}
 	if value.LastRunOutcome != nil {
 		result.LastRunOutcome = &generated.AutomationRunOutcome{
-			FinishedAt: value.LastRunOutcome.FinishedAt,
-			StartedAt:  value.LastRunOutcome.StartedAt,
-			State:      generated.AutomationState(value.LastRunOutcome.State),
+			UpstreamOutcomes: upstreamOutcomes(value.LastRunOutcome.UpstreamOutcomes),
+			FinishedAt:       value.LastRunOutcome.FinishedAt,
+			StartedAt:        value.LastRunOutcome.StartedAt,
+			State:            generated.AutomationState(value.LastRunOutcome.State),
 		}
 	}
 	return result
@@ -52,6 +65,7 @@ func RunAccepted(value automationapplication.RunAccepted) generated.AutomationRu
 
 func DispatchRun(value automationapplication.DispatchRun) generated.AutomationDispatchRun {
 	return generated.AutomationDispatchRun{
+		UpstreamOutcomes:   upstreamOutcomes(value.UpstreamOutcomes),
 		DispatchErrorCount: value.DispatchErrorCount,
 		CompletedCount:     value.CompletedCount,
 		EnqueuedCount:      value.EnqueuedCount,

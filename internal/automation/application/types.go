@@ -1,6 +1,10 @@
 package application
 
-import "time"
+import (
+	"time"
+
+	providerdomain "bansoko/internal/provider/domain"
+)
 
 type AutomationKindValue string
 type AutomationIntervalUnitValue string
@@ -8,9 +12,10 @@ type AutomationStateValue string
 type AutomationTriggerValue string
 
 type RunOutcome struct {
-	FinishedAt *time.Time
-	StartedAt  *time.Time
-	State      AutomationStateValue
+	UpstreamOutcomes *providerdomain.Outcomes
+	FinishedAt       *time.Time
+	StartedAt        *time.Time
+	State            AutomationStateValue
 }
 
 type Schedule struct {
@@ -38,6 +43,7 @@ type RunAccepted struct {
 }
 
 type DispatchRun struct {
+	UpstreamOutcomes   *providerdomain.Outcomes
 	CompletedCount     *int
 	DispatchErrorCount int
 	EnqueuedCount      int

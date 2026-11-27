@@ -56,6 +56,7 @@ required_paths = {
   "/livez" => ["get"],
   "/readyz" => ["get"],
   "/system/health" => ["get"],
+  "/system/upstream-health" => ["get"],
   "/bootstrap/status" => ["get"],
   "/bootstrap/owner" => ["post"],
   "/auth/login" => ["post"],

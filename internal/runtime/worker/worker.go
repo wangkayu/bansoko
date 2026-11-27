@@ -42,6 +42,7 @@ var (
 const (
 	OutcomeFinish    OutcomeKind = "finish"
 	OutcomeRetry     OutcomeKind = "retry"
+	OutcomeDeferRSS  OutcomeKind = "defer_rss_quota"
 	OutcomeCommitted OutcomeKind = "committed"
 	// OutcomeAwaitRecovery means the external effect of this claim is unknown
 	// and only the ticketed recovery lane may settle it: the worker applies no
@@ -234,6 +235,22 @@ type retryUntilResolvedStore interface {
 	RetryWithoutAttemptBudget(context.Context, workitems.Claim, string, string, time.Duration, workitems.OwnerWriter) (workitems.RetryOutcome, error)
 }
 
+type rssQuotaDeferrer interface {
+	DeferRSSQuota(context.Context, workitems.Claim, string, time.Duration) error
+}
+
+func DeferRSSQuota(code string, delay time.Duration) Outcome {
+	return Outcome{Kind: OutcomeDeferRSS, ReasonCode: code, RetryAfter: delay}
+}
+
+func deferRSSQuota(ctx context.Context, store WorkItemStore, claim workitems.Claim, outcome Outcome) error {
+	deferrer, ok := store.(rssQuotaDeferrer)
+	if !ok || claim.Kind != workitems.KindRSSRefresh || claim.OneShot != nil {
+		return fmt.Errorf("%w: RSS quota deferral is not supported for %q", ErrInvalidOutcome, claim.Kind)
+	}
+	return deferrer.DeferRSSQuota(ctx, claim, outcome.ReasonCode, outcome.RetryAfter)
+}
+
 // Worker claims at most one item per RunOnce call and routes it to the handler
 // registered for its exact typed kind.
 type Worker struct {
@@ -392,6 +409,8 @@ func (w *Worker) RunOnce(ctx context.Context) (handled bool, err error) {
 		} else {
 			transitionErr = w.store.Finish(ctx, claim, outcome.TerminalState, outcome.WriteOwner)
 		}
+	case OutcomeDeferRSS:
+		transitionErr = deferRSSQuota(ctx, w.store, claim, outcome)
 	case OutcomeRetry:
 		retryStore, ok := w.store.(retryUntilResolvedStore)
 		if lease != nil {

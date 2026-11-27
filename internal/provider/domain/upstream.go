@@ -20,6 +20,37 @@ const (
 	StateError       State = "error"
 )
 
+// Outcomes is a fixed, zero-inclusive breakdown of classified reads.
+type Outcomes struct {
+	Available   int `json:"available"`
+	Empty       int `json:"empty"`
+	NotIndexed  int `json:"not_indexed"`
+	RateLimited int `json:"rate_limited"`
+	Cooldown    int `json:"cooldown"`
+	Error       int `json:"error"`
+}
+
+func (o *Outcomes) Count(state State, n int) {
+	switch state {
+	case StateAvailable:
+		o.Available += n
+	case StateEmpty:
+		o.Empty += n
+	case StateNotIndexed:
+		o.NotIndexed += n
+	case StateRateLimited:
+		o.RateLimited += n
+	case StateCooldown:
+		o.Cooldown += n
+	case StateError:
+		o.Error += n
+	}
+}
+
+func (s State) Deferred() bool {
+	return s == StateCooldown || s == StateRateLimited
+}
+
 // ReasonCode is the stable machine code that names why a read ended in its
 // state. It is bounded, has no upstream text, and is what diagnostics group by.
 type ReasonCode string

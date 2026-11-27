@@ -118,6 +118,25 @@ paths:
                 $ref: '#/components/schemas/SystemHealth'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /system/upstream-health:
+    get:
+      tags: [System]
+      operationId: getSystemUpstreamHealth
+      x-scope: read
+      description: >-
+        Read shared request cooldowns and aggregate business refresh outcomes.
+        This does not probe upstream providers or affect readiness.
+      responses:
+        '200':
+          description: Current upstream diagnostic evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemUpstreamHealth'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /bootstrap/status:
     get:
       tags: [Bootstrap]
@@ -9416,6 +9435,54 @@ components:
           minimum: 1
           maximum: 500
           description: Applied per-group item cap in owner modes; 100 by default.
+    UpstreamOutcomeCounts:
+      type: object
+      additionalProperties: false
+      required: [available, empty, not_indexed, rate_limited, cooldown, error]
+      properties:
+        available: {type: integer, minimum: 0}
+        empty: {type: integer, minimum: 0}
+        not_indexed: {type: integer, minimum: 0}
+        rate_limited: {type: integer, minimum: 0}
+        cooldown: {type: integer, minimum: 0}
+        error: {type: integer, minimum: 0}
+    SystemUpstreamHealth:
+      type: object
+      additionalProperties: false
+      required: [checked_at, quotas, refreshes]
+      properties:
+        checked_at: {type: string, format: date-time}
+        quotas:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpstreamQuotaHealth'
+        refreshes:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpstreamRefreshHealth'
+    UpstreamQuotaHealth:
+      type: object
+      additionalProperties: false
+      required: [bucket, cooldown_until, last_limited_at, reason_code]
+      properties:
+        bucket: {type: string}
+        cooldown_until: {type: string, format: date-time}
+        last_limited_at: {type: string, format: date-time}
+        reason_code: {type: string}
+    UpstreamRefreshHealth:
+      type: object
+      additionalProperties: false
+      required: [provider, kind, outcomes, last_attempt_at]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderKind'
+        kind:
+          type: string
+          enum: [groups, catalog]
+        outcomes:
+          $ref: '#/components/schemas/UpstreamOutcomeCounts'
+        last_attempt_at: {type: string, format: date-time}
+        last_success_at: {type: string, format: date-time}
     SystemHealth:
       type: object
       additionalProperties: false
@@ -12570,6 +12637,8 @@ components:
       properties:
         state:
           $ref: '#/components/schemas/AutomationState'
+        upstream_outcomes:
+          $ref: '#/components/schemas/UpstreamOutcomeCounts'
         started_at:
           type: string
           nullable: true
@@ -12774,6 +12843,8 @@ components:
           $ref: '#/components/schemas/AutomationKind'
         trigger:
           $ref: '#/components/schemas/AutomationTrigger'
+        upstream_outcomes:
+          $ref: '#/components/schemas/UpstreamOutcomeCounts'
         state:
           $ref: '#/components/schemas/AutomationState'
         completed_count:

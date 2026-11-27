@@ -159,6 +159,12 @@ export const zhCN = {
   settings: { ...settingsCopy, ...settingsConnectionsCopy, ...settingsProviderCopy, ...settingsNotificationsCopy, ...settingsTokenCopy, ...settingsBackupCopy, ...settingsTitleParserCopy },
   grid: gridCopy,
   upstream: {
+    outcomes: { available: "有结果", empty: "无结果", not_indexed: "尚未收录", rate_limited: "限流", cooldown: "冷却", error: "失败" },
+    health: {
+      title: "上游诊断", refresh: "刷新", loading: "正在读取上游诊断", failed: "无法读取上游诊断",
+      quotas: "共享请求额度", refreshes: "业务刷新", noQuota: "暂无额度事件", noRefresh: "暂无刷新记录", outcomes: "结果统计",
+      catalog: "季度目录", groups: "字幕组发现", lastAttempt: "上次尝试：{at}", lastSuccess: "上次成功：{at}", lastLimited: "上次限流：{at}", cooldownEnded: "冷却已结束",
+    },
     notIndexed: "站点尚未收录这部番剧",
     rateLimited: "站点正在限制请求",
     cooldown: "正在等待站点请求额度恢复",

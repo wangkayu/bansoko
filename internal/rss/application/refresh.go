@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
 	acquisitiondomain "bansoko/internal/acquisition/domain"
@@ -19,6 +20,7 @@ import (
 	"bansoko/internal/parserpolicy"
 	"bansoko/internal/persistence/txscope"
 	providerdomain "bansoko/internal/provider/domain"
+	provideroutbound "bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/worker"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
@@ -119,6 +121,19 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 			s.circuitAfterCommit(claim, snapshot, effect, nil)), nil
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return worker.Outcome{}, ctx.Err()
+		}
+		if throttle, delay, ok := rssQuotaWait(err); ok {
+			return worker.WithAfterCommit(worker.DeferRSSQuota(throttle, delay), func(ctx context.Context) {
+				if s.logger != nil {
+					event := refreshRuntimeEvent(claim)
+					event.Outcome, event.Stage, event.ReasonCode = "deferred", "read_feed", throttle
+					event.Message = refreshLogSubject(snapshot) + ": deferred by shared provider quota"
+					s.logger.Info(ctx, event)
+				}
+			}), nil
+		}
 		reason := safeReason(err.Error())
 		if reason == "" {
 			reason = "RSS source fetch failed"
@@ -153,6 +168,23 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 	return worker.WithAfterCommit(
 		worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: "refresh_succeeded"}, s.refreshSuccessWriter(claim, snapshot, feed, completeFeedValidators(exchange, feed), effect)),
 		s.circuitAfterCommit(claim, snapshot, effect, nil)), nil
+}
+
+func rssQuotaWait(err error) (string, time.Duration, bool) {
+	var throttle *provideroutbound.ThrottleError
+	if errors.As(err, &throttle) {
+		// 503 remains an actual upstream failure. Only later local cooldowns
+		// and explicit HTTP 429 responses are free of the failure budget.
+		if throttle.StatusCode == 429 {
+			return "provider_rate_limited", min(24*time.Hour, max(time.Second, throttle.RetryAfter)), true
+		}
+		return "", 0, false
+	}
+	var cooldown *provideroutbound.CooldownError
+	if errors.As(err, &cooldown) {
+		return "provider_cooldown", min(24*time.Hour, max(time.Second, cooldown.RetryAfter)), true
+	}
+	return "", 0, false
 }
 
 // refreshTriggerIsManual reports whether the WorkItem carries an explicit

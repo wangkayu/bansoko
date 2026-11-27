@@ -891,6 +891,14 @@ func (r *Runtime) applyOutcome(ctx context.Context, claim workitems.Claim, outco
 		if outcome.AfterCommit != nil {
 			outcome.AfterCommit(ctx)
 		}
+	case OutcomeDeferRSS:
+		if err := deferRSSQuota(ctx, r.store, claim, outcome); err != nil {
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "RSS quota deferral persistence failed", "retry", "retry_persist_failed", "retry_persistence_error", nil))
+			return
+		}
+		if outcome.AfterCommit != nil {
+			outcome.AfterCommit(ctx)
+		}
 	case OutcomeRetry:
 		policy := r.registry.MustGet(claim.Kind)
 		delay := outcome.RetryAfter

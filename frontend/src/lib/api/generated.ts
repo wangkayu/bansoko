@@ -64,6 +64,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/upstream-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read shared request cooldowns and aggregate business refresh outcomes. This does not probe upstream providers or affect readiness. */
+        get: operations["getSystemUpstreamHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bootstrap/status": {
         parameters: {
             query?: never;
@@ -3470,6 +3487,38 @@ export interface components {
             /** @description Applied per-group item cap in owner modes; 100 by default. */
             limit_per_group: number;
         };
+        UpstreamOutcomeCounts: {
+            available: number;
+            empty: number;
+            not_indexed: number;
+            rate_limited: number;
+            cooldown: number;
+            error: number;
+        };
+        SystemUpstreamHealth: {
+            /** Format: date-time */
+            checked_at: string;
+            quotas: components["schemas"]["UpstreamQuotaHealth"][];
+            refreshes: components["schemas"]["UpstreamRefreshHealth"][];
+        };
+        UpstreamQuotaHealth: {
+            bucket: string;
+            /** Format: date-time */
+            cooldown_until: string;
+            /** Format: date-time */
+            last_limited_at: string;
+            reason_code: string;
+        };
+        UpstreamRefreshHealth: {
+            provider: components["schemas"]["ProviderKind"];
+            /** @enum {string} */
+            kind: "groups" | "catalog";
+            outcomes: components["schemas"]["UpstreamOutcomeCounts"];
+            /** Format: date-time */
+            last_attempt_at: string;
+            /** Format: date-time */
+            last_success_at?: string;
+        };
         SystemHealth: {
             /** @enum {string} */
             status: "healthy";
@@ -4843,6 +4892,7 @@ export interface components {
         };
         AutomationRunOutcome: {
             state: components["schemas"]["AutomationState"];
+            upstream_outcomes?: components["schemas"]["UpstreamOutcomeCounts"];
             /** Format: date-time */
             started_at?: string | null;
             /** Format: date-time */
@@ -4960,6 +5010,7 @@ export interface components {
             id: components["schemas"]["ID"];
             kind: components["schemas"]["AutomationKind"];
             trigger: components["schemas"]["AutomationTrigger"];
+            upstream_outcomes?: components["schemas"]["UpstreamOutcomeCounts"];
             state: components["schemas"]["AutomationState"];
             /** @description Confirmed inline actions, not queued tasks. Unknown for historical or unconfirmed runs, and not yet available while a run is live. */
             completed_count?: number | null;
@@ -9027,6 +9078,28 @@ export interface operations {
                     "application/json": components["schemas"]["SystemHealth"];
                 };
             };
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getSystemUpstreamHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current upstream diagnostic evidence. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemUpstreamHealth"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             503: components["responses"]["Unavailable"];
         };
     };

@@ -68,6 +68,10 @@ type Querier interface {
 	//
 	//  SELECT public.work_item_create($1::text, $2::text, $3::text, $4::text, $5::text, $6::integer, $7::jsonb, $8::bigint, $9::double precision, $10::smallint) AS id
 	CreateWorkItem(ctx context.Context, arg CreateWorkItemParams) (string, error)
+	//DeferRSSQuota
+	//
+	//  SELECT public.work_item_defer_rss_quota($1::text, $2::bigint, $3::bigint, $4::double precision, $5::text)::bigint AS affected
+	DeferRSSQuota(ctx context.Context, arg DeferRSSQuotaParams) (int64, error)
 	//DeleteFileMaintenanceWorkItems
 	//
 	//  SELECT public.work_item_delete_file_maintenance($1::text)::bigint AS affected

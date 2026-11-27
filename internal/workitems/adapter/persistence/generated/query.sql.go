@@ -290,6 +290,34 @@ func (q *Queries) CreateWorkItem(ctx context.Context, arg CreateWorkItemParams) 
 	return id, err
 }
 
+const deferRSSQuota = `-- name: DeferRSSQuota :one
+SELECT public.work_item_defer_rss_quota($1::text, $2::bigint, $3::bigint, $4::double precision, $5::text)::bigint AS affected
+`
+
+type DeferRSSQuotaParams struct {
+	ID                   string
+	FencingToken         int64
+	ExpectedOwnerVersion int64
+	DelaySeconds         float64
+	ReasonCode           string
+}
+
+// DeferRSSQuota
+//
+//	SELECT public.work_item_defer_rss_quota($1::text, $2::bigint, $3::bigint, $4::double precision, $5::text)::bigint AS affected
+func (q *Queries) DeferRSSQuota(ctx context.Context, arg DeferRSSQuotaParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, deferRSSQuota,
+		arg.ID,
+		arg.FencingToken,
+		arg.ExpectedOwnerVersion,
+		arg.DelaySeconds,
+		arg.ReasonCode,
+	)
+	var affected int64
+	err := row.Scan(&affected)
+	return affected, err
+}
+
 const deleteFileMaintenanceWorkItems = `-- name: DeleteFileMaintenanceWorkItems :one
 SELECT public.work_item_delete_file_maintenance($1::text)::bigint AS affected
 `

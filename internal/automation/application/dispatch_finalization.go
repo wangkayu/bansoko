@@ -66,21 +66,29 @@ func (d *Dispatcher) finishRun(parent context.Context, runID string, result disp
 func (d *Dispatcher) finalizeDispatchTx(ctx context.Context, tx *sql.Tx, id string, result dispatchResult, recovered bool) (finalizedDispatch, error) {
 	counts := result.counts
 	var completed *int
+	var upstream json.RawMessage
 	if result.state != "unconfirmed" {
 		completed = &counts.completed
+		if counts.upstream != nil {
+			var err error
+			upstream, err = json.Marshal(counts.upstream)
+			if err != nil {
+				return finalizedDispatch{}, fmt.Errorf("encode dispatch upstream outcomes: %w", err)
+			}
+		}
 	}
 	run := finalizedDispatch{id: id}
 	var finishedAt time.Time
 	err := tx.QueryRowContext(ctx, `
 UPDATE automation_dispatch_runs
 SET state = $2, target_count = $3, enqueued_count = $4, merged_count = $5,
-    skipped_count = $6, dispatch_error_count = $7, completed_count = $8,
+    skipped_count = $6, dispatch_error_count = $7, completed_count = $8, upstream_outcomes = $9,
     finished_at = GREATEST(CURRENT_TIMESTAMP, started_at),
     retention_until = GREATEST(CURRENT_TIMESTAMP, started_at) + INTERVAL '30 days',
     updated_at = GREATEST(CURRENT_TIMESTAMP, started_at)
 WHERE id = $1 AND state = 'running'
 RETURNING kind, trigger, finished_at`, id, result.state, counts.targetCount, counts.enqueued,
-		counts.merged, counts.skipped, counts.errors, completed).Scan(&run.kind, &run.trigger, &finishedAt)
+		counts.merged, counts.skipped, counts.errors, completed, upstream).Scan(&run.kind, &run.trigger, &finishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return finalizedDispatch{}, nil
 	}
@@ -119,11 +127,15 @@ func (d *Dispatcher) recordObservability(ctx context.Context, tx txscope.Tx, kin
 		summary = fmt.Sprintf("targets=%d completed=%d enqueued=%d merged=%d skipped=%d errors=%d",
 			counts.targetCount, counts.completed, counts.enqueued, counts.merged, counts.skipped, counts.errors)
 		var err error
-		details, err = json.Marshal(map[string]int{
+		fields := map[string]any{
 			"target_count": counts.targetCount, "completed_count": counts.completed,
 			"enqueued_count": counts.enqueued, "merged_count": counts.merged,
 			"skipped_count": counts.skipped, "error_count": counts.errors,
-		})
+		}
+		if counts.upstream != nil {
+			fields["upstream_outcomes"] = counts.upstream
+		}
+		details, err = json.Marshal(fields)
 		if err != nil {
 			return fmt.Errorf("encode dispatch routine details: %w", err)
 		}
