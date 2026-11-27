@@ -122,6 +122,7 @@ paths:
       tags: [System]
       operationId: getSystemUpstreamHealth
       x-scope: read
+      x-surface-keep: "ops/diagnostics: retained as an HTTP diagnostic snapshot for operators and scripts; the WebUI surfaces rate-limit feedback inline and via runtime logs"
       description: >-
         Read shared request cooldowns and aggregate business refresh outcomes.
         This does not probe upstream providers or affect readiness.

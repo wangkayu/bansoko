@@ -116,6 +116,7 @@ func (s *Scheduler) SetLogger(logger observabilityport.RuntimeLogger) {
 	defer s.mu.Unlock()
 	s.logger = logger
 }
+
 type bucket struct {
 	policy  Policy
 	next    time.Time
