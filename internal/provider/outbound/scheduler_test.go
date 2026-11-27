@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	observabilityport "bansoko/internal/observability/port"
 )
 
 func testScheduler(t *testing.T, clock Clock, store Store) *Scheduler {
@@ -256,4 +258,31 @@ func TestRSSExplicitRetryChargesOnlyAniBTRedirectHop(t *testing.T) {
 			t.Fatalf("AniBT attempts = %v, finish = %v", attempts, time.Now())
 		}
 	})
+}
+
+type captureRuntimeLogger struct {
+	observabilityport.NopRuntimeLogger
+	warnings []observabilityport.RuntimeEvent
+}
+
+func (l *captureRuntimeLogger) Warn(_ context.Context, event observabilityport.RuntimeEvent) {
+	l.warnings = append(l.warnings, event)
+}
+
+func TestObserveThrottleLogsWarningEvent(t *testing.T) {
+	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	s := testScheduler(t, &manualClock{now: now}, nil)
+	logger := &captureRuntimeLogger{}
+	s.SetLogger(logger)
+
+	if err := s.ObserveThrottle(t.Context(), AniBTMetadata, http.StatusTooManyRequests, "30"); err == nil {
+		t.Fatal("expected throttle error")
+	}
+	if len(logger.warnings) != 1 {
+		t.Fatalf("warnings = %d, want 1", len(logger.warnings))
+	}
+	got := logger.warnings[0]
+	if got.Component != "provider_outbound" || got.Kind != string(AniBTMetadata) || got.HTTPStatus != http.StatusTooManyRequests || got.ReasonCode != ReasonRateLimited || got.DurationMS != 30000 {
+		t.Fatalf("unexpected runtime warning event: %+v", got)
+	}
 }

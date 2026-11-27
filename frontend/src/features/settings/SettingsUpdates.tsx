@@ -109,11 +109,7 @@ export function SettingsUpdates() {
     queryFn: getReadyz,
     retry: false,
   });
-  const deployment = readiness?.deployment_identity;
   const manualMode = readiness?.update_mode === "manual";
-  const describeBuild = (build: NonNullable<typeof deployment>["selected_build"]) =>
-    build ? `${build.version} · ${build.build_id}${build.release_sequence ? ` · ${build.lane} #${build.release_sequence}` : ""}` : t("settings.updates.buildUnknown");
-  const reasonKey = deployment?.selection_reason_code;
   const [lastActiveStatus, setLastActiveStatus] = useState<EmbeddedUpdateStatus>();
   const {
     data: recoveredStatus,
@@ -337,14 +333,6 @@ export function SettingsUpdates() {
       <div className="settings-updates-header">
         <h2 className="settings-updates-title text-title">{t("settings.updates.title")}</h2>
       </div>
-
-      <DescriptionList
-        items={[
-          { label: t("settings.updates.runningBuild"), value: describeBuild(deployment?.selected_build) },
-          { label: t("settings.updates.imageBuild"), value: deployment?.anchor === "native" ? t("settings.updates.nativeAnchor") : describeBuild(deployment?.base_build) },
-          { label: t("settings.updates.selectionReason"), value: (reasonKey && tryT(`settings.updates.selection.${reasonKey}`)) || deployment?.selection_reason || t("settings.updates.buildUnknown") },
-        ]}
-      />
 
       {statusLoading && !visibleStatus && <StateBlock kind="busy" skeleton="settings" title={t("settings.updates.loading")} />}
 

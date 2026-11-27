@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	observabilityport "bansoko/internal/observability/port"
 )
 
 type BucketKey string
@@ -105,7 +107,14 @@ type Scheduler struct {
 	mu      sync.Mutex
 	clock   Clock
 	store   Store
+	logger  observabilityport.RuntimeLogger
 	buckets map[BucketKey]*bucket
+}
+
+func (s *Scheduler) SetLogger(logger observabilityport.RuntimeLogger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logger = logger
 }
 type bucket struct {
 	policy  Policy

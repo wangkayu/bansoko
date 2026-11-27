@@ -21,7 +21,7 @@ const CATEGORY_GROUPS: { group: string; labels: string[] }[] = [
   { group: "服务", labels: ["服务连接", "下载与入库"] },
   { group: "订阅策略", labels: ["默认规则", "同集多版本", "订阅数量与对齐"] },
   { group: "站点", labels: ["AniBT 配置", "Mikan 配置", "隐藏的番剧"] },
-  { group: "系统", labels: ["账户", "自动任务", "上游诊断", "通知", "版本与升级", "解析组件", "数据备份", "API 令牌"] },
+  { group: "系统", labels: ["账户", "自动任务", "通知", "版本与升级", "解析组件", "数据备份", "API 令牌"] },
 ];
 const CATEGORIES = CATEGORY_GROUPS.flatMap((group) => group.labels);
 
@@ -602,37 +602,6 @@ test.describe("settings functional closure", () => {
 test.describe("settings fixture coverage", () => {
   test.skip(!fixtureOnly, "内容断言依赖 fixture HTTP mock");
 
-  test("上游诊断分别显示额度等待与业务刷新", async ({ page }, testInfo) => {
-    const clientNow = new Date();
-    await page.clock.setFixedTime(clientNow);
-    const now = new Date(clientNow.getTime() - 3_600_000);
-    const until = new Date(now.getTime() + 90_000);
-    await page.route("**/api/v1/system/upstream-health", route => route.fulfill({ json: {
-      checked_at: now.toISOString(),
-      quotas: [{ bucket: "anibt:metadata", reason_code: "PROVIDER_RATE_LIMITED", last_limited_at: now.toISOString(), cooldown_until: until.toISOString() }],
-      refreshes: [{ provider: "anibt", kind: "groups", last_attempt_at: now.toISOString(), last_success_at: now.toISOString(),
-        outcomes: { available: 4, empty: 2, not_indexed: 1, rate_limited: 0, cooldown: 3, error: 1 } }],
-    } }));
-    await openSettings(page, "/#/settings/upstreamHealth");
-    await expect(page.getByTestId("settings-content").getByRole("heading", { name: "上游诊断", exact: true }).filter({ visible: true }).last()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "共享请求额度" })).toBeVisible();
-    await expect(page.getByText("anibt:metadata", { exact: true })).toBeVisible();
-    const cooldown = page.locator('[data-upstream-state="cooldown"]');
-    await expect(cooldown).toContainText("预计冷却还剩 90 秒");
-    await expect(page.getByRole("heading", { name: "业务刷新" })).toBeVisible();
-    await expect(page.getByLabel("结果统计")).toContainText("尚未收录");
-    await expect(page.getByText(/上次成功：/)).toBeVisible();
-    const overflow = await page.getByRole("dialog").evaluate(el => el.scrollWidth - el.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
-    if (process.env.BANSOKO_UPSTREAM_VISUAL_QA === "1") {
-      await page.screenshot({ path: testInfo.outputPath("upstream-health.png") });
-    }
-    await page.clock.setFixedTime(new Date(clientNow.getTime() + 45_000));
-    await expect(cooldown).toContainText("预计冷却还剩 45 秒");
-    await page.clock.setFixedTime(new Date(clientNow.getTime() + 90_000));
-    await expect(cooldown).toHaveCount(0);
-  });
-
   test("事件脚本：配置分栏、源码滚动与返回草稿", async ({ page }, testInfo) => {
     const mobile = isMobile(page);
     if (mobile) await page.setViewportSize({ width: 320, height: 640 });
@@ -1187,24 +1156,12 @@ test.describe("settings fixture coverage", () => {
   });
 
   test("版本与升级默认空态与 AI Lab 可达", async ({ page }) => {
-    await page.route("**/api/v1/readyz", (route) => route.fulfill({ json: {
-      ready: true,
-      deployment_identity: {
-        anchor: "docker",
-        selected_build: { version: "1.2.0", build_id: "v1.2.0", lane: "stable", release_sequence: 12 },
-        base_build: { version: "1.3.0", build_id: "v1.3.0", lane: "stable", release_sequence: 13 },
-        selection_reason_code: "base_newer_takeover_not_enabled",
-      },
-    } }));
     test.skip(isMobile(page), "sidebar 链接交互是桌面形态，手机另有两级导航用例");
     await openSettings(page, "/#/settings/updates");
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 10000 });
     // 内嵌更新状态未提供时，版本与升级页展示默认空态。
     await expect(dialog.getByText("检查是否有新版本", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("1.2.0 · v1.2.0 · stable #12", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("1.3.0 · v1.3.0 · stable #13", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("镜像版本较新，但尚未启用接管", { exact: true })).toBeVisible();
 
     await page.getByRole("navigation", { name: "设置分类" }).getByRole("link", { name: "API 令牌" }).click();
     await expect(page).toHaveURL(/\/settings\/ai$/);

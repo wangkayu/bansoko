@@ -362,6 +362,7 @@ func runServe(args []string, probe bool) int {
 	if err != nil {
 		fatalStartup(runtimeLogger, "provider outbound health restore failed", "provider_outbound_restore_failed")
 	}
+	providerOutbound.SetLogger(runtimeLogger)
 
 	fixtureAllowlist, fixtureResolver := cfg.TestFixtureNetwork()
 

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	observabilityport "bansoko/internal/observability/port"
 )
 
 const (
@@ -74,7 +76,21 @@ func (s *Scheduler) ObserveThrottle(ctx context.Context, key BucketKey, status i
 	}
 	b.health = health
 	b.signal()
+	logger := s.logger
 	s.mu.Unlock()
+	if logger != nil {
+		logger.Warn(ctx, observabilityport.RuntimeEvent{
+			Component:  "provider_outbound",
+			Operation:  "observe_throttle",
+			Outcome:    "throttled",
+			HTTPStatus: status,
+			ReasonCode: reason,
+			Kind:       string(key),
+			Attempt:    consecutive,
+			DurationMS: max(0, health.CooldownUntil.Sub(now)).Milliseconds(),
+			Message:    "provider outbound bucket entered cooldown",
+		})
+	}
 	failure := &ThrottleError{CooldownError: *newCooldown(key, reason, now, health.CooldownUntil), StatusCode: status}
 	if s.store != nil {
 		// A response already proved the cooldown. Persist it even if the caller
