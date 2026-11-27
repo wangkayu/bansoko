@@ -23,6 +23,8 @@ import {
   patchAnimeRules,
   patchAnimeSubgroups,
   readAgentGuide,
+  readCatalogWorkspace,
+  searchProviderCatalog,
   putConnection,
   retryDownloadTask,
   setCsrfTokenProvider,
@@ -80,6 +82,25 @@ describe("api client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     setSessionTokenProvider(() => "");
+  });
+
+  it("timestamps upstream status at receipt in search and catalog results", async () => {
+    const upstream = { state: "cooldown", checked_at: "2026-01-01T00:00:00Z", retry_after_seconds: 25 };
+    const clock = vi.spyOn(Date, "now");
+    try {
+      clock.mockReturnValue(1_000);
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { items: [], upstream }));
+      await expect(searchProviderCatalog("anibt", "test")).resolves.toMatchObject({
+        upstream: { ...upstream, receivedAtMs: 1_000 },
+      });
+      clock.mockReturnValue(2_000);
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { snapshot: { upstream } }));
+      await expect(readCatalogWorkspace("anibt", "202604")).resolves.toMatchObject({
+        snapshot: { upstream: { ...upstream, receivedAtMs: 2_000 } },
+      });
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("generates a UUID-like key when randomUUID is unavailable", () => {

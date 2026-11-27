@@ -702,7 +702,8 @@ describe("OneShotDialog 第一步：种子目录", () => {
     fireEvent.click(await findSeed(SEED_A));
     fireEvent.click(button(t("oneshot.refreshSeedsAction")));
     expect(await screen.findByText(t("upstream.rateLimited"))).toBeInTheDocument();
-    expect(button(t("upstream.retryLater"))).toBeDisabled();
+    expect(button(t("upstream.retryLater"))).toBeEnabled();
+    expect(button(t("oneshot.refreshSeedsAction"))).toBeEnabled();
     expect(await findSeed(SEED_A)).toBeChecked();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(calls.filter((call) => call.url.endsWith("/entry-1/rss"))).toHaveLength(1);

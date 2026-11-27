@@ -128,11 +128,9 @@ function renderOwner(workspace = ownerWorkspace()) {
   );
 }
 
-it("字幕组冷却结束后，状态块重试仍需确认未保存编辑", async () => {
+it("字幕组冷却期间，状态块重试仍需确认未保存编辑", async () => {
   const discover = vi.mocked(discoverAnimeSubgroups);
-  const clock = vi.spyOn(Date, "now");
   const now = Date.now();
-  clock.mockReturnValue(now);
   try {
     discover.mockReset().mockRejectedValue(new ApiError({
       status: 429, message: "quota",
@@ -143,11 +141,10 @@ it("字幕组冷却结束后，状态块重试仍需确认未保存编辑", asyn
     const refresh = screen.getByRole("button", { name: t("config.discovery.refresh") });
     fireEvent.click(refresh);
     const retry = await screen.findByRole("button", { name: t("upstream.retryLater") });
-    expect(retry).toBeDisabled();
-    expect(refresh).toBeDisabled();
+    expect(retry).toBeEnabled();
+    expect(refresh).toBeEnabled();
+    expect(screen.getByText(t("upstream.waitSeconds", { n: 60 }))).toBeInTheDocument();
     setPolicy("b", t("forms.sources.policyNever"));
-    clock.mockReturnValue(now + 60_000);
-    await waitFor(() => expect(retry).toBeEnabled());
     expect(screen.getByRole("button", { name: t("config.discovery.refresh") })).toBeEnabled();
     fireEvent.click(retry);
     expect(await screen.findByText(t("tabs.subgroups.refreshConfirmTitle"))).toBeInTheDocument();
@@ -156,7 +153,6 @@ it("字幕组冷却结束后，状态块重试仍需确认未保存编辑", asyn
     expect(discover).toHaveBeenCalledTimes(2);
     await screen.findByRole("button", { name: t("upstream.retryLater") });
   } finally {
-    clock.mockRestore();
     discover.mockReset();
   }
 });

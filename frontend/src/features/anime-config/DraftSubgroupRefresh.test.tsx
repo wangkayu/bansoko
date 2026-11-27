@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { discoverProviderEntryGroups, type ProviderGroupDiscoveryResult } from "../../lib/api/client";
+import { ApiError, discoverProviderEntryGroups, type ProviderGroupDiscoveryResult } from "../../lib/api/client";
 import { DraftSubgroupRefresh } from "./DraftSubgroupRefresh";
 import { t } from "../../lib/i18n";
 
@@ -49,6 +49,30 @@ describe("DraftSubgroupRefresh", () => {
     render(<DraftSubgroupRefresh provider="mikan" providerEntryRef="3001" onDiscovered={onDiscovered} />);
     fireEvent.click(screen.getByRole("button", { name: t("config.discovery.refresh") }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t("config.discovery.failed"), expect.anything()));
+    expect(onDiscovered).not.toHaveBeenCalled();
+  });
+
+  it("冷却期间仍可刷新和重试，请求进行中禁用两个按钮", async () => {
+    const quota = (seconds: number) => new ApiError({
+      status: 429,
+      message: "quota",
+      upstream: { state: "cooldown", checked_at: "2026-01-01T00:00:00Z", retry_after_seconds: seconds },
+    });
+    mockedDiscover.mockImplementationOnce(async () => { throw quota(60); })
+      .mockImplementationOnce(async () => { throw quota(15); });
+    const onDiscovered = vi.fn();
+    render(<DraftSubgroupRefresh provider="anibt" providerEntryRef="123" onDiscovered={onDiscovered} />);
+
+    fireEvent.click(screen.getByRole("button", { name: t("config.discovery.refresh") }));
+    const retry = await screen.findByRole("button", { name: t("upstream.retryLater") });
+    expect(retry).toBeEnabled();
+    expect(screen.getByRole("button", { name: t("config.discovery.refresh") })).toBeEnabled();
+    fireEvent.click(retry);
+    expect(retry).toBeDisabled();
+    expect(screen.getByRole("button", { name: t("act.refreshing") })).toBeDisabled();
+    expect(await screen.findByText(t("upstream.waitSeconds", { n: 15 }))).toBeInTheDocument();
+    expect(retry).toBeEnabled();
+    expect(mockedDiscover).toHaveBeenCalledTimes(2);
     expect(onDiscovered).not.toHaveBeenCalled();
   });
 });

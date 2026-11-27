@@ -11,7 +11,7 @@ import {
   type GroupAction,
   type UpstreamStatus,
 } from "../../lib/api/client";
-import { nonErrorUpstream, UpstreamStatusBlock, useUpstreamWait } from "../../ui/UpstreamStatusBlock";
+import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { subgroupsChangeCount, subgroupsEditFromWorkspace, valuesEqual, type SubgroupsEdit } from "../../lib/draft";
 import { SelectionOverrideFields, type ServerSelectionFact } from "../anime-forms/SourcesFields";
 import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
@@ -139,7 +139,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   const [busy, setBusy] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [upstream, setUpstream] = useState<UpstreamStatus>();
-  const refreshDisabled = useUpstreamWait(upstream) > 0 || busy || discovering;
+  const refreshDisabled = busy || discovering;
   const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
@@ -198,7 +198,6 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
   async function discover() {
     if (refreshDisabled) return;
     setDiscovering(true);
-    setUpstream(undefined);
     setError(undefined);
     setConflict(undefined);
     try {
@@ -229,8 +228,8 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
         setConflict(cause.currentVersion);
       }
       const status = nonErrorUpstream(cause);
-      if (status) setUpstream(status);
-      else setError(toUserMessage(cause, t("config.discovery.failed")));
+      setUpstream(status);
+      if (!status) setError(toUserMessage(cause, t("config.discovery.failed")));
     } finally {
       setDiscovering(false);
     }

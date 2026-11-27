@@ -355,7 +355,6 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
       }
       setOpeningGroup(key);
       setOpenError(undefined);
-      updateGroupUpstream(key);
       try {
         // A fresh seed list is used directly (no network); the group is fetched only when there is none or it is stale.
         const persisted = await readProviderEntryRSS(provider, providerEntryRef, group.groupRef);
@@ -363,10 +362,14 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
           ? persisted
           : await previewProviderEntryRSS(provider, providerEntryRef, { group_ref: group.groupRef });
         refsRef.current.set(key, feedRefOf(resolved));
+        updateGroupUpstream(key);
       } catch (cause) {
         const status = nonErrorUpstream(cause);
         if (status?.state === "rate_limited" || status?.state === "cooldown") updateGroupUpstream(key, status);
-        else setOpenError({ key, message: toUserMessage(cause, t("oneshot.loadSeedsFailed")) });
+        else {
+          updateGroupUpstream(key);
+          setOpenError({ key, message: toUserMessage(cause, t("oneshot.loadSeedsFailed")) });
+        }
         return;
       } finally {
         setOpeningGroup(undefined);
@@ -380,16 +383,19 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     async (group: OneShotSeedGroup, current: AnimeDraft | undefined, offset: number, span: number) => {
       setRefreshingGroup(group.key);
       setRefreshError(undefined);
-      updateGroupUpstream(group.key);
       try {
         const refreshed = await previewProviderEntryRSS(provider, group.scope.provider_entry_ref, {
           group_ref: group.scope.provider_group_ref,
         });
         refsRef.current.set(group.key, feedRefOf(refreshed));
+        updateGroupUpstream(group.key);
       } catch (cause) {
         const status = nonErrorUpstream(cause);
         if (status?.state === "rate_limited" || status?.state === "cooldown") updateGroupUpstream(group.key, status);
-        else setRefreshError(toUserMessage(cause, t("rss.refreshSeedsFailed")));
+        else {
+          updateGroupUpstream(group.key);
+          setRefreshError(toUserMessage(cause, t("rss.refreshSeedsFailed")));
+        }
         return false;
       } finally {
         setRefreshingGroup(undefined);

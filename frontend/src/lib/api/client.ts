@@ -33,7 +33,7 @@ export type OperationResponse<Name extends keyof operations> =
 export type ID = Schema<"ID">;
 export type Version = Schema<"Version">;
 export type SystemHealth = Schema<"SystemHealth">;
-export type UpstreamStatus = Schema<"UpstreamStatus">;
+export type UpstreamStatus = Schema<"UpstreamStatus"> & { receivedAtMs?: number };
 export type ReadinessReport = Schema<"ReadinessReport">;
 export type SystemUpstreamHealth = Schema<"SystemUpstreamHealth">;
 export type UpstreamOutcomeCounts = Schema<"UpstreamOutcomeCounts">;
@@ -307,7 +307,7 @@ export class ApiError extends Error {
   /** Present on 429 responses that carry a Retry-After header. */
   readonly retryAfterSeconds?: number;
   readonly upstream?: UpstreamStatus;
-  readonly receivedAt = new Date().toISOString();
+  readonly receivedAt: string;
 
   constructor(input: {
     status: number;
@@ -318,6 +318,7 @@ export class ApiError extends Error {
     details?: ErrorDetail[];
     retryAfterSeconds?: number;
     upstream?: UpstreamStatus;
+    receivedAtMs?: number;
   }) {
     super(input.message);
     this.name = "ApiError";
@@ -326,8 +327,14 @@ export class ApiError extends Error {
     this.requestId = input.requestId;
     this.currentVersion = input.currentVersion;
     this.details = input.details;
+    const receivedAtMs = input.receivedAtMs ?? Date.now();
+    this.receivedAt = new Date(receivedAtMs).toISOString();
     this.retryAfterSeconds = input.retryAfterSeconds;
-    this.upstream = input.upstream;
+    this.upstream = input.upstream && {
+      ...input.upstream,
+      retry_after_seconds: input.upstream.retry_after_seconds ?? input.retryAfterSeconds,
+      receivedAtMs,
+    };
   }
 }
 
@@ -495,10 +502,15 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
   if (options.responseType === "text" && response.ok) {
     return (await response.text()) as Result;
   }
+  const receivedAtMs = Date.now();
   const payload = response.status === 204 ? undefined : await response.json().catch((cause: unknown) => {
     if (options.signal?.aborted) throw cause;
     return undefined;
   });
+  // Keep the receipt timestamp through query caching and component remounts.
+  for (const status of [payload?.upstream, payload?.snapshot?.upstream]) {
+    if (status && typeof status === "object") status.receivedAtMs = receivedAtMs;
+  }
   if (!response.ok) {
     if (options.acceptStatuses?.includes(response.status)) {
       return payload as Result;
@@ -516,6 +528,7 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
       details: error.details,
       retryAfterSeconds: readRetryAfterSeconds(response.headers.get("Retry-After")) ?? error.upstream?.retry_after_seconds,
       upstream: error.upstream,
+      receivedAtMs,
     });
   }
 

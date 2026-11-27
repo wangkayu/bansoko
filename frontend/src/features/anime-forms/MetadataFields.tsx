@@ -9,7 +9,7 @@ import { matchTitleChoice, type MatchTitleOffer } from "../../lib/metadata/prefe
 import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { SegmentedControl, Button, Field, Input } from "../../ui";
 import { Checkbox, Dialog, Popconfirm, Select, type SelectOption } from "../../ui/base";
-import { nonErrorUpstream, UpstreamStatusBlock, useUpstreamWait } from "../../ui/UpstreamStatusBlock";
+import { nonErrorUpstream, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
 import { MetadataEpisodeDialog, type MetadataEpisodeBinding } from "./MetadataEpisodeDialog";
 
 // The metadata binding fact rows: the resting state is only "linked ID with an external link /
@@ -1134,7 +1134,6 @@ function MetadataMatchDialog({
   const [error, setError] = useState<string>();
   const [upstream, setUpstream] = useState<UpstreamStatus>();
   const [retryAutomatic, setRetryAutomatic] = useState(false);
-  const waiting = useUpstreamWait(upstream) > 0;
   // TMDB season editors (drafts; commit on confirm).
   const [mediaKind, setMediaKind] = useState<"tv" | "movie">("tv");
   const [seasonSelect, setSeasonSelect] = useState("custom");
@@ -1147,6 +1146,7 @@ function MetadataMatchDialog({
   function changeQuery(next: string) {
     setQuery(next);
     if (queryKey(next) === queryKey(query)) return;
+    setUpstream(undefined);
     requestSequence.current++;
     setSearching(false);
     setSearched(false);
@@ -1157,13 +1157,13 @@ function MetadataMatchDialog({
 
   async function search(queryOverride = query, automatic = false) {
     const nextQuery = queryOverride.trim();
-    if (!nextQuery || searching || waiting) return;
+    if (!nextQuery || searching) return;
     const sequence = ++requestSequence.current;
     const useDraftIdentity = title.trim() !== "" && queryKey(nextQuery) === queryKey(title);
     setQuery(nextQuery);
     setSearching(true);
     setSearched(true);
-    setUpstream(undefined);
+    if (queryKey(nextQuery) !== queryKey(query)) setUpstream(undefined);
     setError(undefined);
     setCandidates([]);
     setSelected(undefined);
@@ -1180,6 +1180,7 @@ function MetadataMatchDialog({
           } : { title: nextQuery, origin: "custom" })
         : await searcher.search(provider, nextQuery);
       if (sequence !== requestSequence.current) return;
+      setUpstream(undefined);
       setCandidates(nextCandidates);
       if (automatic && nextCandidates[0]) pick(nextCandidates[0], true);
     } catch (cause) {
@@ -1188,7 +1189,10 @@ function MetadataMatchDialog({
       if (status) {
         setUpstream(status);
         setRetryAutomatic(automatic);
-      } else setError(toUserMessage(cause, t("forms.queryFailed")));
+      } else {
+        setUpstream(undefined);
+        setError(toUserMessage(cause, t("forms.queryFailed")));
+      }
     } finally {
       if (sequence === requestSequence.current) setSearching(false);
     }
@@ -1306,7 +1310,7 @@ function MetadataMatchDialog({
             className="metadata-match-search-action"
             size="sm"
             onClick={() => void search()}
-            disabled={searching || waiting || query.trim() === ""}
+            disabled={searching || query.trim() === ""}
           >
             {searching ? <LoaderCircle className="metadata-match-action-icon metadata-match-spinner" /> : <Search className="metadata-match-action-icon" />}
             {t("forms.search")}
@@ -1316,7 +1320,7 @@ function MetadataMatchDialog({
             size="sm"
             variant="ghost"
             onClick={() => void search(query, true)}
-            disabled={searching || waiting || query.trim() === ""}
+            disabled={searching || query.trim() === ""}
           >
             <Sparkles className="metadata-match-action-icon" />
             {t("forms.autoSearch")}
@@ -1326,7 +1330,7 @@ function MetadataMatchDialog({
         {suggestedQueries.length > 0 && (
           <div className="tw:flex tw:flex-wrap tw:gap-1.5" role="group" aria-label={t("forms.queryCandidatesAria")}>
             {suggestedQueries.map((candidate) => (
-              <Button key={candidate} size="sm" variant="secondary" disabled={searching || waiting} onClick={() => void search(candidate)}>
+              <Button key={candidate} size="sm" variant="secondary" disabled={searching} onClick={() => void search(candidate)}>
                 {candidate}
               </Button>
             ))}
@@ -1370,7 +1374,7 @@ function MetadataMatchDialog({
             {error}
           </p>
         )}
-        <UpstreamStatusBlock status={upstream} onRetry={() => void search(query, retryAutomatic)} />
+        <UpstreamStatusBlock status={upstream} onRetry={() => void search(query, retryAutomatic)} retryDisabled={searching || query.trim() === ""} />
         {searched && !searching && !error && !upstream && candidates.length === 0 && (
           <p className="metadata-match-empty">
             {t("forms.noCandidates")}

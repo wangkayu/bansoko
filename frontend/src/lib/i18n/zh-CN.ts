@@ -168,7 +168,7 @@ export const zhCN = {
     notIndexed: "站点尚未收录这部番剧",
     rateLimited: "站点正在限制请求",
     cooldown: "正在等待站点请求额度恢复",
-    waitSeconds: "{n} 秒后可重试",
+    waitSeconds: "预计冷却还剩 {n} 秒",
     retryLater: "重试",
     error: "站点暂时不可用",
   },

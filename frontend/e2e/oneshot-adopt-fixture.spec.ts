@@ -404,7 +404,7 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     test.skip(!fixtureOnly, "fixture UI walkthrough runs only with BANSOKO_E2E_FIXTURES=1");
   });
 
-  test("一次性种子预览限流时等待并可重试", async ({ page }, testInfo) => {
+  test("一次性种子预览冷却期间可重试并更新倒计时", async ({ page }, testInfo) => {
     await mockSignedIn(page);
     await mockShellReads(page);
     await mockDiscovery(page);
@@ -414,15 +414,19 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     let previews = 0;
     await page.route("**/api/v1/catalog/providers/*/entries/*/rss*", async (route) => {
       if (route.request().method() === "GET") {
-        if (previews > 0) return route.fallback();
         return ok(route, 200, { provider: "anibt", provider_entry_ref: ENTRY_REF, group_ref: GROUP_REF, freshness: "stale", seeds: [] });
       }
-      if (++previews > 1) return route.fallback();
+      if (++previews > 2) return route.fallback();
+      const first = previews === 1;
+      const seconds = first ? 60 : 8;
       return route.fulfill({
         status: 429,
-        headers: { "Retry-After": "60" },
-        json: { code: "PROVIDER_RATE_LIMITED", message: "quota", upstream: {
-          state: "rate_limited", checked_at: now.toISOString(), cooldown_until: new Date(now.getTime() + 60_000).toISOString(),
+        headers: { "Retry-After": String(seconds) },
+        json: { code: first ? "PROVIDER_RATE_LIMITED" : "PROVIDER_COOLDOWN", message: "quota", upstream: {
+          state: first ? "rate_limited" : "cooldown",
+          retry_after_seconds: seconds,
+          checked_at: new Date(now.getTime() - 3_600_000).toISOString(),
+          cooldown_until: new Date(now.getTime() - 3_600_000 + seconds * 1000).toISOString(),
         } },
       });
     });
@@ -437,12 +441,19 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     const task = page.getByRole("dialog", { name: "浏览种子" });
     await expect(task.getByText("站点正在限制请求")).toBeVisible();
     const retry = task.getByRole("button", { name: "重试", exact: true });
-    await expect(retry).toBeDisabled();
+    await expect(retry).toBeEnabled();
+    await expect(task.getByText("预计冷却还剩 60 秒")).toBeVisible();
     expect(previews).toBe(1);
     expect(await task.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     if (process.env.BANSOKO_UPSTREAM_VISUAL_QA === "1") await task.screenshot({ path: testInfo.outputPath("rss-quota.png") });
-    await page.clock.setFixedTime(new Date(now.getTime() + 61_000));
+    await page.clock.setFixedTime(new Date(now.getTime() + 3_000));
+    await expect(task.getByText("预计冷却还剩 57 秒")).toBeVisible();
+    await retry.click();
+    await expect(task.getByText("预计冷却还剩 8 秒")).toBeVisible();
+    expect(previews).toBe(2);
     await expect(retry).toBeEnabled();
+    await page.clock.setFixedTime(new Date(now.getTime() + 12_000));
+    await expect(task.getByText(/预计冷却还剩/)).toHaveCount(0);
     await retry.click();
     await expect(task.getByRole("checkbox", { name: `[${GROUP}] ${TITLE} - 01 [1080p]` })).toBeVisible();
     await expect(task.getByText("站点正在限制请求")).toHaveCount(0);

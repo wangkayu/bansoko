@@ -36,8 +36,8 @@ export function DraftSubgroupRefresh({
   const [upstream, setUpstream] = useState<UpstreamStatus>();
 
   async function discover() {
+    if (discovering) return;
     setDiscovering(true);
-    setUpstream(undefined);
     try {
       const result = await discoverProviderEntryGroups(provider, providerEntryRef);
       setUpstream(result.upstream);
@@ -54,8 +54,8 @@ export function DraftSubgroupRefresh({
       }
     } catch (cause) {
       const status = nonErrorUpstream(cause);
-      if (status) setUpstream(status);
-      else toast.error(toUserMessage(cause, t("config.discovery.failed")));
+      setUpstream(status);
+      if (!status) toast.error(toUserMessage(cause, t("config.discovery.failed")));
     } finally {
       setDiscovering(false);
     }
@@ -64,7 +64,6 @@ export function DraftSubgroupRefresh({
   return (
     <div className="tw:min-w-0">
     <span className="tw:inline-flex tw:items-center tw:gap-1.5">
-      {(!upstream || upstream.state === "available") && (
       <Button size="sm" variant="secondary" disabled={discovering} onClick={() => void discover()}>
         {discovering ? (
           <LoaderCircle className="draft-refresh-icon" />
@@ -73,14 +72,13 @@ export function DraftSubgroupRefresh({
         )}
         {discovering ? t("act.refreshing") : t("config.discovery.refresh")}
       </Button>
-      )}
       {showHint && (
         <HelpTip label={t("anime.draftRefresh")}>
           {t("anime.draftRefresh")}
         </HelpTip>
       )}
     </span>
-    <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={() => void discover()} />
+    <UpstreamStatusBlock status={upstream} emptyTitle={t("config.discovery.none")} onRetry={() => void discover()} retryDisabled={discovering} />
     </div>
   );
 }

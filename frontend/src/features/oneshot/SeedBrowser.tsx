@@ -130,7 +130,7 @@ function GroupList({
             <button
               type="button"
               aria-label={t("oneshot.openGroup", { name: entry.name })}
-              disabled={openingGroup !== undefined || status !== undefined}
+              disabled={openingGroup !== undefined}
               onClick={() => onOpen(entry.key)}
               className="tw:group tw:flex tw:w-full tw:cursor-pointer tw:items-center tw:gap-3 tw:rounded-control tw:border tw:border-border tw:bg-transparent tw:px-3 tw:py-3 tw:text-left tw:text-foreground tw:transition-[background-color,border-color,transform] tw:duration-150 tw:hover:border-ring/40 tw:hover:bg-muted/40 tw:active:scale-[0.99] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring tw:disabled:cursor-default tw:motion-reduce:transition-none tw:motion-reduce:active:scale-100"
             >
@@ -458,7 +458,7 @@ export function SeedBrowser({
               title={activeTitle}
               count={activeGroup?.rows.length}
               onBack={onBack}
-              onRefresh={activeUpstream ? undefined : onRefresh}
+              onRefresh={onRefresh}
               refreshing={refreshing}
               pending={pending && !activeLoading}
               filter={filter}

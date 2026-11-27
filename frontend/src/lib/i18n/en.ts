@@ -167,7 +167,7 @@ export const en = {
     notIndexed: "This title has not been indexed by the provider",
     rateLimited: "The provider is limiting requests",
     cooldown: "Waiting for provider quota to recover",
-    waitSeconds: "Retry in {n} seconds",
+    waitSeconds: "Estimated cooldown remaining: {n} seconds",
     retryLater: "Retry",
     error: "The provider is temporarily unavailable",
   },

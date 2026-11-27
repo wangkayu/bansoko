@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ApiError, toUserMessage, type UpstreamStatus } from "../lib/api/client";
 import { t } from "../lib/i18n";
 import { Button } from "./base/controls";
@@ -16,6 +16,7 @@ export function nonErrorUpstream(cause: unknown): UpstreamStatus | undefined {
   return {
     state,
     checked_at: cause.receivedAt,
+    receivedAtMs: Date.parse(cause.receivedAt),
     reason_code: cause.upstream?.reason_code ?? cause.code,
     retry_after_seconds: seconds,
   };
@@ -43,7 +44,7 @@ export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onR
         kind={status.state === "error" ? "error" : "empty"}
         title={title}
         description={seconds > 0 ? t("upstream.waitSeconds", { n: seconds }) : undefined}
-        action={onRetry && <Button size="sm" disabled={retryDisabled || seconds > 0} onClick={onRetry}>{waiting ? t("upstream.retryLater") : t("act.retry")}</Button>}
+        action={onRetry && <Button size="sm" disabled={retryDisabled} onClick={onRetry}>{waiting ? t("upstream.retryLater") : t("act.retry")}</Button>}
       />
     </div>
   );
@@ -51,8 +52,11 @@ export function UpstreamStatusBlock({ status, cause, emptyTitle, errorTitle, onR
 
 export function useUpstreamWait(status?: UpstreamStatus): number {
   const waiting = status?.state === "rate_limited" || status?.state === "cooldown";
-  const deadline = status?.cooldown_until ? Date.parse(status.cooldown_until)
-    : status?.retry_after_seconds === undefined ? 0 : Date.parse(status.checked_at) + status.retry_after_seconds * 1000;
+  const receivedAtMs = useMemo(() => status?.receivedAtMs ?? Date.now(), [status]);
+  const seconds = status?.retry_after_seconds;
+  const deadline = seconds !== undefined && Number.isFinite(seconds)
+    ? receivedAtMs + seconds * 1000
+    : status?.cooldown_until ? Date.parse(status.cooldown_until) : 0;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!waiting || !Number.isFinite(deadline) || deadline <= Date.now()) return;

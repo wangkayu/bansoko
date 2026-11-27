@@ -6,7 +6,7 @@ import type { AnimeMetadataDraft, SubscriptionOrigin } from "../../lib/api/clien
 import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { MetadataFields } from "./MetadataFields";
 import { t } from "../../lib/i18n";
-import { setSessionTokenProvider } from "../../lib/api/client";
+import { ApiError, setSessionTokenProvider } from "../../lib/api/client";
 import { resetAuthedImageCache } from "../../lib/useAuthedImage";
 
 // MetadataFields: the resting state is only the binding fact rows (external link + clear);
@@ -808,6 +808,39 @@ describe("MetadataFields 季度行", () => {
       expect.objectContaining({ season: 12, tmdb: { work_id: "265010", media_kind: "tv", season: 2 } }),
     );
   });
+});
+
+it("冷却期间允许查询、自动查询、回车及候选词，修改查询词后清除旧提示", async () => {
+  const quota = () => new ApiError({
+    status: 429, message: "quota", code: "PROVIDER_COOLDOWN", retryAfterSeconds: 60,
+  });
+  const searcher = searcherReturning([]);
+  vi.mocked(searcher.search).mockImplementation(async () => { throw quota(); });
+  vi.mocked(searcher.searchAutomatic).mockImplementation(async () => { throw quota(); });
+  render(<Controlled searcher={searcher} matchQueryCandidates={["候选一"]} />);
+  clickMatch("bgm");
+  const dialog = within(await screen.findByRole("dialog"));
+  const search = dialog.getByRole("button", { name: t("forms.search") });
+  const automatic = dialog.getByRole("button", { name: t("forms.autoSearch") });
+  const shortcut = dialog.getByRole("button", { name: "候选一" });
+  const input = dialog.getByRole("textbox", { name: t("forms.titleQuery") });
+  fireEvent.click(search);
+  const retry = await dialog.findByRole("button", { name: t("upstream.retryLater") });
+  for (const button of [search, automatic, shortcut, retry]) expect(button).toBeEnabled();
+  fireEvent.click(retry);
+  expect(retry).toBeDisabled();
+  await waitFor(() => expect(retry).toBeEnabled());
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(retry).toBeEnabled());
+  expect(searcher.search).toHaveBeenCalledTimes(3);
+  fireEvent.click(automatic);
+  await waitFor(() => expect(retry).toBeEnabled());
+  expect(searcher.searchAutomatic).toHaveBeenCalledTimes(1);
+  fireEvent.click(shortcut);
+  await dialog.findByText(t("upstream.cooldown"));
+  expect(searcher.search).toHaveBeenLastCalledWith("bgm", "候选一");
+  fireEvent.change(input, { target: { value: "新查询" } });
+  expect(dialog.queryByText(t("upstream.cooldown"))).not.toBeInTheDocument();
 });
 
 describe("MetadataMatchDialog 检索词候选与作品名回传", () => {
