@@ -98,11 +98,11 @@ WHERE id = 'site-retired'`); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	observed := provider.GroupReadResult{Provider: provider.ProviderAniBT, CatalogEntryRef: "777", ObservedAt: now, SchemaVersion: "fixture-v1"}
+	observed := provider.GroupReadResult{Provider: provider.ProviderAniBT, CatalogEntryRef: "777", ObservedAt: now, SchemaVersion: "anibt-anime-groups-v1", Complete: true, CompletenessEvidence: "anibt-entry-total-v1"}
 	for _, ref := range []string{"alpha", "beta", "gamma"} {
 		key := provider.GroupRef{Provider: observed.Provider, ExternalID: ref}
 		name := map[string]string{"alpha": "Alpha", "beta": "Beta", "gamma": "Gamma 简繁"}[ref]
-		observed.Groups = append(observed.Groups, provider.GroupSnapshotEntry{Ref: key, DisplayName: name, ObservedAt: now, FeedLocator: provider.FeedLocator{Provider: observed.Provider, CatalogEntryRef: observed.CatalogEntryRef, Group: key}})
+		observed.Groups = append(observed.Groups, provider.GroupSnapshotEntry{Ref: key, DisplayName: name, ObservedAt: now, Active: new(true), FeedLocator: provider.FeedLocator{Provider: observed.Provider, CatalogEntryRef: observed.CatalogEntryRef, Group: key}})
 	}
 	if _, err := catalog.PersistGroupObservationTx(ctx, tx, observed); err != nil {
 		t.Fatal(err)

@@ -17,6 +17,9 @@ import (
 // by both manual discovery and automation. The caller owns the enclosing tx;
 // allocation, canonical freezing and the typed SQL write never span provider I/O.
 func PersistGroupObservationTx(ctx context.Context, tx *sql.Tx, result providerdomain.GroupReadResult) (providerdomain.GroupSnapshot, error) {
+	if err := validateCompleteGroupRead(result); err != nil {
+		return providerdomain.GroupSnapshot{}, err
+	}
 	if tx == nil {
 		return providerdomain.GroupSnapshot{}, errors.New("group observation transaction is nil")
 	}
@@ -84,6 +87,9 @@ func ReadGroupObservationTx(ctx context.Context, tx *sql.Tx, id string) (catalog
 // and its retention is extended. It returns the reused snapshot header and
 // true, or false when a new observation must be persisted.
 func ReuseUnchangedGroupObservationTx(ctx context.Context, tx *sql.Tx, result providerdomain.GroupReadResult) (providerdomain.GroupSnapshot, bool, error) {
+	if err := validateCompleteGroupRead(result); err != nil {
+		return providerdomain.GroupSnapshot{}, false, err
+	}
 	if tx == nil {
 		return providerdomain.GroupSnapshot{}, false, errors.New("group observation transaction is nil")
 	}
@@ -123,17 +129,14 @@ WHERE provider = $1 AND catalog_entry_ref = $2 ORDER BY version DESC LIMIT 1`, r
 	if _, err := tx.ExecContext(ctx, `UPDATE provider_group_snapshots SET retention_until = CURRENT_TIMESTAMP + INTERVAL '30 days' WHERE id = $1`, id); err != nil {
 		return snapshot, false, fmt.Errorf("extend unchanged group observation retention: %w", err)
 	}
-	state := "fresh"
-	if len(result.Groups) == 0 {
-		state = "empty"
-	}
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO provider_group_refresh_health(provider, catalog_entry_ref, state, last_attempt_at, last_success_at, version)
-VALUES ($1, $2, $3, $4, $4, 1)
+INSERT INTO provider_group_refresh_health(provider, catalog_entry_ref, state, last_attempt_at, last_success_at, checked_at, version)
+VALUES ($1, $2, $3, statement_timestamp(), $4, $4, 1)
 ON CONFLICT (provider, catalog_entry_ref) DO UPDATE SET state = EXCLUDED.state,
-    last_attempt_at = EXCLUDED.last_attempt_at, last_success_at = EXCLUDED.last_success_at,
-    error_code = NULL, error_message = NULL, version = provider_group_refresh_health.version + 1,
-    updated_at = CURRENT_TIMESTAMP`, result.Provider, result.CatalogEntryRef, state, result.ObservedAt); err != nil {
+    last_success_at = EXCLUDED.last_success_at, checked_at = EXCLUDED.checked_at,
+    error_code = NULL, error_message = NULL, cooldown_until = NULL,
+    version = provider_group_refresh_health.version + 1,
+    updated_at = CURRENT_TIMESTAMP`, result.Provider, result.CatalogEntryRef, providerdomain.GroupReadStatus(result).State, result.ObservedAt); err != nil {
 		return snapshot, false, fmt.Errorf("refresh unchanged group observation health: %w", err)
 	}
 	return snapshot, true, nil

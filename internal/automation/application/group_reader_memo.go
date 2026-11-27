@@ -2,39 +2,35 @@ package application
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 
+	catalogapp "bansoko/internal/catalog/application"
 	providerdomain "bansoko/internal/provider/domain"
 )
 
-// memoGroupReader answers repeated reads of the same catalog entry within one
-// dispatch run from the first answer (success or failure).
-type memoGroupReader struct {
-	inner GroupReader
-	mu    sync.Mutex
-	cache map[string]memoGroupRead
-}
+type groupReadFunc func(context.Context, *sql.DB, catalogapp.GroupReader, string, string) (providerdomain.GroupReadResult, providerdomain.Status, error)
 
-type memoGroupRead struct {
-	result providerdomain.GroupReadResult
-	err    error
-}
-
-func (r *memoGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string) (providerdomain.GroupReadResult, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if cached, ok := r.cache[catalogEntryRef]; ok {
-		return cached.result, cached.err
+// memoizeGroupRead shares one upstream read and its health record across all
+// subscriptions for the same provider entry in a dispatch run.
+func memoizeGroupRead() groupReadFunc {
+	type scope struct{ provider, entry string }
+	type read struct {
+		result providerdomain.GroupReadResult
+		status providerdomain.Status
+		err    error
 	}
-	result, err := r.inner.ReadGroups(ctx, catalogEntryRef)
-	r.cache[catalogEntryRef] = memoGroupRead{result: result, err: err}
-	return result, err
-}
-
-func memoizeGroupReaders(readers map[string]GroupReader) map[string]GroupReader {
-	memo := make(map[string]GroupReader, len(readers))
-	for provider, reader := range readers {
-		memo[provider] = &memoGroupReader{inner: reader, cache: map[string]memoGroupRead{}}
+	var mu sync.Mutex
+	cache := map[scope]read{}
+	return func(ctx context.Context, db *sql.DB, reader catalogapp.GroupReader, provider, entry string) (providerdomain.GroupReadResult, providerdomain.Status, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		key := scope{provider, entry}
+		if cached, ok := cache[key]; ok {
+			return cached.result, cached.status, cached.err
+		}
+		result, status, err := catalogapp.ReadProviderGroups(ctx, db, reader, provider, entry)
+		cache[key] = read{result, status, err}
+		return result, status, err
 	}
-	return memo
 }

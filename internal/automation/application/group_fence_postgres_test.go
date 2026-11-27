@@ -29,7 +29,7 @@ func TestForcedDiscoveryRejectsStaleCompleteResponse(t *testing.T) {
 			active := true
 			ref, _ := providerdomain.NewGroupRef(providerdomain.ProviderAniBT, "old")
 			now := time.Now().UTC()
-			reader := changingGroupReader{result: providerdomain.GroupReadResult{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", ObservedAt: now, SchemaVersion: "test-v1", Complete: true, CompletenessEvidence: "test-complete", Groups: []providerdomain.GroupSnapshotEntry{{Ref: ref, DisplayName: "Old", Active: &active, ObservedAt: now, FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", Group: ref}}}}, beforeReturn: func() {
+			reader := changingGroupReader{result: providerdomain.GroupReadResult{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", ObservedAt: now, SchemaVersion: "anibt-anime-groups-v1", Complete: true, CompletenessEvidence: "anibt-entry-total-v1", Groups: []providerdomain.GroupSnapshotEntry{{Ref: ref, DisplayName: "Old", Active: &active, ObservedAt: now, FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", Group: ref}}}}, beforeReturn: func() {
 				query := `UPDATE provider_group_scope_generations SET generation=2 WHERE subscription_id='sub-1'`
 				if change == "subscription" {
 					query = `UPDATE subscriptions SET version=version+1 WHERE id='sub-1'`

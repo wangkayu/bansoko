@@ -138,14 +138,17 @@ func TestCatalogGroupWholeObservationFailureRollsBack(t *testing.T) {
 		mutate    func(map[string]any)
 		entries   string
 		badDigest bool
+		message   string
 	}{
 		{name: "wrong digest", badDigest: true},
 		{name: "unknown key", mutate: func(o map[string]any) { o["extra"] = true }},
 		{name: "missing key", mutate: func(o map[string]any) { delete(o, "schema_version") }},
-		{name: "wrong evidence", mutate: func(o map[string]any) {
+		{name: "wrong evidence", message: "GROUP_OBSERVATION_EVIDENCE_INVALID", mutate: func(o map[string]any) {
 			o["completeness"].(map[string]any)["value"].(map[string]any)["evidence"] = "anibt-entry-total-v1"
 		}},
-		{name: "missing complete boolean", mutate: func(o map[string]any) { o["completeness"].(map[string]any)["value"].(map[string]any)["complete"] = nil }},
+		{name: "incomplete", message: "GROUP_OBSERVATION_EVIDENCE_INVALID", mutate: func(o map[string]any) {
+			o["completeness"].(map[string]any)["value"].(map[string]any)["complete"] = false
+		}},
 		{name: "duplicate group", mutate: func(o map[string]any) { g := o["groups"].([]any); g[1] = g[0] }},
 		{name: "duplicate key", entries: string(entryBytes) + " "},
 		{name: "empty projection", entries: `[]`},
@@ -181,6 +184,9 @@ func TestCatalogGroupWholeObservationFailureRollsBack(t *testing.T) {
 			if err == nil {
 				t.Fatal("invalid observation accepted")
 			}
+			if tc.message != "" && adoptAcceptPGMessage(err) != tc.message {
+				t.Fatalf("expected %s, got %v", tc.message, err)
+			}
 			var count int
 			if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM provider_group_snapshots)+(SELECT count(*) FROM provider_group_refresh_health)`).Scan(&count); err != nil || count != 0 {
 				t.Fatalf("partial graph left: %d %v", count, err)
@@ -205,6 +211,15 @@ func TestCatalogGroupObservationPreservesUnavailableAndEmpty(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := groupResult()
 			tc.mutate(&r)
+			if !tc.authoritative {
+				if err := inTx(db, func(tx *sql.Tx) error {
+					_, err := catalogapp.PersistGroupObservationTx(ctx, tx, r)
+					return err
+				}); err == nil {
+					t.Fatal("published non-authoritative observation")
+				}
+				return
+			}
 			s := publishGroup(t, db, r)
 			if err := inTx(db, func(tx *sql.Tx) error {
 				o, err := catalogapp.ReadGroupObservationTx(ctx, tx, s.ID)

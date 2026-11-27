@@ -129,8 +129,9 @@ func TestDiscoverProviderEntryGroupsBumpsSnapshotVersionOnRerun(t *testing.T) {
 		CatalogEntryRef: entryRef,
 		ObservedAt:      observedAt,
 		SourceVersion:   "anibt-source-1",
-		SchemaVersion:   "anibt-groups-v1",
-		Groups:          []providerdomain.GroupSnapshotEntry{},
+		SchemaVersion:   "anibt-anime-groups-v1",
+		Complete:        true, CompletenessEvidence: "anibt-entry-total-v1",
+		Groups: []providerdomain.GroupSnapshotEntry{},
 	}}
 	service := NewService(db, nil)
 	service.SetGroupReaders(map[string]GroupReader{"anibt": reader})
@@ -163,10 +164,12 @@ func TestProviderGroupRetentionUsesDatabaseTimeAndKeepsLatestGood(t *testing.T) 
 		CatalogEntryRef: entryRef,
 		ObservedAt:      futureObservedAt,
 		SourceVersion:   "future-source",
-		SchemaVersion:   "mikan-groups-v1",
+		SchemaVersion:   "mikan-detail-groups-v1",
+		Complete:        true, CompletenessEvidence: "mikan-detail-group-blocks-v1",
 		Groups: []providerdomain.GroupSnapshotEntry{{
 			Ref:         providerdomain.GroupRef{Provider: providerdomain.ProviderMikan, ExternalID: "678"},
 			DisplayName: "Future group",
+			Active:      new(true),
 			FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderMikan, CatalogEntryRef: entryRef, Group: providerdomain.GroupRef{Provider: providerdomain.ProviderMikan, ExternalID: "678"}},
 			ObservedAt:  futureObservedAt,
 		}},
@@ -198,8 +201,9 @@ func TestProviderGroupRetentionUsesDatabaseTimeAndKeepsLatestGood(t *testing.T) 
 		CatalogEntryRef: entryRef,
 		ObservedAt:      now,
 		SourceVersion:   "empty-source",
-		SchemaVersion:   "mikan-groups-v1",
-		Groups:          []providerdomain.GroupSnapshotEntry{},
+		SchemaVersion:   "mikan-detail-groups-v1",
+		Complete:        true, CompletenessEvidence: "mikan-detail-group-blocks-v1",
+		Groups: []providerdomain.GroupSnapshotEntry{},
 	}}})
 	latest, err := service.DiscoverProviderEntryGroups(ctx, "mikan", entryRef)
 	if err != nil {

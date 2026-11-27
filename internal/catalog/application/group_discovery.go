@@ -111,9 +111,12 @@ func (s *Service) DiscoverProviderEntryGroups(ctx context.Context, provider, cat
 			Message: "Provider group discovery is not configured for this provider.",
 		}
 	}
-	result, err := reader.ReadGroups(ctx, catalogEntryRef)
+	result, status, err := ReadProviderGroups(ctx, s.db, reader, provider, catalogEntryRef)
 	if err != nil {
-		return catalogdomain.ProviderGroupDiscoveryResult{}, &apperrors.Business{
+		if status.State == "" {
+			return catalogdomain.ProviderGroupDiscoveryResult{}, err
+		}
+		return catalogdomain.ProviderGroupDiscoveryResult{UpstreamStatus: status}, &apperrors.Business{
 			Status:  http.StatusServiceUnavailable,
 			Code:    "PROVIDER_GROUP_DISCOVERY_FAILED",
 			Message: safeProviderReason(err.Error()),
@@ -129,7 +132,9 @@ func (s *Service) DiscoverProviderEntryGroups(ctx context.Context, provider, cat
 		// is already persisted. Surface an empty feed_url per group.
 		endpoint = ""
 	}
-	return mapProviderGroupDiscoveryResult(snapshot, endpoint), nil
+	discovery := mapProviderGroupDiscoveryResult(snapshot, endpoint)
+	discovery.UpstreamStatus = status
+	return discovery, nil
 }
 
 // ReadProviderEntryRSS reads only the latest persisted feed snapshot. It never

@@ -76,7 +76,7 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return providerdomain.GroupReadResult{}, fmt.Errorf("AniBT groups returned HTTP %d", response.StatusCode)
+		return providerdomain.GroupReadResult{}, aniBTGroupHTTPFailure(response)
 	}
 	payload, err := readBoundedResponse(response)
 	if err != nil {
@@ -86,7 +86,7 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 		OK   *bool `json:"ok"`
 		Data struct {
 			BGMID  int64 `json:"bgmId"`
-			Total  int   `json:"total"`
+			Total  *int  `json:"total"`
 			Groups []struct {
 				Slug          string `json:"slug"`
 				Name          string `json:"name"`
@@ -96,8 +96,7 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 			} `json:"groups"`
 		} `json:"data"`
 	}
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	if err := decoder.Decode(&document); err != nil {
+	if err := json.Unmarshal(payload, &document); err != nil {
 		return providerdomain.GroupReadResult{}, fmt.Errorf("decode AniBT groups: %w", err)
 	}
 	if document.OK != nil && !*document.OK {
@@ -106,7 +105,7 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 	if document.Data.BGMID != int64(bgmID) {
 		return providerdomain.GroupReadResult{}, errors.New("AniBT group response BGM ID does not match request")
 	}
-	if document.Data.Total != len(document.Data.Groups) {
+	if document.Data.Total == nil || document.Data.Groups == nil || *document.Data.Total != len(document.Data.Groups) {
 		return providerdomain.GroupReadResult{}, errors.New("AniBT group response total does not match groups")
 	}
 	observedAt := time.Now().UTC()
@@ -140,6 +139,26 @@ func (r AniBTGroupReader) ReadGroups(ctx context.Context, catalogEntryRef string
 		})
 	}
 	return result, nil
+}
+
+func aniBTGroupHTTPFailure(response *http.Response) error {
+	status := providerdomain.Status{State: providerdomain.StateError, ReasonCode: providerdomain.ReasonUpstreamStatus}
+	switch response.StatusCode {
+	case http.StatusNotFound:
+		payload, err := readBoundedBody(response, 16<<10)
+		var document struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err == nil && json.Unmarshal(payload, &document) == nil && document.Error.Code == "ANIME_NOT_FOUND" {
+			status.State, status.ReasonCode = providerdomain.StateNotIndexed, providerdomain.ReasonAnimeNotFound
+		}
+	case http.StatusTooManyRequests:
+		// Production uses the scheduler, which also supplies the deadline.
+		status.State, status.ReasonCode = providerdomain.StateRateLimited, providerdomain.ReasonRateLimited
+	}
+	return &providerdomain.ReadFailure{Status: status, Err: fmt.Errorf("AniBT groups returned HTTP %d", response.StatusCode)}
 }
 
 // ReadGroupCatalog reads the AniBT group directory once and returns every group

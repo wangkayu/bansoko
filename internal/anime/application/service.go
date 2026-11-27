@@ -25,6 +25,7 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/policyowner"
+	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/workitems"
 )
 
@@ -41,6 +42,7 @@ type GroupDiscoveryProvider interface {
 
 // DiscoverResult is the outcome of a per-anime group discovery run.
 type DiscoverResult struct {
+	UpstreamStatus  providerdomain.Status
 	Outcome         string // "discovered", "no_groups", "provider_error", "config_error"
 	Reason          string
 	DiscoveredCount int

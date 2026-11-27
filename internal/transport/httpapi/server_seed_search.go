@@ -128,7 +128,7 @@ func writeSeedSearchError(w http.ResponseWriter, r *http.Request, err error) {
 		if limited.RetryAfter > 0 {
 			w.Header().Set("Retry-After", retryAfterSeconds(limited.RetryAfter))
 		}
-		writeError(w, r, &apperrors.Business{Status: http.StatusTooManyRequests, Code: "PROVIDER_RATE_LIMITED", Message: limited.Error()})
+		writeError(w, r, &APIError{Status: http.StatusTooManyRequests, Code: "PROVIDER_RATE_LIMITED", Message: limited.Error()})
 		return
 	}
 	if errors.Is(err, catalogapplication.ErrSearchQueryInvalid) {

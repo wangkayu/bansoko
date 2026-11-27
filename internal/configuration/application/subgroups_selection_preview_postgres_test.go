@@ -36,10 +36,10 @@ func TestSubgroupsSelectionPreviewMatchesTheSaveAndWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	result := provider.GroupReadResult{Provider: provider.ProviderAniBT, CatalogEntryRef: "555", ObservedAt: now, SchemaVersion: "fixture-v1"}
+	result := provider.GroupReadResult{Provider: provider.ProviderAniBT, CatalogEntryRef: "555", ObservedAt: now, SchemaVersion: "anibt-anime-groups-v1", Complete: true, CompletenessEvidence: "anibt-entry-total-v1"}
 	for _, ref := range []string{"alpha", "beta", "gamma"} {
 		key := provider.GroupRef{Provider: result.Provider, ExternalID: ref}
-		result.Groups = append(result.Groups, provider.GroupSnapshotEntry{Ref: key, DisplayName: ref, ObservedAt: now, FeedLocator: provider.FeedLocator{Provider: result.Provider, CatalogEntryRef: result.CatalogEntryRef, Group: key}})
+		result.Groups = append(result.Groups, provider.GroupSnapshotEntry{Ref: key, DisplayName: ref, ObservedAt: now, Active: new(true), FeedLocator: provider.FeedLocator{Provider: result.Provider, CatalogEntryRef: result.CatalogEntryRef, Group: key}})
 	}
 	if _, err := catalog.PersistGroupObservationTx(ctx, tx, result); err != nil {
 		t.Fatal(err)

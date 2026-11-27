@@ -22,7 +22,7 @@ func TestForcedRefreshProvisionFailureKeepsPriorScopeAndSnapshot(t *testing.T) {
 	ref, _ := providerdomain.NewGroupRef(providerdomain.ProviderAniBT, "new")
 	now := time.Now().UTC()
 	active := true
-	result := providerdomain.GroupReadResult{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", ObservedAt: now, SchemaVersion: "test-groups-v1", Complete: true, CompletenessEvidence: "complete-test", Groups: []providerdomain.GroupSnapshotEntry{{Ref: ref, DisplayName: "New", ObservedAt: now, Active: &active, FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", Group: ref}}}}
+	result := providerdomain.GroupReadResult{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", ObservedAt: now, SchemaVersion: "anibt-anime-groups-v1", Complete: true, CompletenessEvidence: "anibt-entry-total-v1", Groups: []providerdomain.GroupSnapshotEntry{{Ref: ref, DisplayName: "New", ObservedAt: now, Active: &active, FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", Group: ref}}}}
 	store, err := workitems.NewStore(db, 0, nil)
 	if err != nil {
 		t.Fatal(err)

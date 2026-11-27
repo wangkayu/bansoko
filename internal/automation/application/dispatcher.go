@@ -67,6 +67,7 @@ type Dispatcher struct {
 	// reuseUnchangedGroups is set on the per-run copy of a scheduled group
 	// discovery; see ReuseUnchangedGroupObservationTx.
 	reuseUnchangedGroups bool
+	groupRead            groupReadFunc
 }
 
 // SetEventHub wires the optional in-process read-model invalidation boundary.
@@ -77,6 +78,7 @@ func (d *Dispatcher) SetEventHub(hub *events.Hub) {
 }
 
 type dispatchCounts struct {
+	groupStatus providerdomain.Status
 	targetCount int
 	enqueued    int
 	merged      int
@@ -431,7 +433,7 @@ WHERE s.state = 'active'
 	// Several subscriptions may share one provider entry: read its groups once
 	// per dispatch run.
 	run := *d
-	run.GroupReaders = memoizeGroupReaders(d.GroupReaders)
+	run.groupRead = memoizeGroupRead()
 	run.reuseUnchangedGroups = scheduled
 	for _, target := range targets {
 		if err := ctx.Err(); err != nil {
@@ -504,7 +506,7 @@ WHERE s.managed_anime_id = $1`, managedAnimeID).Scan(
 
 	counts, err := d.discoverOneMode(ctx, managedAnimeID, subscriptionID, provider, catalogEntryRef, animeTitle, policy, true)
 	if err != nil {
-		return animeapp.DiscoverResult{Outcome: "provider_error", Reason: truncateReason(err.Error())}, nil
+		return animeapp.DiscoverResult{Outcome: "provider_error", Reason: truncateReason(err.Error()), UpstreamStatus: counts.groupStatus}, nil
 	}
 
 	discoveredCount := counts.merged + counts.enqueued + counts.skipped
@@ -513,15 +515,17 @@ WHERE s.managed_anime_id = $1`, managedAnimeID).Scan(
 			Outcome:         "provider_error",
 			Reason:          "Group sources could not be created.",
 			DiscoveredCount: discoveredCount,
+			UpstreamStatus:  counts.groupStatus,
 		}, nil
 	}
 	if discoveredCount == 0 {
-		return animeapp.DiscoverResult{Outcome: "no_groups", Reason: "No groups were found."}, nil
+		return animeapp.DiscoverResult{Outcome: "no_groups", Reason: "No groups were found.", UpstreamStatus: counts.groupStatus}, nil
 	}
 	return animeapp.DiscoverResult{
 		Outcome:         "discovered",
 		Reason:          fmt.Sprintf("Discovered %d group(s).", discoveredCount),
 		DiscoveredCount: discoveredCount,
+		UpstreamStatus:  counts.groupStatus,
 	}, nil
 }
 
@@ -549,20 +553,14 @@ func (d *Dispatcher) discoverOneMode(ctx context.Context, managedAnimeID, subscr
 	if err != nil {
 		return counts, err
 	}
-	result, err := reader.ReadGroups(ctx, catalogEntryRef)
+	readGroups := d.groupRead
+	if readGroups == nil {
+		readGroups = catalogapp.ReadProviderGroups
+	}
+	result, status, err := readGroups(ctx, d.DB, reader, providerName, catalogEntryRef)
+	counts.groupStatus = status
 	if err != nil {
-		if healthErr := d.recordGroupRefreshFailure(ctx, providerName, catalogEntryRef, err); healthErr != nil {
-			return counts, fmt.Errorf("read groups: %w (record health: %v)", err, healthErr)
-		}
 		return counts, fmt.Errorf("read groups: %w", err)
-	}
-	// Reject mismatched or duplicate provider identities before any selection
-	// writes; silently skipping invalid refs would publish a partial scope.
-	if err := validateDiscoveryIdentity(result, providerName, catalogEntryRef); err != nil {
-		return counts, err
-	}
-	if authoritative && (!result.Complete || result.CompletenessEvidence == "") {
-		return counts, errors.New("forced group refresh response is incomplete")
 	}
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -1314,20 +1312,6 @@ func (d *Dispatcher) persistGroupSnapshot(ctx context.Context, result providerdo
 
 func (d *Dispatcher) persistGroupSnapshotTx(ctx context.Context, tx *sql.Tx, result providerdomain.GroupReadResult) (providerdomain.GroupSnapshot, error) {
 	return catalogapp.PersistGroupObservationTx(ctx, tx, result)
-}
-
-func (d *Dispatcher) recordGroupRefreshFailure(ctx context.Context, providerName, catalogEntryRef string, cause error) error {
-	message := strings.TrimSpace(cause.Error())
-	if len(message) > 512 {
-		message = message[:512]
-	}
-	_, err := d.DB.ExecContext(ctx, `
-INSERT INTO provider_group_refresh_health(provider, catalog_entry_ref, state, last_attempt_at, error_code, error_message, version)
-VALUES ($1, $2, 'error', CURRENT_TIMESTAMP, 'PROVIDER_GROUP_READ_FAILED', $3, 1)
-ON CONFLICT (provider, catalog_entry_ref) DO UPDATE SET
-    state = 'error', last_attempt_at = CURRENT_TIMESTAMP, error_code = 'PROVIDER_GROUP_READ_FAILED', error_message = EXCLUDED.error_message,
-    version = provider_group_refresh_health.version + 1, updated_at = CURRENT_TIMESTAMP`, providerName, catalogEntryRef, message)
-	return err
 }
 
 // readerEndpoint resolves the connection endpoint for a provider kind.

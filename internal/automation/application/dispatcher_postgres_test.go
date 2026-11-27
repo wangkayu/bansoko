@@ -75,6 +75,7 @@ func (r dispatcherTestGroupReader) ReadGroups(ctx context.Context, catalogEntryR
 	result := providerdomain.GroupReadResult{
 		Provider: providerdomain.ProviderAniBT, CatalogEntryRef: catalogEntryRef,
 		ObservedAt: time.Now().UTC(), SchemaVersion: "anibt-anime-groups-v1", Groups: make([]providerdomain.GroupSnapshotEntry, 0, len(payload.Data.Groups)),
+		Complete: true, CompletenessEvidence: "anibt-entry-total-v1",
 	}
 	for _, item := range payload.Data.Groups {
 		ref, err := providerdomain.NewGroupRef(providerdomain.ProviderAniBT, item.Slug)
@@ -82,7 +83,7 @@ func (r dispatcherTestGroupReader) ReadGroups(ctx context.Context, catalogEntryR
 			return providerdomain.GroupReadResult{}, err
 		}
 		result.Groups = append(result.Groups, providerdomain.GroupSnapshotEntry{
-			Ref: ref, DisplayName: item.Name, ObservedAt: result.ObservedAt,
+			Ref: ref, DisplayName: item.Name, ObservedAt: result.ObservedAt, Active: new(true),
 			FeedLocator: providerdomain.FeedLocator{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: catalogEntryRef, Group: ref},
 		})
 	}
@@ -496,8 +497,8 @@ FOR EACH ROW EXECUTE FUNCTION test_fail_beta_provider_source()`); err != nil {
 		DB: db, WorkItems: store,
 		GroupReaders: map[string]GroupReader{"anibt": staticDispatcherGroupReader{result: providerdomain.GroupReadResult{
 			Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", ObservedAt: observedAt,
-			SchemaVersion: "anibt-groups-v1", Groups: groups,
-			Complete: true, CompletenessEvidence: "test-full-entry",
+			SchemaVersion: "anibt-anime-groups-v1", Groups: groups,
+			Complete: true, CompletenessEvidence: "anibt-entry-total-v1",
 		}}},
 		Connections: dispatcherTestConnections{{Kind: configurationdomain.ConnectionAniBT, Endpoint: "https://anibt.example", State: configurationdomain.ConnectionConfigured}},
 	}
@@ -704,6 +705,30 @@ func TestValidEmptyDiscoveryPersistsSnapshotAndRetainsLastGoodSources(t *testing
 	if _, err := dispatcher.dispatchGroupDiscovery(ctx); err != nil {
 		t.Fatal(err)
 	}
+	readPublished := func() (selection string, success time.Time, snapshots int) {
+		t.Helper()
+		if err := db.QueryRowContext(ctx, `SELECT
+		    (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id)::text FROM provider_group_selections s),
+		    last_success_at, (SELECT count(*) FROM provider_group_snapshots)
+		    FROM provider_group_refresh_health WHERE provider='anibt' AND catalog_entry_ref='123'`).Scan(&selection, &success, &snapshots); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	selectionBefore, successBefore, snapshotsBefore := readPublished()
+	reader := dispatcher.GroupReaders["anibt"]
+	dispatcher.GroupReaders["anibt"] = staticDispatcherGroupReader{result: providerdomain.GroupReadResult{
+		Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", SchemaVersion: "anibt-anime-groups-v1",
+		CompletenessEvidence: "anibt-entry-total-v1", ObservedAt: successBefore.Add(time.Minute),
+	}}
+	if counts, err := dispatcher.dispatchGroupDiscovery(ctx); err != nil || counts.errors != 1 {
+		t.Fatalf("incomplete discovery counts=%+v err=%v", counts, err)
+	}
+	if selection, success, snapshots := readPublished(); selection != selectionBefore || !success.Equal(successBefore) || snapshots != snapshotsBefore {
+		t.Fatal("incomplete discovery replaced the snapshot, selections, or last success")
+	}
+	dispatcher.GroupReaders["anibt"] = reader
+
 	response = `{"ok":true,"data":{"bgmId":123,"total":0,"groups":[]}}`
 	if _, err := dispatcher.dispatchGroupDiscovery(ctx); err != nil {
 		t.Fatal(err)

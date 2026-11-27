@@ -5,6 +5,7 @@ import (
 	"time"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	providerdomain "bansoko/internal/provider/domain"
 )
 
 type SnapshotStatus string
@@ -269,6 +270,7 @@ type ProviderGroupDiscoveryGroup struct {
 }
 
 type ProviderGroupDiscoveryResult struct {
+	UpstreamStatus   providerdomain.Status
 	Groups           []ProviderGroupDiscoveryGroup
 	ObservedAt       time.Time
 	Provider         string

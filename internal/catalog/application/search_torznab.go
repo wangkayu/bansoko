@@ -75,7 +75,7 @@ func (e *TorznabError) Error() string {
 func (e *TorznabError) Unwrap() error { return ErrTorznabError }
 
 // ProviderRateLimited is a typed upstream refusal that names how long a caller
-// should wait. Torznab answers 429/503 with Retry-After; the duration travels
+// should wait. When Torznab answers 429/503, the duration travels
 // with the error so the transport can answer with the same header instead of
 // inventing a retry time.
 type ProviderRateLimited struct {

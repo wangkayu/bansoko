@@ -989,7 +989,9 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/automation/application/dispatcher.go"
+      "internal/automation/application/dispatcher.go",
+      "internal/catalog/application/group_refresh.go",
+      "internal/catalog/application/group_observation.go"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
