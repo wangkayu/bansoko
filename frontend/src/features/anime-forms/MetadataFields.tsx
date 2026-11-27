@@ -1457,18 +1457,25 @@ function MetadataMatchDialog({
                 (provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.detailsStatus === "available" && (candidate.seasons?.length ?? 0) > 0)
               );
               return (
-                <div key={`${candidate.provider}:${candidate.mediaKind ?? "subject"}:${candidate.workId}`} role="presentation" className="metadata-match-option-wrap">
+                // The wrapper carries the card frame and holds the option button and the EP
+                // action as siblings: a button cannot nest inside the option button, and
+                // flowing them side by side keeps every line of text clear of the action
+                // instead of reserving a guessed padding for it.
+                <div key={`${candidate.provider}:${candidate.mediaKind ?? "subject"}:${candidate.workId}`} role="presentation" className={active ? "metadata-match-option-wrap metadata-match-option-wrap-active" : "metadata-match-option-wrap"}>
                   <button
                     type="button"
                     role="option"
                     aria-selected={active}
                     onClick={() => pick(candidate)}
-                    className={active ? "metadata-match-option metadata-match-option-active" : "metadata-match-option"}
+                    className="metadata-match-option"
                   >
                     <CandidatePoster url={candidate.posterUrl} />
                     <span className="metadata-match-option-content">
-                      <span className="metadata-match-title">
-                        {candidate.title}
+                      <span className="metadata-match-head">
+                        <span className="metadata-match-title">
+                          {candidate.title}
+                        </span>
+                        {active && <Check className="metadata-match-selected-icon" aria-hidden="true" />}
                       </span>
                       {candidate.originalTitle && (
                         <span className="metadata-match-original-title">
@@ -1483,7 +1490,6 @@ function MetadataMatchDialog({
                           : ""}
                       </span>
                     </span>
-                    {active && <Check className="metadata-match-selected-icon" />}
                   </button>
                   {canBrowseEpisodes && (
                     <Button
@@ -1497,7 +1503,7 @@ function MetadataMatchDialog({
                       }}
                     >
                       <ListOrdered aria-hidden="true" />
-                      {t("forms.episodeListAction")}
+                      <span className="metadata-match-episodes-label">{t("forms.episodeListAction")}</span>
                     </Button>
                   )}
                 </div>

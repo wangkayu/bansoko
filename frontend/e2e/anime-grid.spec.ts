@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { workspaceConfiguration } from "../src/features/workspace/configuration";
 import type {
@@ -1109,6 +1109,30 @@ async function expectInsideViewport(page: Page, selector: string) {
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+// Two boxes overlap when their interiors intersect; touching edges do not count.
+function overlaps(a: Box, b: Box) {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+async function boxOf(locator: Locator): Promise<Box> {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+}
+
+// A line either fits its box or clips what does not fit (overflow hidden / ellipsis). A line that
+// merely overflows paints over its neighbour column and grows the container's scroll width, which
+// is exactly the phone bug this guards against.
+async function expectClippedOrFitting(locator: Locator) {
+  expect(await locator.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const clips = style.overflowX !== "visible" || style.textOverflow === "ellipsis";
+    return clips || el.scrollWidth <= el.clientWidth + 1;
+  })).toBe(true);
 }
 
 async function enterApp(page: Page) {
@@ -2622,15 +2646,17 @@ test.describe("AnimeGrid", () => {
     await expect(match.getByRole("button", { name: "确认匹配", exact: true, includeHidden: true })).toBeDisabled();
     const entry = match.getByRole("button", { name: "浏览星际邮差艾拉的 EP 列表", exact: true });
     await expect(entry).toBeVisible();
-    const cardBox = await option.boundingBox();
-    const entryBox = await entry.boundingBox();
-    expect(cardBox).not.toBeNull();
-    expect(entryBox).not.toBeNull();
-    expect(entryBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
-    expect(entryBox!.y).toBeGreaterThanOrEqual(cardBox!.y);
-    expect(entryBox!.x + entryBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
-    expect(entryBox!.y + entryBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height + 1);
-    if (testInfo.project.name === "mobile") expect(entryBox!.height).toBeGreaterThanOrEqual(44);
+    // The card wrapper owns the frame and the option (text) area and the EP action are siblings
+    // inside it, so the action never covers a title, original title or meta line.
+    const cardBox = await boxOf(match.locator(".metadata-match-option-wrap").first());
+    const optionBox = await boxOf(option);
+    const entryBox = await boxOf(entry);
+    expect(optionBox.x).toBeGreaterThanOrEqual(cardBox.x);
+    expect(optionBox.y).toBeGreaterThanOrEqual(cardBox.y);
+    expect(entryBox.x + entryBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+    expect(entryBox.y + entryBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 1);
+    expect(overlaps(optionBox, entryBox)).toBe(false);
+    if (testInfo.project.name === "mobile") expect(entryBox.height).toBeGreaterThanOrEqual(44);
 
     await entry.click();
     const browser = page.getByRole("dialog", { name: "EP 列表", exact: true });
@@ -2661,6 +2687,91 @@ test.describe("AnimeGrid", () => {
     await expect(reopened).toBeHidden();
     await expect(entry).toBeFocused();
     await expect(applySeason).toContainText("S2 · 第二季");
+  });
+
+  test("keeps a long candidate title clear of the EP action and the selected mark", async ({ page }, testInfo) => {
+    await enterApp(page);
+    // The reported phone case: a long localized title, a long Japanese original title and a
+    // meta line, with both the EP action and the selected mark on the card.
+    const title = "爱书的下克上：为了成为图书管理员不择手段！";
+    const originalTitle = "本好きの下剋上 司書になるためには手段を選んでいられません";
+    await mockCandidateSearch(page, [{
+      provider: "tmdb",
+      provider_work_id: "990001",
+      title,
+      original_title: originalTitle,
+      media_kind: "tv",
+      details_status: "available",
+      year: 2019,
+      seasons: [{ season_number: 2, name: "第二季", episode_count: 12, air_date: "2020-04-05", is_special: false }],
+      suggested_season: 2,
+      score: 0.9,
+    }]);
+    await mockEpisodeRoute(page, "/api/v1/metadata/tmdb/works/990001/seasons/2/episodes", {
+      season: 2,
+      episodes: [
+        { episode: 1024, title: "为了成为图书管理员不择手段的一集，标题长到必须换行显示", air_date: "2020-04-05" },
+        ...episodeRows(2, 2020),
+      ],
+    });
+
+    const card = await openProvider(page, "Mikan");
+    const dialog = await openConfigFromCard(page, card);
+    await dialog.getByRole("button", { name: "匹配 TMDB", exact: true }).click();
+    const match = page.getByRole("dialog", { name: "匹配 TMDB 条目", exact: true, includeHidden: true });
+    await match.getByRole("button", { name: "查询", exact: true }).click();
+    // The phone project runs the narrowest common phone width, so the tight case is proven.
+    if (testInfo.project.name === "mobile") await page.setViewportSize({ width: 375, height: 812 });
+
+    const option = match.getByRole("option", { name: /爱书的下克上/, includeHidden: true });
+    await expect(option).toBeVisible();
+    const entry = match.getByRole("button", { name: `浏览${title}的 EP 列表`, exact: true });
+    await expect(entry).toBeVisible();
+    const cardWrap = match.locator(".metadata-match-option-wrap").first();
+    const cardBox = await boxOf(cardWrap);
+    const optionBox = await boxOf(option);
+    const entryBox = await boxOf(entry);
+    // The action owns a column beside the text area: zero overlap, not a reserved padding.
+    expect(overlaps(optionBox, entryBox)).toBe(false);
+    expect(entryBox.x).toBeGreaterThanOrEqual(optionBox.x + optionBox.width);
+    expect(entryBox.x + entryBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+    if (testInfo.project.name === "mobile") {
+      expect(entryBox.height).toBeGreaterThanOrEqual(44);
+      expect(entryBox.width).toBeGreaterThanOrEqual(44);
+    }
+    for (const selector of [".metadata-match-title", ".metadata-match-original-title", ".metadata-match-meta"]) {
+      const line = match.locator(selector).first();
+      await expect(line).toBeVisible();
+      expect(overlaps(await boxOf(line), entryBox)).toBe(false);
+      await expectClippedOrFitting(line);
+    }
+    // Neither the candidate list nor the page grows a horizontal scrollbar.
+    expect(await match.locator(".metadata-match-candidates").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await option.click();
+    const mark = match.locator(".metadata-match-selected-icon");
+    await expect(mark).toBeVisible();
+    const markBox = await boxOf(mark);
+    expect(overlaps(markBox, await boxOf(match.locator(".metadata-match-title").first()))).toBe(false);
+    expect(overlaps(markBox, entryBox)).toBe(false);
+    expect(markBox.x + markBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+
+    // The EP list holds the same extremes: a 4-digit episode number and a long episode title.
+    await entry.click();
+    const browser = page.getByRole("dialog", { name: "EP 列表", exact: true });
+    await expect(browser.locator(".metadata-episode-row")).toHaveCount(3);
+    await expectInsideViewport(page, ".metadata-episode-browser");
+    expect(await browser.locator(".metadata-episode-scroll").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    const longRow = browser.locator(".metadata-episode-row").first();
+    const numberBox = await boxOf(longRow.locator(".metadata-episode-number"));
+    const titleCellBox = await boxOf(longRow.locator(".metadata-episode-title-cell"));
+    const dateBox = await boxOf(longRow.locator(".metadata-episode-date"));
+    expect(overlaps(numberBox, titleCellBox)).toBe(false);
+    expect(overlaps(titleCellBox, dateBox)).toBe(false);
+    await expectClippedOrFitting(longRow.locator(".metadata-episode-number"));
+    await expectClippedOrFitting(longRow.locator(".metadata-episode-title-cell"));
+    await expectClippedOrFitting(longRow.locator(".metadata-episode-date"));
   });
 
   test("browses a Bangumi candidate's main episodes and specials without a season picker", async ({ page }) => {

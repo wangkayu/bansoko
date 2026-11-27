@@ -334,6 +334,51 @@ describe("MetadataMatchDialog", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("候选卡片把 EP 列表动作放在选项按钮之外，长标题、原名与选中标记各自占位", async () => {
+    // Long CJK titles are the case that used to overflow the card: the action button must be a
+    // sibling of the option button (a button may never nest), so no text line can run under it.
+    const longCandidate: MetadataCandidate = {
+      provider: "tmdb",
+      workId: "990001",
+      title: "爱书的下克上：为了成为图书管理员不择手段！",
+      originalTitle: "本好きの下剋上 司書になるためには手段を選んでいられません",
+      year: 2019,
+      mediaKind: "tv",
+      detailsStatus: "available",
+      seasons: [{ seasonNumber: 2, name: "第二季", episodeCount: 12, airDate: "2020-04-05", isSpecial: false }],
+      suggestedSeason: 2,
+    };
+    const episodeLoader = vi.fn<MetadataEpisodeLoader>().mockResolvedValue([]);
+    render(<Controlled searcher={searcherReturning([longCandidate])} episodeLoader={episodeLoader} />);
+    clickMatch("tmdb");
+    const matchDialog = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+    fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.search") }));
+
+    const option = await within(matchDialog).findByRole("option", { name: /爱书的下克上/ });
+    // Nothing focusable nests inside the option: the EP action is its sibling in the card.
+    expect(within(option).queryByRole("button")).not.toBeInTheDocument();
+    const card = option.parentElement!;
+    expect(card).toHaveClass("metadata-match-option-wrap");
+    const action = within(card).getByRole("button", { name: t("forms.browseCandidateEpisodes", { title: longCandidate.title }) });
+    expect(action).toHaveClass("metadata-match-episodes-action");
+    expect(within(action).getByText(t("forms.episodeListAction"))).toHaveClass("metadata-match-episodes-label");
+
+    // Each text line is its own element, so the stylesheet can clamp or ellipsize them apart.
+    expect(within(option).getByText(longCandidate.title)).toHaveClass("metadata-match-title");
+    expect(within(option).getByText(longCandidate.originalTitle!)).toHaveClass("metadata-match-original-title");
+    expect(within(option).getByText(/2019/)).toHaveClass("metadata-match-meta");
+    expect(option.querySelector(".metadata-match-selected-icon")).toBeNull();
+
+    // The selected mark joins the title row instead of being laid over the title text.
+    fireEvent.click(option);
+    expect(option).toHaveAttribute("aria-selected", "true");
+    expect(card).toHaveClass("metadata-match-option-wrap-active");
+    const head = option.querySelector(".metadata-match-head")!;
+    expect(head.querySelector(".metadata-match-title")).toHaveTextContent(longCandidate.title);
+    expect(head.querySelector(".metadata-match-selected-icon")).not.toBeNull();
+    expect(action).toBeInTheDocument();
+  });
+
   it("BGM 直接浏览条目 EP，按正片与 SP 分组且没有季度选择", async () => {
     const onChange = vi.fn();
     const episodeLoader = vi.fn(async (_work: Parameters<MetadataEpisodeLoader>[0], _season?: number) => [

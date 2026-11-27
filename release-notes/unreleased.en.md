@@ -18,6 +18,7 @@
 - Library scans recognize movies without episode numbers, and importing a movie uses the movie naming rules to build its file path.
 - Movie subscriptions show “Waiting for import” until the file enters the library. After import, they show 1/1 with a full progress bar and appear under “Completed” in bulk management.
 - Auto Search in the metadata dialog now uses the title in the search box. It preselects the suggested season when available and leaves the binding unchanged until you confirm.
+- Candidate cards in the metadata match dialog now use separate columns: long titles and original titles clip inside the card instead of overflowing sideways or sitting under the EP list button and the selected mark.
 
 ## Important
 
