@@ -5,11 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"bansoko/internal/download/domain"
-	"bansoko/internal/filemaintenance"
 	"bansoko/internal/postprocessing/naming"
 )
 
@@ -19,35 +20,38 @@ func (p fakeRecognitionPolicy) UnclassifiedRoute(context.Context) (string, error
 	return p.route, nil
 }
 
-// fakeRecognitionRenderer stands in for the naming renderer when a test needs
-// a matched render (the real one reads the anime from the database).
-type fakeRecognitionRenderer struct {
-	inputs []filemaintenance.RecognitionRenderInput
-	render func(filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error)
+type fakeRecognitionAnimeFacts struct {
+	loads []string
+	fills int
 }
 
-func (f *fakeRecognitionRenderer) RenderRecognition(_ context.Context, input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-	f.inputs = append(f.inputs, input)
-	return f.render(input)
+func (f *fakeRecognitionAnimeFacts) LoadAnimeFacts(_ context.Context, id string) (naming.AnimeNamingFacts, error) {
+	f.loads = append(f.loads, id)
+	return naming.AnimeNamingFacts{ID: id, Title: "Show"}, nil
 }
 
-func (f *fakeRecognitionRenderer) RenderRecognitionSuffix(_ context.Context, input filemaintenance.RecognitionRenderInput) (string, error) {
-	f.inputs = append(f.inputs, input)
-	return "sub", nil
+func (f *fakeRecognitionAnimeFacts) FillWorkTitles(context.Context, *naming.AnimeNamingFacts) error {
+	f.fills++
+	return nil
 }
 
 type fakeRecognitionMediaProber struct {
+	mu    sync.Mutex
 	facts map[string]domain.MediaFacts
 	err   error
 	calls []string
 }
 
 func (f *fakeRecognitionMediaProber) Probe(_ context.Context, path string) (domain.MediaFacts, error) {
+	f.mu.Lock()
 	f.calls = append(f.calls, path)
-	if f.err != nil {
-		return domain.MediaFacts{}, f.err
+	err := f.err
+	facts := f.facts[path]
+	f.mu.Unlock()
+	if err != nil {
+		return domain.MediaFacts{}, err
 	}
-	return f.facts[path], nil
+	return facts, nil
 }
 
 // recognitionRules names files with the given absolute directory: a video keeps
@@ -72,7 +76,7 @@ func recognitionRules(directory string) naming.NamingRules {
 func newRecognitionFixture(t *testing.T, policy RecognitionPolicy) commandFixture {
 	t.Helper()
 	f := newCommandFixture(t)
-	f.service.SetRecognition(filemaintenance.NewNamingTargetRenderer(nil, nil), nil, policy)
+	f.service.SetRecognition(nil, nil, policy)
 	return f
 }
 
@@ -440,15 +444,92 @@ func TestRecognitionSubmitIsIdempotentAndGuardsThePlan(t *testing.T) {
 	}
 }
 
+func TestRecognitionReplaysLegacySubmissionAfterSourceDisappears(t *testing.T) {
+	ctx := context.Background()
+	f := newRecognitionFixture(t, nil)
+	submit := SubmitRecognitionRequest{
+		RecognitionRequest: RecognitionRequest{
+			Paths: []string{"/old/ep.mkv"},
+			Match: &RecognitionMatch{ManagedAnimeID: " anime-1 ", Episode: intPointer(3)},
+		},
+		IdempotencyKey: "legacy", ExpectedPlanDigest: "legacy-plan", Conflict: RecognitionConflictBlock,
+		LegacyLoadRuntimeFacts: true,
+	}
+	// This shape records the digest as written before r2 and episode ranges.
+	stored := requestDigest(struct {
+		Paths            []string
+		ParserID         string
+		ParserConfig     string
+		Naming           naming.NamingRules
+		LoadRuntimeFacts bool
+		Match            struct {
+			Anime   string
+			Season  *int
+			Episode *int
+			Offset  int
+			Draft   recognitionAnimeDigest
+		}
+		Overrides []RecognitionEpisodeOverride
+		Conflict  RecognitionConflictChoice
+	}{
+		Paths: submit.Paths, LoadRuntimeFacts: true, Conflict: RecognitionConflictBlock,
+		Match: struct {
+			Anime   string
+			Season  *int
+			Episode *int
+			Offset  int
+			Draft   recognitionAnimeDigest
+		}{Anime: " anime-1 ", Episode: intPointer(3)},
+	})
+	f.commands.byKey = map[string]UserOperation{"legacy:old": {ID: "old", Operation: UserRename}}
+	f.commands.digests = map[string]string{"legacy:old": stored}
+	result, err := f.service.SubmitRecognition(ctx, submit)
+	if err != nil || len(result.Operations) != 1 || result.Operations[0].ID != "old" || len(f.commands.admitted) != 0 {
+		t.Fatalf("legacy replay=%+v, admissions=%v, error=%v", result, f.commands.admitted, err)
+	}
+	submit.LegacyLoadRuntimeFacts = false
+	_, err = f.service.SubmitRecognition(ctx, submit)
+	mustCode(t, err, CodeIdempotencyConflict)
+	submit.IdempotencyKey = "unsubmitted"
+	_, err = f.service.SubmitRecognition(ctx, submit)
+	mustCode(t, err, CodeRecognitionPlanChanged)
+}
+
+func TestRecognitionEpisodeEndChangesBothDigests(t *testing.T) {
+	ctx := context.Background()
+	f := newRecognitionFixture(t, nil)
+	video := f.abs("Loose/Show - 01.mkv")
+	writeFile(t, video, 4)
+	request := recognitionRequest(video)
+	request.Naming.TV.VideoFilenameTemplate = "constant.mkv"
+	request.Match = &RecognitionMatch{Episode: intPointer(3), EpisodeEnd: intPointer(4)}
+	first, err := f.service.PreviewRecognition(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := recognitionRequestDigest(SubmitRecognitionRequest{RecognitionRequest: request})
+	request.Match.EpisodeEnd = intPointer(5)
+	second, err := f.service.PreviewRecognition(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Rows[0].TargetName != second.Rows[0].TargetName || first.PlanDigest == second.PlanDigest ||
+		before == recognitionRequestDigest(SubmitRecognitionRequest{RecognitionRequest: request}) {
+		t.Fatalf("range change did not produce distinct digests: %s, %s", first.PlanDigest, second.PlanDigest)
+	}
+	_, err = f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{
+		RecognitionRequest: request, ExpectedPlanDigest: first.PlanDigest, IdempotencyKey: "range-change",
+	})
+	mustCode(t, err, CodeRecognitionPlanChanged)
+	if len(f.commands.admitted) != 0 {
+		t.Fatalf("admissions = %v", f.commands.admitted)
+	}
+}
+
 func TestRecognitionManualEpisodeReachesTheRender(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{
-			Directory: input.Rules.TV.DirectoryTemplate,
-			Filename:  "ep-" + input.Episode + "." + input.EpisodeSource + "." + input.FileName,
-		}, nil
-	}}
-	f.service.SetRecognition(renderer, fakeMatchAnimes{"anime-1": {ID: "anime-1", Title: "Show"}}, fakeRecognitionPolicy{})
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	anime := &fakeRecognitionAnimeFacts{}
+	f.service.SetRecognition(anime, nil, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/mystery.mkv"), 4)
 	request := RecognitionRequest{
@@ -456,6 +537,7 @@ func TestRecognitionManualEpisodeReachesTheRender(t *testing.T) {
 		Naming: recognitionRules(f.abs("Loose")),
 		Match:  &RecognitionMatch{ManagedAnimeID: "anime-1", Season: intPointer(3), Episode: intPointer(7), Offset: 1},
 	}
+	request.Naming.TV.VideoFilenameTemplate = "${anime.title}-${anime.season}-${ep.number}-${ep.source}.${file.ext}"
 	preview, err := f.service.PreviewRecognition(ctx, request)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
@@ -464,23 +546,13 @@ func TestRecognitionManualEpisodeReachesTheRender(t *testing.T) {
 	if row.Disposition != RecognitionRename || row.Episode == nil || row.Episode.Number != "8" || row.Episode.Source != "manual" {
 		t.Fatalf("row = %+v, episode = %+v", row, row.Episode)
 	}
-	if len(renderer.inputs) == 0 || renderer.inputs[0].Episode != "8" || renderer.inputs[0].EpisodeSource != "manual" || renderer.inputs[0].ManagedAnimeID != "anime-1" {
-		t.Fatalf("render input = %+v", renderer.inputs)
-	}
-	if renderer.inputs[0].Season == nil || *renderer.inputs[0].Season != 3 {
-		t.Fatalf("season = %v", renderer.inputs[0].Season)
+	if row.TargetName != "Show-3-8-manual.mkv" || len(anime.loads) != 1 || anime.loads[0] != "anime-1" {
+		t.Fatalf("target = %q, anime loads = %v", row.TargetName, anime.loads)
 	}
 }
 
 func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{
-			Directory: input.Rules.TV.DirectoryTemplate,
-			Filename:  input.EpisodeDisplay + "-" + input.FileName,
-		}, nil
-	}}
-	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
 	first := f.abs("Loose/Show - 01.mkv")
 	second := f.abs("Loose/Show - 02.mkv")
 	third := f.abs("Loose/Show - 03.mkv")
@@ -490,6 +562,8 @@ func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T
 	writeFile(t, third, 4)
 	writeFile(t, subtitle, 4)
 	request := recognitionRequest(first, second, third, subtitle)
+	request.Naming.TV.VideoFilenameTemplate = "${anime.season}-${ep.display}-${fn}"
+	request.Naming.SubtitleSuffixTemplate = "sub-${anime.season}-${ep.number}"
 	request.Match = &RecognitionMatch{Season: intPointer(2), Offset: 10}
 	request.Overrides = []RecognitionEpisodeOverride{
 		{Path: "  " + first + "  ", Season: intPointer(0), Episode: 7},
@@ -502,38 +576,23 @@ func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T
 	}
 	firstRow := recognitionRow(t, preview, "Show - 01.mkv")
 	if firstRow.Episode == nil || firstRow.Episode.Raw != "1" || firstRow.Episode.Number != "7" ||
-		firstRow.Episode.Offset != 0 || firstRow.Episode.Source != "manual" || firstRow.TargetName != "7-Show - 01.mkv" {
+		firstRow.Episode.Offset != 0 || firstRow.Episode.Source != "manual" || firstRow.TargetName != "0-7-Show - 01.mkv" {
 		t.Fatalf("overridden video = %+v", firstRow)
 	}
 	secondRow := recognitionRow(t, preview, "Show - 02.mkv")
 	if secondRow.Episode == nil || secondRow.Episode.Number != "12" || secondRow.Episode.Offset != 10 ||
-		secondRow.Episode.Source != "file_parser" || secondRow.TargetName != "12-Show - 02.mkv" {
+		secondRow.Episode.Source != "file_parser" || secondRow.TargetName != "2-12-Show - 02.mkv" {
 		t.Fatalf("unoverridden video = %+v", secondRow)
 	}
 	subtitleRow := recognitionRow(t, preview, "Show - 01.zh.ass")
 	if subtitleRow.Episode == nil || subtitleRow.Episode.Number != "7" || subtitleRow.Episode.Offset != 0 ||
-		subtitleRow.TargetName != "7-Show - 01.sub.ass" {
+		subtitleRow.TargetName != "0-7-Show - 01.sub-0-7.ass" {
 		t.Fatalf("bound subtitle = %+v", subtitleRow)
-	}
-	seasons := map[string]*int{}
-	offsets := map[string]int{}
-	for _, input := range renderer.inputs {
-		seasons[input.FileName] = input.Season
-		offsets[input.FileName] = input.EpisodeOffset
-	}
-	for _, name := range []string{"Show - 01.mkv", "Show - 01.zh.ass"} {
-		if seasons[name] == nil || *seasons[name] != 0 || offsets[name] != 0 {
-			t.Fatalf("%s did not inherit the explicit zero season and final episode: season=%v offset=%d", name, seasons[name], offsets[name])
-		}
-	}
-	if seasons["Show - 02.mkv"] == nil || *seasons["Show - 02.mkv"] != 2 || offsets["Show - 02.mkv"] != 10 {
-		t.Fatalf("unoverridden render lost the main settings: %+v", renderer.inputs)
 	}
 	thirdRow := recognitionRow(t, preview, "Show - 03.mkv")
 	if thirdRow.Episode == nil || thirdRow.Episode.Number != "5" || thirdRow.Episode.NumberEnd != "9" ||
-		thirdRow.Episode.Source != "manual" || thirdRow.Episode.Offset != 0 || thirdRow.TargetName != "5-9-Show - 03.mkv" ||
-		seasons["Show - 03.mkv"] == nil || *seasons["Show - 03.mkv"] != 2 {
-		t.Fatalf("manual range must keep its source, end and inherited season: row=%+v season=%v", thirdRow, seasons["Show - 03.mkv"])
+		thirdRow.Episode.Source != "manual" || thirdRow.Episode.Offset != 0 || thirdRow.TargetName != "2-5-9-Show - 03.mkv" {
+		t.Fatalf("manual range must keep its source, end and inherited season: %+v", thirdRow)
 	}
 }
 
@@ -618,109 +677,115 @@ func TestRecognitionEpisodeOverridesJoinCanonicalDigests(t *testing.T) {
 	}
 }
 
-func TestRecognitionRuntimeFactsAreExplicitAndPerVideo(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{
-			Directory: input.Rules.TV.DirectoryTemplate,
-			Filename:  input.Media.Resolution + "-" + input.FileName,
-		}, nil
-	}}
-	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
+func TestRecognitionRuntimeFactsAreDemandDrivenAndCached(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{route: "route"})
 	ctx := context.Background()
 	first := f.abs("Loose/Show - 01.mkv")
 	second := f.abs("Loose/Show - 02.mkv")
 	subtitle := f.abs("Loose/Show - 01.zh.ass")
-	writeFile(t, first, 4)
-	writeFile(t, second, 4)
-	writeFile(t, subtitle, 4)
+	for _, path := range []string{first, second, subtitle} {
+		writeFile(t, path, 4)
+	}
 	prober := &fakeRecognitionMediaProber{facts: map[string]domain.MediaFacts{
-		first:  {Resolution: "1080p", VideoCodec: "h264", Container: "mkv"},
-		second: {Resolution: "2160p", VideoCodec: "hevc", HDR: "hdr10"},
+		first:  {Resolution: "1080p", VideoCodec: "h264"},
+		second: {Resolution: "2160p"},
 	}}
 	f.service.SetRecognitionMediaProber(prober)
 	request := recognitionRequest(first, second, subtitle)
-
-	if _, err := f.service.PreviewRecognition(ctx, request); err != nil {
-		t.Fatalf("default preview: %v", err)
+	request.Naming.Movie.VideoFilenameTemplate = "${media.resolution}-${fn}"
+	request.Naming.Unknown.VideoFilenameTemplate = "${media.resolution}-${fn}"
+	if _, err := f.service.PreviewRecognition(ctx, request); err != nil || len(prober.calls) != 0 {
+		t.Fatalf("unselected templates: probes=%v, err=%v", prober.calls, err)
 	}
-	if len(prober.calls) != 0 {
-		t.Fatalf("default preview probed media: %v", prober.calls)
-	}
-	request.LoadRuntimeFacts = true
+	unknown := f.abs("Loose/mystery.mkv")
+	writeFile(t, unknown, 4)
+	request.Paths = append(request.Paths, unknown)
+	request.Naming.Unknown.VideoFilenameTemplate = "${fn}"
+	request.Naming.TV.VideoFilenameTemplate = "${media.resolution}-${fn}"
+	request.Naming.SubtitleSuffixTemplate = "${media.video_codec}"
 	preview, err := f.service.PreviewRecognition(ctx, request)
-	if err != nil {
-		t.Fatalf("runtime preview: %v", err)
+	if err != nil || len(prober.calls) != 2 || len(preview.RuntimeFacts.MediaProbe) != 2 {
+		t.Fatalf("preview=%+v, probes=%v, err=%v", preview, prober.calls, err)
 	}
-	if len(prober.calls) != 2 {
-		t.Fatalf("runtime probes = %v", prober.calls)
+	if row := recognitionRow(t, preview, "Show - 01.zh.ass"); row.TargetName != "1080p-Show - 01.h264.ass" || row.SizeBytes != 4 {
+		t.Fatalf("subtitle did not inherit its video's media facts: %+v", row)
 	}
-	if got := recognitionRow(t, preview, "Show - 01.mkv").TargetName; got != "1080p-Show - 01.mkv" {
-		t.Fatalf("first target = %q", got)
+	request.DisableRuntimeFacts = true
+	cached, err := f.service.PreviewRecognition(ctx, request)
+	if err != nil || cached.PlanDigest != preview.PlanDigest || len(prober.calls) != 2 {
+		t.Fatalf("cache-only preview=%+v, probes=%v, err=%v", cached, prober.calls, err)
 	}
-	if got := recognitionRow(t, preview, "Show - 02.mkv").TargetName; got != "2160p-Show - 02.mkv" {
-		t.Fatalf("second target = %q", got)
+	request.DisableRuntimeFacts = false
+	request.RefreshMedia = true
+	refreshed, err := f.service.PreviewRecognition(ctx, request)
+	wantCalls := []string{first, first, second, second}
+	slices.Sort(wantCalls)
+	gotCalls := append([]string(nil), prober.calls...)
+	slices.Sort(gotCalls)
+	if err != nil || refreshed.PlanDigest != preview.PlanDigest || !slices.Equal(gotCalls, wantCalls) ||
+		len(refreshed.RuntimeFacts.MediaProbe) != 2 ||
+		refreshed.RuntimeFacts.MediaProbe[0].Path != first ||
+		refreshed.RuntimeFacts.MediaProbe[1].Path != second {
+		t.Fatalf("refreshed preview=%+v, probes=%v, err=%v", refreshed, prober.calls, err)
 	}
-	var subtitleInput *filemaintenance.RecognitionRenderInput
-	for index := range renderer.inputs {
-		input := &renderer.inputs[index]
-		if input.FileName == "Show - 01.zh.ass" {
-			subtitleInput = input
-		}
-	}
-	if subtitleInput == nil || subtitleInput.Media.Resolution != "1080p" || subtitleInput.Media.VideoCodec != "h264" {
-		t.Fatalf("subtitle did not inherit its video's media facts: %+v", subtitleInput)
-	}
-}
-
-func TestRecognitionRuntimeFactsModeChangesThePlanDigest(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{Directory: input.Rules.TV.DirectoryTemplate, Filename: input.FileName}, nil
-	}}
-	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
-	f.service.SetRecognitionMediaProber(&fakeRecognitionMediaProber{})
-	path := f.abs("Loose/Show - 01.mkv")
-	writeFile(t, path, 4)
-	request := recognitionRequest(path)
-	plain, err := f.service.PreviewRecognition(context.Background(), request)
-	if err != nil {
-		t.Fatalf("plain preview: %v", err)
-	}
-	request.LoadRuntimeFacts = true
-	loaded, err := f.service.PreviewRecognition(context.Background(), request)
-	if err != nil {
-		t.Fatalf("loaded preview: %v", err)
-	}
-	if plain.PlanDigest == loaded.PlanDigest {
-		t.Fatal("plain and runtime plans must not share a digest")
+	request.RefreshMedia = false
+	_, err = f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{RecognitionRequest: request, ExpectedPlanDigest: preview.PlanDigest, IdempotencyKey: "runtime-cache", Conflict: RecognitionConflictBlock})
+	if err != nil || len(prober.calls) != 4 {
+		t.Fatalf("submit probes=%v, err=%v", prober.calls, err)
 	}
 }
 
 func TestRecognitionRuntimeProbeFailureBlocksTheRowAndSubmit(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{Directory: input.Rules.TV.DirectoryTemplate, Filename: input.FileName}, nil
-	}}
-	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
-	f.service.SetRecognitionMediaProber(&fakeRecognitionMediaProber{err: errors.New("probe failed")})
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	prober := &fakeRecognitionMediaProber{err: errors.New("probe failed")}
+	f.service.SetRecognitionMediaProber(prober)
 	path := f.abs("Loose/Show - 01.mkv")
 	writeFile(t, path, 4)
 	request := recognitionRequest(path)
-	request.LoadRuntimeFacts = true
+	directory := f.abs("Loose/New")
+	request.Naming.TV.DirectoryTemplate = directory
+	request.Naming.TV.VideoFilenameTemplate = "${media.resolution ? 'result' : 'empty'}.${file.ext}"
 	preview, err := f.service.PreviewRecognition(context.Background(), request)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
 	row := recognitionRow(t, preview, "Show - 01.mkv")
-	if row.Disposition != RecognitionError || len(row.Blockers) != 1 || row.Blockers[0].Code != RecognitionBlockerRuntimeFacts {
+	if row.Disposition != RecognitionError || row.TargetName != "result.mkv" || row.HasPlaceholder || len(preview.Conflicts) != 0 ||
+		len(row.Blockers) != 1 || row.Blockers[0].Code != RecognitionBlockerRuntimeFacts || strings.Join(row.Blockers[0].DiagnosticIDs, ",") != "media-1" {
 		t.Fatalf("row = %+v", row)
 	}
-	_, err = f.service.SubmitRecognition(context.Background(), SubmitRecognitionRequest{
-		IdempotencyKey: "runtime-failure", ExpectedPlanDigest: preview.PlanDigest,
-		RecognitionRequest: request, Conflict: RecognitionConflictBlock,
-	})
-	mustCode(t, err, CodeRecognitionNotRenderable)
+	for _, strategy := range []RecognitionConflictChoice{RecognitionConflictBlock, RecognitionConflictSkip, RecognitionConflictVersion, RecognitionConflictOverwrite} {
+		_, err = f.service.SubmitRecognition(context.Background(), SubmitRecognitionRequest{
+			IdempotencyKey: "runtime-failure", ExpectedPlanDigest: preview.PlanDigest,
+			RecognitionRequest: request, Conflict: strategy,
+		})
+		mustCode(t, err, CodeRecognitionNotRenderable)
+	}
+	if _, err := os.Stat(directory); !os.IsNotExist(err) || len(prober.calls) != 1 {
+		t.Fatalf("blocked submit touched directory or reread facts: stat=%v, probes=%v", err, prober.calls)
+	}
+	if len(f.commands.admitted) != 0 {
+		t.Fatalf("blocked preview admitted operations: %v", f.commands.admitted)
+	}
+
+	// An earlier ready token must also be refused when the rebuilt plan has
+	// blockers, even when the final rendered path is identical.
+	f.service.SetRecognitionMediaProber(&fakeRecognitionMediaProber{facts: map[string]domain.MediaFacts{path: {Resolution: "1080p"}}})
+	ready, err := f.service.PreviewRecognition(context.Background(), request)
+	if err != nil || !strings.HasPrefix(ready.PlanDigest, "r2.ready.") || ready.Rows[0].TargetPath != row.TargetPath {
+		t.Fatalf("ready preview = %+v, error = %v", ready, err)
+	}
+	f.service.SetRecognitionMediaProber(prober)
+	for _, strategy := range []RecognitionConflictChoice{RecognitionConflictBlock, RecognitionConflictSkip, RecognitionConflictVersion, RecognitionConflictOverwrite} {
+		_, err = f.service.SubmitRecognition(context.Background(), SubmitRecognitionRequest{
+			IdempotencyKey: "runtime-rebuild-failure", ExpectedPlanDigest: ready.PlanDigest,
+			RecognitionRequest: request, Conflict: strategy,
+		})
+		mustCode(t, err, CodeRecognitionNotRenderable)
+	}
+	if _, err := os.Stat(directory); !os.IsNotExist(err) || len(f.commands.admitted) != 0 || len(prober.calls) != 5 {
+		t.Fatalf("blocked rebuild: stat=%v, admissions=%v, probes=%v", err, f.commands.admitted, prober.calls)
+	}
 }
 
 func hasCode(err error, code string) bool {
@@ -731,14 +796,9 @@ func hasCode(err error, code string) bool {
 func intPointer(value int) *int { return &value }
 
 func TestRecognitionAnimeDraftReachesTheRender(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{
-			Directory: input.Rules.TV.DirectoryTemplate,
-			Filename:  "renamed." + input.FileName,
-		}, nil
-	}}
-	f.service.SetRecognition(renderer, fakeMatchAnimes{"anime-1": {ID: "anime-1", Title: "Show"}}, fakeRecognitionPolicy{})
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	anime := &fakeRecognitionAnimeFacts{}
+	f.service.SetRecognition(anime, nil, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
 	year := 2024
@@ -754,18 +814,13 @@ func TestRecognitionAnimeDraftReachesTheRender(t *testing.T) {
 			},
 		},
 	}
-	if _, err := f.service.PreviewRecognition(ctx, request); err != nil {
+	request.Naming.Movie.VideoFilenameTemplate = "${anime.title}-${anime.kind}-${anime.year}.${file.ext}"
+	preview, err := f.service.PreviewRecognition(ctx, request)
+	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
-	if len(renderer.inputs) == 0 || renderer.inputs[0].AnimeDraft == nil {
-		t.Fatalf("render input = %+v", renderer.inputs)
-	}
-	draft := renderer.inputs[0].AnimeDraft
-	if draft.Title != "Edited" || draft.MediaKind != "movie" || draft.Year == nil || *draft.Year != 2024 {
-		t.Fatalf("draft = %+v", draft)
-	}
-	if !draft.BGM || draft.BGMWorkID != "bgm-9" || !draft.TMDB || draft.TMDBWorkID != "42" || draft.TMDBMediaKind != "movie" || draft.TMDBSeason != 0 {
-		t.Fatalf("bindings = %+v", draft)
+	if row := preview.Rows[0]; row.TargetName != "Edited-movie-2024.mkv" || len(anime.loads) != 1 || anime.fills != 1 {
+		t.Fatalf("row=%+v, fact reads=%+v", row, anime)
 	}
 }
 
@@ -817,28 +872,15 @@ func TestRecognitionMatchFormsAreValidated(t *testing.T) {
 }
 
 func TestRecognitionDraftOnlyMatchReadsNoAnime(t *testing.T) {
-	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
-		return filemaintenance.RecognitionRendered{
-			Directory: input.Rules.TV.DirectoryTemplate,
-			Filename:  "renamed." + input.FileName,
-		}, nil
-	}}
-	// No matchAnimes at all: a draft-only match must not read one.
-	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
 	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
 	request.Match = &RecognitionMatch{Anime: &RecognitionAnimeDraft{Title: "Edited", MediaKind: "tv"}}
-	if _, err := f.service.PreviewRecognition(ctx, request); err != nil {
-		t.Fatalf("preview: %v", err)
-	}
-	if len(renderer.inputs) == 0 || renderer.inputs[0].ManagedAnimeID != "" {
-		t.Fatalf("render input = %+v", renderer.inputs)
-	}
-	draft := renderer.inputs[0].AnimeDraft
-	if draft == nil || draft.Title != "Edited" || draft.MediaKind != "tv" {
-		t.Fatalf("draft = %+v", draft)
+	request.Naming.TV.VideoFilenameTemplate = "${anime.title}-${anime.kind}.${file.ext}"
+	preview, err := f.service.PreviewRecognition(ctx, request)
+	if err != nil || preview.Rows[0].TargetName != "Edited-tv.mkv" {
+		t.Fatalf("preview=%+v, err=%v", preview, err)
 	}
 }
 

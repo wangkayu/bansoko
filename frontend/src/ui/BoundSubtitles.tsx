@@ -6,6 +6,7 @@ import { labelValue } from "../lib/i18n/format";
 import { subtitleFormat } from "../lib/boundSubtitles";
 import { Tooltip } from "./base";
 import { ReasonText } from "./ReasonText";
+import { TargetPathText, type TargetPlaceholderTone } from "./TargetPathText";
 
 // Video ↔ external-subtitle bindings in a file list: each bound subtitle is a
 // format badge (uppercase extension, side by side in file-list order) on the
@@ -109,7 +110,17 @@ function SubtitleBadge({ subtitle, state }: { subtitle: BoundSubtitleItem; state
 
 const DETAIL_META = "text-caption tw:m-0 tw:text-muted-foreground";
 
-function SubtitleDetail({ subtitle, state, showLanguage }: { subtitle: BoundSubtitleItem; state: BadgeState; showLanguage: boolean }) {
+function SubtitleDetail({
+  subtitle,
+  state,
+  showLanguage,
+  placeholderTone,
+}: {
+  subtitle: BoundSubtitleItem;
+  state: BadgeState;
+  showLanguage: boolean;
+  placeholderTone: TargetPlaceholderTone;
+}) {
   const size = subtitle.sizeBytes !== undefined && subtitle.sizeBytes !== null && subtitle.sizeBytes > 0 ? formatBytes(subtitle.sizeBytes) : undefined;
   return (
     <li className="tw:grid tw:min-w-0 tw:gap-0.5">
@@ -130,7 +141,9 @@ function SubtitleDetail({ subtitle, state, showLanguage }: { subtitle: BoundSubt
       )}
       {state === "placed" && (
         <>
-          <p className="text-caption break-anywhere tw:m-0" title={subtitle.target ?? undefined}>→ {subtitle.target}</p>
+          <p className="text-caption break-anywhere tw:m-0" title={subtitle.target ?? undefined}>
+            → {subtitle.target ? <TargetPathText value={subtitle.target} placeholderTone={placeholderTone} /> : null}
+          </p>
           {subtitle.targetNote && <p className={DETAIL_META}>{subtitle.targetNote}</p>}
         </>
       )}
@@ -158,6 +171,7 @@ export function BoundSubtitles({
   subtitles,
   videoExcluded = false,
   showLanguage = true,
+  placeholderTone = "neutral",
 }: {
   videoName: string;
   subtitles: readonly BoundSubtitleItem[];
@@ -165,6 +179,8 @@ export function BoundSubtitles({
   videoExcluded?: boolean;
   /** Show the language line; a page without language facts turns it off rather than claim the language is unknown. */
   showLanguage?: boolean;
+  /** Placeholder highlight tone for expanded subtitle target paths. */
+  placeholderTone?: TargetPlaceholderTone;
 }) {
   const [open, setOpen] = useState(false);
   const panelID = useId();
@@ -190,7 +206,15 @@ export function BoundSubtitles({
       </div>
       {open && (
         <ul id={panelID} className="tw:m-0 tw:ml-1.5 tw:grid tw:min-w-0 tw:list-none tw:gap-1.5 tw:border-l tw:border-border tw:py-0.5 tw:pl-3 tw:pr-0">
-          {subtitles.map((subtitle, index) => <SubtitleDetail key={subtitle.key} subtitle={subtitle} state={states[index]!} showLanguage={showLanguage} />)}
+          {subtitles.map((subtitle, index) => (
+            <SubtitleDetail
+              key={subtitle.key}
+              subtitle={subtitle}
+              state={states[index]!}
+              showLanguage={showLanguage}
+              placeholderTone={placeholderTone}
+            />
+          ))}
         </ul>
       )}
     </div>

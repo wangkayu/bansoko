@@ -86,7 +86,7 @@ func TestCatalogFieldsExistInProductionSampleContexts(t *testing.T) {
 			// Walk the template-visible object, so a field is checked under the
 			// name templates use rather than its Go struct name.
 			facts := renderFacts(ctx, 0)
-			object, err := profile.object(&facts, false)
+			object, err := profile.object(&facts, nil)
 			if err != nil {
 				t.Fatalf("sample %q context: %v", sample.Ref, err)
 			}

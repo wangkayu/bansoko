@@ -651,7 +651,7 @@ func runServe(args []string, probe bool) int {
 	})
 	metadataSearcher.SetEpisodeListLookup(candidateEpisodeLookup)
 	// B13 P1: the file manager's writes.
-	if err := wireFileManagerCommands(fileMaintenanceGraph, db, workStore, observabilityService, observabilityService, eventHub, reconciliationService, episodeTitleLookup); err != nil {
+	if err := wireFileManagerCommands(fileMaintenanceGraph, db, workStore, observabilityService, observabilityService, eventHub, reconciliationService, episodeTitleLookup, episodeTitleQueries); err != nil {
 		fatalStartup(runtimeLogger, "file manager commands failed", "file_manager_commands_failed")
 	}
 	automationGraph, err := initializeAutomationGraph(

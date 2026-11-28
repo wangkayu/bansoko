@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -181,7 +182,7 @@ WHERE source=$1 AND work_id=$2 AND season=$3 AND episode=$4`,
 // overwrite selects the positive-cache bypass store (the 刷新元数据 action):
 // known rows are rewritten too.
 func (c *PersistentCache) fetchShared(ctx context.Context, q cacheQuery, refresh, overwrite bool) (List, error) {
-	flightKey := fmt.Sprintf("cache\x00%s\x00%s\x00%d", q.Source, q.WorkID, q.Season)
+	flightKey := fmt.Sprintf("cache\x00%p\x00%s\x00%s\x00%d", c.DB, q.Source, q.WorkID, q.Season)
 	if refresh {
 		flightKey += "\x00bypass"
 	}
@@ -219,17 +220,17 @@ func (c *PersistentCache) fetchShared(ctx context.Context, q cacheQuery, refresh
 // row is never rewritten: the positive answer is the freeze point, even if a
 // refetched list would call it different or empty today.
 func (c *PersistentCache) store(ctx context.Context, q cacheQuery, list List) error {
-	return c.storeRows(ctx, q, list, false)
+	return c.storeRows(ctx, q, list, false, nil)
 }
 
 // storeOverwrite is the refresh store: every listed row is written over the
 // stored answer, a known row included. A title the provider no longer names
 // becomes a definite absent.
 func (c *PersistentCache) storeOverwrite(ctx context.Context, q cacheQuery, list List) error {
-	return c.storeRows(ctx, q, list, true)
+	return c.storeRows(ctx, q, list, true, nil)
 }
 
-func (c *PersistentCache) storeRows(ctx context.Context, q cacheQuery, list List, overwrite bool) error {
+func (c *PersistentCache) storeRows(ctx context.Context, q cacheQuery, list List, overwrite bool, additionalEpisodes []int) error {
 	type row struct {
 		Episode int    `json:"episode"`
 		State   string `json:"state"`
@@ -253,17 +254,11 @@ func (c *PersistentCache) storeRows(ctx context.Context, q cacheQuery, list List
 	}
 	// A requested episode the list never named is a definite negative: the
 	// store records it so the same request never repeats the fetch.
-	if !seen[q.Episode] {
-		add(q.Episode, "")
+	add(q.Episode, "")
+	for _, episode := range additionalEpisodes {
+		add(episode, "")
 	}
-	// Deterministic order keeps a retry's rows bit-for-bit comparable.
-	for i := 0; i < len(rows); i++ {
-		for j := i + 1; j < len(rows); j++ {
-			if rows[j].Episode < rows[i].Episode {
-				rows[i], rows[j] = rows[j], rows[i]
-			}
-		}
-	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Episode < rows[j].Episode })
 	payload, err := json.Marshal(rows)
 	if err != nil {
 		return fmt.Errorf("serialize episode title cache rows: %w", err)

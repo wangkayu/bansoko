@@ -5,12 +5,15 @@ import (
 	"database/sql"
 
 	artifactadapter "bansoko/internal/artifact/adapter"
+	"bansoko/internal/episodetitle/namingfacts"
 	"bansoko/internal/events"
 	"bansoko/internal/filemaintenance"
 	filemaintenancepolicy "bansoko/internal/filemaintenance/policy"
 	"bansoko/internal/filemanager"
 	filemanagerpersistence "bansoko/internal/filemanager/persistence"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/postprocessing/naming"
+	namingpersistence "bansoko/internal/postprocessing/naming/adapter/persistence"
 	reconciliationapplication "bansoko/internal/reconciliation/application"
 	"bansoko/internal/workitems"
 )
@@ -63,6 +66,7 @@ func wireFileManagerCommands(
 	hub *events.Hub,
 	scans scanSubmitter,
 	seasons filemanager.SeasonCatalog,
+	titles *namingfacts.Querier,
 ) error {
 	commands, err := filemanagerpersistence.NewCommands(db, workStore, activity, hub)
 	if err != nil {
@@ -76,13 +80,21 @@ func wireFileManagerCommands(
 	// B13 P2: a match renders through the same naming renderer; the season
 	// lists share the lookup and its cache.
 	graph.fileManager.SetMatch(graph.namingRenderer, reader, seasons)
-	// Recognition reuses the same naming renderer; an unrecognized video
-	// follows the instance unclassified-route policy.
-	graph.fileManager.SetRecognition(graph.namingRenderer, reader, fileManagerRecognitionPolicy{policies: graph.fileEffectPolicies})
+	graph.fileManager.SetRecognition(fileManagerRecognitionFacts{db: db}, titles, fileManagerRecognitionPolicy{policies: graph.fileEffectPolicies})
 	graph.fileManager.SetRecognitionMediaProber(artifactadapter.OSMediaProber{})
 	graph.userOperations.SetRecorder(recorder)
 	graph.userOperations.SetEventHub(hub)
 	return nil
+}
+
+type fileManagerRecognitionFacts struct{ db *sql.DB }
+
+func (f fileManagerRecognitionFacts) LoadAnimeFacts(ctx context.Context, animeID string) (naming.AnimeNamingFacts, error) {
+	return namingpersistence.LoadAnimeFacts(ctx, f.db, animeID)
+}
+
+func (f fileManagerRecognitionFacts) FillWorkTitles(ctx context.Context, facts *naming.AnimeNamingFacts) error {
+	return namingpersistence.FillWorkTitles(ctx, f.db, facts)
 }
 
 // fileManagerRecognitionPolicy reads the instance unclassified-route policy

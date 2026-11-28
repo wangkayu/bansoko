@@ -40,9 +40,11 @@ type Service struct {
 	matchAnimes   MatchAnimeReader
 	seasons       SeasonCatalog
 
-	recognition       RecognitionRenderer
-	recognitionMedia  RecognitionMediaProber
-	recognitionPolicy RecognitionPolicy
+	recognitionEnabled bool
+	recognitionFacts   RecognitionAnimeFacts
+	recognitionTitles  RecognitionEpisodeTitles
+	recognitionMedia   *recognitionMediaCache
+	recognitionPolicy  RecognitionPolicy
 }
 
 // AlignmentPolicy reports whether the effective file maintenance policy of

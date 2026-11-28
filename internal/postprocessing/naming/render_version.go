@@ -129,7 +129,7 @@ func (e *Engine) MissingRequiredFacts(required []string, ctx NamingContext) []st
 		return nil
 	}
 	facts := renderFacts(ctx, e.replay)
-	return sortedMissing(languageProfileOf().missing(required, &facts, false))
+	return sortedMissing(languageProfileOf().missing(required, &facts, nil))
 }
 
 // renderFacts projects ctx onto the fact set one render reads under the

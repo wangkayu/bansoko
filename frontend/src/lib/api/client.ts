@@ -249,9 +249,19 @@ export type FileManagerMatchRequest = Schema<"FileManagerMatchRequest">;
 export type FileManagerRecognitionParserKind = Schema<"FileManagerRecognitionParserKind">;
 export type FileManagerRecognitionParser = Schema<"FileManagerRecognitionParser">;
 export type FileManagerRecognitionMatch = Schema<"FileManagerRecognitionMatch">;
-export type FileManagerRecognitionRequest = Schema<"FileManagerRecognitionRequest">;
-export type FileManagerRecognitionSubmitRequest = Schema<"FileManagerRecognitionSubmitRequest">;
+export type FileManagerRecognitionWorkKey = Schema<"FileManagerRecognitionWorkKey">;
+export type FileManagerRecognitionTitleProvider = Schema<"FileManagerRecognitionTitleProvider">;
+export type FileManagerRecognitionRequest = Omit<Schema<"FileManagerRecognitionRequest">, "load_runtime_facts" | "refresh_media"> & {
+  load_runtime_facts?: boolean;
+  refresh_media?: boolean;
+};
+export type FileManagerRecognitionSubmitRequest = Omit<Schema<"FileManagerRecognitionSubmitRequest">, "load_runtime_facts"> & {
+  load_runtime_facts?: boolean;
+};
 export type FileManagerRecognitionPreview = Schema<"FileManagerRecognitionPreview">;
+export type FileManagerRecognitionRuntimeFacts = Schema<"FileManagerRecognitionRuntimeFacts">;
+export type FileManagerRecognitionMediaDiagnostic = Schema<"FileManagerRecognitionMediaDiagnostic">;
+export type FileManagerRecognitionTitleDiagnostic = Schema<"FileManagerRecognitionTitleDiagnostic">;
 export type FileManagerRecognitionRow = Schema<"FileManagerRecognitionRow">;
 export type FileManagerRecognitionEpisode = Schema<"FileManagerRecognitionEpisode">;
 export type FileManagerRecognitionDisposition = Schema<"FileManagerRecognitionDisposition">;

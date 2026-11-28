@@ -2922,7 +2922,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Admits the confirmed recognition plan as one batch of ordinary move/rename user file operations: the files stay detached, no placement or record is created, and a refusal anywhere admits nothing. The request passes back the preview's plan digest and its conflict choice: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles) where they are, and `version` gives each file the first free ` (N)` sibling (a versioned video's subtitles follow its new name). Nothing is ever overwritten. Unrendered rows are refused (FILE_MANAGER_RECOGNITION_NOT_RENDERABLE) and a changed plan (FILE_MANAGER_RECOGNITION_PLAN_CHANGED). A replay with the same Idempotency-Key and request returns the original batch. */
+        /** @description Admits the confirmed recognition plan as one batch of ordinary move/rename user file operations: the files stay detached, no placement or record is created, and a refusal anywhere admits nothing. The request passes back the preview's plan digest and its conflict choice: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles) where they are, and `version` gives each file the first free ` (N)` sibling (a versioned video's subtitles follow its new name). The `overwrite` choice replaces plain files at their targets. Blocked rows, including those with unresolved runtime facts, are refused (FILE_MANAGER_RECOGNITION_NOT_RENDERABLE). A changed plan is refused with (FILE_MANAGER_RECOGNITION_PLAN_CHANGED). A replay with the same Idempotency-Key and request returns the original batch. */
         post: operations["submitFileManagerRecognition"];
         delete?: never;
         options?: never;
@@ -6609,14 +6609,33 @@ export interface components {
             bgm?: components["schemas"]["NullableBGMBinding"];
             tmdb?: components["schemas"]["NullableTMDBBinding"];
         };
+        FileManagerRecognitionWorkKey: {
+            provider: components["schemas"]["FileManagerRecognitionTitleProvider"];
+            work_id: string;
+            /** @description Provider season number (zero for Bangumi). */
+            season: number;
+        };
+        /** @enum {string} */
+        FileManagerRecognitionTitleProvider: "bgm" | "tmdb";
         FileManagerRecognitionRequest: {
             /** @description Absolute paths of the selected files, all in one directory. */
             paths: string[];
             parser?: components["schemas"]["FileManagerRecognitionParser"];
             naming: components["schemas"]["NamingRules"];
             match?: components["schemas"]["FileManagerRecognitionMatch"];
-            /** @description Explicitly read each selected video's current MediaInfo facts and resolve referenced provider episode titles through the persistent cache before rendering. Preview and submit must use the same value; submit reads the facts again and confirms the resulting plan digest. */
-            load_runtime_facts?: boolean;
+            /**
+             * @deprecated
+             * @description Omitted or true resolves the runtime facts required by the selected templates. False permits cache hits only. It cannot be combined with refresh_media or a nonempty episode_title_cache_only.
+             * @default true
+             */
+            load_runtime_facts: boolean;
+            /**
+             * @description Refresh MediaInfo for the videos that require it.
+             * @default false
+             */
+            refresh_media: boolean;
+            /** @description Resolve these episode title work keys from cache only. */
+            episode_title_cache_only?: components["schemas"]["FileManagerRecognitionWorkKey"][];
             /** @description Sparse manual final numbering for selected videos. Unlisted videos keep parser results and the recognition offset; subtitles follow their videos. Preview and submit must carry identical overrides. */
             overrides?: components["schemas"]["FileEpisodeOverride"][];
         };
@@ -6633,6 +6652,8 @@ export interface components {
         FileManagerRecognitionBlocker: {
             code: components["schemas"]["FileManagerRecognitionBlockerCode"];
             facts?: string[];
+            /** @description IDs of the related runtime facts diagnostics. */
+            diagnostic_ids?: string[];
         };
         FileManagerRecognitionConflict: {
             /** @enum {string} */
@@ -6659,6 +6680,10 @@ export interface components {
             /** @description The group's stem (a video and its bound subtitles share one). */
             group: string;
             revision: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** @description The rendered path contains a preview placeholder marker. */
+            has_placeholder: boolean;
             episode?: components["schemas"]["FileManagerRecognitionEpisode"];
             /** @description Rendered absolute target; absent when no target is written. */
             target_path?: string;
@@ -6674,6 +6699,30 @@ export interface components {
          * @enum {string}
          */
         FileManagerRecognitionUnknownRoute: "skip" | "route";
+        FileManagerRecognitionMediaDiagnostic: {
+            id: string;
+            path: string;
+            /** @enum {string} */
+            state: "ready" | "unavailable";
+            /** @enum {string} */
+            reason?: "probe_timeout" | "probe_unavailable" | "probe_failed" | "invalid_output" | "not_loaded";
+        };
+        FileManagerRecognitionTitleDiagnostic: {
+            id: string;
+            provider: components["schemas"]["FileManagerRecognitionTitleProvider"];
+            work_id: string;
+            season: number;
+            /** @enum {string} */
+            state: "known" | "absent" | "unavailable";
+            episodes: number[];
+            /** @enum {string} */
+            reason?: "unconfigured" | "credentials_rejected" | "rate_limited" | "unreachable" | "invalid_response" | "cache_miss" | "not_loaded";
+            retry_after_seconds?: number;
+        };
+        FileManagerRecognitionRuntimeFacts: {
+            media_probe: components["schemas"]["FileManagerRecognitionMediaDiagnostic"][];
+            episode_titles: components["schemas"]["FileManagerRecognitionTitleDiagnostic"][];
+        };
         FileManagerRecognitionPreview: {
             /** @description The folder the selected files were read from. */
             directory: string;
@@ -6685,6 +6734,7 @@ export interface components {
             plan_digest: string;
             /** @description Absolute targets another row or a file already holds. */
             conflicts: string[];
+            runtime_facts: components["schemas"]["FileManagerRecognitionRuntimeFacts"];
         };
         /**
          * @description How the submit settles occupied or duplicated targets: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles), `version` gives each file a free ` (N)` sibling, `overwrite` replaces each plain file at its target and refuses the request when any target is managed, in progress or duplicated.
@@ -6696,8 +6746,12 @@ export interface components {
             parser?: components["schemas"]["FileManagerRecognitionParser"];
             naming: components["schemas"]["NamingRules"];
             match?: components["schemas"]["FileManagerRecognitionMatch"];
-            /** @description Must match the confirmed preview. Reads current MediaInfo facts and referenced provider episode titles again before checking the digest. */
-            load_runtime_facts?: boolean;
+            /**
+             * @deprecated
+             * @description Omitted or true resolves required runtime facts. False permits cache hits only.
+             * @default true
+             */
+            load_runtime_facts: boolean;
             /** @description Must exactly match the overrides of the confirmed preview. */
             overrides?: components["schemas"]["FileEpisodeOverride"][];
             /** @description The `plan_digest` the preview returned. */
@@ -14325,6 +14379,7 @@ export interface operations {
             403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     submitFileManagerRecognition: {
@@ -14356,6 +14411,7 @@ export interface operations {
             403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     submitFileManagerOperation: {

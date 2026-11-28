@@ -12,3 +12,4 @@ export { ConflictBlock } from "./ConflictBlock";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { LazyPendingBar } from "./LazyPendingBar";
 export { useDirtyConfirm } from "./useDirtyConfirm";
+export { TargetPathText, type TargetPlaceholderTone } from "./TargetPathText";

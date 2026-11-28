@@ -1,7 +1,6 @@
 package filemaintenance
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -40,23 +39,5 @@ func TestMatchFileTitleEvidenceDoesNotReparsePublishedNames(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestRecognitionPreparesOnlyFileTitleEvidence(t *testing.T) {
-	r := &NamingTargetRenderer{}
-	ctx, err := r.recognitionContext(context.Background(), RecognitionRenderInput{FileKind: "video"}, "[ExampleGroup] Example - 01 [1080p].mkv")
-	if err != nil {
-		t.Fatal(err)
-	}
-	facts := naming.UnifiedFacts(naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: ctx}).Context)
-	if got, _ := facts.FileRt.Get("Resolution"); got != "1080p" {
-		t.Fatalf("frt resolution = %q", got)
-	}
-	if got, _ := facts.Rt.Get("Resolution"); got != "" {
-		t.Fatalf("file evidence leaked into rt: %q", got)
-	}
-	if ctx.File.Media.Resolution != "" {
-		t.Fatal("file title leaked into measured media")
 	}
 }

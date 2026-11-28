@@ -50,7 +50,7 @@ func MissingRequiredFacts(required []string, ctx NamingContext) []string {
 		return nil
 	}
 	facts := renderFacts(ctx, 0)
-	return sortedMissing(languageProfileOf().missing(required, &facts, false))
+	return sortedMissing(languageProfileOf().missing(required, &facts, nil))
 }
 
 func sortedMissing(missing []string) []string {

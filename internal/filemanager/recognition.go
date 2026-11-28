@@ -16,6 +16,7 @@ import (
 
 	"bansoko/internal/download/domain"
 	"bansoko/internal/episodeidentity"
+	"bansoko/internal/episodetitle"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/parser"
@@ -107,13 +108,6 @@ const (
 // OccupantDuplicate marks a target another row of the same request renders.
 const OccupantDuplicate MatchOccupant = "duplicate"
 
-// RecognitionRenderer renders one file's target and a subtitle's suffix with
-// the operation's naming rules (filemaintenance.RenderRecognition).
-type RecognitionRenderer interface {
-	RenderRecognition(ctx context.Context, input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error)
-	RenderRecognitionSuffix(ctx context.Context, input filemaintenance.RecognitionRenderInput) (string, error)
-}
-
 // RecognitionPolicy reads the instance unclassified-route policy. Unwired, the
 // default (skip) applies.
 type RecognitionPolicy interface {
@@ -125,29 +119,28 @@ type RecognitionMediaProber interface {
 	Probe(ctx context.Context, path string) (domain.MediaFacts, error)
 }
 
-// SetRecognitionMediaProber wires the explicit runtime-facts probe. Recognition
-// without it keeps working; only a request that asks for runtime facts reports
-// the missing probe on each video row.
+// SetRecognitionMediaProber initializes the revision-keyed cache. A nil prober
+// leaves runtime media probing unavailable.
 func (s *Service) SetRecognitionMediaProber(prober RecognitionMediaProber) {
-	if s != nil {
-		s.recognitionMedia = prober
+	if s == nil {
+		return
+	}
+	s.recognitionMedia = nil
+	if prober != nil {
+		s.recognitionMedia = newRecognitionMediaCache(prober)
 	}
 }
 
-// SetRecognition wires the recognition ports. Unwired, recognition is
-// refused. The anime reader is the same one a match uses: a match is an
-// optional metadata source for the render, never a written relation.
-func (s *Service) SetRecognition(renderer RecognitionRenderer, animes MatchAnimeReader, policy RecognitionPolicy) {
+// SetRecognition wires recognition's shared naming facts, title queries and policy.
+func (s *Service) SetRecognition(facts RecognitionAnimeFacts, titles RecognitionEpisodeTitles, policy RecognitionPolicy) {
 	if s != nil {
-		s.recognition, s.recognitionPolicy = renderer, policy
-		if animes != nil {
-			s.matchAnimes = animes
-		}
+		s.recognitionFacts, s.recognitionTitles, s.recognitionPolicy = facts, titles, policy
+		s.recognitionEnabled = true
 	}
 }
 
 func (s *Service) requireRecognition() error {
-	if s.recognition == nil {
+	if !s.recognitionEnabled {
 		return conflict(CodeRecognitionUnavailable, "file manager recognition is not available")
 	}
 	return nil
@@ -215,9 +208,10 @@ type RecognitionRequest struct {
 	// Overrides sparsely replace selected videos' parsed numbering with final
 	// manual values. Their paths are canonicalized, unique and sorted.
 	Overrides []RecognitionEpisodeOverride
-	// LoadRuntimeFacts explicitly reads current video media facts and resolves
-	// referenced provider episode titles. Preview and submit share this switch.
-	LoadRuntimeFacts bool
+	// DisableRuntimeFacts permits cached answers only.
+	DisableRuntimeFacts   bool
+	RefreshMedia          bool
+	EpisodeTitleCacheOnly []episodetitle.WorkKey
 }
 
 // RecognitionEpisodeOverride is one selected video's final manual numbering.
@@ -245,8 +239,9 @@ type RecognitionEpisode struct {
 
 // RecognitionBlocker is one reason a row cannot be rendered.
 type RecognitionBlocker struct {
-	Code  string
-	Facts []string
+	Code          string
+	Facts         []string
+	DiagnosticIDs []string
 }
 
 // RecognitionConflict is an occupied or duplicated target. VersionPath is the
@@ -258,14 +253,16 @@ type RecognitionConflict struct {
 
 // RecognitionRow is one selected file and what recognition does with it.
 type RecognitionRow struct {
-	Path       string
-	Name       string
-	Kind       string
-	Group      string
-	Revision   string
-	Episode    *RecognitionEpisode
-	TargetPath string
-	TargetName string
+	Path           string
+	Name           string
+	Kind           string
+	Group          string
+	Revision       string
+	SizeBytes      int64
+	HasPlaceholder bool
+	Episode        *RecognitionEpisode
+	TargetPath     string
+	TargetName     string
 	// EmptyFacts are referenced facts that rendered empty after runtime loading.
 	// They are informational, not blockers, and stay hidden in the default mode.
 	EmptyFacts  []string
@@ -291,9 +288,10 @@ type RecognitionPreview struct {
 	// own name, offered as the match's title candidate — the same read the
 	// seed search exposes per seed as TitleHint; empty when no name parses a
 	// title.
-	TitleHint  string
-	PlanDigest string
-	Conflicts  []string
+	TitleHint    string
+	PlanDigest   string
+	Conflicts    []string
+	RuntimeFacts RecognitionRuntimeFacts
 }
 
 // SubmitRecognitionRequest confirms one previewed recognition. Conflict is how
@@ -304,6 +302,8 @@ type SubmitRecognitionRequest struct {
 	RecognitionRequest
 	ExpectedPlanDigest string
 	Conflict           RecognitionConflictChoice
+	// LegacyLoadRuntimeFacts retains the original HTTP switch for replay of old batches.
+	LegacyLoadRuntimeFacts bool
 }
 
 // RecognitionOutcome is what a submit admitted.
@@ -323,10 +323,6 @@ type recognitionFile struct {
 	// title, and rt.* stays empty in its renders.
 	fileRt   templatefacts.Values
 	identity episodeidentity.EpisodeIdentity
-	media    naming.MediaNamingFacts
-	// runtimeFactsErr blocks only this video and its bound subtitles. The raw
-	// tool error stays server-side; the row exposes a stable blocker code.
-	runtimeFactsErr error
 }
 
 // recognitionGroup is one video with its bound subtitles, one video-less
@@ -364,6 +360,8 @@ type recognitionPlan struct {
 	operations   []recognitionOperation
 	unknownRoute string
 	digest       string
+	runtimeFacts RecognitionRuntimeFacts
+	animeFacts   naming.AnimeNamingFacts
 }
 
 func normalizeRecognitionParser(value RecognitionParser) (parser.ParserSelection, error) {
@@ -614,34 +612,6 @@ func recognitionEvidence(ctx context.Context, files []recognitionFile, selection
 	return nil
 }
 
-// loadRecognitionRuntimeFacts probes every selected video separately. A failed
-// probe is a row blocker, not an empty media fact; a missing prober follows the
-// same fail-closed path. Subtitles inherit their video's facts while rendering.
-func (s *Service) loadRecognitionRuntimeFacts(ctx context.Context, files []recognitionFile) error {
-	for index := range files {
-		if files[index].kind != filekinds.KindVideo {
-			continue
-		}
-		if s.recognitionMedia == nil {
-			files[index].runtimeFactsErr = errors.New("recognition media prober is not wired")
-			continue
-		}
-		facts, err := s.recognitionMedia.Probe(ctx, files[index].inspection.absolute)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			files[index].runtimeFactsErr = err
-			continue
-		}
-		files[index].media = naming.MediaNamingFacts{
-			Resolution: facts.Resolution, VideoCodec: facts.VideoCodec,
-			AudioCodec: facts.AudioCodec, Container: facts.Container, HDR: facts.HDR,
-		}
-	}
-	return nil
-}
-
 // recognitionGroups binds each subtitle to the video whose name it starts
 // with (the one subtitle rule), keeps every video as its own group and every
 // other file as a standalone group. Two videos with one stem cannot both own
@@ -743,7 +713,7 @@ func recognitionMatchID(match *RecognitionMatch) string {
 	if match == nil {
 		return ""
 	}
-	return match.ManagedAnimeID
+	return strings.TrimSpace(match.ManagedAnimeID)
 }
 
 func recognitionMatchSeason(match *RecognitionMatch) *int {
@@ -758,98 +728,6 @@ func recognitionSeason(match *RecognitionMatch, override *RecognitionEpisodeOver
 		return override.Season
 	}
 	return recognitionMatchSeason(match)
-}
-
-// recognitionAnimeDraft maps the operation's temporary draft onto the render
-// input. nil keeps the matched anime's stored rows.
-func recognitionAnimeDraft(match *RecognitionMatch) *filemaintenance.RecognitionAnimeDraft {
-	if match == nil || match.Anime == nil {
-		return nil
-	}
-	draft := &filemaintenance.RecognitionAnimeDraft{
-		Title:     match.Anime.Title,
-		MediaKind: match.Anime.MediaKind,
-		Year:      match.Anime.Year,
-	}
-	if match.Anime.BGM != nil {
-		draft.BGMWorkID = match.Anime.BGM.WorkID
-		draft.BGM = true
-	}
-	if match.Anime.TMDB != nil {
-		draft.TMDBWorkID = match.Anime.TMDB.WorkID
-		draft.TMDBMediaKind = match.Anime.TMDB.MediaKind
-		draft.TMDBSeason = match.Anime.TMDB.Season
-		draft.TMDB = true
-	}
-	return draft
-}
-
-func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode *RecognitionEpisode, season *int) filemaintenance.RecognitionRenderInput {
-	match := plan.request.Match
-	input := filemaintenance.RecognitionRenderInput{
-		Rules:            plan.request.Naming,
-		UnknownRoute:     plan.unknownRoute == string(filemaintenance.UnclassifiedRoutePolicyValueRoute),
-		FileName:         file.inspection.detail.Entry.Name,
-		FileKind:         file.kind,
-		ManagedAnimeID:   recognitionMatchID(match),
-		Season:           season,
-		AnimeDraft:       recognitionAnimeDraft(match),
-		Media:            file.media,
-		LoadRuntimeFacts: plan.request.LoadRuntimeFacts,
-	}
-	if file.inspection.info != nil {
-		input.SizeBytes = file.inspection.info.Size()
-	}
-	if episode != nil {
-		input.Episode = episode.Number
-		input.EpisodeEnd = episode.NumberEnd
-		input.EpisodeRaw = episode.Raw
-		input.EpisodeDisplay = (episodeidentity.Position{Number: episode.Number, End: episode.NumberEnd}).Display()
-		input.EpisodeOffset = episode.Offset
-		input.EpisodeSource = episode.Source
-	}
-	return input
-}
-
-// renderRecognition renders one file's target and maps a render refusal to its
-// row blocker.
-func (s *Service) renderRecognition(ctx context.Context, input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, *RecognitionBlocker, error) {
-	rendered, err := s.recognition.RenderRecognition(ctx, input)
-	if err == nil {
-		return rendered, nil, nil
-	}
-	blocker, err := recognitionRenderBlocker(err)
-	return filemaintenance.RecognitionRendered{}, blocker, err
-}
-
-// renderRecognitionSuffix renders a subtitle's suffix and maps a render refusal
-// to its row blocker.
-func (s *Service) renderRecognitionSuffix(ctx context.Context, input filemaintenance.RecognitionRenderInput) (string, *RecognitionBlocker, error) {
-	value, err := s.recognition.RenderRecognitionSuffix(ctx, input)
-	if err == nil {
-		return value, nil, nil
-	}
-	blocker, err := recognitionRenderBlocker(err)
-	return "", blocker, err
-}
-
-// recognitionRenderBlocker maps a typed render refusal to its row blocker; any
-// other error stays an error.
-func recognitionRenderBlocker(err error) (*RecognitionBlocker, error) {
-	var renderErr *filemaintenance.RecognitionRenderError
-	if !errors.As(err, &renderErr) {
-		return nil, err
-	}
-	code := RecognitionBlockerTemplateInvalid
-	switch renderErr.Code {
-	case filemaintenance.RecognitionRenderFactsMissing:
-		code = RecognitionBlockerFactsMissing
-	case filemaintenance.RecognitionRenderTargetInvalid:
-		code = RecognitionBlockerTargetInvalid
-	case filemaintenance.RecognitionRenderRuntimeFacts:
-		code = RecognitionBlockerRuntimeFacts
-	}
-	return &RecognitionBlocker{Code: code, Facts: renderErr.Facts}, nil
 }
 
 // recognitionPlan renders one request. It reads the filesystem and owner facts
@@ -867,19 +745,9 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 	if err != nil {
 		return recognitionPlan{}, err
 	}
-	// A managed-anime match re-reads the anime; a draft-only match names with
-	// the draft alone and touches nothing stored.
-	if request.Match != nil && strings.TrimSpace(request.Match.ManagedAnimeID) != "" {
-		if s.matchAnimes == nil {
-			return recognitionPlan{}, conflict(CodeRecognitionUnavailable, "file manager match is not available")
-		}
-		anime, err := s.matchAnimes.MatchAnime(ctx, request.Match.ManagedAnimeID)
-		if err != nil {
-			return recognitionPlan{}, err
-		}
-		if anime == nil {
-			return recognitionPlan{}, notFound(CodeMatchAnimeUnavailable, "anime does not exist")
-		}
+	cacheOnly, err := recognitionCacheOnly(request)
+	if err != nil {
+		return recognitionPlan{}, err
 	}
 	files, directory, err := s.recognitionEntries(ctx, request.Paths)
 	if err != nil {
@@ -895,11 +763,6 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 	if err := recognitionEvidence(ctx, files, selection, offset); err != nil {
 		return recognitionPlan{}, err
 	}
-	if request.LoadRuntimeFacts {
-		if err := s.loadRecognitionRuntimeFacts(ctx, files); err != nil {
-			return recognitionPlan{}, err
-		}
-	}
 	videos := 0
 	for _, file := range files {
 		if file.kind == filekinds.KindVideo {
@@ -914,7 +777,14 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 		return recognitionPlan{}, err
 	}
 	plan := recognitionPlan{request: request, directory: directory, files: files, groups: recognitionGroups(files), unknownRoute: route}
-	s.buildRecognitionRows(ctx, &plan)
+	anime, err := s.recognitionAnimeFacts(ctx, request.Match)
+	if err != nil {
+		return recognitionPlan{}, err
+	}
+	plan.animeFacts = anime
+	if err := s.buildRecognitionRows(ctx, &plan, anime, cacheOnly); err != nil {
+		return recognitionPlan{}, err
+	}
 	if err := s.markRecognitionConflicts(ctx, &plan); err != nil {
 		return recognitionPlan{}, err
 	}
@@ -922,80 +792,66 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 	return plan, nil
 }
 
-// buildRecognitionRows renders every group into rows and records the
-// operations a submit would admit. A file with no episode identity is the
-// renderer's call — the unknown variant under the route, otherwise left alone
-// — because whether it is a movie is a naming-fact decision.
-func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPlan) {
+// buildRecognitionRows resolves runtime dependencies once, then renders each group.
+func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPlan, anime naming.AnimeNamingFacts, cacheOnly map[episodetitle.WorkKey]bool) error {
+	engine := naming.NewEngine()
+	rules, compileErr := engine.CompileRules(plan.request.Naming)
+	specs := recognitionSpecs(plan, rules, anime)
+	runtime, err := s.recognitionRuntime(ctx, plan, specs, cacheOnly)
+	if err != nil {
+		return err
+	}
 	for groupIndex, group := range plan.groups {
-		switch {
-		case group.video >= 0:
-			videoPath := plan.files[group.video].inspection.absolute
-			override := recognitionOverride(plan.request.Overrides, videoPath)
-			episode := recognitionEpisode(plan.files[group.video].identity, plan.request.Match, override)
-			season := recognitionSeason(plan.request.Match, override)
-			videoRowIndex := len(plan.rows)
-			videoRow := s.recognitionRenderRow(ctx, plan, groupIndex, group.video, episode, season)
-			plan.rows = append(plan.rows, videoRow)
-			if recognitionActionable(videoRow) {
-				s.recordRecognitionOperation(plan, videoRowIndex, groupIndex, videoRowIndex, filekinds.KindVideo, group.video, videoRow.TargetPath, "", "")
+		videoRowIndex := -1
+		var video RecognitionRow
+		if group.video >= 0 {
+			videoRowIndex = len(plan.rows)
+			video, err = s.recognitionRenderRow(ctx, plan, groupIndex, group.video, specs[group.video], rules, engine, runtime, compileErr)
+			if err != nil {
+				return err
 			}
-			for _, index := range group.subtitles {
-				subtitleRowIndex := len(plan.rows)
-				var row RecognitionRow
-				switch {
-				case videoRow.Disposition == RecognitionSkip:
-					// The subtitle follows its video: it is left alone too.
-					file := plan.files[index]
-					row = RecognitionRow{
-						Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
-						Kind: filekinds.KindSubtitle, Group: group.stem,
-						Revision: file.inspection.detail.Revision, Disposition: RecognitionSkip,
-					}
-				case videoRow.TargetPath == "":
-					file := plan.files[index]
-					row = RecognitionRow{
-						Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
-						Kind: filekinds.KindSubtitle, Group: group.stem,
-						Revision: file.inspection.detail.Revision, Disposition: RecognitionError,
-						Blockers: []RecognitionBlocker{{Code: RecognitionBlockerVideoFailed}},
-					}
-				default:
-					row = s.recognitionSubtitleRow(ctx, plan, groupIndex, index, episode, season, videoRow.TargetPath)
-				}
-				plan.rows = append(plan.rows, row)
-				if recognitionActionable(row) {
-					s.recordRecognitionOperation(plan, subtitleRowIndex, groupIndex, videoRowIndex, filekinds.KindSubtitle, index, row.TargetPath, row.subtitleSuffix, row.subtitleExtension)
-				}
-			}
-		case len(group.subtitles) > 0:
-			// A subtitle whose video is not selected cannot be named: its target
-			// is the video's name, which this operation does not have.
-			for _, index := range group.subtitles {
-				plan.rows = append(plan.rows, RecognitionRow{
-					Path: plan.files[index].inspection.absolute, Name: plan.files[index].inspection.detail.Entry.Name,
-					Kind: filekinds.KindSubtitle, Group: group.stem,
-					Revision:    plan.files[index].inspection.detail.Revision,
-					Disposition: RecognitionError,
-					Blockers:    []RecognitionBlocker{{Code: RecognitionBlockerVideoMissing}},
-				})
-			}
-		default:
-			for _, index := range group.others {
-				rowIndex := len(plan.rows)
-				row := s.recognitionRenderRow(ctx, plan, groupIndex, index, nil, recognitionMatchSeason(plan.request.Match))
-				plan.rows = append(plan.rows, row)
-				if recognitionActionable(row) {
-					s.recordRecognitionOperation(plan, rowIndex, groupIndex, -1, filekinds.KindOther, index, row.TargetPath, "", "")
-				}
+			plan.rows = append(plan.rows, video)
+			if recognitionActionable(video) {
+				s.recordRecognitionOperation(plan, videoRowIndex, groupIndex, videoRowIndex, filekinds.KindVideo, group.video, video.TargetPath, "", "")
 			}
 		}
+		for _, index := range group.subtitles {
+			row := plan.newRow(groupIndex, index, specs[index].episode)
+			switch {
+			case group.video < 0:
+				row.block(RecognitionBlocker{Code: RecognitionBlockerVideoMissing})
+			case video.Disposition == RecognitionSkip:
+				row.Disposition = RecognitionSkip
+			case video.TargetPath == "":
+				row.block(RecognitionBlocker{Code: RecognitionBlockerVideoFailed})
+			default:
+				if err := s.renderRecognitionSubtitle(ctx, &row, video, specs[index], rules, engine, runtime); err != nil {
+					return err
+				}
+			}
+			if recognitionActionable(row) {
+				s.recordRecognitionOperation(plan, len(plan.rows), groupIndex, videoRowIndex, filekinds.KindSubtitle, index, row.TargetPath, row.subtitleSuffix, row.subtitleExtension)
+			}
+			plan.rows = append(plan.rows, row)
+		}
+		for _, index := range group.others {
+			row, err := s.recognitionRenderRow(ctx, plan, groupIndex, index, specs[index], rules, engine, runtime, compileErr)
+			if err != nil {
+				return err
+			}
+			if recognitionActionable(row) {
+				s.recordRecognitionOperation(plan, len(plan.rows), groupIndex, -1, filekinds.KindOther, index, row.TargetPath, "", "")
+			}
+			plan.rows = append(plan.rows, row)
+		}
 	}
+	return ctx.Err()
 }
 
 // recognitionActionable reports a row this plan would move or rename.
 func recognitionActionable(row RecognitionRow) bool {
-	return row.Disposition == RecognitionRename || row.Disposition == RecognitionMove
+	return len(row.Blockers) == 0 && !row.HasPlaceholder && row.TargetPath != "" &&
+		(row.Disposition == RecognitionRename || row.Disposition == RecognitionMove)
 }
 
 // recordRecognitionOperation remembers one file a submit would move.
@@ -1008,115 +864,124 @@ func (s *Service) recordRecognitionOperation(plan *recognitionPlan, row, group, 
 	})
 }
 
-// recognitionRenderRow renders one file's target with the operation's own
-// naming rules and resolves it against the instance's writable space.
-func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, season *int) RecognitionRow {
+func (plan *recognitionPlan) newRow(groupIndex, fileIndex int, episode *RecognitionEpisode) RecognitionRow {
 	file := plan.files[fileIndex]
-	row := RecognitionRow{
+	return RecognitionRow{
 		Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
-		Kind: file.kind, Group: plan.groups[groupIndex].stem,
-		Revision: file.inspection.detail.Revision,
-		Episode:  episode, Disposition: RecognitionRename,
+		Kind: file.kind, Group: plan.groups[groupIndex].stem, Revision: file.inspection.detail.Revision,
+		SizeBytes: file.inspection.info.Size(), Episode: episode, Disposition: RecognitionRename,
 	}
-	if file.runtimeFactsErr != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerRuntimeFacts}}
-		return row
-	}
-	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(plan, file, episode, season))
-	if err != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
-		return row
-	}
-	if blocker != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{*blocker}
-		return row
-	}
-	if rendered.Skipped {
-		row.Disposition = RecognitionSkip
-		return row
-	}
-	if plan.request.LoadRuntimeFacts {
-		row.EmptyFacts = append([]string(nil), rendered.EmptyFacts...)
-	}
-	target := joinAbsolute(rendered.Directory, rendered.Filename)
-	problem, err := s.recognitionTargetProblem(ctx, target)
-	if err != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
-		return row
-	}
-	if problem != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{*problem}
-		return row
-	}
-	row.TargetName = rendered.Filename
-	row.TargetPath = target
-	// A target in another directory is a move; the same absolute path the file
-	// already has still reads as unchanged.
-	if filepath.Dir(row.TargetPath) != filepath.Dir(file.inspection.absolute) {
-		row.Disposition = RecognitionMove
-	}
-	if row.TargetPath == file.inspection.absolute {
-		row.Disposition = RecognitionUnchanged
-	}
-	return row
 }
 
-// recognitionSubtitleRow renders a subtitle's suffix over the same facts as its
-// video and composes the target from the video's rendered path.
-func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, season *int, videoTarget string) RecognitionRow {
-	file := plan.files[fileIndex]
-	row := RecognitionRow{
-		Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
-		Kind: filekinds.KindSubtitle, Group: plan.groups[groupIndex].stem,
-		Revision: file.inspection.detail.Revision, Episode: episode,
-		Disposition: RecognitionRename,
+func (row *RecognitionRow) block(blocker RecognitionBlocker) {
+	row.Disposition = RecognitionError
+	for index, previous := range row.Blockers {
+		if previous.Code == blocker.Code {
+			row.Blockers[index].Facts = recognitionFactPaths(previous.Facts, blocker.Facts)
+			row.Blockers[index].DiagnosticIDs = recognitionFactPaths(previous.DiagnosticIDs, blocker.DiagnosticIDs)
+			return
+		}
 	}
-	input := recognitionRenderInput(plan, file, episode, season)
-	// The suffix follows the video's execution-time media facts; a subtitle is
-	// never probed as if it were a video of its own.
-	input.Media = plan.files[plan.groups[groupIndex].video].media
-	suffix, blocker, err := s.renderRecognitionSuffix(ctx, input)
-	if err != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
-		return row
+	row.Blockers = append(row.Blockers, blocker)
+}
+
+func (row *RecognitionRow) renderError(err error) error {
+	var renderErr *naming.Error
+	if !errors.As(err, &renderErr) {
+		return err
 	}
+	code := RecognitionBlockerTemplateInvalid
+	switch renderErr.Code {
+	case naming.ErrCodeNamingFactMissing, naming.ErrCodeNamingFactUndefined:
+		code = RecognitionBlockerFactsMissing
+	case naming.ErrCodeNamingTargetInvalid, naming.ErrCodeNamingTargetNotAbsolute, naming.ErrCodeSubtitleSuffixInvalid:
+		code = RecognitionBlockerTargetInvalid
+	}
+	row.block(RecognitionBlocker{Code: code, Facts: recognitionFactPaths(renderErr.Missing)})
+	return nil
+}
+
+func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, spec recognitionRenderSpec, rules naming.CompiledNamingRules, engine *naming.Engine, runtime recognitionRuntime, compileErr error) (RecognitionRow, error) {
+	row := plan.newRow(groupIndex, fileIndex, spec.episode)
+	if compileErr != nil {
+		err := row.renderError(compileErr)
+		return row, err
+	}
+	if spec.skip {
+		row.Disposition = RecognitionSkip
+		return row, nil
+	}
+	facts, unresolved, blocker := runtime.apply(spec)
 	if blocker != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{*blocker}
-		return row
+		row.block(*blocker)
 	}
-	// The subtitle follows its video: the sidecar name composes onto the
-	// video's basename inside the video's own target directory.
-	stem := strings.TrimSuffix(path.Base(videoTarget), path.Ext(videoTarget))
-	extension := strings.TrimPrefix(filepath.Ext(file.inspection.detail.Entry.Name), ".")
-	name := naming.CompanionSidecarFilename(stem, suffix, extension)
-	target := joinAbsolute(filepath.Dir(videoTarget), name)
-	if problem, err := s.recognitionTargetProblem(ctx, target); err != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
-		return row
-	} else if problem != nil {
-		row.Disposition = RecognitionError
-		row.Blockers = []RecognitionBlocker{*problem}
-		return row
+	render := rules.RenderVideoDetailed
+	if spec.unknown {
+		render = rules.RenderUnknownDetailed
 	}
-	row.TargetName = name
-	row.TargetPath = target
-	row.subtitleSuffix = suffix
-	row.subtitleExtension = extension
-	if filepath.Dir(row.TargetPath) != filepath.Dir(file.inspection.absolute) {
+	rendered, err := render(engine.WithPlaceholders(unresolved), facts)
+	if err != nil {
+		err = row.renderError(err)
+		return row, err
+	}
+	row.EmptyFacts = recognitionFactPaths(rendered.EmptyFacts)
+	err = s.setRecognitionTarget(ctx, &row, rendered.Directory, rendered.Filename)
+	return row, err
+}
+
+func (s *Service) renderRecognitionSubtitle(ctx context.Context, row *RecognitionRow, video RecognitionRow, spec recognitionRenderSpec, rules naming.CompiledNamingRules, engine *naming.Engine, runtime recognitionRuntime) error {
+	for _, blocker := range video.Blockers {
+		row.block(blocker)
+	}
+	row.EmptyFacts = recognitionFactPaths(video.EmptyFacts)
+	facts, unresolved, blocker := runtime.apply(spec)
+	if blocker != nil {
+		row.block(*blocker)
+	}
+	rendered, err := rules.RenderSubtitleSuffixDetailed(engine.WithPlaceholders(unresolved), facts)
+	if err != nil {
+		return row.renderError(err)
+	}
+	row.EmptyFacts = recognitionFactPaths(row.EmptyFacts, rendered.EmptyFacts)
+	stem := strings.TrimSuffix(path.Base(video.TargetPath), path.Ext(video.TargetPath))
+	row.subtitleSuffix = rendered.Value
+	row.subtitleExtension = strings.TrimPrefix(filepath.Ext(row.Name), ".")
+	name := naming.CompanionSidecarFilename(stem, row.subtitleSuffix, row.subtitleExtension)
+	return s.setRecognitionTarget(ctx, row, filepath.Dir(video.TargetPath), name)
+}
+
+func (s *Service) setRecognitionTarget(ctx context.Context, row *RecognitionRow, directory, name string) error {
+	target := joinAbsolute(directory, name)
+	row.HasPlaceholder = naming.HasPreviewPlaceholder(target)
+	if row.HasPlaceholder {
+		hasUnresolved := false
+		for _, blocker := range row.Blockers {
+			hasUnresolved = hasUnresolved || blocker.Code == RecognitionBlockerRuntimeFacts
+		}
+		if !hasUnresolved {
+			row.block(RecognitionBlocker{Code: RecognitionBlockerTargetInvalid})
+			return nil
+		}
+	}
+	problem, err := s.recognitionTargetProblem(ctx, target)
+	if err != nil {
+		return err
+	}
+	if problem != nil {
+		row.block(*problem)
+		return nil
+	}
+	row.TargetPath, row.TargetName = target, name
+	if row.Disposition == RecognitionError {
+		return nil
+	}
+	if filepath.Dir(target) != filepath.Dir(row.Path) {
 		row.Disposition = RecognitionMove
 	}
-	if row.TargetPath == file.inspection.absolute {
+	if target == row.Path {
 		row.Disposition = RecognitionUnchanged
 	}
-	return row
+	return nil
 }
 
 // recognitionTargetProblem checks that a rendered target is a destination this
@@ -1151,7 +1016,7 @@ func (s *Service) markRecognitionConflicts(ctx context.Context, plan *recognitio
 	claimed := map[string]int{}
 	for index := range plan.rows {
 		row := &plan.rows[index]
-		if row.Disposition != RecognitionRename && row.Disposition != RecognitionMove {
+		if !recognitionActionable(*row) {
 			continue
 		}
 		if other, taken := claimed[row.TargetPath]; taken {
@@ -1225,40 +1090,50 @@ func recognitionPlanDigest(plan recognitionPlan, selection parser.ParserSelectio
 		Facts []string
 	}
 	type rowDigest struct {
-		Path        string
-		Revision    string
-		Target      string
-		Disposition string
-		EmptyFacts  []string
-		Blockers    []blockerDigest
+		Path, Revision, Group, Kind, Target string
+		Episode                             *RecognitionEpisode
+		Disposition                         RecognitionDisposition
+		EmptyFacts                          []string
+		Blockers                            []blockerDigest
 	}
+	state := "ready"
 	rows := make([]rowDigest, 0, len(plan.rows))
 	for _, row := range plan.rows {
+		if recognitionRowBlocked(row) {
+			state = "blocked"
+		}
 		blockers := make([]blockerDigest, 0, len(row.Blockers))
 		for _, blocker := range row.Blockers {
-			blockers = append(blockers, blockerDigest{Code: blocker.Code, Facts: blocker.Facts})
+			blockers = append(blockers, blockerDigest{Code: blocker.Code, Facts: recognitionFactPaths(blocker.Facts)})
 		}
-		rows = append(rows, rowDigest{Path: row.Path, Revision: row.Revision, Target: row.TargetPath, Disposition: string(row.Disposition), EmptyFacts: row.EmptyFacts, Blockers: blockers})
+		sort.Slice(blockers, func(i, j int) bool { return blockers[i].Code < blockers[j].Code })
+		rows = append(rows, rowDigest{row.Path, row.Revision, row.Group, row.Kind, row.TargetPath, row.Episode, row.Disposition, recognitionFactPaths(row.EmptyFacts), blockers})
 	}
-	return requestDigest(struct {
-		Directory        string
-		ParserID         string
-		ParserConfig     string
-		Naming           naming.NamingRules
-		UnknownRoute     string
-		LoadRuntimeFacts bool
-		Match            recognitionMatchDigest
-		Overrides        []RecognitionEpisodeOverride
-		Rows             []rowDigest
-	}{plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), request.Overrides, rows})
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Path < rows[j].Path })
+	const version = "r2"
+	return version + "." + state + "." + requestDigest(struct {
+		Version, State, Directory, ParserID, ParserConfig string
+		Naming                                            naming.NamingRules
+		UnknownRoute                                      string
+		Match                                             recognitionMatchDigest
+		Anime                                             naming.AnimeNamingFacts
+		Overrides                                         []RecognitionEpisodeOverride
+		Rows                                              []rowDigest
+	}{version, state, plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, digestRecognitionMatch(request.Match), plan.animeFacts, request.Overrides, rows})
+}
+
+func recognitionRowBlocked(row RecognitionRow) bool {
+	return row.Disposition == RecognitionError || len(row.Blockers) != 0 || row.HasPlaceholder ||
+		naming.HasPreviewPlaceholder(row.TargetPath) || (row.Disposition != RecognitionSkip && row.TargetPath == "")
 }
 
 type recognitionMatchDigest struct {
-	Anime   string
-	Season  *int
-	Episode *int
-	Offset  int
-	Draft   recognitionAnimeDigest
+	Anime      string
+	Season     *int
+	Episode    *int
+	EpisodeEnd *int `json:",omitempty"`
+	Offset     int
+	Draft      recognitionAnimeDigest
 }
 
 type recognitionAnimeDigest struct {
@@ -1277,7 +1152,7 @@ func digestRecognitionMatch(match *RecognitionMatch) recognitionMatchDigest {
 	if match == nil {
 		return recognitionMatchDigest{}
 	}
-	digest := recognitionMatchDigest{Anime: match.ManagedAnimeID, Season: match.Season, Episode: match.Episode, Offset: match.Offset}
+	digest := recognitionMatchDigest{Anime: recognitionMatchID(match), Season: match.Season, Episode: match.Episode, EpisodeEnd: match.EpisodeEnd, Offset: match.Offset}
 	if match.Anime != nil {
 		digest.Draft = recognitionAnimeDigest{
 			Title: match.Anime.Title, MediaKind: match.Anime.MediaKind, Year: match.Anime.Year,
@@ -1296,6 +1171,15 @@ func digestRecognitionMatch(match *RecognitionMatch) recognitionMatchDigest {
 // recognitionRequestDigest is the idempotency identity of one recognition
 // request; it does not depend on what the filesystem looked like when it ran.
 func recognitionRequestDigest(request SubmitRecognitionRequest) string {
+	match := digestRecognitionMatch(request.Match)
+	return requestDigest(struct {
+		Version string
+		Request string
+	}{"r2", recognitionSubmissionDigest(request, match, !request.DisableRuntimeFacts)})
+}
+
+// Keep the original request encoding so an already admitted batch remains replayable.
+func recognitionSubmissionDigest(request SubmitRecognitionRequest, match recognitionMatchDigest, load bool) string {
 	overrides, _ := canonicalRecognitionOverrides(request.Overrides)
 	return requestDigest(struct {
 		Paths            []string
@@ -1306,7 +1190,7 @@ func recognitionRequestDigest(request SubmitRecognitionRequest) string {
 		Match            recognitionMatchDigest
 		Overrides        []RecognitionEpisodeOverride
 		Conflict         RecognitionConflictChoice
-	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), overrides, request.Conflict})
+	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, load, match, overrides, request.Conflict})
 }
 
 // PreviewRecognition renders the plan of one recognition request and writes
@@ -1319,7 +1203,7 @@ func (s *Service) PreviewRecognition(ctx context.Context, request RecognitionReq
 	if err != nil {
 		return RecognitionPreview{}, err
 	}
-	preview := RecognitionPreview{Directory: plan.directory, Rows: plan.rows, UnknownRoute: plan.unknownRoute, PlanDigest: plan.digest}
+	preview := RecognitionPreview{Directory: plan.directory, Rows: plan.rows, UnknownRoute: plan.unknownRoute, PlanDigest: plan.digest, RuntimeFacts: plan.runtimeFacts}
 	// The match's title candidate: the title the parser read from the first
 	// video's own name, the same read a search seed's title hint carries.
 	for _, file := range plan.files {
@@ -1373,22 +1257,38 @@ func (s *Service) SubmitRecognition(ctx context.Context, request SubmitRecogniti
 	if operations, stored, err := s.commands.OperationBatch(ctx, request.IdempotencyKey); err != nil {
 		return RecognitionOutcome{}, err
 	} else if len(operations) > 0 {
-		if stored != digest {
+		legacyMatch := digestRecognitionMatch(request.Match)
+		legacyMatch.EpisodeEnd = nil
+		if request.Match != nil {
+			legacyMatch.Anime = request.Match.ManagedAnimeID
+		}
+		legacyReplay := !strings.HasPrefix(request.ExpectedPlanDigest, "r2.") &&
+			stored == recognitionSubmissionDigest(request, legacyMatch, request.LegacyLoadRuntimeFacts)
+		if stored != digest && !legacyReplay {
 			return RecognitionOutcome{}, conflict(CodeIdempotencyConflict, "idempotency key was used for another request")
 		}
 		return recognitionOutcome(operations), nil
+	}
+	if strings.HasPrefix(request.ExpectedPlanDigest, "r2.blocked.") {
+		return RecognitionOutcome{}, conflict(CodeRecognitionNotRenderable, "the preview contains a file that cannot be rendered")
+	}
+	if !strings.HasPrefix(request.ExpectedPlanDigest, "r2.ready.") {
+		return RecognitionOutcome{}, conflict(CodeRecognitionPlanChanged, "the plan changed since the preview")
+	}
+	if request.RefreshMedia || len(request.EpisodeTitleCacheOnly) > 0 {
+		return RecognitionOutcome{}, invalid(CodeRecognitionInvalid, "preview runtime facts options cannot be submitted")
 	}
 	plan, err := s.recognitionPlan(ctx, request.RecognitionRequest)
 	if err != nil {
 		return RecognitionOutcome{}, err
 	}
-	if request.ExpectedPlanDigest == "" || request.ExpectedPlanDigest != plan.digest {
-		return RecognitionOutcome{}, conflict(CodeRecognitionPlanChanged, "the plan changed since the preview")
-	}
 	for _, row := range plan.rows {
-		if row.Disposition == RecognitionError {
+		if recognitionRowBlocked(row) {
 			return RecognitionOutcome{}, conflict(CodeRecognitionNotRenderable, "a file cannot be rendered: "+row.Name)
 		}
+	}
+	if request.ExpectedPlanDigest != plan.digest {
+		return RecognitionOutcome{}, conflict(CodeRecognitionPlanChanged, "the plan changed since the preview")
 	}
 	admissions, createdDirs, err := s.recognitionAdmissions(ctx, plan, request, digest, choice)
 	if err != nil {

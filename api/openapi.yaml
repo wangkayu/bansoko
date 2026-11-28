@@ -7450,6 +7450,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /file-manager/recognition:
     post:
       tags: [FileManager]
@@ -7472,8 +7474,10 @@ paths:
         cancels the whole request, `skip` leaves the conflicting files (and a
         conflicting video's subtitles) where they are, and `version` gives each
         file the first free ` (N)` sibling (a versioned video's subtitles follow
-        its new name). Nothing is ever overwritten. Unrendered rows are refused
-        (FILE_MANAGER_RECOGNITION_NOT_RENDERABLE) and a changed plan
+        its new name). The `overwrite` choice replaces plain files at their
+        targets. Blocked rows, including those with unresolved runtime facts,
+        are refused (FILE_MANAGER_RECOGNITION_NOT_RENDERABLE). A changed plan
+        is refused with
         (FILE_MANAGER_RECOGNITION_PLAN_CHANGED). A replay with the same
         Idempotency-Key and request returns the original batch.
       parameters:
@@ -7501,6 +7505,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /file-manager/operations:
     post:
       tags: [FileManager]
@@ -16769,6 +16775,24 @@ components:
           $ref: '#/components/schemas/NullableBGMBinding'
         tmdb:
           $ref: '#/components/schemas/NullableTMDBBinding'
+    FileManagerRecognitionWorkKey:
+      type: object
+      additionalProperties: false
+      required: [provider, work_id, season]
+      properties:
+        provider:
+          $ref: '#/components/schemas/FileManagerRecognitionTitleProvider'
+        work_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        season:
+          type: integer
+          minimum: 0
+          description: Provider season number (zero for Bangumi).
+    FileManagerRecognitionTitleProvider:
+      type: string
+      enum: [bgm, tmdb]
     FileManagerRecognitionRequest:
       type: object
       additionalProperties: false
@@ -16791,11 +16815,22 @@ components:
           $ref: '#/components/schemas/FileManagerRecognitionMatch'
         load_runtime_facts:
           type: boolean
+          deprecated: true
+          default: true
           description: >-
-            Explicitly read each selected video's current MediaInfo facts and
-            resolve referenced provider episode titles through the persistent
-            cache before rendering. Preview and submit must use the same value;
-            submit reads the facts again and confirms the resulting plan digest.
+            Omitted or true resolves the runtime facts required by the selected
+            templates. False permits cache hits only. It cannot be combined
+            with refresh_media or a nonempty episode_title_cache_only.
+        refresh_media:
+          type: boolean
+          default: false
+          description: Refresh MediaInfo for the videos that require it.
+        episode_title_cache_only:
+          type: array
+          maxItems: 512
+          description: Resolve these episode title work keys from cache only.
+          items:
+            $ref: '#/components/schemas/FileManagerRecognitionWorkKey'
         overrides:
           type: array
           maxItems: 256
@@ -16836,6 +16871,12 @@ components:
           items:
             type: string
             maxLength: 128
+        diagnostic_ids:
+          type: array
+          maxItems: 32
+          description: IDs of the related runtime facts diagnostics.
+          items:
+            type: string
     FileManagerRecognitionConflict:
       type: object
       additionalProperties: false
@@ -16876,7 +16917,7 @@ components:
     FileManagerRecognitionRow:
       type: object
       additionalProperties: false
-      required: [path, name, kind, group, revision, disposition]
+      required: [path, name, kind, group, revision, size_bytes, has_placeholder, disposition]
       properties:
         path:
           type: string
@@ -16894,6 +16935,13 @@ components:
         revision:
           type: string
           maxLength: 128
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        has_placeholder:
+          type: boolean
+          description: The rendered path contains a preview placeholder marker.
         episode:
           $ref: '#/components/schemas/FileManagerRecognitionEpisode'
         target_path:
@@ -16925,10 +16973,65 @@ components:
       type: string
       description: The instance unclassified-route policy the plan read.
       enum: [skip, route]
+    FileManagerRecognitionMediaDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [id, path, state]
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+        state:
+          type: string
+          enum: [ready, unavailable]
+        reason:
+          type: string
+          enum: [probe_timeout, probe_unavailable, probe_failed, invalid_output, not_loaded]
+    FileManagerRecognitionTitleDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [id, provider, work_id, season, state, episodes]
+      properties:
+        id:
+          type: string
+        provider:
+          $ref: '#/components/schemas/FileManagerRecognitionTitleProvider'
+        work_id:
+          type: string
+        season:
+          type: integer
+          minimum: 0
+        state:
+          type: string
+          enum: [known, absent, unavailable]
+        episodes:
+          type: array
+          items:
+            type: integer
+        reason:
+          type: string
+          enum: [unconfigured, credentials_rejected, rate_limited, unreachable, invalid_response, cache_miss, not_loaded]
+        retry_after_seconds:
+          type: integer
+          minimum: 0
+    FileManagerRecognitionRuntimeFacts:
+      type: object
+      additionalProperties: false
+      required: [media_probe, episode_titles]
+      properties:
+        media_probe:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileManagerRecognitionMediaDiagnostic'
+        episode_titles:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileManagerRecognitionTitleDiagnostic'
     FileManagerRecognitionPreview:
       type: object
       additionalProperties: false
-      required: [directory, rows, unknown_route, plan_digest, conflicts]
+      required: [directory, rows, unknown_route, plan_digest, conflicts, runtime_facts]
       properties:
         directory:
           type: string
@@ -16961,6 +17064,8 @@ components:
           items:
             type: string
             maxLength: 4096
+        runtime_facts:
+          $ref: '#/components/schemas/FileManagerRecognitionRuntimeFacts'
     FileManagerRecognitionConflictChoice:
       type: string
       description: >-
@@ -16992,9 +17097,9 @@ components:
           $ref: '#/components/schemas/FileManagerRecognitionMatch'
         load_runtime_facts:
           type: boolean
-          description: >-
-            Must match the confirmed preview. Reads current MediaInfo facts and
-            referenced provider episode titles again before checking the digest.
+          deprecated: true
+          default: true
+          description: Omitted or true resolves required runtime facts. False permits cache hits only.
         overrides:
           type: array
           maxItems: 256

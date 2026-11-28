@@ -17,6 +17,7 @@ import (
 	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/episodetitle"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	"bansoko/internal/provider/outbound"
 	"bansoko/internal/runtime/buildinfo"
 )
 
@@ -56,26 +57,26 @@ type tmdbRequest struct {
 
 func (c TMDBClient) prepare(ctx context.Context) (tmdbRequest, error) {
 	if c.Connections == nil {
-		return tmdbRequest{}, errors.New("TMDB connection source is not configured")
+		return tmdbRequest{}, providerError(episodetitle.SourceTMDB, episodetitle.LookupUnconfigured, errors.New("TMDB connection source is not configured"))
 	}
 	connections, err := c.Connections.ListConnections(ctx)
 	if err != nil {
-		return tmdbRequest{}, fmt.Errorf("list TMDB connections: %w", err)
+		return tmdbRequest{}, configurationError(ctx, fmt.Errorf("list TMDB connections: %w", err))
 	}
 	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, configurationdomain.ConnectionTMDB)
 	if err != nil {
-		return tmdbRequest{}, err
+		return tmdbRequest{}, connectionError(ctx, episodetitle.SourceTMDB, err)
 	}
 	apiKey := ""
 	if c.Secrets != nil && strings.TrimSpace(connection.SecretRef) != "" {
 		apiKey, _ = c.Secrets.Resolve(connection.SecretRef)
 	}
 	if strings.TrimSpace(apiKey) == "" {
-		return tmdbRequest{}, errors.New("TMDB API key is not configured")
+		return tmdbRequest{}, providerError(episodetitle.SourceTMDB, episodetitle.LookupUnconfigured, errors.New("TMDB API key is not configured"))
 	}
 	client, err := resolveClient(ctx, c.Client, c.ClientResolver, connection)
 	if err != nil {
-		return tmdbRequest{}, fmt.Errorf("resolve TMDB network route: %w", err)
+		return tmdbRequest{}, configurationError(ctx, fmt.Errorf("resolve TMDB network route: %w", err))
 	}
 	return tmdbRequest{client: client, apiKey: apiKey, endpoint: connection.Endpoint}, nil
 }
@@ -94,7 +95,7 @@ func (r tmdbRequest) get(ctx context.Context, suffix, language string, target an
 	}
 	params.Set("language", language)
 	endpoint.RawQuery = params.Encode()
-	return getJSON(ctx, r.client, endpoint, r.apiKey, target)
+	return getJSON(ctx, episodetitle.SourceTMDB, r.client, endpoint, r.apiKey, target)
 }
 
 // Episodes implements episodetitle.Client.
@@ -191,7 +192,7 @@ func resolveClient(ctx context.Context, fallback *http.Client, resolver HTTPClie
 // getJSON GETs endpoint and decodes a 2xx JSON body into target. HTTP 404
 // maps to episodetitle.ErrNotFound. Errors never carry the request URL (which
 // may hold an api_key) or the Authorization header.
-func getJSON(ctx context.Context, client *http.Client, endpoint *url.URL, apiKey string, target any) error {
+func getJSON(ctx context.Context, source episodetitle.Source, client *http.Client, endpoint *url.URL, apiKey string, target any) error {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
@@ -210,7 +211,10 @@ func getJSON(ctx context.Context, client *http.Client, endpoint *url.URL, apiKey
 		if errors.As(err, &urlErr) {
 			err = urlErr.Err
 		}
-		return fmt.Errorf("provider request failed: %w", err)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return providerError(source, episodetitle.LookupUnreachable, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
@@ -218,12 +222,49 @@ func getJSON(ctx context.Context, client *http.Client, endpoint *url.URL, apiKey
 		return fmt.Errorf("provider returned HTTP 404: %w", episodetitle.ErrNotFound)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("provider returned HTTP %d", response.StatusCode)
+		failure := &episodetitle.LookupError{Source: source, Kind: episodetitle.LookupUnreachable, Cause: fmt.Errorf("provider returned HTTP %d", response.StatusCode)}
+		switch response.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			failure.Kind = episodetitle.LookupCredentialsRejected
+		case http.StatusTooManyRequests:
+			failure.Kind = episodetitle.LookupRateLimited
+			failure.RetryAfter, _ = outbound.ParseRetryAfter(response.Header.Get("Retry-After"), time.Now())
+		}
+		return failure
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(target); err != nil {
-		return fmt.Errorf("decode provider response: %w", err)
+	const maxResponse = 4 << 20
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponse+1))
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return providerError(source, episodetitle.LookupUnreachable, err)
+	}
+	if len(body) > maxResponse {
+		return providerError(source, episodetitle.LookupInvalidResponse, errors.New("provider response is too large"))
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		return providerError(source, episodetitle.LookupInvalidResponse, fmt.Errorf("decode provider response: %w", err))
 	}
 	return nil
+}
+
+func providerError(source episodetitle.Source, kind episodetitle.LookupErrorKind, cause error) error {
+	return &episodetitle.LookupError{Source: source, Kind: kind, Cause: cause}
+}
+
+func configurationError(ctx context.Context, cause error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return &episodetitle.ConfigurationError{Cause: cause}
+}
+
+func connectionError(ctx context.Context, source episodetitle.Source, cause error) error {
+	if errors.Is(cause, configurationdomain.ErrNoEnabledConnection) {
+		return providerError(source, episodetitle.LookupUnconfigured, cause)
+	}
+	return configurationError(ctx, cause)
 }
 
 func appendEndpointPath(raw, suffix string) (*url.URL, error) {

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../ui/toast";
 import {
   ApiError,
@@ -14,24 +14,24 @@ import {
 import { searchProviderLabel } from "../../lib/providers/registry";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { formatBytes } from "../../lib/labels";
-import { namingFactLabel, namingFailureDetail, reasonLabel } from "../../lib/i18n/reasons";
+import { namingFailureDetail, reasonLabel } from "../../lib/i18n/reasons";
 import { joinList } from "../../lib/i18n/format";
+import { factLabels, firstFactField, inlineFactLinkClass, MissingFactsNote, useFactJump } from "../anime-forms/MissingFactsNote";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
 import { TaskConfigPanel } from "../anime-forms/TaskConfigPanel";
 import { TaskSplitLayout, taskPanelColumnClass, taskPreviewColumnClass } from "../anime-forms/TaskSplitLayout";
 import { MetadataFields } from "../anime-forms/MetadataFields";
 import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { draftParserKind, freezeBusinessDraft, withDraftParserKind } from "../anime-config/businessDraft";
-import { Button, Field, Input, StateBlock, StatePill } from "../../ui";
+import { Button, Field, Input, StateBlock, StatePill, TargetPathText } from "../../ui";
 import { isUpstreamNotice, UpstreamStatusBlock } from "../../ui/UpstreamStatusBlock";
-import { Checkbox, Dialog, HelpTip, REVEAL_MS, SpinnerIcon } from "../../ui/base";
+import { Checkbox, Dialog, HelpTip, SpinnerIcon } from "../../ui/base";
 import { ReasonText } from "../../ui/ReasonText";
 import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles";
 import { fileUnitsSummary, groupBoundSubtitles } from "../../lib/boundSubtitles";
 import { t } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
 import {
-  factField,
   needsExpand,
   seedEpisodeLabel,
   selectableRow,
@@ -81,52 +81,8 @@ const SPAN_MAX = 12;
 const NAMING_ONLY: readonly SectionKey[] = ["naming"];
 /** Re-read throttle for the narrow column's consecutive adjustments. */
 const PREVIEW_DEBOUNCE_MS = 250;
-
-/** The brief outline when jumping to an input: a marker only, no motion. */
-const JUMP_FLASH = ["tw:outline-2", "tw:outline-offset-2", "tw:outline-warning"];
-const JUMP_FLASH_MS = 1600;
-/** Typeable fields; hidden inputs that come with dropdown selects are excluded. */
-const TEXT_INPUT = "input:not([disabled]):not([type='hidden']):not([aria-hidden='true']), textarea:not([disabled])";
-/** Text buttons in the body (empties, summary): inherit the surrounding row's color and font size. */
-const inlineLink =
-  "tw:cursor-pointer tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:text-inherit tw:underline tw:decoration-dotted tw:underline-offset-2 tw:hover:decoration-solid tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring";
+const inlineLink = inlineFactLinkClass;
 const SPLIT = "\u0000";
-
-/** Dedup empties (several paths may share a name, e.g. multiple episode kinds), keeping the first occurrence's path for jumps. */
-function factLabels(facts: readonly string[]): { path: string; label: string }[] {
-  const seen = new Map<string, string>();
-  for (const path of facts) {
-    const label = namingFactLabel(path);
-    if (!seen.has(label)) seen.set(label, path);
-  }
-  return [...seen].map(([label, path]) => ({ path, label }));
-}
-
-/** Summary and empty notes jump to the directly editable field first (year, TMDB…), falling back to naming only when none exists. */
-function firstFactField(facts: readonly string[]): FactField {
-  return facts.map(factField).find((field) => field !== "naming") ?? "naming";
-}
-
-/** The preview's empty-facts note: warning colored, each fact tappable, jumping to its matching input. */
-function MissingFactsNote({ facts, onJump }: { facts: readonly string[]; onJump: (field: FactField) => void }) {
-  const labels = factLabels(facts);
-  // {facts} in the copy becomes per-fact buttons; the surrounding text is kept verbatim per language.
-  const [before = "", after = ""] = t("oneshot.missingFacts", { facts: SPLIT }).split(SPLIT);
-  return (
-    <p className="text-caption tw:m-0 tw:text-warning">
-      {before}
-      {labels.map((fact, index) => (
-        <Fragment key={fact.path}>
-          {index > 0 && t("common.format.listSeparator")}
-          <button type="button" className={inlineLink} onClick={() => onJump(factField(fact.path))}>
-            {fact.label}
-          </button>
-        </Fragment>
-      ))}
-      {after}
-    </p>
-  );
-}
 
 /** One subtitle in the nested list: the target and filter outcome the server gives. */
 function subtitleItem(file: RSSListFile): BoundSubtitleItem {
@@ -156,7 +112,11 @@ function FileRow({ file, subtitles, onJump }: { file: RSSListFile; subtitles: RS
         {file.size_bytes !== undefined && <span> · {formatBytes(file.size_bytes)}</span>}
       </p>
       <p className="break-anywhere tw:m-0 tw:text-sm" title={file.rendered_target ?? undefined}>
-        {file.rendered_target ?? <span className="text-muted text-caption">{failure ?? t("oneshot.targetMissing")}</span>}
+        {file.rendered_target ? (
+          <TargetPathText value={file.rendered_target} placeholderTone="neutral" />
+        ) : (
+          <span className="text-muted text-caption">{failure ?? t("oneshot.targetMissing")}</span>
+        )}
       </p>
       {emptyFacts.length > 0 && <MissingFactsNote facts={emptyFacts} onJump={onJump} />}
       {(file.in_library === true || (!file.included && file.reason_code)) && (
@@ -821,57 +781,12 @@ export function OneShotDialog({
   const settingsRef = useRef<HTMLElement>(null);
   const previewRef = useRef<HTMLElement>(null);
   const namingRef = useRef<HTMLDivElement>(null);
-  const [jump, setJump] = useState<{ field: FactField; seq: number }>();
-
-  /** Jumps to an input: naming sits inside the advanced section, so expand it first. */
-  function jumpTo(field: FactField) {
-    if (field === "naming") setAdvancedOpen(true);
-    setJump((current) => ({ field, seq: (current?.seq ?? 0) + 1 }));
-  }
-
-  function jumpNode(field: FactField): HTMLElement | null {
-    const settings = settingsRef.current;
-    if (!settings) return null;
-    if (field === "naming") return namingRef.current;
-    if (field === "title") return settings.querySelector<HTMLElement>("#oneshot-title");
-    // The metadata rows come from the shared MetadataFields, with row titles carrying `${idPrefix}-…-label` ids.
-    const labelId = { year: "oneshot-year-label", season: "oneshot-season-label", bgm: "oneshot-bgm-label", tmdb: "oneshot-tmdb-label", kind: "oneshot-media-kind-label" }[field];
-    return settings.querySelector<HTMLElement>(`#${labelId}`)?.closest<HTMLElement>("section") ?? null;
-  }
-
-  useEffect(() => {
-    if (!jump) return;
-    let frame = 0;
-    let timer = 0;
-    let flashTimer = 0;
-    let tries = 0;
-    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const run = () => {
-      const node = jumpNode(jump.field);
-      // A just-expanded advanced section mounts on the next frame.
-      if (!node) {
-        if (tries++ < 10) frame = window.requestAnimationFrame(run);
-        return;
-      }
-      node.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
-      // Look for a typeable field first (year, naming template); only without one land on a row button (match TMDB and friends).
-      const focusable = node.matches("input, button")
-        ? node
-        : (node.querySelector<HTMLElement>(TEXT_INPUT) ?? node.querySelector<HTMLElement>("button:not([disabled])"));
-      focusable?.focus({ preventScroll: true });
-      node.classList.add(...JUMP_FLASH);
-      flashTimer = window.setTimeout(() => node.classList.remove(...JUMP_FLASH), JUMP_FLASH_MS);
-    };
-    // Expanding the advanced section has a row-height transition: wait for it to finish before positioning, or the jump lands off.
-    if (jump.field === "naming") timer = window.setTimeout(run, REVEAL_MS + 20);
-    else run();
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.clearTimeout(flashTimer);
-    };
-    // jumpNode is a read-only ref; each jump is triggered by seq.
-  }, [jump]);
+  const jumpTo = useFactJump({
+    idPrefix: "oneshot",
+    settingsRef,
+    namingRef,
+    onOpenAdvanced: () => setAdvancedOpen(true),
+  });
 
   // The advanced section's three parts differ from task start: a one-line hint shows even while folded.
   const advancedChanged = (() => {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	accessdomain "bansoko/internal/accesscontrol/domain"
+	"bansoko/internal/episodetitle"
 	"bansoko/internal/filemanager"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/transport/httpapi/generated"
@@ -149,8 +150,15 @@ func (f *fakeFileManager) PreviewRecognition(_ context.Context, request filemana
 				EmptyFacts: []string{"media.hdr"},
 				Conflict:   &filemanager.RecognitionConflict{OccupiedBy: filemanager.OccupantFile, VersionPath: "/srv/library/Show/01 (2).mkv"}},
 			{Path: "/srv/library/Show/mystery.mkv", Name: "mystery.mkv", Kind: "video", Group: "mystery", Revision: "rev-2",
-				Disposition: filemanager.RecognitionError,
-				Blockers:    []filemanager.RecognitionBlocker{{Code: filemanager.RecognitionBlockerFactsMissing, Facts: []string{"anime.title"}}}},
+				Disposition: filemanager.RecognitionError, SizeBytes: 4096, HasPlaceholder: true,
+				Blockers: []filemanager.RecognitionBlocker{{Code: filemanager.RecognitionBlockerRuntimeFacts, Facts: []string{"tmdb.ep_title"}, DiagnosticIDs: []string{"titles-1"}}}},
+		},
+		RuntimeFacts: filemanager.RecognitionRuntimeFacts{
+			MediaProbe: []filemanager.RecognitionMediaDiagnostic{{ID: "media-1", Path: "/srv/library/Show/Show - 01.mkv", State: "ready"}},
+			EpisodeTitles: []filemanager.RecognitionTitleDiagnostic{{
+				ID: "titles-1", State: "unavailable", Reason: "rate_limited",
+				Work: episodetitle.WorkKey{Source: episodetitle.SourceTMDB, WorkID: "42", Season: 0}, Episodes: []int{1, 2}, RetryAfterSeconds: new(17),
+			}},
 		},
 	}, nil
 }
@@ -376,7 +384,7 @@ func TestFileManagerHandlersMapTypedErrors(t *testing.T) {
 	}
 }
 
-func postFileManager(t *testing.T, service *fakeFileManager, target, key, body string) (*httptest.ResponseRecorder, map[string]any) {
+func postFileManager(t *testing.T, service FileManagerService, target, key, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	server := &Server{deps: Dependencies{FileManager: service, SkipAuth: true, RuntimeLogger: observabilityport.NopRuntimeLogger{}}}
 	recorder := httptest.NewRecorder()
@@ -592,13 +600,15 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		`"subtitle_suffix_template":"sub"}`
 	recorder, body := postFileManager(t, service, "/api/v1/file-manager/recognition/preview", "",
 		`{"paths":["/srv/library/Show/Show - 01.mkv","/srv/library/Show/Show - 01.zh.ass"],"parser":{"id":"regex","config":{"episode_patterns":["S(\\d+)"]}},`+
-			namingJSON+`,"load_runtime_facts":true,"match":{"managed_anime_id":"anime-1","season":1,"offset":2},`+
+			namingJSON+`,"refresh_media":true,"episode_title_cache_only":[{"provider":"tmdb","work_id":"42","season":0}],"match":{"managed_anime_id":"anime-1","season":1,"offset":2},`+
 			`"overrides":[{"path":"/srv/library/Show/Show - 01.mkv","season":0,"episode":7}]}`)
 	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("preview: %d %v", recorder.Code, body)
 	}
 	request := service.recognition
-	if len(request.Paths) != 2 || !request.LoadRuntimeFacts || request.Parser.ID != "regex" || string(request.Parser.Config) != `{"episode_patterns":["S(\\d+)"]}` ||
+	if len(request.Paths) != 2 || request.DisableRuntimeFacts || !request.RefreshMedia || len(request.EpisodeTitleCacheOnly) != 1 ||
+		request.EpisodeTitleCacheOnly[0].Source != "tmdb" || request.EpisodeTitleCacheOnly[0].WorkID != "42" || request.EpisodeTitleCacheOnly[0].Season != 0 ||
+		request.Parser.ID != "regex" || string(request.Parser.Config) != `{"episode_patterns":["S(\\d+)"]}` ||
 		request.Naming.TV.DirectoryTemplate != "/srv/library/Show" || request.Naming.TV.VideoFilenameTemplate != "${ep.number}.${file.ext}" ||
 		request.Naming.Unknown.DirectoryTemplate != "/srv/library/Show/Extras" || request.Naming.SubtitleSuffixTemplate != "sub" ||
 		request.Naming.Language != "js-naming-1" ||
@@ -618,9 +628,50 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		first["target_name"] != "01.mkv" || first["empty_facts"].([]any)[0] != "media.hdr" || first["disposition"] != "rename" || first["group"] != "Show - 01" ||
 		first["revision"] != "rev-1" || episode["number"] != "1" || episode["source"] != "file_parser" || episode["offset"] != float64(0) ||
 		conflict["occupied_by"] != "file" || conflict["version_path"] != "/srv/library/Show/01 (2).mkv" ||
-		rows[1].(map[string]any)["disposition"] != "error" || blocker["code"] != "facts_missing" ||
-		blocker["facts"].([]any)[0] != "anime.title" {
+		rows[1].(map[string]any)["disposition"] != "error" || blocker["code"] != "runtime_facts_unavailable" ||
+		blocker["facts"].([]any)[0] != "tmdb.ep_title" || blocker["diagnostic_ids"].([]any)[0] != "titles-1" ||
+		rows[1].(map[string]any)["size_bytes"] != float64(4096) || rows[1].(map[string]any)["has_placeholder"] != true || first["has_placeholder"] != false {
 		t.Fatalf("preview body: %v", body)
+	}
+	runtime := body["runtime_facts"].(map[string]any)
+	media := runtime["media_probe"].([]any)[0].(map[string]any)
+	title := runtime["episode_titles"].([]any)[0].(map[string]any)
+	if media["state"] != "ready" || media["id"] != "media-1" || media["reason"] != nil ||
+		title["id"] != "titles-1" || title["provider"] != "tmdb" || title["work_id"] != "42" || title["season"] != float64(0) ||
+		title["state"] != "unavailable" || title["reason"] != "rate_limited" || title["retry_after_seconds"] != float64(17) || len(title["episodes"].([]any)) != 2 {
+		t.Fatalf("runtime facts: %v", runtime)
+	}
+
+	const selection = `{"paths":["/srv/library/Show/Show - 01.mkv"],`
+	for _, option := range []string{"", `,"load_runtime_facts":true`, `,"load_runtime_facts":false`} {
+		recorder, body := postFileManager(t, service, "/api/v1/file-manager/recognition/preview", "", selection+namingJSON+option+`}`)
+		if recorder.Code != http.StatusOK || service.recognition.DisableRuntimeFacts != (option == `,"load_runtime_facts":false`) {
+			t.Fatalf("load option %q: status=%d, runtime disabled=%t, body=%v", option, recorder.Code, service.recognition.DisableRuntimeFacts, body)
+		}
+	}
+	missingSeason, body := postFileManager(t, service, "/api/v1/file-manager/recognition/preview", "",
+		selection+namingJSON+`,"episode_title_cache_only":[{"provider":"tmdb","work_id":"42"}]}`)
+	if missingSeason.Code != http.StatusUnprocessableEntity || body["code"] != filemanager.CodeRecognitionInvalid {
+		t.Fatalf("omitted season: status=%d, body=%v", missingSeason.Code, body)
+	}
+	realService := &filemanager.Service{}
+	realService.SetRecognition(nil, nil, nil)
+	for _, option := range []string{
+		`,"refresh_media":true`,
+		`,"episode_title_cache_only":[{"provider":"tmdb","work_id":"42","season":0}]`,
+	} {
+		recorder, body := postFileManager(t, realService, "/api/v1/file-manager/recognition/preview", "",
+			selection+namingJSON+`,"load_runtime_facts":false`+option+`}`)
+		if recorder.Code != http.StatusUnprocessableEntity || body["code"] != filemanager.CodeRecognitionInvalid {
+			t.Fatalf("disabled runtime with %s: status=%d, body=%v", option, recorder.Code, body)
+		}
+	}
+	for _, option := range []string{`,"refresh_media":true`, `,"episode_title_cache_only":[]`} {
+		recorder, body := postFileManager(t, &fakeFileManager{}, "/api/v1/file-manager/recognition", "rec-preview-only",
+			selection+namingJSON+`,"expected_plan_digest":"plan-1","conflict":"block"`+option+`}`)
+		if recorder.Code != http.StatusBadRequest || body["code"] != "REQUEST_INVALID" {
+			t.Fatalf("submit option %q: status=%d, body=%v", option, recorder.Code, body)
+		}
 	}
 
 	recorder, body = postFileManager(t, service, "/api/v1/file-manager/recognition", "rec-1",
@@ -631,7 +682,7 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 	}
 	submit := service.recognitionSub
 	if submit.IdempotencyKey != "rec-1" || submit.Actor != "web" || submit.ExpectedPlanDigest != "plan-1" ||
-		!submit.LoadRuntimeFacts || submit.Conflict != filemanager.RecognitionConflictVersion ||
+		submit.DisableRuntimeFacts || !submit.LegacyLoadRuntimeFacts || submit.Conflict != filemanager.RecognitionConflictVersion ||
 		submit.Naming.TV.VideoFilenameTemplate != "${ep.number}.${file.ext}" ||
 		submit.Naming.SubtitleSuffixTemplate != "sub" || submit.Match != nil ||
 		submit.Parser.ID != "" || len(submit.Parser.Config) != 0 || len(submit.Overrides) != 1 ||

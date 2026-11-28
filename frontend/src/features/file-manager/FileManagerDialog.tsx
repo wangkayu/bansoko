@@ -65,10 +65,20 @@ export type FileManagerDialogProps = {
   onNavigate: (path: string | undefined) => void;
   onOpenAnime: (managedAnimeID: string) => void;
   onOpenRecord: (acquisitionID: string) => void;
+  /** Deep-links into connection settings for a metadata provider (bgm / tmdb). */
+  onOpenConnectionSettings?: (provider: "bgm" | "tmdb") => void;
   onClose: () => void;
 };
 
-export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenRecord, onClose }: FileManagerDialogProps) {
+export function FileManagerDialog({
+  open,
+  path,
+  onNavigate,
+  onOpenAnime,
+  onOpenRecord,
+  onOpenConnectionSettings,
+  onClose,
+}: FileManagerDialogProps) {
   const roots = useQuery({ queryKey: fileManagerKeys.roots, queryFn: listFileManagerRoots, enabled: open });
   const rootList = useMemo(() => roots.data?.roots ?? [], [roots.data]);
   // Without a carried path the dialog opens at the first usable library directory.
@@ -375,7 +385,13 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
         />
       ) : null}
       {overlay?.kind === "recognize" ? (
-        <RecognitionDialog paths={overlay.paths} singleVideo={overlay.singleVideo} onClose={() => setOverlay(null)} onFinished={reportRecognition} />
+        <RecognitionDialog
+          paths={overlay.paths}
+          singleVideo={overlay.singleVideo}
+          onOpenConnectionSettings={onOpenConnectionSettings}
+          onClose={() => setOverlay(null)}
+          onFinished={reportRecognition}
+        />
       ) : null}
       {overlay?.kind === "delete" ? (
         <DeleteDialog files={overlay.files} onClose={() => setOverlay(null)} onFinished={reportBatch} />

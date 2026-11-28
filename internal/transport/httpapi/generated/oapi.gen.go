@@ -1046,6 +1046,21 @@ const (
 	FileManagerRecognitionDispositionUnchanged FileManagerRecognitionDisposition = "unchanged"
 )
 
+// Defines values for FileManagerRecognitionMediaDiagnosticReason.
+const (
+	FileManagerRecognitionMediaDiagnosticReasonInvalidOutput    FileManagerRecognitionMediaDiagnosticReason = "invalid_output"
+	FileManagerRecognitionMediaDiagnosticReasonNotLoaded        FileManagerRecognitionMediaDiagnosticReason = "not_loaded"
+	FileManagerRecognitionMediaDiagnosticReasonProbeFailed      FileManagerRecognitionMediaDiagnosticReason = "probe_failed"
+	FileManagerRecognitionMediaDiagnosticReasonProbeTimeout     FileManagerRecognitionMediaDiagnosticReason = "probe_timeout"
+	FileManagerRecognitionMediaDiagnosticReasonProbeUnavailable FileManagerRecognitionMediaDiagnosticReason = "probe_unavailable"
+)
+
+// Defines values for FileManagerRecognitionMediaDiagnosticState.
+const (
+	FileManagerRecognitionMediaDiagnosticStateReady       FileManagerRecognitionMediaDiagnosticState = "ready"
+	FileManagerRecognitionMediaDiagnosticStateUnavailable FileManagerRecognitionMediaDiagnosticState = "unavailable"
+)
+
 // Defines values for FileManagerRecognitionParserKind.
 const (
 	FileManagerRecognitionParserKindRegex    FileManagerRecognitionParserKind = "regex"
@@ -1057,6 +1072,30 @@ const (
 	FileManagerRecognitionRowKindOther    FileManagerRecognitionRowKind = "other"
 	FileManagerRecognitionRowKindSubtitle FileManagerRecognitionRowKind = "subtitle"
 	FileManagerRecognitionRowKindVideo    FileManagerRecognitionRowKind = "video"
+)
+
+// Defines values for FileManagerRecognitionTitleDiagnosticReason.
+const (
+	FileManagerRecognitionTitleDiagnosticReasonCacheMiss           FileManagerRecognitionTitleDiagnosticReason = "cache_miss"
+	FileManagerRecognitionTitleDiagnosticReasonCredentialsRejected FileManagerRecognitionTitleDiagnosticReason = "credentials_rejected"
+	FileManagerRecognitionTitleDiagnosticReasonInvalidResponse     FileManagerRecognitionTitleDiagnosticReason = "invalid_response"
+	FileManagerRecognitionTitleDiagnosticReasonNotLoaded           FileManagerRecognitionTitleDiagnosticReason = "not_loaded"
+	FileManagerRecognitionTitleDiagnosticReasonRateLimited         FileManagerRecognitionTitleDiagnosticReason = "rate_limited"
+	FileManagerRecognitionTitleDiagnosticReasonUnconfigured        FileManagerRecognitionTitleDiagnosticReason = "unconfigured"
+	FileManagerRecognitionTitleDiagnosticReasonUnreachable         FileManagerRecognitionTitleDiagnosticReason = "unreachable"
+)
+
+// Defines values for FileManagerRecognitionTitleDiagnosticState.
+const (
+	FileManagerRecognitionTitleDiagnosticStateAbsent      FileManagerRecognitionTitleDiagnosticState = "absent"
+	FileManagerRecognitionTitleDiagnosticStateKnown       FileManagerRecognitionTitleDiagnosticState = "known"
+	FileManagerRecognitionTitleDiagnosticStateUnavailable FileManagerRecognitionTitleDiagnosticState = "unavailable"
+)
+
+// Defines values for FileManagerRecognitionTitleProvider.
+const (
+	FileManagerRecognitionTitleProviderBgm  FileManagerRecognitionTitleProvider = "bgm"
+	FileManagerRecognitionTitleProviderTmdb FileManagerRecognitionTitleProvider = "tmdb"
 )
 
 // Defines values for FileManagerRecognitionUnknownRoute.
@@ -5614,8 +5653,11 @@ type FileManagerRecognitionAnimeDraftMediaKind string
 // FileManagerRecognitionBlocker defines model for FileManagerRecognitionBlocker.
 type FileManagerRecognitionBlocker struct {
 	// Code Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), runtime facts could not be read (`runtime_facts_unavailable`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
-	Code  FileManagerRecognitionBlockerCode `json:"code"`
-	Facts *[]string                         `json:"facts,omitempty"`
+	Code FileManagerRecognitionBlockerCode `json:"code"`
+
+	// DiagnosticIds IDs of the related runtime facts diagnostics.
+	DiagnosticIds *[]string `json:"diagnostic_ids,omitempty"`
+	Facts         *[]string `json:"facts,omitempty"`
 }
 
 // FileManagerRecognitionBlockerCode Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), runtime facts could not be read (`runtime_facts_unavailable`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
@@ -5673,6 +5715,20 @@ type FileManagerRecognitionMatch struct {
 	Season *int `json:"season,omitempty"`
 }
 
+// FileManagerRecognitionMediaDiagnostic defines model for FileManagerRecognitionMediaDiagnostic.
+type FileManagerRecognitionMediaDiagnostic struct {
+	Id     string                                       `json:"id"`
+	Path   string                                       `json:"path"`
+	Reason *FileManagerRecognitionMediaDiagnosticReason `json:"reason,omitempty"`
+	State  FileManagerRecognitionMediaDiagnosticState   `json:"state"`
+}
+
+// FileManagerRecognitionMediaDiagnosticReason defines model for FileManagerRecognitionMediaDiagnostic.Reason.
+type FileManagerRecognitionMediaDiagnosticReason string
+
+// FileManagerRecognitionMediaDiagnosticState defines model for FileManagerRecognitionMediaDiagnostic.State.
+type FileManagerRecognitionMediaDiagnosticState string
+
 // FileManagerRecognitionParser defines model for FileManagerRecognitionParser.
 type FileManagerRecognitionParser struct {
 	// Config Parser configuration (the `regex` parser's `episode_patterns`).
@@ -5694,8 +5750,9 @@ type FileManagerRecognitionPreview struct {
 	Directory string `json:"directory"`
 
 	// PlanDigest The plan the submit must confirm.
-	PlanDigest string                      `json:"plan_digest"`
-	Rows       []FileManagerRecognitionRow `json:"rows"`
+	PlanDigest   string                             `json:"plan_digest"`
+	Rows         []FileManagerRecognitionRow        `json:"rows"`
+	RuntimeFacts FileManagerRecognitionRuntimeFacts `json:"runtime_facts"`
 
 	// TitleHint The title the parser read from the first recognized file's own name, offered as the match's title candidate — the same read the seed search exposes per seed as `title_hint`; absent when no name parses a title.
 	TitleHint *string `json:"title_hint,omitempty"`
@@ -5706,7 +5763,11 @@ type FileManagerRecognitionPreview struct {
 
 // FileManagerRecognitionRequest defines model for FileManagerRecognitionRequest.
 type FileManagerRecognitionRequest struct {
-	// LoadRuntimeFacts Explicitly read each selected video's current MediaInfo facts and resolve referenced provider episode titles through the persistent cache before rendering. Preview and submit must use the same value; submit reads the facts again and confirms the resulting plan digest.
+	// EpisodeTitleCacheOnly Resolve these episode title work keys from cache only.
+	EpisodeTitleCacheOnly *[]FileManagerRecognitionWorkKey `json:"episode_title_cache_only,omitempty"`
+
+	// LoadRuntimeFacts Omitted or true resolves the runtime facts required by the selected templates. False permits cache hits only. It cannot be combined with refresh_media or a nonempty episode_title_cache_only.
+	// Deprecated:
 	LoadRuntimeFacts *bool `json:"load_runtime_facts,omitempty"`
 
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
@@ -5719,6 +5780,9 @@ type FileManagerRecognitionRequest struct {
 
 	// Paths Absolute paths of the selected files, all in one directory.
 	Paths []string `json:"paths"`
+
+	// RefreshMedia Refresh MediaInfo for the videos that require it.
+	RefreshMedia *bool `json:"refresh_media,omitempty"`
 }
 
 // FileManagerRecognitionResult defines model for FileManagerRecognitionResult.
@@ -5741,12 +5805,16 @@ type FileManagerRecognitionRow struct {
 	Episode    *FileManagerRecognitionEpisode `json:"episode,omitempty"`
 
 	// Group The group's stem (a video and its bound subtitles share one).
-	Group      string                        `json:"group"`
-	Kind       FileManagerRecognitionRowKind `json:"kind"`
-	Name       string                        `json:"name"`
-	Path       string                        `json:"path"`
-	Revision   string                        `json:"revision"`
-	TargetName *string                       `json:"target_name,omitempty"`
+	Group string `json:"group"`
+
+	// HasPlaceholder The rendered path contains a preview placeholder marker.
+	HasPlaceholder bool                          `json:"has_placeholder"`
+	Kind           FileManagerRecognitionRowKind `json:"kind"`
+	Name           string                        `json:"name"`
+	Path           string                        `json:"path"`
+	Revision       string                        `json:"revision"`
+	SizeBytes      int64                         `json:"size_bytes"`
+	TargetName     *string                       `json:"target_name,omitempty"`
 
 	// TargetPath Rendered absolute target; absent when no target is written.
 	TargetPath *string `json:"target_path,omitempty"`
@@ -5754,6 +5822,12 @@ type FileManagerRecognitionRow struct {
 
 // FileManagerRecognitionRowKind defines model for FileManagerRecognitionRow.Kind.
 type FileManagerRecognitionRowKind string
+
+// FileManagerRecognitionRuntimeFacts defines model for FileManagerRecognitionRuntimeFacts.
+type FileManagerRecognitionRuntimeFacts struct {
+	EpisodeTitles []FileManagerRecognitionTitleDiagnostic `json:"episode_titles"`
+	MediaProbe    []FileManagerRecognitionMediaDiagnostic `json:"media_probe"`
+}
 
 // FileManagerRecognitionSubmitRequest defines model for FileManagerRecognitionSubmitRequest.
 type FileManagerRecognitionSubmitRequest struct {
@@ -5763,7 +5837,8 @@ type FileManagerRecognitionSubmitRequest struct {
 	// ExpectedPlanDigest The `plan_digest` the preview returned.
 	ExpectedPlanDigest string `json:"expected_plan_digest"`
 
-	// LoadRuntimeFacts Must match the confirmed preview. Reads current MediaInfo facts and referenced provider episode titles again before checking the digest.
+	// LoadRuntimeFacts Omitted or true resolves required runtime facts. False permits cache hits only.
+	// Deprecated:
 	LoadRuntimeFacts *bool `json:"load_runtime_facts,omitempty"`
 
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
@@ -5776,8 +5851,38 @@ type FileManagerRecognitionSubmitRequest struct {
 	Paths     []string                      `json:"paths"`
 }
 
+// FileManagerRecognitionTitleDiagnostic defines model for FileManagerRecognitionTitleDiagnostic.
+type FileManagerRecognitionTitleDiagnostic struct {
+	Episodes          []int                                        `json:"episodes"`
+	Id                string                                       `json:"id"`
+	Provider          FileManagerRecognitionTitleProvider          `json:"provider"`
+	Reason            *FileManagerRecognitionTitleDiagnosticReason `json:"reason,omitempty"`
+	RetryAfterSeconds *int                                         `json:"retry_after_seconds,omitempty"`
+	Season            int                                          `json:"season"`
+	State             FileManagerRecognitionTitleDiagnosticState   `json:"state"`
+	WorkId            string                                       `json:"work_id"`
+}
+
+// FileManagerRecognitionTitleDiagnosticReason defines model for FileManagerRecognitionTitleDiagnostic.Reason.
+type FileManagerRecognitionTitleDiagnosticReason string
+
+// FileManagerRecognitionTitleDiagnosticState defines model for FileManagerRecognitionTitleDiagnostic.State.
+type FileManagerRecognitionTitleDiagnosticState string
+
+// FileManagerRecognitionTitleProvider defines model for FileManagerRecognitionTitleProvider.
+type FileManagerRecognitionTitleProvider string
+
 // FileManagerRecognitionUnknownRoute The instance unclassified-route policy the plan read.
 type FileManagerRecognitionUnknownRoute string
+
+// FileManagerRecognitionWorkKey defines model for FileManagerRecognitionWorkKey.
+type FileManagerRecognitionWorkKey struct {
+	Provider FileManagerRecognitionTitleProvider `json:"provider"`
+
+	// Season Provider season number (zero for Bangumi).
+	Season int    `json:"season"`
+	WorkId string `json:"work_id"`
+}
 
 // FileManagerReleaseRequest defines model for FileManagerReleaseRequest.
 type FileManagerReleaseRequest struct {

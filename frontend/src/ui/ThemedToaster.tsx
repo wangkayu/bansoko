@@ -7,17 +7,29 @@ import type { ReactElement } from "react";
 // over modal dialog footers (save → subscribe), and while a modal is open the
 // toast lives in the inert app root, so it swallowed the click on the footer's
 // primary action.
-export function ThemedToaster({ inCatalogList = false }: { inCatalogList?: boolean } = {}): ReactElement {
+export function ThemedToaster({
+  inCatalogList = false,
+  inDialog = false,
+}: {
+  inCatalogList?: boolean;
+  inDialog?: boolean;
+} = {}): ReactElement {
   const { resolvedTheme } = useTheme();
+  const scoped = inCatalogList || inDialog;
+  const className = inCatalogList
+    ? "catalog-list-toaster"
+    : inDialog
+      ? "dialog-toaster"
+      : "tw:[:root:has(.catalog-list-toaster,.dialog-toaster)_&]:hidden";
   return (
     <Toaster
-      // Expose the list's copy while its focus trap is active.
-      className={inCatalogList ? "catalog-list-toaster" : "tw:[:root:has(.catalog-list-toaster)_&]:hidden"}
-      style={inCatalogList ? { position: "absolute" } : undefined}
+      // Expose actionable toasts inside a modal's focus trap while hiding the inert root toaster.
+      className={className}
+      style={scoped ? { position: "absolute" } : undefined}
       // Keep the list's filters and batch footer clear of actionable notices.
       position={inCatalogList ? "bottom-center" : "top-center"}
-      offset={inCatalogList ? { bottom: 80 } : undefined}
-      mobileOffset={inCatalogList ? { bottom: 80 } : undefined}
+      offset={inCatalogList ? { bottom: 80 } : inDialog ? { top: 12 } : undefined}
+      mobileOffset={inCatalogList ? { bottom: 80 } : inDialog ? { top: 12 } : undefined}
       visibleToasts={inCatalogList ? 1 : undefined}
       theme={resolvedTheme === "dark" ? "dark" : "light"}
       toastOptions={{

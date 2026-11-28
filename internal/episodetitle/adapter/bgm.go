@@ -28,21 +28,18 @@ type BGMClient struct {
 
 var _ episodetitle.Client = BGMClient{}
 
-// prepare resolves the bgm connection and its egress client. A missing,
-// ambiguous or unresolvable bgm connection is not swallowed: a template that
-// reads the episode title asked for this query, so the failure surfaces as a
-// transient lookup failure exactly like a network error.
+// prepare resolves the BGM connection and its egress client.
 func (c BGMClient) prepare(ctx context.Context) (string, *http.Client, error) {
 	if c.Connections == nil {
-		return "", nil, fmt.Errorf("BGM connection source is not configured: %w", episodetitle.ErrTransient)
+		return "", nil, providerError(episodetitle.SourceBGM, episodetitle.LookupUnconfigured, errors.New("BGM connection source is not configured"))
 	}
 	connections, err := c.Connections.ListConnections(ctx)
 	if err != nil {
-		return "", nil, fmt.Errorf("list BGM connections: %w", err)
+		return "", nil, configurationError(ctx, fmt.Errorf("list BGM connections: %w", err))
 	}
 	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, configurationdomain.ConnectionBGM)
 	if err != nil {
-		return "", nil, fmt.Errorf("no enabled BGM connection: %w", episodetitle.ErrTransient)
+		return "", nil, connectionError(ctx, episodetitle.SourceBGM, err)
 	}
 	endpoint := strings.TrimSpace(connection.Endpoint)
 	if endpoint == "" {
@@ -50,7 +47,7 @@ func (c BGMClient) prepare(ctx context.Context) (string, *http.Client, error) {
 	}
 	client, err := resolveClient(ctx, c.Client, c.ClientResolver, connection)
 	if err != nil {
-		return "", nil, fmt.Errorf("resolve BGM network route: %w", err)
+		return "", nil, configurationError(ctx, fmt.Errorf("resolve BGM network route: %w", err))
 	}
 	return endpoint, client, nil
 }
@@ -76,14 +73,12 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 	query := parsed.Query()
 	query.Set("type", strconv.Itoa(bgmEpisodeTypeMain))
 	parsed.RawQuery = query.Encode()
-	var payload struct {
-		Data []bgmEpisode `json:"data"`
+	items, err := fetchBGMMainPages(ctx, client, parsed)
+	if err != nil {
+		return episodetitle.List{}, err
 	}
-	if err := getJSON(ctx, client, parsed, "", &payload); err != nil {
-		return episodetitle.List{}, fmt.Errorf("request BGM subject episodes: %w", err)
-	}
-	episodes := make([]episodetitle.Episode, 0, len(payload.Data))
-	for _, item := range payload.Data {
+	episodes := make([]episodetitle.Episode, 0, len(items))
+	for _, item := range items {
 		if item.Type != bgmEpisodeTypeMain {
 			// The type query already asks for main episodes; a proxy or a
 			// provider change that ignores it must not slip specials in.
@@ -101,6 +96,54 @@ func (c BGMClient) Episodes(ctx context.Context, key episodetitle.Key) (episodet
 		})
 	}
 	return episodetitle.List{Episodes: episodes}, nil
+}
+
+// fetchBGMMainPages returns a complete list or an error. Even a 404 after
+// the first page cannot establish absence for episodes we have not seen.
+func fetchBGMMainPages(ctx context.Context, client *http.Client, endpoint *url.URL) ([]bgmEpisode, error) {
+	invalid := func(message string) error {
+		return providerError(episodetitle.SourceBGM, episodetitle.LookupInvalidResponse, errors.New(message))
+	}
+	var items []bgmEpisode
+	total := -1
+	for offset := 0; offset < bgmEpisodeMaxCount; offset += bgmEpisodePageSize {
+		page := *endpoint
+		query := page.Query()
+		query.Set("limit", strconv.Itoa(bgmEpisodePageSize))
+		query.Set("offset", strconv.Itoa(offset))
+		page.RawQuery = query.Encode()
+		var payload struct {
+			Data  []bgmEpisode `json:"data"`
+			Total *int         `json:"total"`
+		}
+		if err := getJSON(ctx, episodetitle.SourceBGM, client, &page, "", &payload); err != nil {
+			if offset > 0 && errors.Is(err, episodetitle.ErrNotFound) {
+				return nil, invalid("BGM episode page disappeared during pagination")
+			}
+			return nil, fmt.Errorf("request BGM subject episodes: %w", err)
+		}
+		if payload.Data == nil || len(payload.Data) > bgmEpisodePageSize {
+			return nil, invalid("BGM episode page has invalid data")
+		}
+		if payload.Total != nil {
+			if *payload.Total < 0 || *payload.Total > bgmEpisodeMaxCount || (total >= 0 && total != *payload.Total) {
+				return nil, invalid("BGM episode page total is inconsistent or exceeds the limit")
+			}
+			total = *payload.Total
+		}
+		items = append(items, payload.Data...)
+		if total >= 0 {
+			if len(items) == total {
+				return items, nil
+			}
+			if len(items) > total || len(payload.Data) < bgmEpisodePageSize {
+				return nil, invalid("BGM episode list is incomplete")
+			}
+		} else if len(payload.Data) < bgmEpisodePageSize {
+			return items, nil
+		}
+	}
+	return nil, invalid("BGM episode list reached the pagination limit")
 }
 
 // subjectEpisodesEndpoint resolves the episode list URL of one subject on the
@@ -179,7 +222,7 @@ func (c BGMClient) SectionedEpisodes(ctx context.Context, key episodetitle.Key) 
 			Data  []bgmEpisode `json:"data"`
 			Total int          `json:"total"`
 		}
-		if err := getJSON(ctx, client, &page, "", &payload); err != nil {
+		if err := getJSON(ctx, episodetitle.SourceBGM, client, &page, "", &payload); err != nil {
 			return episodetitle.SectionedList{}, fmt.Errorf("request BGM subject episodes: %w", err)
 		}
 		for _, item := range payload.Data {

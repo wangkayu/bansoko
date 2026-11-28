@@ -240,7 +240,7 @@ func (l *Lookup) Season(ctx context.Context, key Key, bypassCache bool) (List, e
 	}
 	client := l.clients[key.Source]
 	if client == nil {
-		return List{}, transient(fmt.Errorf("no episode list client for source %q", key.Source))
+		return List{}, &LookupError{Source: key.Source, Kind: LookupUnconfigured}
 	}
 	if !bypassCache {
 		if list, ok := l.fresh(key); ok {
@@ -363,7 +363,7 @@ func (l *Lookup) fetch(ctx context.Context, client Client, key Key) (List, error
 		cancelWait()
 	case <-waitCtx.Done():
 		cancelWait()
-		return List{}, transient(fmt.Errorf("wait for %s query slot: %w", key.Source, waitCtx.Err()))
+		return List{}, &LookupError{Source: key.Source, Kind: LookupUnreachable, Cause: fmt.Errorf("wait for query slot: %w", waitCtx.Err())}
 	}
 	defer func() { <-sem }()
 
@@ -374,7 +374,12 @@ func (l *Lookup) fetch(ctx context.Context, client Client, key Key) (List, error
 	case errors.Is(err, ErrNotFound):
 		list = List{}
 	case err != nil:
-		return List{}, transient(err)
+		var provider *LookupError
+		var configuration *ConfigurationError
+		if errors.As(err, &provider) || errors.As(err, &configuration) {
+			return List{}, transient(err)
+		}
+		return List{}, &LookupError{Source: key.Source, Kind: LookupUnreachable, Cause: err}
 	}
 	list = List{Episodes: append([]Episode(nil), list.Episodes...)}
 	l.store(key, list)

@@ -52,9 +52,10 @@ const library: NamingTemplateLibraryView = {
 const preview: FileManagerRecognitionPreview = {
   directory: "/media/anime",
   unknown_route: "skip",
-  plan_digest: "digest-1",
+  plan_digest: "r2.ready.digest-1",
   conflicts: [],
   title_hint: "示例作品",
+  runtime_facts: { media_probe: [], episode_titles: [] },
   rows: [
     {
       path: "/media/anime/Show - 01.mkv",
@@ -62,6 +63,8 @@ const preview: FileManagerRecognitionPreview = {
       kind: "video",
       group: "g1",
       revision: "r1",
+      size_bytes: 2048,
+      has_placeholder: false,
       episode: { raw: "01", number: "1", offset: 0, source: "parsed" },
       target_path: "/media/anime/示例作品/Season 1/示例作品 S01E01.mkv",
       target_name: "示例作品 S01E01.mkv",
@@ -73,6 +76,8 @@ const preview: FileManagerRecognitionPreview = {
       kind: "video",
       group: "g2",
       revision: "r2",
+      size_bytes: 2048,
+      has_placeholder: false,
       episode: { raw: "02", number: "2", offset: 0, source: "parsed" },
       target_path: "/media/anime/示例作品/Season 1/示例作品 S01E02.mkv",
       target_name: "示例作品 S01E02.mkv",
@@ -84,6 +89,8 @@ const preview: FileManagerRecognitionPreview = {
       kind: "video",
       group: "g3",
       revision: "r3",
+      size_bytes: 2048,
+      has_placeholder: false,
       episode: { raw: "03", number: "3", offset: 0, source: "parsed" },
       target_path: "/media/anime/示例作品/Season 1/示例作品 S01E03.mkv",
       target_name: "示例作品 S01E03.mkv",
@@ -95,6 +102,8 @@ const preview: FileManagerRecognitionPreview = {
       kind: "subtitle",
       group: "g1",
       revision: "r4",
+      size_bytes: 32,
+      has_placeholder: false,
       target_path: "/media/anime/示例作品/Season 1/示例作品 S01E01.zh.ass",
       target_name: "示例作品 S01E01.zh.ass",
       disposition: "rename",
@@ -177,25 +186,25 @@ test.describe("file manager recognition actions", () => {
     await expect(dialog).toBeVisible();
     const toolbar = dialog.getByRole("toolbar", { name: t("fileManager.recognize.actions") });
     await expect(toolbar).toBeVisible();
-    const loadButton = toolbar.getByRole("button", { name: t("fileManager.recognize.runtimeFacts.load") });
+    const reloadButton = toolbar.getByRole("button", { name: t("fileManager.recognize.reload") });
     const numberingButton = toolbar.getByRole("button", { name: t("fileNumbering.title") });
-    await expect(loadButton).toBeVisible();
+    await expect(reloadButton).toBeVisible();
     await expect(numberingButton).toBeVisible();
 
     // The settings column keeps fields only; both actions must not repeat there.
     const panel = dialog.getByRole("region", { name: t("fileManager.recognize.configAria") });
-    await expect(panel.getByRole("button", { name: t("fileManager.recognize.runtimeFacts.load") })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: t("fileManager.recognize.reload") })).toHaveCount(0);
     await expect(panel.getByRole("button", { name: t("fileNumbering.title") })).toHaveCount(0);
 
     // Rows arrive from the served plan; the toolbar sits above the first one.
-    const firstRow = dialog.getByText("/media/anime/Show - 01.mkv").first();
+    const firstRow = dialog.getByTitle("/media/anime/Show - 01.mkv").first();
     await expect(firstRow).toBeVisible({ timeout: 5000 });
 
     const toolbarBox = (await toolbar.boundingBox())!;
     const firstRowBox = (await firstRow.boundingBox())!;
     expect(toolbarBox.y + toolbarBox.height, "工具栏应在预览行上方").toBeLessThanOrEqual(firstRowBox.y + 1);
 
-    for (const button of [loadButton, numberingButton]) {
+    for (const button of [reloadButton, numberingButton]) {
       const box = (await button.boundingBox())!;
       expect(box.x, "按钮在工具栏左边界内").toBeGreaterThanOrEqual(toolbarBox.x - 1);
       expect(box.x + box.width, "按钮在工具栏右边界内").toBeLessThanOrEqual(toolbarBox.x + toolbarBox.width + 1);
@@ -210,7 +219,7 @@ test.describe("file manager recognition actions", () => {
       expect(panelBox.y, "手机端设置列在行列表之后").toBeGreaterThan(firstRowBox.y);
       const viewport = page.viewportSize()!;
       expect(toolbarBox.width, "工具栏不超出视口").toBeLessThanOrEqual(viewport.width);
-      for (const button of [loadButton, numberingButton]) {
+      for (const button of [reloadButton, numberingButton]) {
         const box = (await button.boundingBox())!;
         expect(box.x + box.width, "手机端按钮不超出视口").toBeLessThanOrEqual(viewport.width);
       }

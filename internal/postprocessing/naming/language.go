@@ -115,11 +115,11 @@ func (p *languageProfile) guardedRoots() []string {
 // object builds the plain template object for one render from its projected
 // facts. A preview keeps every known value; only an absent execution-phase fact
 // reads PreviewPlaceholder(path).
-func (p *languageProfile) object(facts *templatefacts.FactSet, placeholders bool) (map[string]interface{}, error) {
+func (p *languageProfile) object(facts *templatefacts.FactSet, placeholders func(templatefacts.Fact) bool) (map[string]interface{}, error) {
 	out := templatefacts.ScenarioObject(templatefacts.ScenarioNaming, facts)
-	if placeholders {
+	if placeholders != nil {
 		for _, fact := range templatefacts.ScenarioFacts(templatefacts.ScenarioNaming) {
-			if fact.Phase != templatefacts.PhaseExecution || !templatefacts.Absent(fact.Value(facts)) {
+			if !placeholders(fact) || !templatefacts.Absent(fact.Value(facts)) {
 				continue
 			}
 			segments := strings.Split(fact.Path, ".")
@@ -143,15 +143,15 @@ func (p *languageProfile) object(facts *templatefacts.FactSet, placeholders bool
 }
 
 // missing returns the nullable required facts the projected facts have no
-// value for. With placeholders an execution-phase fact is never missing.
-func (p *languageProfile) missing(required []string, facts *templatefacts.FactSet, placeholders bool) []string {
+// value for. A fact selected for placeholder rendering is never missing.
+func (p *languageProfile) missing(required []string, facts *templatefacts.FactSet, placeholders func(templatefacts.Fact) bool) []string {
 	missing := []string{}
 	for _, path := range required {
 		if !p.nullable[path] {
 			continue
 		}
 		fact, ok := templatefacts.Lookup(path)
-		if !ok || (placeholders && fact.Phase == templatefacts.PhaseExecution) {
+		if !ok || (placeholders != nil && placeholders(fact)) {
 			continue
 		}
 		if templatefacts.Absent(fact.Value(facts)) {

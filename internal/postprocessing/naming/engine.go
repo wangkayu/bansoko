@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -65,8 +66,8 @@ func (e *Error) Error() string {
 type Engine struct {
 	pool    *runtimePool
 	timeout time.Duration
-	// preview renders absent execution-phase facts as placeholders; see Preview.
-	preview bool
+	// placeholders selects the catalog facts allowed to render placeholder text.
+	placeholders func(templatefacts.Fact) bool
 	// replay is the renderer semantics a frozen snapshot is replayed with
 	// (1 = naming-render-1, 2 = naming-render-2, 3 = naming-render-3); 0
 	// renders the current RendererVersion. See ForRenderer.
@@ -82,7 +83,15 @@ func (e *Engine) legacy() bool { return e.replay == 1 }
 // will appear — it is never a naming result.
 func (e *Engine) Preview() *Engine {
 	preview := *e
-	preview.preview = true
+	preview.placeholders = func(fact templatefacts.Fact) bool { return fact.Phase == templatefacts.PhaseExecution }
+	return &preview
+}
+
+// WithPlaceholders returns an engine that previews only the given catalog paths.
+func (e *Engine) WithPlaceholders(paths map[string]bool) *Engine {
+	selected := maps.Clone(paths)
+	preview := *e
+	preview.placeholders = func(fact templatefacts.Fact) bool { return selected[fact.Path] }
 	return &preview
 }
 
@@ -450,7 +459,7 @@ func (e *Engine) RenderDetailed(t CompiledTemplate, ctx NamingContext) (Rendered
 		return Rendered{}, nil
 	}
 	facts := renderFacts(ctx, e.replay)
-	empty := sortedMissing(profile.missing(t.RequiredFacts, &facts, e.preview))
+	empty := sortedMissing(profile.missing(t.RequiredFacts, &facts, e.placeholders))
 	if e.legacy() && len(legacyRefused(empty)) > 0 {
 		return Rendered{}, missingFactsError(t.Kind, legacyRefused(empty))
 	}
@@ -568,7 +577,7 @@ func (e *Engine) execute(profile *languageProfile, t CompiledTemplate, facts *te
 	if e.legacy() {
 		installNamingValue(rt, true)
 	}
-	plain, err := profile.object(facts, e.preview)
+	plain, err := profile.object(facts, e.placeholders)
 	if err != nil {
 		return "", &Error{Code: ErrCodeTemplateCompileError, Field: string(t.Kind), Message: err.Error()}
 	}

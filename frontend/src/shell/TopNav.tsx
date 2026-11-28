@@ -381,6 +381,7 @@ export function TopNav({
             onNavigate={(path) => routeDialogs.update({ path })}
             onOpenAnime={(id) => routeDialogs.open({ anime: id, tab: "rss" })}
             onOpenRecord={(id) => routeDialogs.open({ record: id })}
+            onOpenConnectionSettings={(provider) => openSettingsTarget(`/settings/connections?connection=${encodeURIComponent(provider)}`)}
             onClose={() => routeDialogs.close()}
           />
         </Suspense>

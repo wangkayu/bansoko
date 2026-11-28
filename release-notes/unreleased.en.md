@@ -16,6 +16,7 @@
 - Automatic matching now distinguishes movie markers from ordinary words, treats explicit seasons as TV, and keeps meaningful subtitle text when trimming search titles. It stops guessing among multiple unproven seasons.
 - TMDB automatic matching remains animation-only and thresholded, rejects popularity-based ties and weak short-title containment, and keeps ambiguous failures isolated to their current media type.
 - Bangumi automatic binding accepts exact titles, normalized exact titles, and allowlisted infobox aliases only; fuzzy and substring matches no longer bind automatically.
+- File manager recognition now automatically loads referenced MediaInfo and episode titles on demand with caching. When a provider is unconfigured, rate-limited, or a media probe fails, previews stay visible with inline placeholders and toast notices while blocking submission until resolved; a permanent Reload action refreshes runtime facts on demand.
 
 ## Fixed
 

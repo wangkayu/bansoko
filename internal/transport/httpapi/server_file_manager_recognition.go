@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"bansoko/internal/episodetitle"
 	"bansoko/internal/filemanager"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/transport/httpapi/generated"
@@ -25,6 +26,15 @@ func writeFileManagerRecognitionError(w http.ResponseWriter, r *http.Request, er
 	writeFileManagerError(w, r, err)
 }
 
+// Decode the required season as a pointer so omission is distinguishable from zero.
+type recognitionPreviewInput struct {
+	generated.FileManagerRecognitionRequest
+	EpisodeTitleCacheOnly []struct {
+		generated.FileManagerRecognitionWorkKey
+		Season *int `json:"season"`
+	} `json:"episode_title_cache_only"`
+}
+
 // PreviewFileManagerRecognition renders what recognizing the selected files
 // would name them.
 func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +42,7 @@ func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Re
 		writeError(w, r, errors.New("file manager service is not configured"))
 		return
 	}
-	var input generated.FileManagerRecognitionRequest
+	var input recognitionPreviewInput
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, r, err)
 		return
@@ -46,12 +56,19 @@ func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Re
 	writeJSON(w, r.Context(), http.StatusOK, preview)
 }
 
-func (s *Server) previewFileManagerRecognition(ctx context.Context, input generated.FileManagerRecognitionRequest) (generated.FileManagerRecognitionPreview, error) {
+func (s *Server) previewFileManagerRecognition(ctx context.Context, input recognitionPreviewInput) (generated.FileManagerRecognitionPreview, error) {
 	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match, input.Overrides)
 	if err != nil {
 		return generated.FileManagerRecognitionPreview{}, err
 	}
-	request.LoadRuntimeFacts = input.LoadRuntimeFacts != nil && *input.LoadRuntimeFacts
+	request.DisableRuntimeFacts = input.LoadRuntimeFacts != nil && !*input.LoadRuntimeFacts
+	request.RefreshMedia = input.RefreshMedia != nil && *input.RefreshMedia
+	for _, key := range input.EpisodeTitleCacheOnly {
+		if key.Season == nil {
+			return generated.FileManagerRecognitionPreview{}, &filemanager.Error{Kind: filemanager.ErrorInvalid, Code: filemanager.CodeRecognitionInvalid, Message: "episode title cache key requires a season"}
+		}
+		request.EpisodeTitleCacheOnly = append(request.EpisodeTitleCacheOnly, episodetitle.WorkKey{Source: episodetitle.Source(key.Provider), WorkID: key.WorkId, Season: *key.Season})
+	}
 	preview, err := s.deps.FileManager.PreviewRecognition(ctx, request)
 	if err != nil {
 		return generated.FileManagerRecognitionPreview{}, err
@@ -85,10 +102,11 @@ func (s *Server) submitFileManagerRecognition(ctx context.Context, idempotencyKe
 	if err != nil {
 		return generated.FileManagerRecognitionResult{}, err
 	}
-	request.LoadRuntimeFacts = input.LoadRuntimeFacts != nil && *input.LoadRuntimeFacts
+	request.DisableRuntimeFacts = input.LoadRuntimeFacts != nil && !*input.LoadRuntimeFacts
 	outcome, err := s.deps.FileManager.SubmitRecognition(ctx, filemanager.SubmitRecognitionRequest{
 		IdempotencyKey: idempotencyKey, Actor: fileManagerActor, RecognitionRequest: request,
 		ExpectedPlanDigest: input.ExpectedPlanDigest, Conflict: filemanager.RecognitionConflictChoice(input.Conflict),
+		LegacyLoadRuntimeFacts: input.LoadRuntimeFacts != nil && *input.LoadRuntimeFacts,
 	})
 	if err != nil {
 		return generated.FileManagerRecognitionResult{}, err
@@ -200,7 +218,8 @@ func mapFileManagerRecognitionPreview(preview filemanager.RecognitionPreview) ge
 	mapped := generated.FileManagerRecognitionPreview{
 		Directory: preview.Directory, UnknownRoute: generated.FileManagerRecognitionUnknownRoute(preview.UnknownRoute),
 		PlanDigest: preview.PlanDigest, Conflicts: append([]string{}, preview.Conflicts...),
-		Rows: make([]generated.FileManagerRecognitionRow, 0, len(preview.Rows)),
+		Rows:         make([]generated.FileManagerRecognitionRow, 0, len(preview.Rows)),
+		RuntimeFacts: mapRecognitionRuntimeFacts(preview.RuntimeFacts),
 	}
 	if preview.TitleHint != "" {
 		hint := preview.TitleHint
@@ -212,10 +231,38 @@ func mapFileManagerRecognitionPreview(preview filemanager.RecognitionPreview) ge
 	return mapped
 }
 
+func mapRecognitionRuntimeFacts(facts filemanager.RecognitionRuntimeFacts) generated.FileManagerRecognitionRuntimeFacts {
+	mapped := generated.FileManagerRecognitionRuntimeFacts{
+		MediaProbe:    make([]generated.FileManagerRecognitionMediaDiagnostic, 0, len(facts.MediaProbe)),
+		EpisodeTitles: make([]generated.FileManagerRecognitionTitleDiagnostic, 0, len(facts.EpisodeTitles)),
+	}
+	for _, item := range facts.MediaProbe {
+		diagnostic := generated.FileManagerRecognitionMediaDiagnostic{Id: item.ID, Path: item.Path, State: generated.FileManagerRecognitionMediaDiagnosticState(item.State)}
+		if item.Reason != "" {
+			reason := generated.FileManagerRecognitionMediaDiagnosticReason(item.Reason)
+			diagnostic.Reason = &reason
+		}
+		mapped.MediaProbe = append(mapped.MediaProbe, diagnostic)
+	}
+	for _, item := range facts.EpisodeTitles {
+		diagnostic := generated.FileManagerRecognitionTitleDiagnostic{
+			Id: item.ID, Provider: generated.FileManagerRecognitionTitleProvider(item.Work.Source), WorkId: item.Work.WorkID, Season: item.Work.Season,
+			State: generated.FileManagerRecognitionTitleDiagnosticState(item.State), Episodes: item.Episodes, RetryAfterSeconds: item.RetryAfterSeconds,
+		}
+		if item.Reason != "" {
+			reason := generated.FileManagerRecognitionTitleDiagnosticReason(item.Reason)
+			diagnostic.Reason = &reason
+		}
+		mapped.EpisodeTitles = append(mapped.EpisodeTitles, diagnostic)
+	}
+	return mapped
+}
+
 func mapFileManagerRecognitionRow(row filemanager.RecognitionRow) generated.FileManagerRecognitionRow {
 	mapped := generated.FileManagerRecognitionRow{
 		Path: row.Path, Name: row.Name, Kind: generated.FileManagerRecognitionRowKind(row.Kind),
 		Group: row.Group, Revision: row.Revision, Disposition: generated.FileManagerRecognitionDisposition(row.Disposition),
+		SizeBytes: row.SizeBytes, HasPlaceholder: row.HasPlaceholder,
 	}
 	if row.Episode != nil {
 		episode := generated.FileManagerRecognitionEpisode{Number: row.Episode.Number, Offset: row.Episode.Offset, Source: row.Episode.Source}
@@ -248,6 +295,10 @@ func mapFileManagerRecognitionRow(row filemanager.RecognitionRow) generated.File
 			if len(blocker.Facts) > 0 {
 				facts := append([]string{}, blocker.Facts...)
 				item.Facts = &facts
+			}
+			if len(blocker.DiagnosticIDs) > 0 {
+				ids := append([]string{}, blocker.DiagnosticIDs...)
+				item.DiagnosticIds = &ids
 			}
 			blockers = append(blockers, item)
 		}
